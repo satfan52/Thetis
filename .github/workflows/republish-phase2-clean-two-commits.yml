@@ -1,0 +1,206 @@
+name: Republish Phase 2 with clean two-commit history
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/republish-phase2-clean-two-commits.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  republish-clean:
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout CI helpers
+        uses: actions/checkout@v4
+
+      - name: Checkout exact pristine baseline for new feature history
+        uses: actions/checkout@v4
+        with:
+          ref: 852bf0ef0b4f3886a13fc2846489aee16f361872
+          path: source
+          fetch-depth: 0
+
+      - name: Checkout exact pristine baseline for semantic reference
+        uses: actions/checkout@v4
+        with:
+          ref: 852bf0ef0b4f3886a13fc2846489aee16f361872
+          path: reference
+          fetch-depth: 1
+
+      - name: Configure commit identity
+        shell: pwsh
+        run: |
+          Set-Location source
+          git config user.name 'satfan52'
+          git config user.email 'pik138065@gmail.com'
+
+      - name: Apply and commit clean Patch 1 - native routing foundation
+        shell: pwsh
+        run: |
+          python .github/scripts/phase2_native_patch.py
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 2) { throw "Patch 1 expected 2 changed files, got $($changed.Count): $changed" }
+          if ($changed -notcontains 'Project Files/Source/ChannelMaster/ivac.c') { throw 'Patch 1 missing ivac.c' }
+          if ($changed -notcontains 'Project Files/Source/ChannelMaster/ivac.h') { throw 'Patch 1 missing ivac.h' }
+          git add -- 'Project Files/Source/ChannelMaster/ivac.c' 'Project Files/Source/ChannelMaster/ivac.h'
+          git commit -m 'audio: add IVAC output-only processed TX routing foundation'
+
+      - name: Generate exact validated full-state reference
+        shell: pwsh
+        run: |
+          $native = Get-Content '.github/scripts/phase2_native_patch.py' -Raw
+          $native = $native -replace 'ROOT = Path\("source"\)', 'ROOT = Path("reference")'
+          Set-Content '.github/scripts/phase2_native_reference.py' -Value $native -Encoding utf8
+
+          $full = Get-Content '.github/scripts/phase2_full_patch.py' -Raw
+          $full = $full -replace 'ROOT = Path\("source"\)', 'ROOT = Path("reference")'
+          $full = $full -replace 'phase2_native_patch\.py', 'phase2_native_reference.py'
+          Set-Content '.github/scripts/phase2_full_reference.py' -Value $full -Encoding utf8
+
+          python .github/scripts/phase2_full_reference.py
+
+      - name: Apply clean Patch 2 while preserving unchanged audio.cs bytes
+        shell: pwsh
+        run: |
+          Copy-Item -Force 'reference/Project Files/Source/Console/ivac.cs' 'source/Project Files/Source/Console/ivac.cs'
+          Copy-Item -Force 'reference/Project Files/Source/Console/setup.cs' 'source/Project Files/Source/Console/setup.cs'
+
+          @'
+          from pathlib import Path
+          import difflib
+
+          src = Path(r"source/Project Files/Source/Console/audio.cs")
+          ref = Path(r"reference/Project Files/Source/Console/audio.cs")
+
+          src_raw = src.read_bytes()
+          ref_raw = ref.read_bytes()
+          src_bom = src_raw.startswith(b"\xef\xbb\xbf")
+          src_text = src_raw.decode("utf-8-sig")
+          ref_text = ref_raw.decode("utf-8-sig")
+
+          src_lines = src_text.splitlines(keepends=True)
+          ref_lines = ref_text.splitlines(keepends=True)
+
+          def key(line):
+              return line.rstrip("\r\n")
+
+          def ending(line):
+              if line.endswith("\r\n"):
+                  return "\r\n"
+              if line.endswith("\n"):
+                  return "\n"
+              return ""
+
+          src_keys = [key(x) for x in src_lines]
+          ref_keys = [key(x) for x in ref_lines]
+          matcher = difflib.SequenceMatcher(None, src_keys, ref_keys, autojunk=False)
+          out = []
+
+          for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+              if tag == "equal":
+                  out.extend(src_lines[i1:i2])
+                  continue
+
+              local_eol = "\r\n"
+              if i1 < len(src_lines) and ending(src_lines[i1]):
+                  local_eol = ending(src_lines[i1])
+              elif i1 > 0 and ending(src_lines[i1 - 1]):
+                  local_eol = ending(src_lines[i1 - 1])
+
+              for line in ref_lines[j1:j2]:
+                  eol = ending(line)
+                  body = key(line)
+                  out.append(body + (local_eol if eol else ""))
+
+          merged = "".join(out)
+          if merged.replace("\r\n", "\n") != ref_text.replace("\r\n", "\n"):
+              raise RuntimeError("Semantic merge does not match validated Phase 2 audio.cs")
+
+          data = merged.encode("utf-8")
+          if src_bom:
+              data = b"\xef\xbb\xbf" + data
+          src.write_bytes(data)
+          '@ | Set-Content '.github/scripts/merge_audio_preserve_endings.py' -Encoding utf8
+
+          python .github/scripts/merge_audio_preserve_endings.py
+
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 3) { throw "Patch 2 expected 3 changed files, got $($changed.Count): $changed" }
+          if ($changed -notcontains 'Project Files/Source/Console/audio.cs') { throw 'Patch 2 missing audio.cs' }
+          if ($changed -notcontains 'Project Files/Source/Console/ivac.cs') { throw 'Patch 2 missing ivac.cs' }
+          if ($changed -notcontains 'Project Files/Source/Console/setup.cs') { throw 'Patch 2 missing setup.cs' }
+
+          $numstat = git diff --numstat -- 'Project Files/Source/Console/audio.cs'
+          Write-Host "audio.cs Patch 2 numstat: $numstat"
+          $parts = $numstat -split '\s+'
+          if ([int]$parts[0] -gt 500 -or [int]$parts[1] -gt 500) { throw "audio.cs diff is unexpectedly noisy: $numstat" }
+
+          git add -- 'Project Files/Source/Console/audio.cs' 'Project Files/Source/Console/ivac.cs' 'Project Files/Source/Console/setup.cs'
+          git commit -m 'vac2: add reversible processed TX output mode and GUI'
+          if (git status --porcelain) { throw 'Unexpected files after Patch 2 commit' }
+
+      - name: Verify clean two-commit topology and diff size
+        shell: pwsh
+        run: |
+          Set-Location source
+          if ((git rev-list --count 852bf0ef0b4f3886a13fc2846489aee16f361872..HEAD).Trim() -ne '2') { throw 'Expected exactly two commits above baseline' }
+          git log --oneline --decorate -3
+          git diff --stat 852bf0ef0b4f3886a13fc2846489aee16f361872..HEAD
+          git diff --numstat 852bf0ef0b4f3886a13fc2846489aee16f361872..HEAD
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw 'MSBuild.exe not found' }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Set-Location source
+          nuget restore 'Project Files\Source\Thetis_VS2026.sln' -NonInteractive
+
+      - name: Build exact clean two-commit HEAD Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" 'Project Files\Source\Thetis_VS2026.sln' /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-clean-two-commits.binlog
+
+      - name: Replace feature branch only after successful build
+        shell: pwsh
+        run: |
+          Set-Location source
+          git push --force-with-lease=refs/heads/feature/independent-tx-audio-routing:ed14cdcfa90c3b6c3a0d847ef2ebf7100613bd01 origin HEAD:refs/heads/feature/independent-tx-audio-routing
+
+      - name: Upload exact clean validated binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-phase2-clean-two-commit-validated
+          path: |
+            source/Project Files/bin/x64/Release/**
+            source/Project Files/build/x64/Release/**
+          if-no-files-found: warn
+
+      - name: Upload clean-history diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-clean-two-commit-diagnostics
+          path: source/phase2-clean-two-commits.binlog
+          if-no-files-found: ignore
