@@ -37,7 +37,7 @@ jobs:
             Write-Host "===== $file ====="
             $lines = Get-Content -LiteralPath $file
             foreach ($pattern in $patterns) {
-              $matches = Select-String -InputObject $lines -Pattern $pattern -SimpleMatch
+              $matches = $lines | Select-String -Pattern $pattern -SimpleMatch
               foreach ($m in $matches) {
                 $lineNo = $m.LineNumber
                 $start = [Math]::Max(1, $lineNo - 8)
