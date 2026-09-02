@@ -253,7 +253,6 @@ namespace Thetis
                 monitor_volume = value;
                 cmaster.CMSetAudioVolume(value);
                 ivac.SetIVACmonVol(0, monitor_volume);
-                ivac.SetIVACmonVol(1, monitor_volume);
                 cmaster.SetTCIRxAudioMonVol(0, monitor_volume);
                 cmaster.SetTCIRxAudioMonVol(1, monitor_volume);
             }
@@ -367,7 +366,7 @@ namespace Thetis
                     else
                     {
                         ivac.SetIVACmox(0, 1);
-                        ivac.SetIVACmox(1, vac2_enabled ? 1 : 0);
+                        ivac.SetIVACmox(1, 0);
                         cmaster.SetTCIRxAudioMox(0, 1);
                         cmaster.SetTCIRxAudioMox(1, 0);
                     }
@@ -375,7 +374,7 @@ namespace Thetis
                 else
                 {
                     ivac.SetIVACmox(0, 0);
-                    ivac.SetIVACmox(1, vac2_enabled ? 1 : 0);
+                    ivac.SetIVACmox(1, 0);
                     cmaster.SetTCIRxAudioMox(0, 0);
                     cmaster.SetTCIRxAudioMox(1, 0);
                 }
@@ -389,7 +388,7 @@ namespace Thetis
             if (mon)
             {
                 ivac.SetIVACmon(0, 1);
-                ivac.SetIVACmon(1, vac2_enabled ? 1 : 0);
+                ivac.SetIVACmon(1, 0);
                 ivac.SetIVACmonVol(0, monitor_volume);
                 cmaster.SetTCIRxAudioMon(0, 1);
                 cmaster.SetTCIRxAudioMon(1, 1);
@@ -399,7 +398,7 @@ namespace Thetis
             else
             {
                 ivac.SetIVACmon(0, 0);
-                ivac.SetIVACmon(1, vac2_enabled ? 1 : 0);
+                ivac.SetIVACmon(1, 0);
                 cmaster.SetTCIRxAudioMon(0, 0);
                 cmaster.SetTCIRxAudioMon(1, 0);
             }
@@ -478,16 +477,6 @@ namespace Thetis
                 cmaster.CMSetAntiVoxSourceWhat();
                 if (console.PowerOn)
                     EnableVAC2(value);
-
-                // Phase 1 proof build: enabling VAC2 dedicates its output to post-DSP TX audio.
-                // RX audio is suppressed on VAC2 so an external transmitter never receives RX AF.
-                // The console MON control continues to govern VAC1 operator monitoring only.
-                ivac.SetIVACmonVol(1, monitor_volume);
-                setupIVACforMon();
-                if (vac2_enabled || (mox && rx2_enabled && vfob_tx))
-                    ivac.SetIVACmox(1, 1);
-                else
-                    ivac.SetIVACmox(1, 0);
             }
             get { return vac2_enabled; }
         }
@@ -871,6 +860,79 @@ namespace Thetis
         {
             get { return output_dev3; }
             set { output_dev3 = value; }
+        }
+
+        // VAC2 can remain a completely normal duplex VAC (default), or be
+        // temporarily repurposed as a dedicated post-TX-DSP audio output.
+        // The processed-output device settings are intentionally independent
+        // so switching modes never overwrites the user's normal VAC2 setup.
+        private static bool vac2_processed_tx_output = false;
+        private static int vac2_processed_host = 0;
+        private static int vac2_processed_output = 0;
+        private static int vac2_processed_sample_rate = 48000;
+        private static int vac2_processed_block_size = 512;
+        private static int vac2_processed_exclusive_out = 0;
+        private static double vac2_processed_gain_db = 0.0;
+
+        public static bool VAC2ProcessedTXOutput
+        {
+            get { return vac2_processed_tx_output; }
+            set
+            {
+                if (vac2_processed_tx_output == value) return;
+                bool restart = vac2_enabled && console != null && console.PowerOn;
+                if (restart) EnableVAC2(false);
+                vac2_processed_tx_output = value;
+                if (restart) EnableVAC2(true);
+            }
+        }
+
+        public static int VAC2ProcessedHost
+        {
+            get { return vac2_processed_host; }
+            set { vac2_processed_host = value; }
+        }
+
+        public static int VAC2ProcessedOutput
+        {
+            get { return vac2_processed_output; }
+            set { vac2_processed_output = value; }
+        }
+
+        public static int VAC2ProcessedSampleRate
+        {
+            get { return vac2_processed_sample_rate; }
+            set { vac2_processed_sample_rate = value; }
+        }
+
+        public static int VAC2ProcessedBlockSize
+        {
+            get { return vac2_processed_block_size; }
+            set { vac2_processed_block_size = value; }
+        }
+
+        public static int VAC2ProcessedExclusiveOut
+        {
+            get { return vac2_processed_exclusive_out; }
+            set { vac2_processed_exclusive_out = value; }
+        }
+
+        public static double VAC2ProcessedGainDB
+        {
+            get { return vac2_processed_gain_db; }
+            set
+            {
+                vac2_processed_gain_db = value;
+                if (vac2_processed_tx_output)
+                    ivac.SetIVACmonVol(1, Math.Pow(10.0, vac2_processed_gain_db / 20.0));
+            }
+        }
+
+        public static void RestartVAC2()
+        {
+            if (!vac2_enabled || console == null || !console.PowerOn) return;
+            EnableVAC2(false);
+            EnableVAC2(true);
         }
 
         private static int latency2 = 120;
@@ -1681,76 +1743,136 @@ namespace Thetis
             if (enable)
                 unsafe
                 {
-                    int num_chan = 1;
-                    int sample_rate = sample_rate3;
-                    int block_size = block_size_vac2;
-
-                    double in_latency = vac2_latency_manual ? latency3 / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
-                    double out_latency = vac2_latency_out_manual ? vac2_latency_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
-                    double pa_in_latency = vac2_latency_pa_in_manual ? vac2_latency_pa_in / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
-                    double pa_out_latency = vac2_latency_pa_out_manual ? vac2_latency_pa_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
-
-                    if (vac2_output_iq)
+                    if (vac2_processed_tx_output)
                     {
-                        num_chan = 2;
-                        sample_rate = sample_rate_rx2;
-                        block_size = block_size_rx2;
+                        // Dedicated external-transmitter path.  No PortAudio input device
+                        // is opened and native IVAC ignores RX audio as a mixer dependency.
+                        int global_output = (int)PA19.PA_HostApiDeviceIndexToDeviceIndex(vac2_processed_host, vac2_processed_output);
+                        PA19.PaDeviceInfo out_info = PA19.PA_GetDeviceInfo(global_output);
+                        if (global_output < 0 || out_info.maxOutputChannels < 2)
+                        {
+                            MessageBox.Show("The selected Processed TX Output device is unavailable or does not expose two output channels.\n" +
+                                "Please select another output device on Setup -> Audio -> VAC 2.",
+                                "VAC2 Processed TX Output Error",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error);
+                            return;
+                        }
+
+                        double out_latency = out_info.defaultLowOutputLatency;
+
+                        VAC2RBReset = true;
+                        ivac.SetIVACOutputOnly(1, 1);
+                        ivac.SetIVACiqType(1, 0);               // always audio, never Direct I/Q
+                        ivac.SetIVACstereo(1, 0);               // source is processed TX speech
+                        ivac.SetIVAChostAPIindex(1, vac2_processed_host);
+                        ivac.SetIVACoutputDEVindex(1, vac2_processed_output);
+                        ivac.SetIVACnumChannels(1, 2);
+                        ivac.SetIVACvacRate(1, vac2_processed_sample_rate);
+                        ivac.SetIVACvacSize(1, vac2_processed_block_size);
+                        ivac.SetIVACOutLatency(1, out_latency, 0);
+                        ivac.SetIVACPAOutLatency(1, out_latency, 1);
+                        ivac.SetIVACExclusiveIn(1, 0);
+                        ivac.SetIVACExclusiveOut(1, vac2_processed_exclusive_out);
+                        ivac.SetIVACmonVol(1, Math.Pow(10.0, vac2_processed_gain_db / 20.0));
+
+                        try
+                        {
+                            retval = ivac.StartAudioIVAC(1) == 1;
+                            if (retval && console.PowerOn)
+                                ivac.SetIVACrun(1, 1);
+                        }
+                        catch (Exception)
+                        {
+                            MessageBox.Show("The program is having trouble starting the Processed TX Output stream.\n" +
+                                "Please examine the VAC2 Processed TX Output settings and try again.",
+                                "VAC2 Processed TX Output Startup Error",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error);
+                        }
                     }
-                    else if (vac2_stereo) num_chan = 2;
-
-                    VAC2RBReset = true;
-
-                    ivac.SetIVAChostAPIindex(1, host3);
-                    ivac.SetIVACinputDEVindex(1, input_dev3);
-                    ivac.SetIVACoutputDEVindex(1, output_dev3);
-                    ivac.SetIVACnumChannels(1, num_chan);
-                    ivac.SetIVACInLatency(1, in_latency, 0);
-                    ivac.SetIVACOutLatency(1, out_latency, 0);
-                    ivac.SetIVACPAInLatency(1, pa_in_latency, 0);
-                    ivac.SetIVACPAOutLatency(1, pa_out_latency, 1);
-
-                    // MW0LGE_21h
-                    ivac.SetIVACFeedbackGain(1, 0, vac2_feedbackgainOut);
-                    ivac.SetIVACFeedbackGain(1, 1, vac2_feedbackgainIn);
-                    ivac.SetIVACSlewTime(1, 0, vac2_slewtimeOut);
-                    ivac.SetIVACSlewTime(1, 1, vac2_slewtimeIn);
-                    //
-
-                    // MW0LGE_21j
-                    ivac.SetIVACPropRingMin(1, 0, vac2_prop_ringminOut);
-                    ivac.SetIVACPropRingMin(1, 1, vac2_prop_ringminIn);
-                    ivac.SetIVACPropRingMax(1, 0, vac2_prop_ringmaxOut);
-                    ivac.SetIVACPropRingMax(1, 1, vac2_prop_ringmaxIn);
-                    ivac.SetIVACFFRingMin(1, 0, vac2_ff_ringminOut);
-                    ivac.SetIVACFFRingMin(1, 1, vac2_ff_ringminIn);
-                    ivac.SetIVACFFRingMax(1, 0, vac2_ff_ringmaxOut);
-                    ivac.SetIVACFFRingMax(1, 1, vac2_ff_ringmaxIn);
-                    ivac.SetIVACFFAlpha(1, 0, vac2_ff_alphaOut);
-                    ivac.SetIVACFFAlpha(1, 1, vac2_ff_alphaIn);
-                    ivac.SetIVACswapIQout(1, _swap_iq_vac2);
-                    ivac.SetIVACinitialVars(1, vac2_oldVarIn, vac2_oldVarOut);
-                    //
-
-                    try
+                    else
                     {
-                        retval = ivac.StartAudioIVAC(1) == 1;
-                        if (retval && console.PowerOn)
-                            ivac.SetIVACrun(1, 1);
+                        // Exact legacy VAC2 path.  Restore every native mode flag that may
+                        // have been changed by Processed TX Output before opening duplex VAC2.
+                        ivac.SetIVACOutputOnly(1, 0);
+                        ivac.SetIVACiqType(1, Convert.ToInt32(vac2_output_iq));
+                        ivac.SetIVACstereo(1, Convert.ToInt32(vac2_stereo));
+                        ivac.SetIVACExclusiveIn(1, _exclusive_in_vac2);
+                        ivac.SetIVACExclusiveOut(1, _exclusive_out_vac2);
 
-                    }
-                    catch (Exception)
-                    {
-                        MessageBox.Show("The program is having trouble starting the VAC audio streams.\n" +
-                            "Please examine the VAC related settings on the Setup Form -> Audio Tab and try again.",
-                            "VAC2 Audio Stream Startup Error",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error);
+                        int num_chan = 1;
+                        int sample_rate = sample_rate3;
+                        int block_size = block_size_vac2;
+
+                        double in_latency = vac2_latency_manual ? latency3 / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
+                        double out_latency = vac2_latency_out_manual ? vac2_latency_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
+                        double pa_in_latency = vac2_latency_pa_in_manual ? vac2_latency_pa_in / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
+                        double pa_out_latency = vac2_latency_pa_out_manual ? vac2_latency_pa_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
+
+                        if (vac2_output_iq)
+                        {
+                            num_chan = 2;
+                            sample_rate = sample_rate_rx2;
+                            block_size = block_size_rx2;
+                        }
+                        else if (vac2_stereo) num_chan = 2;
+
+                        VAC2RBReset = true;
+
+                        ivac.SetIVAChostAPIindex(1, host3);
+                        ivac.SetIVACinputDEVindex(1, input_dev3);
+                        ivac.SetIVACoutputDEVindex(1, output_dev3);
+                        ivac.SetIVACnumChannels(1, num_chan);
+                        ivac.SetIVACvacRate(1, sample_rate);
+                        ivac.SetIVACvacSize(1, block_size);
+                        ivac.SetIVACInLatency(1, in_latency, 0);
+                        ivac.SetIVACOutLatency(1, out_latency, 0);
+                        ivac.SetIVACPAInLatency(1, pa_in_latency, 0);
+                        ivac.SetIVACPAOutLatency(1, pa_out_latency, 1);
+
+                        // MW0LGE_21h
+                        ivac.SetIVACFeedbackGain(1, 0, vac2_feedbackgainOut);
+                        ivac.SetIVACFeedbackGain(1, 1, vac2_feedbackgainIn);
+                        ivac.SetIVACSlewTime(1, 0, vac2_slewtimeOut);
+                        ivac.SetIVACSlewTime(1, 1, vac2_slewtimeIn);
+                        //
+
+                        // MW0LGE_21j
+                        ivac.SetIVACPropRingMin(1, 0, vac2_prop_ringminOut);
+                        ivac.SetIVACPropRingMin(1, 1, vac2_prop_ringminIn);
+                        ivac.SetIVACPropRingMax(1, 0, vac2_prop_ringmaxOut);
+                        ivac.SetIVACPropRingMax(1, 1, vac2_prop_ringmaxIn);
+                        ivac.SetIVACFFRingMin(1, 0, vac2_ff_ringminOut);
+                        ivac.SetIVACFFRingMin(1, 1, vac2_ff_ringminIn);
+                        ivac.SetIVACFFRingMax(1, 0, vac2_ff_ringmaxOut);
+                        ivac.SetIVACFFRingMax(1, 1, vac2_ff_ringmaxIn);
+                        ivac.SetIVACFFAlpha(1, 0, vac2_ff_alphaOut);
+                        ivac.SetIVACFFAlpha(1, 1, vac2_ff_alphaIn);
+                        ivac.SetIVACswapIQout(1, _swap_iq_vac2);
+                        ivac.SetIVACinitialVars(1, vac2_oldVarIn, vac2_oldVarOut);
+                        //
+
+                        try
+                        {
+                            retval = ivac.StartAudioIVAC(1) == 1;
+                            if (retval && console.PowerOn)
+                                ivac.SetIVACrun(1, 1);
+                        }
+                        catch (Exception)
+                        {
+                            MessageBox.Show("The program is having trouble starting the VAC audio streams.\n" +
+                                "Please examine the VAC related settings on the Setup Form -> Audio Tab and try again.",
+                                "VAC2 Audio Stream Startup Error",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error);
+                        }
                     }
                 }
             else
             {
                 ivac.SetIVACrun(1, 0);
-                ivac.StopAudioIVAC(1);                
+                ivac.StopAudioIVAC(1);
             }
             Thread.Sleep(10); // prevent ASIO exception
         }
