@@ -1,4 +1,4 @@
-name: Inspect Phase 1 setup lifecycle
+name: Inspect VAC2 device and persistence handlers
 
 on:
   workflow_dispatch:
@@ -14,14 +14,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Locate VAC2 parent container
+      - name: Print focused VAC2 setup contexts
         shell: python
         run: |
           from pathlib import Path
-          lines=Path('Project Files/Source/Console/setup.designer.cs').read_text(encoding='utf-8-sig', errors='replace').splitlines()
-          needles=['Controls.Add(this.grpVAC2Gain)', 'Controls.Add(this.grpAudioDetails3)', 'Controls.Add(this.chkVAC2Combine)', 'Controls.Add(this.chkVAC2UseRX2)', 'Controls.Add(this.grpVAC2LatencyManual)']
-          for needle in needles:
-              for i,line in enumerate(lines,1):
-                  if needle in line:
-                      print(f'--- {needle} at {i} ---')
-                      for n in range(max(1,i-25), min(len(lines),i+25)+1): print(f'{n:6}: {lines[n-1]}')
+
+          def show(path, needles, before=12, after=35):
+              lines = Path(path).read_text(encoding='utf-8-sig', errors='replace').splitlines()
+              print(f'===== {path} =====')
+              for needle in needles:
+                  hits = [i for i,l in enumerate(lines,1) if needle in l]
+                  print(f'### {needle!r}: {hits}')
+                  for i in hits[:4]:
+                      a=max(1,i-before); b=min(len(lines),i+after)
+                      for n in range(a,b+1): print(f'{n:6}: {lines[n-1]}')
+                      print()
+
+          show('Project Files/Source/Console/setup.cs', [
+              'comboAudioDriver3_SelectedIndexChanged',
+              'comboAudioInput3_SelectedIndexChanged',
+              'comboAudioOutput3_SelectedIndexChanged',
+              'comboAudioSampleRate3_SelectedIndexChanged',
+              'comboAudioBuffer3_SelectedIndexChanged',
+              'udVAC2GainTX',
+              'SaveOptions()',
+              'RestoreOptions()',
+              'DB.SaveVars',
+              'DB.GetVars',
+              'PADeviceInfo'
+          ])
+
+          show('Project Files/Source/Console/setup.designer.cs', [
+              'udVAC2GainTX.ValueChanged',
+              'comboAudioDriver3.SelectedIndexChanged',
+              'comboAudioInput3.SelectedIndexChanged',
+              'comboAudioOutput3.SelectedIndexChanged',
+              'comboAudioSampleRate3.SelectedIndexChanged',
+              'comboAudioBuffer3.SelectedIndexChanged'
+          ], 8, 12)
+
+          show('Project Files/Source/Console/ivac.cs', [
+              'SetIVACmonVol', 'SetIVACexclusiveOut', 'StartAudioIVAC'
+          ], 8, 16)
