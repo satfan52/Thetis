@@ -1,0 +1,145 @@
+name: Phase 1 VAC2 processed TX proof build
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/phase1-proof-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025-vs2026
+    steps:
+      - name: Checkout pristine feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/independent-tx-audio-routing
+          fetch-depth: 1
+
+      - name: Apply temporary VAC2 proof routing
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path(r'Project Files/Source/Console/audio.cs')
+          raw = p.read_bytes()
+          bom = raw.startswith(b'\xef\xbb\xbf')
+          use_crlf = b'\r\n' in raw
+          text = raw.decode('utf-8-sig').replace('\r\n', '\n')
+
+          def once(old, new, label):
+              global text
+              n = text.count(old)
+              if n != 1:
+                  raise RuntimeError(f'{label}: expected 1 match, got {n}')
+              text = text.replace(old, new, 1)
+
+          once(
+              '                ivac.SetIVACmonVol(0, monitor_volume);\n                cmaster.SetTCIRxAudioMonVol(0, monitor_volume);\n',
+              '                ivac.SetIVACmonVol(0, monitor_volume);\n                ivac.SetIVACmonVol(1, monitor_volume);\n                cmaster.SetTCIRxAudioMonVol(0, monitor_volume);\n',
+              'VAC2 monitor gain')
+
+          a = text.index('        public static bool MOX')
+          b = text.index('        private static void setupIVACforMon()', a)
+          seg = text[a:b]
+          old = 'ivac.SetIVACmox(1, 0);'
+          if seg.count(old) != 2:
+              raise RuntimeError(f'MOX policy: expected 2 VAC2 off assignments, got {seg.count(old)}')
+          seg = seg.replace(old, 'ivac.SetIVACmox(1, vac2_enabled ? 1 : 0);')
+          text = text[:a] + seg + text[b:]
+
+          a = text.index('        private static void setupIVACforMon()')
+          b = text.index('        private static bool mon;', a)
+          seg = text[a:b]
+          old = 'ivac.SetIVACmon(1, 0);'
+          if seg.count(old) != 2:
+              raise RuntimeError(f'MON policy: expected 2 VAC2 off assignments, got {seg.count(old)}')
+          seg = seg.replace(old, 'ivac.SetIVACmon(1, vac2_enabled ? 1 : 0);')
+          text = text[:a] + seg + text[b:]
+
+          old = '''        public static bool VAC2Enabled
+        {
+            set
+            {
+                vac2_enabled = value;
+                cmaster.CMSetAntiVoxSourceWhat();
+                if (console.PowerOn)
+                    EnableVAC2(value);
+            }
+            get { return vac2_enabled; }
+        }
+'''
+          new = '''        public static bool VAC2Enabled
+        {
+            set
+            {
+                vac2_enabled = value;
+                cmaster.CMSetAntiVoxSourceWhat();
+                if (console.PowerOn)
+                    EnableVAC2(value);
+
+                // Phase 1 proof build: an enabled VAC2 is a dedicated post-DSP TX-audio endpoint.
+                // Keep its RX mixer source disabled even while receiving so an external transmitter
+                // never receives receiver audio. Global MON continues to control VAC1 only.
+                ivac.SetIVACmonVol(1, monitor_volume);
+                setupIVACforMon();
+                if (vac2_enabled || (mox && rx2_enabled && vfob_tx))
+                    ivac.SetIVACmox(1, 1);
+                else
+                    ivac.SetIVACmox(1, 0);
+            }
+            get { return vac2_enabled; }
+        }
+'''
+          once(old, new, 'VAC2 enable proof policy')
+
+          out = text.replace('\n', '\r\n' if use_crlf else '\n').encode('utf-8')
+          if bom:
+              out = b'\xef\xbb\xbf' + out
+          p.write_bytes(out)
+
+      - name: Validate proof diff
+        shell: bash
+        run: |
+          git diff --check
+          git diff --stat
+          git diff -- 'Project Files/Source/Console/audio.cs'
+          test "$(git status --porcelain | wc -l)" -eq 1
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild.exe not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
+
+      - name: Build Phase 1 Release x64
+        shell: pwsh
+        run: '& "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase1.binlog'
+
+      - name: Upload Phase 1 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-phase1-vac2-processed-tx-proof
+          path: |
+            Project Files/bin/x64/Release/**
+            Project Files/build/x64/Release/**
+          if-no-files-found: error
+
+      - name: Upload Phase 1 source diff and build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-proof-diagnostics
+          path: |
+            phase1.binlog
+            Project Files/Source/Console/audio.cs
+          if-no-files-found: error
