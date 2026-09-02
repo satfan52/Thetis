@@ -1,0 +1,79 @@
+name: Phase 2 full reversible VAC2 build
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+  workflow_dispatch:
+
+jobs:
+  phase2-full:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout CI helpers
+        uses: actions/checkout@v4
+
+      - name: Checkout pristine feature source
+        uses: actions/checkout@v4
+        with:
+          ref: feature/independent-tx-audio-routing
+          path: source
+
+      - name: Apply full reversible Phase 2 patch
+        shell: pwsh
+        run: |
+          python .github/scripts/phase2_full_patch.py
+          Set-Location source
+          git diff --check
+          git diff --stat
+          git status --short
+          $changed = @(git status --porcelain)
+          if ($changed.Count -ne 5) { throw "Expected exactly five changed product files, got $($changed.Count)" }
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild.exe not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Set-Location source
+          nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
+
+      - name: Build Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-full.binlog
+
+      - name: Upload Phase 2 binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-phase2-reversible-vac2
+          path: |
+            source/Project Files/bin/x64/Release/**
+            source/Project Files/build/x64/Release/**
+          if-no-files-found: warn
+
+      - name: Upload Phase 2 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-full-diagnostics
+          path: |
+            source/phase2-full.binlog
+            source/Project Files/Source/ChannelMaster/ivac.c
+            source/Project Files/Source/ChannelMaster/ivac.h
+            source/Project Files/Source/Console/ivac.cs
+            source/Project Files/Source/Console/audio.cs
+            source/Project Files/Source/Console/setup.cs
+          if-no-files-found: ignore
