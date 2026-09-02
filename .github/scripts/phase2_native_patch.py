@@ -82,8 +82,8 @@ text = once(text, helper_anchor, helper_anchor + helper, "insert mixer mode help
 
 text = once(
     text,
-    "\ta->stereo = stereo;\n",
-    "\ta->stereo = stereo;\n\ta->output_only = 0;\n",
+    "\ta->iq_type = iq_type;\n\ta->stereo = stereo;\n\ta->iq_rate = iq_rate;\n",
+    "\ta->iq_type = iq_type;\n\ta->stereo = stereo;\n\ta->output_only = 0;\n\ta->iq_rate = iq_rate;\n",
     "initialize output_only",
 )
 
