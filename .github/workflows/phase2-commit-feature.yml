@@ -1,0 +1,54 @@
+name: Commit validated Phase 2 to feature branch
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/phase2-commit-feature.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  commit-phase2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout CI helpers
+        uses: actions/checkout@v4
+
+      - name: Checkout pristine feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/independent-tx-audio-routing
+          path: source
+          fetch-depth: 0
+
+      - name: Reproduce validated Phase 2 diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/phase2_full_patch.py
+          cd source
+          git diff --check
+          git status --short
+          test "$(git status --porcelain | wc -l)" -eq 5
+          test "$(git diff --name-only | sort | tr '\n' '|')" = "Project Files/Source/ChannelMaster/ivac.c|Project Files/Source/ChannelMaster/ivac.h|Project Files/Source/Console/audio.cs|Project Files/Source/Console/ivac.cs|Project Files/Source/Console/setup.cs|"
+
+      - name: Commit only product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          git config user.name "satfan52"
+          git config user.email "pik138065@gmail.com"
+          git add -- \
+            'Project Files/Source/ChannelMaster/ivac.c' \
+            'Project Files/Source/ChannelMaster/ivac.h' \
+            'Project Files/Source/Console/ivac.cs' \
+            'Project Files/Source/Console/audio.cs' \
+            'Project Files/Source/Console/setup.cs'
+          git commit -m 'audio: add reversible VAC2 processed TX output mode'
+          git push origin HEAD:feature/independent-tx-audio-routing
