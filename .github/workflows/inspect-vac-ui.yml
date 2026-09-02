@@ -1,0 +1,51 @@
+name: Inspect VAC UI context
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/inspect-vac-ui.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate VAC1/VAC2 controls and handlers
+        shell: pwsh
+        run: |
+          $files = @(
+            'Project Files/Source/Console/setup.cs',
+            'Project Files/Source/Console/setup.designer.cs',
+            'Project Files/Source/Console/audio.cs'
+          )
+          $patterns = @(
+            'comboVAC2Output',
+            'udVAC2TXGain',
+            'comboVAC2ToRX2',
+            'chkVAC2',
+            'setupIVACforMon',
+            'SetIVACmox'
+          )
+          foreach ($file in $files) {
+            Write-Host "===== $file ====="
+            $lines = Get-Content -LiteralPath $file
+            foreach ($pattern in $patterns) {
+              $matches = Select-String -InputObject $lines -Pattern $pattern -SimpleMatch
+              foreach ($m in $matches) {
+                $lineNo = $m.LineNumber
+                $start = [Math]::Max(1, $lineNo - 8)
+                $end = [Math]::Min($lines.Count, $lineNo + 12)
+                Write-Host "--- $pattern at line $lineNo ($start..$end) ---"
+                for ($i = $start; $i -le $end; $i++) {
+                  Write-Host ('{0,6}: {1}' -f $i, $lines[$i-1])
+                }
+              }
+            }
+          }
