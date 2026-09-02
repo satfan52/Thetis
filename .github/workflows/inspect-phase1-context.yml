@@ -14,40 +14,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print focused setup/audio context
+      - name: Print VAC2 control layout
         shell: python
         run: |
           from pathlib import Path
-
-          def show(path, needles, before=10, after=18):
-              lines = Path(path).read_text(encoding='utf-8-sig', errors='replace').splitlines()
-              print(f'===== {path} ({len(lines)} lines) =====')
-              seen=set()
-              for needle in needles:
-                  for i,line in enumerate(lines,1):
-                      if needle in line:
-                          a=max(1,i-before); b=min(len(lines),i+after)
-                          key=(a,b)
-                          if key in seen: continue
-                          seen.add(key)
-                          print(f'--- {needle!r} at {i} ({a}..{b}) ---')
-                          for n in range(a,b+1): print(f'{n:6}: {lines[n-1]}')
-
-          show('Project Files/Source/Console/setup.cs', [
-              'public Setup(', 'Setup(Console', 'InitializeComponent();',
-              'Common.RestoreForm(this', 'Common.SaveForm(this',
-              'FormClosing', 'Closing', 'chkVAC2Enable_CheckedChanged',
-              'InitAudioTab()', 'ForceAudioReset()'
-          ], 14, 28)
-          show('Project Files/Source/Console/setup.designer.cs', [
-              'this.grpVAC1.Location', 'this.grpVAC1.Size',
-              'this.grpVAC2.Location', 'this.grpVAC2.Size',
-              'private System.Windows.Forms.GroupBox grpVAC2',
-              'private Thetis.CheckBoxTS chkVAC2Enable',
-              'private Thetis.CheckBoxTS chkVAC1Enable'
-          ], 8, 15)
-          show('Project Files/Source/Console/audio.cs', [
-              'private static void setupIVACforMon()',
-              'public static bool MOX', 'public static double MonitorVolume',
-              'public static void EnableVAC1', 'public static void EnableVAC2'
-          ], 10, 35)
+          import re
+          p=Path('Project Files/Source/Console/setup.designer.cs')
+          lines=p.read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          start=next(i for i,l in enumerate(lines) if '// grpVAC2' in l)
+          end=min(len(lines), start+1100)
+          current=None
+          for i in range(start,end):
+              s=lines[i].strip()
+              m=re.match(r'// (\w+)$',s)
+              if m:
+                  current=m.group(1)
+              if current and ('.Location = new System.Drawing.Point' in s or '.Size = new System.Drawing.Size' in s or '.Text = ' in s):
+                  print(f'{i+1:6}: {current:32} {s}')
+          print('--- VAC2 Controls.Add order ---')
+          for i in range(start,min(len(lines),start+150)):
+              if 'this.grpVAC2.Controls.Add' in lines[i] or 'this.grpVAC2.Size' in lines[i] or 'this.grpVAC2.Location' in lines[i]:
+                  print(f'{i+1:6}: {lines[i].strip()}')
