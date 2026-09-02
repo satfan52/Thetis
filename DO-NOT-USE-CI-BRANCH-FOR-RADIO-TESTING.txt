@@ -1,0 +1,1 @@
+The ci/baseline-build branch contains temporary build and publication tooling. Radio test binaries and product source are published from the A/B/C product states documented in the public test-set release.
