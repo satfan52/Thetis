@@ -1,0 +1,196 @@
+name: Restructure public Phase 1 and Phase 2 branches
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/restructure-public-phase-branches.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restructure:
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    env:
+      BASE_SHA: 852bf0ef0b4f3886a13fc2846489aee16f361872
+      OLD_PHASE1_SHA: 92743fbf3af6f283fa571a74f9bc9b38c7c12d5e
+      OLD_PHASE2_SHA: 9455da427865a03c0bd99eae90922a10d7f50c37
+      PHASE1_BRANCH: feature/independent-tx-audio-routing-phase1
+      PHASE2_BRANCH: feature/independent-tx-audio-routing
+
+    steps:
+      - name: Checkout CI helpers
+        uses: actions/checkout@v4
+        with:
+          path: helpers
+
+      - name: Checkout exact pristine upstream baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: source
+          fetch-depth: 0
+
+      - name: Checkout current validated Phase 2 final-state reference
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.OLD_PHASE2_SHA }}
+          path: finalref
+          fetch-depth: 0
+
+      - name: Verify public branches are still at expected pre-restructure SHAs
+        shell: pwsh
+        run: |
+          Set-Location source
+          git fetch origin "$env:PHASE1_BRANCH" "$env:PHASE2_BRANCH"
+          $p1 = git rev-parse "origin/$env:PHASE1_BRANCH"
+          $p2 = git rev-parse "origin/$env:PHASE2_BRANCH"
+          if ($p1 -ne $env:OLD_PHASE1_SHA) { throw "Phase 1 branch moved unexpectedly: $p1" }
+          if ($p2 -ne $env:OLD_PHASE2_SHA) { throw "Phase 2 branch moved unexpectedly: $p2" }
+          if ((git rev-parse HEAD) -ne $env:BASE_SHA) { throw "Source checkout is not pristine baseline" }
+
+      - name: Configure commit identity
+        shell: pwsh
+        run: |
+          Set-Location source
+          git config user.name "satfan52"
+          git config user.email "pik138065@gmail.com"
+
+      - name: Apply hardware-testable Phase 1 diagnostic patch
+        shell: pwsh
+        run: |
+          python "helpers/.github/scripts/phase1_proof_patch.py"
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'Project Files/Source/Console/audio.cs') {
+            throw "Phase 1 diagnostic must modify only audio.cs. Changed: $($changed -join ', ')"
+          }
+          git add -- 'Project Files/Source/Console/audio.cs'
+          git commit -m 'phase1: add duplex VAC2 processed TX diagnostic routing'
+          "PHASE1_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild.exe not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Set-Location source
+          nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
+
+      - name: Build exact Phase 1 diagnostic HEAD Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase1-public.binlog
+          if (-not (Test-Path 'Project Files\bin\x64\Release\Thetis.exe')) { throw 'Phase 1 Thetis.exe missing' }
+          New-Item -ItemType Directory -Force -Path '..\phase1-bin' | Out-Null
+          Copy-Item -Recurse -Force 'Project Files\bin\x64\Release\*' '..\phase1-bin\'
+
+      - name: Apply final reversible Phase 2 state on top of Phase 1
+        shell: pwsh
+        run: |
+          $files = @(
+            'Project Files/Source/ChannelMaster/ivac.c',
+            'Project Files/Source/ChannelMaster/ivac.h',
+            'Project Files/Source/Console/audio.cs',
+            'Project Files/Source/Console/ivac.cs',
+            'Project Files/Source/Console/setup.cs'
+          )
+          foreach ($f in $files) {
+            $src = Join-Path 'finalref' $f
+            $dst = Join-Path 'source' $f
+            Copy-Item -Force $src $dst
+          }
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 5) { throw "Phase 2 must change exactly five product files from Phase 1; got $($changed.Count)" }
+          git add -- `
+            'Project Files/Source/ChannelMaster/ivac.c' `
+            'Project Files/Source/ChannelMaster/ivac.h' `
+            'Project Files/Source/Console/audio.cs' `
+            'Project Files/Source/Console/ivac.cs' `
+            'Project Files/Source/Console/setup.cs'
+          git commit -m 'phase2: add reversible output-only VAC2 processed TX mode and GUI'
+          "PHASE2_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
+
+      - name: Verify final Phase 2 product state matches previously validated implementation
+        shell: pwsh
+        run: |
+          Set-Location source
+          $files = @(
+            'Project Files/Source/ChannelMaster/ivac.c',
+            'Project Files/Source/ChannelMaster/ivac.h',
+            'Project Files/Source/Console/audio.cs',
+            'Project Files/Source/Console/ivac.cs',
+            'Project Files/Source/Console/setup.cs'
+          )
+          foreach ($f in $files) {
+            $a = (git hash-object -- "$f")
+            $b = (git -C ..\finalref hash-object -- "$f")
+            if ($a -ne $b) { throw "Final Phase 2 state differs from validated reference: $f" }
+          }
+          $count = [int](git rev-list --count "$env:BASE_SHA..HEAD")
+          if ($count -ne 2) { throw "Expected exactly two commits above baseline; got $count" }
+          git --no-pager log --oneline --decorate -3
+
+      - name: Build exact Phase 2 HEAD Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-public.binlog
+          if (-not (Test-Path 'Project Files\bin\x64\Release\Thetis.exe')) { throw 'Phase 2 Thetis.exe missing' }
+          New-Item -ItemType Directory -Force -Path '..\phase2-bin' | Out-Null
+          Copy-Item -Recurse -Force 'Project Files\bin\x64\Release\*' '..\phase2-bin\'
+
+      - name: Preserve previous foundation-only split as archive tags
+        shell: pwsh
+        run: |
+          Set-Location source
+          git tag -f archive/foundation-phase1-20260902 $env:OLD_PHASE1_SHA
+          git tag -f archive/foundation-phase2-20260902 $env:OLD_PHASE2_SHA
+          git push origin refs/tags/archive/foundation-phase1-20260902 --force
+          git push origin refs/tags/archive/foundation-phase2-20260902 --force
+
+      - name: Replace Phase branches only after both builds and final-state verification succeed
+        shell: pwsh
+        run: |
+          Set-Location source
+          git push origin "$env:PHASE1_SHA:refs/heads/$env:PHASE1_BRANCH" --force-with-lease="refs/heads/$env:PHASE1_BRANCH:$env:OLD_PHASE1_SHA"
+          git push origin "$env:PHASE2_SHA:refs/heads/$env:PHASE2_BRANCH" --force-with-lease="refs/heads/$env:PHASE2_BRANCH:$env:OLD_PHASE2_SHA"
+
+      - name: Upload Phase 1 diagnostic binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-public-phase1-diagnostic-x64
+          path: phase1-bin/**
+
+      - name: Upload Phase 2 reversible binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-public-phase2-reversible-x64
+          path: phase2-bin/**
+
+      - name: Upload restructure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-branch-restructure-diagnostics
+          path: |
+            source/phase1-public.binlog
+            source/phase2-public.binlog
+          if-no-files-found: ignore
