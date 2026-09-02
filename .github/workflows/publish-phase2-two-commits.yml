@@ -1,0 +1,128 @@
+name: Publish Phase 2 as two auditable commits
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/publish-phase2-two-commits.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout CI helpers
+        uses: actions/checkout@v4
+
+      - name: Checkout pristine feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/independent-tx-audio-routing
+          path: source
+          fetch-depth: 0
+
+      - name: Verify pristine feature base
+        shell: pwsh
+        run: |
+          Set-Location source
+          $expected = '852bf0ef0b4f3886a13fc2846489aee16f361872'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Feature branch moved: expected $expected, got $actual" }
+          if (git status --porcelain) { throw 'Feature checkout is not clean' }
+
+      - name: Configure commit identity
+        shell: pwsh
+        run: |
+          Set-Location source
+          git config user.name 'satfan52'
+          git config user.email 'pik138065@gmail.com'
+
+      - name: Apply and commit Patch 1 - native output-only routing foundation
+        shell: pwsh
+        run: |
+          python .github/scripts/phase2_native_patch.py
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 2) { throw "Patch 1 expected 2 changed files, got $($changed.Count): $changed" }
+          if ($changed -notcontains 'Project Files/Source/ChannelMaster/ivac.c') { throw 'Patch 1 missing ivac.c' }
+          if ($changed -notcontains 'Project Files/Source/ChannelMaster/ivac.h') { throw 'Patch 1 missing ivac.h' }
+          git add -- 'Project Files/Source/ChannelMaster/ivac.c' 'Project Files/Source/ChannelMaster/ivac.h'
+          git commit -m 'audio: add IVAC output-only processed TX routing foundation'
+
+      - name: Derive and apply Patch 2 - reversible VAC2 mode and GUI
+        shell: pwsh
+        run: |
+          $full = Get-Content '.github/scripts/phase2_full_patch.py' -Raw
+          $uiOnly = $full -replace '(?m)^runpy\.run_path\([^\r\n]+\)\r?\n', ''
+          Set-Content '.github/scripts/phase2_ui_only_patch.py' -Value $uiOnly -Encoding utf8
+          python .github/scripts/phase2_ui_only_patch.py
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 3) { throw "Patch 2 expected 3 changed files, got $($changed.Count): $changed" }
+          if ($changed -notcontains 'Project Files/Source/Console/audio.cs') { throw 'Patch 2 missing audio.cs' }
+          if ($changed -notcontains 'Project Files/Source/Console/ivac.cs') { throw 'Patch 2 missing ivac.cs' }
+          if ($changed -notcontains 'Project Files/Source/Console/setup.cs') { throw 'Patch 2 missing setup.cs' }
+          git add -- 'Project Files/Source/Console/audio.cs' 'Project Files/Source/Console/ivac.cs' 'Project Files/Source/Console/setup.cs'
+          git commit -m 'vac2: add reversible processed TX output mode and GUI'
+          if (git status --porcelain) { throw 'Unexpected tracked/untracked files after Patch 2 commit' }
+
+      - name: Show two-commit history
+        shell: pwsh
+        run: |
+          Set-Location source
+          git log --oneline --decorate -3
+          git diff --stat 852bf0ef0b4f3886a13fc2846489aee16f361872..HEAD
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw 'MSBuild.exe not found' }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Set-Location source
+          nuget restore 'Project Files\Source\Thetis_VS2026.sln' -NonInteractive
+
+      - name: Build exact two-commit HEAD Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" 'Project Files\Source\Thetis_VS2026.sln' /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-two-commits.binlog
+
+      - name: Push validated two-commit feature branch
+        shell: pwsh
+        run: |
+          Set-Location source
+          git push origin HEAD:feature/independent-tx-audio-routing
+
+      - name: Upload exact validated binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-phase2-two-commit-validated
+          path: |
+            source/Project Files/bin/x64/Release/**
+            source/Project Files/build/x64/Release/**
+          if-no-files-found: warn
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-two-commit-diagnostics
+          path: source/phase2-two-commits.binlog
+          if-no-files-found: ignore
