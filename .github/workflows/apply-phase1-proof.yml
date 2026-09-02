@@ -1,0 +1,167 @@
+name: Apply Phase 1 TX audio proof patch
+
+on:
+  push:
+    branches: [ci/baseline-build]
+    paths: [.github/workflows/apply-phase1-proof.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Phase 1 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/independent-tx-audio-routing
+          fetch-depth: 0
+
+      - name: Apply exact Phase 1 proof patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def patch_text(path, transform):
+              p = Path(path)
+              raw = p.read_bytes()
+              newline = b'\r\n' if raw.count(b'\r\n') > raw.count(b'\n') // 2 else b'\n'
+              text = raw.decode('utf-8-sig')
+              # Python universal handling for our exact transformations; restore original newline style on write.
+              text = text.replace('\r\n', '\n')
+              new = transform(text)
+              if new == text:
+                  raise RuntimeError(f'No changes made to {path}')
+              bom = raw.startswith(b'\xef\xbb\xbf')
+              out = new.replace('\n', newline.decode()).encode('utf-8')
+              if bom:
+                  out = b'\xef\xbb\xbf' + out
+              p.write_bytes(out)
+
+          def once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          def patch_audio(text):
+              anchor = '''        #endregion
+
+        #region Local Copies of External Properties
+'''
+              addition = '''        private static bool vac2_processed_tx_audio_only = false;
+        /// <summary>
+        /// Phase 1 proof-of-concept: dedicate VAC2 output to the existing post-DSP TX monitor stream.
+        /// When enabled, VAC2 RX audio is suppressed and the route is independent of the console MON button.
+        /// Defaults false to preserve legacy behaviour.
+        /// </summary>
+        public static bool VAC2ProcessedTXAudioOnly
+        {
+            get { return vac2_processed_tx_audio_only; }
+            set
+            {
+                vac2_processed_tx_audio_only = value;
+                ivac.SetIVACmonVol(1, monitor_volume);
+                setupIVACforMon();
+
+                // IVAC mox is an output-mixer selector. Keep VAC2 on TX-monitor-only while
+                // the proof route is enabled; otherwise restore the legacy VAC2 MOX policy.
+                if (vac2_processed_tx_audio_only || (mox && rx2_enabled && vfob_tx))
+                    ivac.SetIVACmox(1, 1);
+                else
+                    ivac.SetIVACmox(1, 0);
+            }
+        }
+
+'''
+              text = once(text, anchor, addition + anchor, 'insert VAC2 processed-TX property')
+
+              old = '''                ivac.SetIVACmonVol(0, monitor_volume);
+                cmaster.SetTCIRxAudioMonVol(0, monitor_volume);
+'''
+              new = '''                ivac.SetIVACmonVol(0, monitor_volume);
+                ivac.SetIVACmonVol(1, monitor_volume);
+                cmaster.SetTCIRxAudioMonVol(0, monitor_volume);
+'''
+              text = once(text, old, new, 'set VAC2 monitor gain')
+
+              # Only touch the MOX property: two legacy VAC2=0 assignments exist there
+              # (normal VFO-A TX and receive). Dedicated mode keeps VAC2 TX-monitor-only.
+              a = text.index('        public static bool MOX')
+              b = text.index('        private static void setupIVACforMon()', a)
+              seg = text[a:b]
+              target = 'ivac.SetIVACmox(1, 0);'
+              if seg.count(target) != 2:
+                  raise RuntimeError(f'MOX VAC2 policy: expected 2 legacy zero assignments, found {seg.count(target)}')
+              seg = seg.replace(target, 'ivac.SetIVACmox(1, vac2_processed_tx_audio_only ? 1 : 0);')
+              text = text[:a] + seg + text[b:]
+
+              # Existing monitor policy explicitly disables VAC2 in both MON branches.
+              a = text.index('        private static void setupIVACforMon()')
+              b = text.index('        private static bool mon;', a)
+              seg = text[a:b]
+              target = 'ivac.SetIVACmon(1, 0);'
+              if seg.count(target) != 2:
+                  raise RuntimeError(f'MON VAC2 policy: expected 2 hard-coded off assignments, found {seg.count(target)}')
+              seg = seg.replace(target, 'ivac.SetIVACmon(1, vac2_processed_tx_audio_only ? 1 : 0);')
+              text = text[:a] + seg + text[b:]
+              return text
+
+          def patch_setup(text):
+              text = once(
+                  text,
+                  '            InitializeComponent();\n',
+                  '            InitializeComponent();\n            InitializePhase1ProcessedTXAudioControl();\n',
+                  'initialize Phase 1 checkbox')
+
+              anchor = '''        internal void AfterConstructor()
+'''
+              method = '''        private void InitializePhase1ProcessedTXAudioControl()
+        {
+            // Phase 1 hardware proof only. This intentionally defaults OFF on every launch;
+            // persistence and the final per-VAC UI are added only after the signal path is proven.
+            CheckBoxTS chkVAC2ProcessedTXAudio = new CheckBoxTS();
+            chkVAC2ProcessedTXAudio.AutoSize = true;
+            chkVAC2ProcessedTXAudio.Image = null;
+            chkVAC2ProcessedTXAudio.Location = new System.Drawing.Point(249, 216);
+            chkVAC2ProcessedTXAudio.Name = "chkVAC2ProcessedTXAudioProof";
+            chkVAC2ProcessedTXAudio.Size = new System.Drawing.Size(170, 17);
+            chkVAC2ProcessedTXAudio.TabIndex = 196;
+            chkVAC2ProcessedTXAudio.Text = "Processed TX audio only (test)";
+            chkVAC2ProcessedTXAudio.UseVisualStyleBackColor = true;
+            toolTip1.SetToolTip(chkVAC2ProcessedTXAudio,
+                "Phase 1 test: dedicate VAC2 output to post-DSP TX audio, independent of MON. RX audio is suppressed on VAC2.");
+            chkVAC2ProcessedTXAudio.CheckedChanged += delegate
+            {
+                Audio.VAC2ProcessedTXAudioOnly = chkVAC2ProcessedTXAudio.Checked;
+            };
+            tpVAC2.Controls.Add(chkVAC2ProcessedTXAudio);
+            chkVAC2ProcessedTXAudio.BringToFront();
+        }
+
+'''
+              text = once(text, anchor, method + anchor, 'insert Phase 1 checkbox method')
+              return text
+
+          patch_text('Project Files/Source/Console/audio.cs', patch_audio)
+          patch_text('Project Files/Source/Console/setup.cs', patch_setup)
+
+      - name: Validate diff
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git diff --check
+          git diff --stat
+          git diff -- 'Project Files/Source/Console/audio.cs' 'Project Files/Source/Console/setup.cs'
+          test "$(git status --porcelain | wc -l)" -eq 2
+
+      - name: Commit and push Phase 1 proof
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "satfan52"
+          git config user.email "pik138065@gmail.com"
+          git add 'Project Files/Source/Console/audio.cs' 'Project Files/Source/Console/setup.cs'
+          git commit -m 'audio: add VAC2 processed TX audio proof route'
+          git push origin HEAD:feature/independent-tx-audio-routing
