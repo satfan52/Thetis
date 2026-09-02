@@ -1,0 +1,53 @@
+name: Inspect Phase 1 setup lifecycle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/baseline-build]
+    paths: [.github/workflows/inspect-phase1-context.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print focused setup/audio context
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def show(path, needles, before=10, after=18):
+              lines = Path(path).read_text(encoding='utf-8-sig', errors='replace').splitlines()
+              print(f'===== {path} ({len(lines)} lines) =====')
+              seen=set()
+              for needle in needles:
+                  for i,line in enumerate(lines,1):
+                      if needle in line:
+                          a=max(1,i-before); b=min(len(lines),i+after)
+                          key=(a,b)
+                          if key in seen: continue
+                          seen.add(key)
+                          print(f'--- {needle!r} at {i} ({a}..{b}) ---')
+                          for n in range(a,b+1): print(f'{n:6}: {lines[n-1]}')
+
+          show('Project Files/Source/Console/setup.cs', [
+              'public Setup(', 'Setup(Console', 'InitializeComponent();',
+              'Common.RestoreForm(this', 'Common.SaveForm(this',
+              'FormClosing', 'Closing', 'chkVAC2Enable_CheckedChanged',
+              'InitAudioTab()', 'ForceAudioReset()'
+          ], 14, 28)
+          show('Project Files/Source/Console/setup.designer.cs', [
+              'this.grpVAC1.Location', 'this.grpVAC1.Size',
+              'this.grpVAC2.Location', 'this.grpVAC2.Size',
+              'private System.Windows.Forms.GroupBox grpVAC2',
+              'private Thetis.CheckBoxTS chkVAC2Enable',
+              'private Thetis.CheckBoxTS chkVAC1Enable'
+          ], 8, 15)
+          show('Project Files/Source/Console/audio.cs', [
+              'private static void setupIVACforMon()',
+              'public static bool MOX', 'public static double MonitorVolume',
+              'public static void EnableVAC1', 'public static void EnableVAC2'
+          ], 10, 35)
