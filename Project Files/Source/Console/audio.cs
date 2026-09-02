@@ -253,6 +253,7 @@ namespace Thetis
                 monitor_volume = value;
                 cmaster.CMSetAudioVolume(value);
                 ivac.SetIVACmonVol(0, monitor_volume);
+                ivac.SetIVACmonVol(1, monitor_volume);
                 cmaster.SetTCIRxAudioMonVol(0, monitor_volume);
                 cmaster.SetTCIRxAudioMonVol(1, monitor_volume);
             }
@@ -366,7 +367,7 @@ namespace Thetis
                     else
                     {
                         ivac.SetIVACmox(0, 1);
-                        ivac.SetIVACmox(1, 0);
+                        ivac.SetIVACmox(1, vac2_enabled ? 1 : 0);
                         cmaster.SetTCIRxAudioMox(0, 1);
                         cmaster.SetTCIRxAudioMox(1, 0);
                     }
@@ -374,7 +375,7 @@ namespace Thetis
                 else
                 {
                     ivac.SetIVACmox(0, 0);
-                    ivac.SetIVACmox(1, 0);
+                    ivac.SetIVACmox(1, vac2_enabled ? 1 : 0);
                     cmaster.SetTCIRxAudioMox(0, 0);
                     cmaster.SetTCIRxAudioMox(1, 0);
                 }
@@ -388,7 +389,7 @@ namespace Thetis
             if (mon)
             {
                 ivac.SetIVACmon(0, 1);
-                ivac.SetIVACmon(1, 0);
+                ivac.SetIVACmon(1, vac2_enabled ? 1 : 0);
                 ivac.SetIVACmonVol(0, monitor_volume);
                 cmaster.SetTCIRxAudioMon(0, 1);
                 cmaster.SetTCIRxAudioMon(1, 1);
@@ -398,7 +399,7 @@ namespace Thetis
             else
             {
                 ivac.SetIVACmon(0, 0);
-                ivac.SetIVACmon(1, 0);
+                ivac.SetIVACmon(1, vac2_enabled ? 1 : 0);
                 cmaster.SetTCIRxAudioMon(0, 0);
                 cmaster.SetTCIRxAudioMon(1, 0);
             }
@@ -477,6 +478,16 @@ namespace Thetis
                 cmaster.CMSetAntiVoxSourceWhat();
                 if (console.PowerOn)
                     EnableVAC2(value);
+
+                // Phase 1 proof build: enabling VAC2 dedicates its output to post-DSP TX audio.
+                // RX audio is suppressed on VAC2 so an external transmitter never receives RX AF.
+                // The console MON control continues to govern VAC1 operator monitoring only.
+                ivac.SetIVACmonVol(1, monitor_volume);
+                setupIVACforMon();
+                if (vac2_enabled || (mox && rx2_enabled && vfob_tx))
+                    ivac.SetIVACmox(1, 1);
+                else
+                    ivac.SetIVACmox(1, 0);
             }
             get { return vac2_enabled; }
         }
