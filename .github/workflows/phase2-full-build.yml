@@ -1,10 +1,13 @@
-name: Phase 2 full reversible VAC2 build
+name: Phase 2 complete candidate build
 
 on:
   push:
     branches:
       - ci/baseline-build
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   phase2-full:
@@ -15,22 +18,48 @@ jobs:
       - name: Checkout CI helpers
         uses: actions/checkout@v4
 
-      - name: Checkout pristine feature source
+      - name: Checkout successful Phase 1 candidate
         uses: actions/checkout@v4
         with:
-          ref: feature/independent-tx-audio-routing
+          ref: candidate/phase1-diagnostic
           path: source
+          fetch-depth: 0
 
-      - name: Apply full reversible Phase 2 patch
+      - name: Checkout previously validated Phase 2 final-state reference
+        uses: actions/checkout@v4
+        with:
+          ref: 9455da427865a03c0bd99eae90922a10d7f50c37
+          path: finalref
+          fetch-depth: 0
+
+      - name: Apply exact validated Phase 2 product state and commit locally
         shell: pwsh
         run: |
-          python .github/scripts/phase2_full_patch.py
+          $files = @(
+            'Project Files/Source/ChannelMaster/ivac.c',
+            'Project Files/Source/ChannelMaster/ivac.h',
+            'Project Files/Source/Console/audio.cs',
+            'Project Files/Source/Console/ivac.cs',
+            'Project Files/Source/Console/setup.cs'
+          )
+          foreach ($f in $files) {
+            Copy-Item -Force (Join-Path 'finalref' $f) (Join-Path 'source' $f)
+          }
           Set-Location source
           git diff --check
-          git diff --stat
-          git status --short
-          $changed = @(git status --porcelain)
-          if ($changed.Count -ne 5) { throw "Expected exactly five changed product files, got $($changed.Count)" }
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 5) { throw "Expected exactly five Phase 2 product files, got $($changed.Count)" }
+          foreach ($f in $files) {
+            $a = git hash-object -- "$f"
+            $b = git -C ../finalref hash-object -- "$f"
+            if ($a -ne $b) { throw "Final-state mismatch: $f" }
+          }
+          git config user.name "satfan52"
+          git config user.email "pik138065@gmail.com"
+          git add -- 'Project Files/Source/ChannelMaster/ivac.c' 'Project Files/Source/ChannelMaster/ivac.h' 'Project Files/Source/Console/audio.cs' 'Project Files/Source/Console/ivac.cs' 'Project Files/Source/Console/setup.cs'
+          git commit -m 'phase2: add reversible output-only VAC2 processed TX mode and GUI'
+          $base = '852bf0ef0b4f3886a13fc2846489aee16f361872'
+          if ([int](git rev-list --count "$base..HEAD") -ne 2) { throw 'Expected A -> B -> C topology' }
 
       - name: Locate MSBuild
         id: msbuild
@@ -48,27 +77,31 @@ jobs:
           Set-Location source
           nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
 
-      - name: Build Release x64
+      - name: Build exact Phase 2 candidate Release x64
         shell: pwsh
         run: |
           Set-Location source
-          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-full.binlog
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-full.binlog
+          if (-not (Test-Path 'Project Files\bin\x64\Release\Thetis.exe')) { throw 'Thetis.exe missing' }
+
+      - name: Publish successful candidate ref
+        shell: pwsh
+        run: |
+          Set-Location source
+          git push origin HEAD:refs/heads/candidate/phase2-complete --force
 
       - name: Upload Phase 2 binaries
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: thetis-phase2-reversible-vac2
-          path: |
-            source/Project Files/bin/x64/Release/**
-            source/Project Files/build/x64/Release/**
-          if-no-files-found: warn
+          name: thetis-phase2-complete-candidate-x64
+          path: source/Project Files/bin/x64/Release/**
+          if-no-files-found: error
 
       - name: Upload Phase 2 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase2-full-diagnostics
+          name: phase2-complete-candidate-diagnostics
           path: |
             source/phase2-full.binlog
             source/Project Files/Source/ChannelMaster/ivac.c
