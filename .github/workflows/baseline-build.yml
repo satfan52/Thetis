@@ -1,0 +1,71 @@
+name: Baseline Windows build
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+  workflow_dispatch:
+
+jobs:
+  baseline:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout pinned source
+        uses: actions/checkout@v4
+
+      - name: Show baseline and Windows toolchain
+        shell: pwsh
+        run: |
+          Write-Host "Commit: $env:GITHUB_SHA"
+          git status --short
+          git log -1 --oneline
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -all -products * -format json
+          }
+          Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'MSBuild\\Microsoft\\VC\\v[0-9]+\\Platforms' } |
+            Select-Object -First 20 -ExpandProperty FullName
+          where.exe msbuild
+          where.exe nuget
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild.exe not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          Write-Host "Using MSBuild: $path"
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
+
+      - name: Build untouched Release x64 baseline
+        shell: pwsh
+        run: |
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:baseline.binlog
+
+      - name: Upload diagnostic build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-build-log
+          path: baseline.binlog
+          if-no-files-found: ignore
+
+      - name: Upload baseline binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thetis-baseline-x64-release
+          path: |
+            Project Files/bin/x64/Release/**
+            Project Files/build/x64/Release/**
+          if-no-files-found: warn
