@@ -1,0 +1,65 @@
+name: Phase 2 native IVAC build
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+  workflow_dispatch:
+
+jobs:
+  phase2-native:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout CI helpers
+        uses: actions/checkout@v4
+
+      - name: Checkout pristine feature source
+        uses: actions/checkout@v4
+        with:
+          ref: feature/independent-tx-audio-routing
+          path: source
+
+      - name: Apply native Phase 2 patch
+        shell: pwsh
+        run: |
+          python .github/scripts/phase2_native_patch.py
+          Set-Location source
+          git diff --check
+          git diff --stat
+          $changed = @(git status --porcelain)
+          if ($changed.Count -ne 2) { throw "Expected exactly two changed native files, got $($changed.Count)" }
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild.exe not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Set-Location source
+          nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
+
+      - name: Build Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase2-native.binlog
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-native-diagnostics
+          path: |
+            source/phase2-native.binlog
+            source/Project Files/Source/ChannelMaster/ivac.c
+            source/Project Files/Source/ChannelMaster/ivac.h
+          if-no-files-found: ignore
