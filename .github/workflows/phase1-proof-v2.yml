@@ -1,10 +1,13 @@
-name: Phase 1 proof build v2
+name: Phase 1 diagnostic candidate build
 
 on:
   push:
     branches:
       - ci/baseline-build
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   phase1:
@@ -15,22 +18,25 @@ jobs:
       - name: Checkout CI helpers
         uses: actions/checkout@v4
 
-      - name: Checkout pristine feature source
+      - name: Checkout exact untouched baseline
         uses: actions/checkout@v4
         with:
-          ref: feature/independent-tx-audio-routing
+          ref: 852bf0ef0b4f3886a13fc2846489aee16f361872
           path: source
+          fetch-depth: 0
 
-      - name: Apply Phase 1 proof patch
+      - name: Apply Phase 1 diagnostic patch and commit locally
         shell: pwsh
         run: |
           python .github/scripts/phase1_proof_patch.py
           Set-Location source
           git diff --check
-          git diff --stat
-          git diff -- "Project Files/Source/Console/audio.cs"
-          $changed = @(git status --porcelain)
-          if ($changed.Count -ne 1) { throw "Expected exactly one changed file, got $($changed.Count)" }
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'Project Files/Source/Console/audio.cs') { throw "Unexpected Phase 1 diff" }
+          git config user.name "satfan52"
+          git config user.email "pik138065@gmail.com"
+          git add -- 'Project Files/Source/Console/audio.cs'
+          git commit -m 'phase1: add duplex VAC2 processed TX diagnostic routing'
 
       - name: Locate MSBuild
         id: msbuild
@@ -48,27 +54,31 @@ jobs:
           Set-Location source
           nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
 
-      - name: Build Phase 1 Release x64
+      - name: Build exact Phase 1 candidate Release x64
         shell: pwsh
         run: |
           Set-Location source
-          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase1.binlog
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:phase1.binlog
+          if (-not (Test-Path 'Project Files\bin\x64\Release\Thetis.exe')) { throw 'Thetis.exe missing' }
+
+      - name: Publish successful candidate ref
+        shell: pwsh
+        run: |
+          Set-Location source
+          git push origin HEAD:refs/heads/candidate/phase1-diagnostic --force
 
       - name: Upload Phase 1 binaries
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: thetis-phase1-vac2-processed-tx-proof
-          path: |
-            source/Project Files/bin/x64/Release/**
-            source/Project Files/build/x64/Release/**
+          name: thetis-phase1-diagnostic-candidate-x64
+          path: source/Project Files/bin/x64/Release/**
           if-no-files-found: error
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase1-proof-diagnostics
+          name: phase1-diagnostic-candidate-diagnostics
           path: |
             source/phase1.binlog
             source/Project Files/Source/Console/audio.cs
