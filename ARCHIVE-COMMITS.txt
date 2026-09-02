@@ -1,0 +1,2 @@
+archive/foundation-phase1-20260902 = 92743fbf3af6f283fa571a74f9bc9b38c7c12d5e
+archive/foundation-phase2-20260902 = 9455da427865a03c0bd99eae90922a10d7f50c37
