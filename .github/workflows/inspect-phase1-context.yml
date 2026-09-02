@@ -14,24 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print VAC2 control layout
+      - name: Locate VAC2 parent container
         shell: python
         run: |
           from pathlib import Path
-          import re
-          p=Path('Project Files/Source/Console/setup.designer.cs')
-          lines=p.read_text(encoding='utf-8-sig', errors='replace').splitlines()
-          start=next(i for i,l in enumerate(lines) if '// grpVAC2' in l)
-          end=min(len(lines), start+1100)
-          current=None
-          for i in range(start,end):
-              s=lines[i].strip()
-              m=re.match(r'// (\w+)$',s)
-              if m:
-                  current=m.group(1)
-              if current and ('.Location = new System.Drawing.Point' in s or '.Size = new System.Drawing.Size' in s or '.Text = ' in s):
-                  print(f'{i+1:6}: {current:32} {s}')
-          print('--- VAC2 Controls.Add order ---')
-          for i in range(start,min(len(lines),start+150)):
-              if 'this.grpVAC2.Controls.Add' in lines[i] or 'this.grpVAC2.Size' in lines[i] or 'this.grpVAC2.Location' in lines[i]:
-                  print(f'{i+1:6}: {lines[i].strip()}')
+          lines=Path('Project Files/Source/Console/setup.designer.cs').read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          needles=['Controls.Add(this.grpVAC2Gain)', 'Controls.Add(this.grpAudioDetails3)', 'Controls.Add(this.chkVAC2Combine)', 'Controls.Add(this.chkVAC2UseRX2)', 'Controls.Add(this.grpVAC2LatencyManual)']
+          for needle in needles:
+              for i,line in enumerate(lines,1):
+                  if needle in line:
+                      print(f'--- {needle} at {i} ---')
+                      for n in range(max(1,i-25), min(len(lines),i+25)+1): print(f'{n:6}: {lines[n-1]}')
