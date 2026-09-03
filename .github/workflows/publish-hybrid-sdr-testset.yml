@@ -1,0 +1,178 @@
+name: Publish Hybrid SDR frozen A-B-C test set
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/publish-hybrid-sdr-testset.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build state ${{ matrix.state }}
+    runs-on: windows-2025
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - state: A
+            ref: 852bf0ef0b4f3886a13fc2846489aee16f361872
+            filename: Thetis-HybridSDR-A-Untouched-x64.zip
+            purpose: Untouched upstream-equivalent control
+          - state: B
+            ref: 591ee826db17acef1df6caed40d3bbe68251ad55
+            filename: Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip
+            purpose: Phase 1 duplex VAC2 processed-TX diagnostic
+          - state: C
+            ref: 8f7c6058477899b0e513c28ab9a87f14d46192e7
+            filename: Thetis-HybridSDR-C-Phase2-Complete-x64.zip
+            purpose: Phase 2 reversible Normal VAC / Processed TX Output implementation
+
+    steps:
+      - name: Checkout exact frozen source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: source
+
+      - name: Verify exact commit
+        shell: pwsh
+        run: |
+          Push-Location source
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ matrix.ref }}') { throw "Expected ${{ matrix.ref }}, got $actual" }
+          git status --porcelain
+          Pop-Location
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw "MSBuild.exe not found" }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Push-Location source
+          nuget restore "Project Files\Source\Thetis_VS2026.sln" -NonInteractive
+          Pop-Location
+
+      - name: Build Release x64
+        shell: pwsh
+        run: |
+          Push-Location source
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-${{ matrix.state }}.binlog
+          Pop-Location
+
+      - name: Package ready-to-run ZIP
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $PWD 'source\Project Files\bin\x64\Release'
+          $exe = Join-Path $runtime 'Thetis.exe'
+          if (-not (Test-Path $exe)) { throw "Thetis.exe not found at $exe" }
+          $stage = Join-Path $PWD "stage-${{ matrix.state }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $runtime '*') -Destination $stage -Recurse -Force
+          @"
+          Thetis Hybrid SDR frozen test state ${{ matrix.state }}
+          Purpose: ${{ matrix.purpose }}
+          Source commit: ${{ matrix.ref }}
+          Build: GitHub Actions Release x64 publication build.
+          Hardware status: experimental; Red Pitaya + IC-7100 validation pending at publication freeze.
+          Run Thetis.exe directly from this extracted folder.
+          "@ | Set-Content -Path (Join-Path $stage 'BUILD-INFO.txt') -Encoding UTF8
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath '${{ matrix.filename }}' -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $PWD '${{ matrix.filename }}'))
+          try {
+            $rootExe = $zip.Entries | Where-Object { $_.FullName -eq 'Thetis.exe' }
+            if (-not $rootExe) { throw 'Thetis.exe is not at ZIP root' }
+            Write-Host "ZIP contains $($zip.Entries.Count) entries; root Thetis.exe length $($rootExe.Length)"
+          } finally { $zip.Dispose() }
+          Get-FileHash '${{ matrix.filename }}' -Algorithm SHA256 | Format-List
+
+      - name: Upload frozen package
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-sdr-state-${{ matrix.state }}
+          path: ${{ matrix.filename }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-sdr-buildlog-${{ matrix.state }}
+          path: source/publish-${{ matrix.state }}.binlog
+          if-no-files-found: ignore
+          retention-days: 90
+
+  publish:
+    name: Publish GitHub prerelease
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all frozen packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: hybrid-sdr-state-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify packages and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh dist
+          test -f dist/Thetis-HybridSDR-A-Untouched-x64.zip
+          test -f dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip
+          test -f dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip
+          (cd dist && sha256sum Thetis-HybridSDR-*.zip > Thetis-HybridSDR-SHA256SUMS.txt)
+          cat dist/Thetis-HybridSDR-SHA256SUMS.txt
+
+      - name: Create or update frozen test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='hybrid-sdr-testset-2026-09-03'
+          TITLE='Hybrid SDR A/B/C frozen hardware test set — 2026-09-03'
+          cat > release-notes.md <<'EOF'
+          Experimental frozen test set for the Red Pitaya RX + Thetis DSP + IC-7100 RF TX project.
+
+          No compilation is required to test these packages. Extract each ZIP into a separate folder and run `Thetis.exe`.
+
+          **A — Untouched control**  
+          `master` @ `852bf0ef0b4f3886a13fc2846489aee16f361872`
+
+          **B — Phase 1 diagnostic**  
+          `feature/independent-tx-audio-routing-phase1` @ `591ee826db17acef1df6caed40d3bbe68251ad55`
+
+          **C — Phase 2 complete**  
+          `feature/independent-tx-audio-routing` @ `8f7c6058477899b0e513c28ab9a87f14d46192e7`
+
+          Recommended hardware-test order: **A -> B -> C**.
+
+          A establishes the untouched Red Pitaya/Thetis control. B isolates the duplex processed-TX VAC2 diagnostic route. C is the intended reversible implementation with `Normal VAC` and `Processed TX Output` modes and a true PortAudio output-only TX path.
+
+          Build/GUI status at freeze: A compiled and launched successfully; B compiled successfully; C compiled successfully and its Phase-2 GUI was visually inspected successfully. The complete Red Pitaya + IC-7100 signal path is not yet hardware validated; that is the purpose of this prerelease.
+
+          This is an experimental fork/test set, not an official Thetis release.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --target 8f7c6058477899b0e513c28ab9a87f14d46192e7 --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
+          fi
