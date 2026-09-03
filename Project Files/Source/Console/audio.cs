@@ -862,77 +862,80 @@ namespace Thetis
             set { output_dev3 = value; }
         }
 
-        // VAC2 can remain a completely normal duplex VAC (default), or be
-        // temporarily repurposed as a dedicated post-TX-DSP audio output.
-        // The processed-output device settings are intentionally independent
-        // so switching modes never overwrites the user's normal VAC2 setup.
-        private static bool vac2_processed_tx_output = false;
-        private static int vac2_processed_host = 0;
-        private static int vac2_processed_output = 0;
-        private static int vac2_processed_sample_rate = 48000;
-        private static int vac2_processed_block_size = 512;
-        private static int vac2_processed_exclusive_out = 0;
-        private static double vac2_processed_gain_db = 0.0;
+        // Independent post-DSP transmit-audio output.  The native IVAC ID is
+        // the first one not associated with a software receiver, leaving VAC1
+        // and VAC2 completely unchanged and available for their normal roles.
+        private static bool processed_tx_output_enabled = false;
+        private static int processed_tx_output_host = 0;
+        private static int processed_tx_output_device = 0;
+        private static int processed_tx_output_sample_rate = 48000;
+        private static int processed_tx_output_block_size = 512;
+        private static int processed_tx_output_exclusive = 0;
+        private static double processed_tx_output_gain_db = 0.0;
 
-        public static bool VAC2ProcessedTXOutput
+        private static int ProcessedTXOutputIVACID
         {
-            get { return vac2_processed_tx_output; }
+            get { return cmaster.CMrcvr; }
+        }
+
+        public static bool ProcessedTXOutputEnabled
+        {
+            get { return processed_tx_output_enabled; }
             set
             {
-                if (vac2_processed_tx_output == value) return;
-                bool restart = vac2_enabled && console != null && console.PowerOn;
-                if (restart) EnableVAC2(false);
-                vac2_processed_tx_output = value;
-                if (restart) EnableVAC2(true);
+                if (processed_tx_output_enabled == value) return;
+                processed_tx_output_enabled = value;
+                if (console != null && console.PowerOn)
+                    EnableProcessedTXOutput(value);
             }
         }
 
-        public static int VAC2ProcessedHost
+        public static int ProcessedTXOutputHost
         {
-            get { return vac2_processed_host; }
-            set { vac2_processed_host = value; }
+            get { return processed_tx_output_host; }
+            set { processed_tx_output_host = value; }
         }
 
-        public static int VAC2ProcessedOutput
+        public static int ProcessedTXOutputDevice
         {
-            get { return vac2_processed_output; }
-            set { vac2_processed_output = value; }
+            get { return processed_tx_output_device; }
+            set { processed_tx_output_device = value; }
         }
 
-        public static int VAC2ProcessedSampleRate
+        public static int ProcessedTXOutputSampleRate
         {
-            get { return vac2_processed_sample_rate; }
-            set { vac2_processed_sample_rate = value; }
+            get { return processed_tx_output_sample_rate; }
+            set { processed_tx_output_sample_rate = value; }
         }
 
-        public static int VAC2ProcessedBlockSize
+        public static int ProcessedTXOutputBlockSize
         {
-            get { return vac2_processed_block_size; }
-            set { vac2_processed_block_size = value; }
+            get { return processed_tx_output_block_size; }
+            set { processed_tx_output_block_size = value; }
         }
 
-        public static int VAC2ProcessedExclusiveOut
+        public static int ProcessedTXOutputExclusive
         {
-            get { return vac2_processed_exclusive_out; }
-            set { vac2_processed_exclusive_out = value; }
+            get { return processed_tx_output_exclusive; }
+            set { processed_tx_output_exclusive = value; }
         }
 
-        public static double VAC2ProcessedGainDB
+        public static double ProcessedTXOutputGainDB
         {
-            get { return vac2_processed_gain_db; }
+            get { return processed_tx_output_gain_db; }
             set
             {
-                vac2_processed_gain_db = value;
-                if (vac2_processed_tx_output)
-                    ivac.SetIVACmonVol(1, Math.Pow(10.0, vac2_processed_gain_db / 20.0));
+                processed_tx_output_gain_db = value;
+                if (processed_tx_output_enabled && console != null && console.PowerOn)
+                    ivac.SetIVACmonVol(ProcessedTXOutputIVACID, Math.Pow(10.0, processed_tx_output_gain_db / 20.0));
             }
         }
 
-        public static void RestartVAC2()
+        public static void RestartProcessedTXOutput()
         {
-            if (!vac2_enabled || console == null || !console.PowerOn) return;
-            EnableVAC2(false);
-            EnableVAC2(true);
+            if (!processed_tx_output_enabled || console == null || !console.PowerOn) return;
+            EnableProcessedTXOutput(false);
+            EnableProcessedTXOutput(true);
         }
 
         private static int latency2 = 120;
@@ -1743,138 +1746,154 @@ namespace Thetis
             if (enable)
                 unsafe
                 {
-                    if (vac2_processed_tx_output)
+                    int num_chan = 1;
+                    int sample_rate = sample_rate3;
+                    int block_size = block_size_vac2;
+
+                    double in_latency = vac2_latency_manual ? latency3 / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
+                    double out_latency = vac2_latency_out_manual ? vac2_latency_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
+                    double pa_in_latency = vac2_latency_pa_in_manual ? vac2_latency_pa_in / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
+                    double pa_out_latency = vac2_latency_pa_out_manual ? vac2_latency_pa_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
+
+                    if (vac2_output_iq)
                     {
-                        // Dedicated external-transmitter path.  No PortAudio input device
-                        // is opened and native IVAC ignores RX audio as a mixer dependency.
-                        int global_output = (int)PA19.PA_HostApiDeviceIndexToDeviceIndex(vac2_processed_host, vac2_processed_output);
-                        PA19.PaDeviceInfo out_info = PA19.PA_GetDeviceInfo(global_output);
-                        if (global_output < 0 || out_info.maxOutputChannels < 2)
-                        {
-                            MessageBox.Show("The selected Processed TX Output device is unavailable or does not expose two output channels.\n" +
-                                "Please select another output device on Setup -> Audio -> VAC 2.",
-                                "VAC2 Processed TX Output Error",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Error);
-                            return;
-                        }
-
-                        double out_latency = out_info.defaultLowOutputLatency;
-
-                        VAC2RBReset = true;
-                        ivac.SetIVACOutputOnly(1, 1);
-                        ivac.SetIVACiqType(1, 0);               // always audio, never Direct I/Q
-                        ivac.SetIVACstereo(1, 0);               // source is processed TX speech
-                        ivac.SetIVAChostAPIindex(1, vac2_processed_host);
-                        ivac.SetIVACoutputDEVindex(1, vac2_processed_output);
-                        ivac.SetIVACnumChannels(1, 2);
-                        ivac.SetIVACvacRate(1, vac2_processed_sample_rate);
-                        ivac.SetIVACvacSize(1, vac2_processed_block_size);
-                        ivac.SetIVACOutLatency(1, out_latency, 0);
-                        ivac.SetIVACPAOutLatency(1, out_latency, 1);
-                        ivac.SetIVACExclusiveIn(1, 0);
-                        ivac.SetIVACExclusiveOut(1, vac2_processed_exclusive_out);
-                        ivac.SetIVACmonVol(1, Math.Pow(10.0, vac2_processed_gain_db / 20.0));
-
-                        try
-                        {
-                            retval = ivac.StartAudioIVAC(1) == 1;
-                            if (retval && console.PowerOn)
-                                ivac.SetIVACrun(1, 1);
-                        }
-                        catch (Exception)
-                        {
-                            MessageBox.Show("The program is having trouble starting the Processed TX Output stream.\n" +
-                                "Please examine the VAC2 Processed TX Output settings and try again.",
-                                "VAC2 Processed TX Output Startup Error",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Error);
-                        }
+                        num_chan = 2;
+                        sample_rate = sample_rate_rx2;
+                        block_size = block_size_rx2;
                     }
-                    else
+                    else if (vac2_stereo) num_chan = 2;
+
+                    VAC2RBReset = true;
+
+                    ivac.SetIVAChostAPIindex(1, host3);
+                    ivac.SetIVACinputDEVindex(1, input_dev3);
+                    ivac.SetIVACoutputDEVindex(1, output_dev3);
+                    ivac.SetIVACnumChannels(1, num_chan);
+                    ivac.SetIVACInLatency(1, in_latency, 0);
+                    ivac.SetIVACOutLatency(1, out_latency, 0);
+                    ivac.SetIVACPAInLatency(1, pa_in_latency, 0);
+                    ivac.SetIVACPAOutLatency(1, pa_out_latency, 1);
+
+                    // MW0LGE_21h
+                    ivac.SetIVACFeedbackGain(1, 0, vac2_feedbackgainOut);
+                    ivac.SetIVACFeedbackGain(1, 1, vac2_feedbackgainIn);
+                    ivac.SetIVACSlewTime(1, 0, vac2_slewtimeOut);
+                    ivac.SetIVACSlewTime(1, 1, vac2_slewtimeIn);
+                    //
+
+                    // MW0LGE_21j
+                    ivac.SetIVACPropRingMin(1, 0, vac2_prop_ringminOut);
+                    ivac.SetIVACPropRingMin(1, 1, vac2_prop_ringminIn);
+                    ivac.SetIVACPropRingMax(1, 0, vac2_prop_ringmaxOut);
+                    ivac.SetIVACPropRingMax(1, 1, vac2_prop_ringmaxIn);
+                    ivac.SetIVACFFRingMin(1, 0, vac2_ff_ringminOut);
+                    ivac.SetIVACFFRingMin(1, 1, vac2_ff_ringminIn);
+                    ivac.SetIVACFFRingMax(1, 0, vac2_ff_ringmaxOut);
+                    ivac.SetIVACFFRingMax(1, 1, vac2_ff_ringmaxIn);
+                    ivac.SetIVACFFAlpha(1, 0, vac2_ff_alphaOut);
+                    ivac.SetIVACFFAlpha(1, 1, vac2_ff_alphaIn);
+                    ivac.SetIVACswapIQout(1, _swap_iq_vac2);
+                    ivac.SetIVACinitialVars(1, vac2_oldVarIn, vac2_oldVarOut);
+                    //
+
+                    try
                     {
-                        // Exact legacy VAC2 path.  Restore every native mode flag that may
-                        // have been changed by Processed TX Output before opening duplex VAC2.
-                        ivac.SetIVACOutputOnly(1, 0);
-                        ivac.SetIVACiqType(1, Convert.ToInt32(vac2_output_iq));
-                        ivac.SetIVACstereo(1, Convert.ToInt32(vac2_stereo));
-                        ivac.SetIVACExclusiveIn(1, _exclusive_in_vac2);
-                        ivac.SetIVACExclusiveOut(1, _exclusive_out_vac2);
+                        retval = ivac.StartAudioIVAC(1) == 1;
+                        if (retval && console.PowerOn)
+                            ivac.SetIVACrun(1, 1);
 
-                        int num_chan = 1;
-                        int sample_rate = sample_rate3;
-                        int block_size = block_size_vac2;
-
-                        double in_latency = vac2_latency_manual ? latency3 / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
-                        double out_latency = vac2_latency_out_manual ? vac2_latency_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
-                        double pa_in_latency = vac2_latency_pa_in_manual ? vac2_latency_pa_in / 1000.0 : PA19.PA_GetDeviceInfo(input_dev3).defaultLowInputLatency;
-                        double pa_out_latency = vac2_latency_pa_out_manual ? vac2_latency_pa_out / 1000.0 : PA19.PA_GetDeviceInfo(output_dev3).defaultLowOutputLatency;
-
-                        if (vac2_output_iq)
-                        {
-                            num_chan = 2;
-                            sample_rate = sample_rate_rx2;
-                            block_size = block_size_rx2;
-                        }
-                        else if (vac2_stereo) num_chan = 2;
-
-                        VAC2RBReset = true;
-
-                        ivac.SetIVAChostAPIindex(1, host3);
-                        ivac.SetIVACinputDEVindex(1, input_dev3);
-                        ivac.SetIVACoutputDEVindex(1, output_dev3);
-                        ivac.SetIVACnumChannels(1, num_chan);
-                        ivac.SetIVACvacRate(1, sample_rate);
-                        ivac.SetIVACvacSize(1, block_size);
-                        ivac.SetIVACInLatency(1, in_latency, 0);
-                        ivac.SetIVACOutLatency(1, out_latency, 0);
-                        ivac.SetIVACPAInLatency(1, pa_in_latency, 0);
-                        ivac.SetIVACPAOutLatency(1, pa_out_latency, 1);
-
-                        // MW0LGE_21h
-                        ivac.SetIVACFeedbackGain(1, 0, vac2_feedbackgainOut);
-                        ivac.SetIVACFeedbackGain(1, 1, vac2_feedbackgainIn);
-                        ivac.SetIVACSlewTime(1, 0, vac2_slewtimeOut);
-                        ivac.SetIVACSlewTime(1, 1, vac2_slewtimeIn);
-                        //
-
-                        // MW0LGE_21j
-                        ivac.SetIVACPropRingMin(1, 0, vac2_prop_ringminOut);
-                        ivac.SetIVACPropRingMin(1, 1, vac2_prop_ringminIn);
-                        ivac.SetIVACPropRingMax(1, 0, vac2_prop_ringmaxOut);
-                        ivac.SetIVACPropRingMax(1, 1, vac2_prop_ringmaxIn);
-                        ivac.SetIVACFFRingMin(1, 0, vac2_ff_ringminOut);
-                        ivac.SetIVACFFRingMin(1, 1, vac2_ff_ringminIn);
-                        ivac.SetIVACFFRingMax(1, 0, vac2_ff_ringmaxOut);
-                        ivac.SetIVACFFRingMax(1, 1, vac2_ff_ringmaxIn);
-                        ivac.SetIVACFFAlpha(1, 0, vac2_ff_alphaOut);
-                        ivac.SetIVACFFAlpha(1, 1, vac2_ff_alphaIn);
-                        ivac.SetIVACswapIQout(1, _swap_iq_vac2);
-                        ivac.SetIVACinitialVars(1, vac2_oldVarIn, vac2_oldVarOut);
-                        //
-
-                        try
-                        {
-                            retval = ivac.StartAudioIVAC(1) == 1;
-                            if (retval && console.PowerOn)
-                                ivac.SetIVACrun(1, 1);
-                        }
-                        catch (Exception)
-                        {
-                            MessageBox.Show("The program is having trouble starting the VAC audio streams.\n" +
-                                "Please examine the VAC related settings on the Setup Form -> Audio Tab and try again.",
-                                "VAC2 Audio Stream Startup Error",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Error);
-                        }
+                    }
+                    catch (Exception)
+                    {
+                        MessageBox.Show("The program is having trouble starting the VAC audio streams.\n" +
+                            "Please examine the VAC related settings on the Setup Form -> Audio Tab and try again.",
+                            "VAC2 Audio Stream Startup Error",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
                     }
                 }
             else
             {
                 ivac.SetIVACrun(1, 0);
-                ivac.StopAudioIVAC(1);
+                ivac.StopAudioIVAC(1);                
             }
             Thread.Sleep(10); // prevent ASIO exception
+        }
+
+        public static void EnableProcessedTXOutput(bool enable)
+        {
+            int id = ProcessedTXOutputIVACID;
+
+            if (enable)
+            {
+                int global_output = (int)PA19.PA_HostApiDeviceIndexToDeviceIndex(
+                    processed_tx_output_host, processed_tx_output_device);
+                if (global_output < 0)
+                {
+                    MessageBox.Show("The selected Processed TX Output device is unavailable.\n" +
+                        "Please select another output device on Setup -> Audio -> TX Output.",
+                        "Processed TX Output Error",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return;
+                }
+
+                PA19.PaDeviceInfo out_info = PA19.PA_GetDeviceInfo(global_output);
+                if (out_info.maxOutputChannels < 2)
+                {
+                    MessageBox.Show("The selected Processed TX Output device does not expose two output channels.\n" +
+                        "Please select another output device on Setup -> Audio -> TX Output.",
+                        "Processed TX Output Error",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return;
+                }
+
+                double out_latency = out_info.defaultLowOutputLatency;
+
+                ivac.SetIVACrun(id, 0);
+                ivac.SetIVACOutputOnly(id, 1);
+                ivac.SetIVACiqType(id, 0);
+                ivac.SetIVACstereo(id, 0);
+                ivac.SetIVAChostAPIindex(id, processed_tx_output_host);
+                ivac.SetIVACoutputDEVindex(id, processed_tx_output_device);
+                ivac.SetIVACnumChannels(id, 2);
+                ivac.SetIVACvacRate(id, processed_tx_output_sample_rate);
+                ivac.SetIVACvacSize(id, processed_tx_output_block_size);
+                ivac.SetIVACOutLatency(id, out_latency, 0);
+                ivac.SetIVACPAOutLatency(id, out_latency, 1);
+                ivac.SetIVACExclusiveIn(id, 0);
+                ivac.SetIVACExclusiveOut(id, processed_tx_output_exclusive);
+                ivac.SetIVACmonVol(id, Math.Pow(10.0, processed_tx_output_gain_db / 20.0));
+
+                try
+                {
+                    bool started = ivac.StartAudioIVAC(id) == 1;
+                    if (started && console.PowerOn)
+                        ivac.SetIVACrun(id, 1);
+                    else
+                        MessageBox.Show("The program could not start the Processed TX Output stream.\n" +
+                            "Please examine Setup -> Audio -> TX Output and try again.",
+                            "Processed TX Output Startup Error",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                }
+                catch (Exception)
+                {
+                    MessageBox.Show("The program is having trouble starting the Processed TX Output stream.\n" +
+                        "Please examine Setup -> Audio -> TX Output and try again.",
+                        "Processed TX Output Startup Error",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+            }
+            else
+            {
+                ivac.SetIVACrun(id, 0);
+                ivac.StopAudioIVAC(id);
+            }
+
+            Thread.Sleep(10); // prevent PortAudio/WASAPI restart exceptions
         }
 
         private static RadioProtocol _lastRadioProtocol = RadioProtocol.None;
