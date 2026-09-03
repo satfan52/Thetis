@@ -37,11 +37,14 @@ jobs:
           git apply /tmp/branch-d.patch
           test "$(git diff --name-only | wc -l)" -eq 5
           git diff --name-only
-          if rg -n 'VAC2ProcessedTXOutput|vac2_processed_tx_output|comboVAC2OperatingMode' 'Project Files/Source'; then
+          if grep -R -n -E --include='*.cs' --include='*.c' --include='*.h' \
+            'VAC2ProcessedTXOutput|vac2_processed_tx_output|comboVAC2OperatingMode' 'Project Files/Source'; then
             echo 'Branch C VAC2 repurposing code is still present.' >&2
             exit 1
           fi
-          rg -n 'ProcessedTXOutputEnabled|tpProcessedTXOutput|xvacOUT\(pcm->cmRCVR, 2' 'Project Files/Source'
+          grep -n 'ProcessedTXOutputEnabled' 'Project Files/Source/Console/audio.cs'
+          grep -n 'tpProcessedTXOutput' 'Project Files/Source/Console/setup.cs'
+          grep -n -F 'xvacOUT(pcm->cmRCVR, 2' 'Project Files/Source/ChannelMaster/pipe.c'
 
       - name: Commit and push Branch D
         id: commit
