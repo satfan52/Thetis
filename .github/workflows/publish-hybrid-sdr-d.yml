@@ -1,0 +1,239 @@
+name: Build and publish Hybrid SDR Branch D
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/publish-hybrid-sdr-d.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Create Branch D
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+    steps:
+      - name: Checkout corrected Branch C base
+        uses: actions/checkout@v4
+        with:
+          ref: 5153394ce829f5979c44cae626789ebdb3455d9e
+          fetch-depth: 0
+          path: source
+
+      - name: Apply the reviewed Branch D patch
+        env:
+          BRANCH_D_PATCH: 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
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$BRANCH_D_PATCH" | base64 --decode | gzip -d > /tmp/branch-d.patch
+          cd source
+          git apply --check /tmp/branch-d.patch
+          git apply /tmp/branch-d.patch
+          test "$(git diff --name-only | wc -l)" -eq 5
+          git diff --name-only
+          if rg -n 'VAC2ProcessedTXOutput|vac2_processed_tx_output|comboVAC2OperatingMode' 'Project Files/Source'; then
+            echo 'Branch C VAC2 repurposing code is still present.' >&2
+            exit 1
+          fi
+          rg -n 'ProcessedTXOutputEnabled|tpProcessedTXOutput|xvacOUT\(pcm->cmRCVR, 2' 'Project Files/Source'
+
+      - name: Commit and push Branch D
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B feature/dedicated-processed-tx-output
+          git add \
+            'Project Files/Source/ChannelMaster/cmaster.c' \
+            'Project Files/Source/ChannelMaster/pipe.c' \
+            'Project Files/Source/Console/audio.cs' \
+            'Project Files/Source/Console/console.cs' \
+            'Project Files/Source/Console/setup.cs'
+          git commit -m 'Add independent processed TX audio output'
+          commit_sha="$(git rev-parse HEAD)"
+          git fetch origin feature/dedicated-processed-tx-output || true
+          if git show-ref --verify --quiet refs/remotes/origin/feature/dedicated-processed-tx-output; then
+            remote_sha="$(git rev-parse refs/remotes/origin/feature/dedicated-processed-tx-output)"
+            git push --force-with-lease=refs/heads/feature/dedicated-processed-tx-output:${remote_sha} \
+              origin HEAD:refs/heads/feature/dedicated-processed-tx-output
+          else
+            git push origin HEAD:refs/heads/feature/dedicated-processed-tx-output
+          fi
+          echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
+          echo "Branch D commit: ${commit_sha}"
+
+  build:
+    name: Build Branch D x64
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact Branch D commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          path: source
+
+      - name: Verify source and independent route
+        shell: pwsh
+        run: |
+          Push-Location source
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ needs.prepare.outputs.commit_sha }}') {
+            throw "Expected ${{ needs.prepare.outputs.commit_sha }}, got $actual"
+          }
+          $forbidden = Get-ChildItem 'Project Files\Source' -Recurse -File -Include *.cs,*.c,*.h |
+            Select-String -Pattern 'VAC2ProcessedTXOutput|vac2_processed_tx_output|comboVAC2OperatingMode'
+          if ($forbidden) { throw 'VAC2 repurposing identifiers remain in Branch D.' }
+          Select-String -Path 'Project Files\Source\Console\setup.cs' -Pattern 'tpProcessedTXOutput'
+          Select-String -Path 'Project Files\Source\ChannelMaster\pipe.c' -Pattern 'xvacOUT\(pcm->cmRCVR, 2'
+          Pop-Location
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw 'MSBuild.exe not found' }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Push-Location source
+          nuget restore 'Project Files\Source\Thetis_VS2026.sln' -NonInteractive
+          Pop-Location
+
+      - name: Build Release x64
+        shell: pwsh
+        run: |
+          Push-Location source
+          & "${{ steps.msbuild.outputs.path }}" 'Project Files\Source\Thetis_VS2026.sln' /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-D.binlog
+          Pop-Location
+
+      - name: Package ready-to-run ZIP
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $PWD 'source\Project Files\bin\x64\Release'
+          $exe = Join-Path $runtime 'Thetis.exe'
+          if (-not (Test-Path $exe)) { throw "Thetis.exe not found at $exe" }
+          $stage = Join-Path $PWD 'stage-D'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $runtime '*') -Destination $stage -Recurse -Force
+          @"
+          Thetis Hybrid SDR test state D
+          Purpose: Independent processed TX output while VAC2 remains available for RX2.
+          Source branch: feature/dedicated-processed-tx-output
+          Source commit: ${{ needs.prepare.outputs.commit_sha }}
+          Build: GitHub Actions Release x64 publication build.
+          Hardware status: Build verified; Red Pitaya / IC-7100 validation pending.
+          Controls: Setup -> Audio -> TX Output.
+          Run Thetis.exe directly from this extracted folder.
+          "@ | Set-Content -Path (Join-Path $stage 'BUILD-INFO.txt') -Encoding UTF8
+          $filename = 'Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $filename -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $PWD $filename))
+          try {
+            $rootExe = $zip.Entries | Where-Object { $_.FullName -eq 'Thetis.exe' }
+            if (-not $rootExe) { throw 'Thetis.exe is not at ZIP root' }
+            Write-Host "ZIP contains $($zip.Entries.Count) entries; root Thetis.exe length $($rootExe.Length)"
+          } finally { $zip.Dispose() }
+          Get-FileHash $filename -Algorithm SHA256 | Format-List
+
+      - name: Upload Branch D package
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-sdr-state-D
+          path: Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-sdr-buildlog-D
+          path: source/publish-D.binlog
+          if-no-files-found: ignore
+          retention-days: 90
+
+  publish:
+    name: Add Branch D to GitHub prerelease
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Branch D package
+        uses: actions/download-artifact@v4
+        with:
+          name: hybrid-sdr-state-D
+          path: dist
+
+      - name: Download existing A, B, and C packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='hybrid-sdr-testset-2026-09-03'
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir dist \
+            --pattern 'Thetis-HybridSDR-A-Untouched-x64.zip' \
+            --pattern 'Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip' \
+            --pattern 'Thetis-HybridSDR-C-Phase2-Complete-x64.zip'
+          test -f dist/Thetis-HybridSDR-A-Untouched-x64.zip
+          test -f dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip
+          test -f dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip
+          test -f dist/Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip
+          (cd dist && sha256sum Thetis-HybridSDR-*.zip > Thetis-HybridSDR-SHA256SUMS.txt)
+          cat dist/Thetis-HybridSDR-SHA256SUMS.txt
+
+      - name: Publish Branch D and update release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='hybrid-sdr-testset-2026-09-03'
+          title='Hybrid SDR A/B/C/D hardware test set — 2026-09-03'
+          cat > release-notes.md <<'EOF'
+          Experimental test set for the Red Pitaya RX + Thetis DSP + IC-7100 RF TX project.
+
+          No compilation is required. Extract each ZIP into a separate folder and run Thetis.exe.
+
+          **A — Untouched control**  
+          master @ 852bf0ef0b4f3886a13fc2846489aee16f361872
+
+          **B — Phase 1 diagnostic**  
+          feature/independent-tx-audio-routing-phase1 @ 591ee826db17acef1df6caed40d3bbe68251ad55
+
+          **C — VAC2 processed-TX implementation**  
+          feature/independent-tx-audio-routing @ 5153394ce829f5979c44cae626789ebdb3455d9e
+
+          **D — Dedicated processed-TX output; VAC2 remains standard**  
+          feature/dedicated-processed-tx-output @ BRANCH_D_COMMIT
+
+          A, B, and corrected C have been exercised on the Red Pitaya / IC-7100 setup. D has passed the complete Windows Release x64 build and ZIP verification; its new independent audio route still requires hardware validation.
+
+          In D, configure the external transmitter under Setup → Audio → TX Output. VAC1 remains available for microphone input and VAC2 remains available for its normal RX2/second-receiver role. The new output includes Enable, Driver, Output, Buffer Size, Sample Rate, TX gain, and WASAPI Exclusive Out controls.
+
+          This is an experimental fork/test set, not an official Thetis release.
+          EOF
+          sed -i "s/BRANCH_D_COMMIT/${{ needs.prepare.outputs.commit_sha }}/" release-notes.md
+          gh release upload "$tag" \
+            dist/Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip \
+            dist/Thetis-HybridSDR-SHA256SUMS.txt \
+            --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$tag" --title "$title" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
