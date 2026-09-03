@@ -24,14 +24,17 @@ jobs:
             ref: 852bf0ef0b4f3886a13fc2846489aee16f361872
             filename: Thetis-HybridSDR-A-Untouched-x64.zip
             purpose: Untouched upstream-equivalent control
+            hardware_status: Baseline operation verified on hardware.
           - state: B
             ref: 591ee826db17acef1df6caed40d3bbe68251ad55
             filename: Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip
             purpose: Phase 1 duplex VAC2 processed-TX diagnostic
+            hardware_status: Diagnostic concept validated on hardware.
           - state: C
-            ref: 8f7c6058477899b0e513c28ab9a87f14d46192e7
+            ref: 5153394ce829f5979c44cae626789ebdb3455d9e
             filename: Thetis-HybridSDR-C-Phase2-Complete-x64.zip
             purpose: Phase 2 reversible Normal VAC / Processed TX Output implementation
+            hardware_status: Corrected complete route validated with Red Pitaya and IC-7100.
 
     steps:
       - name: Checkout exact frozen source
@@ -87,7 +90,7 @@ jobs:
           Purpose: ${{ matrix.purpose }}
           Source commit: ${{ matrix.ref }}
           Build: GitHub Actions Release x64 publication build.
-          Hardware status: experimental; Red Pitaya + IC-7100 validation pending at publication freeze.
+          Hardware status: ${{ matrix.hardware_status }}
           Run Thetis.exe directly from this extracted folder.
           "@ | Set-Content -Path (Join-Path $stage 'BUILD-INFO.txt') -Encoding UTF8
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath '${{ matrix.filename }}' -CompressionLevel Optimal
@@ -160,13 +163,13 @@ jobs:
           `feature/independent-tx-audio-routing-phase1` @ `591ee826db17acef1df6caed40d3bbe68251ad55`
 
           **C — Phase 2 complete**  
-          `feature/independent-tx-audio-routing` @ `8f7c6058477899b0e513c28ab9a87f14d46192e7`
+          `feature/independent-tx-audio-routing` @ `5153394ce829f5979c44cae626789ebdb3455d9e`
 
           Recommended hardware-test order: **A -> B -> C**.
 
           A establishes the untouched Red Pitaya/Thetis control. B isolates the duplex processed-TX VAC2 diagnostic route. C is the intended reversible implementation with `Normal VAC` and `Processed TX Output` modes and a true PortAudio output-only TX path.
 
-          Build/GUI status at freeze: A compiled and launched successfully; B compiled successfully; C compiled successfully and its Phase-2 GUI was visually inspected successfully. The complete Red Pitaya + IC-7100 signal path is not yet hardware validated; that is the purpose of this prerelease.
+          Hardware validation: A works as the untouched control; B validates the routing concept; corrected C successfully routes the VAC1 microphone through Thetis TX DSP and VAC2 Processed TX Output to the IC-7100. VAC1 TX Gain, COMP, and VAC2 TX Out were confirmed effective. Main MIC Gain remains intentionally inactive for VAC input, matching standard Thetis behavior.
 
           This is an experimental fork/test set, not an official Thetis release.
           EOF
@@ -174,5 +177,5 @@ jobs:
             gh release upload "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --target 8f7c6058477899b0e513c28ab9a87f14d46192e7 --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
+            gh release create "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --target 5153394ce829f5979c44cae626789ebdb3455d9e --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
           fi
