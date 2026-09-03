@@ -162,7 +162,9 @@ PORT void xvacIN(int id, double* in_tx, int bypass)
 	IVAC a = pvac[id];
 	if (a->output_only)
 	{
-		memset(in_tx, 0, 2 * a->mic_size * sizeof(double));
+		// This IVAC instance has no input stream.  Leave the shared TX input
+		// buffer untouched: pipe.c also calls xvacIN() for the inactive VAC,
+		// after the selected microphone source has already populated in_tx.
 		return;
 	}
 	if (a->run)
