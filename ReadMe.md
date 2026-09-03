@@ -1,147 +1,70 @@
-See LICENSE and LICENSE-DUAL-LICENSING for licensing details.
+# Thetis Hybrid SDR experiment — START HERE
 
-# This project is now active again for some big changes that are on the way related to remote op - 2nd July 2026
+This documentation branch describes an **experimental hybrid-SDR project** built on Thetis. The objective is to use a **Red Pitaya as the HF receiver**, keep **Thetis for RX DSP and the complete TX speech-processing chain**, and use an **Icom IC-7100 as the physical RF transmitter** through its USB Audio CODEC.
 
-Development is continuing for remote op access, with a full permission and state system, display codecs, opus support, remote web client (MW0LGE), remote windows client (OE3IDE). TCI will support WS and WSS connections. This is being implemented natively in Thetis and will not require 3rd party solutions.
+This is **not an official Thetis release**. The complete Red Pitaya + IC-7100 signal path is still awaiting hardware validation.
 
-ETA - when it is done, perhaps a few months from now.
+## Intended architecture
 
-73 MW0LGE - Richie.
+**RX**  
+`Antenna -> Red Pitaya ADC -> HPSDR/Hermes Ethernet IQ -> Thetis RX DSP -> PC speakers`
 
-<img width="1700" height="1072" alt="image" src="https://github.com/user-attachments/assets/ae8e576e-d266-4dc7-8d49-fdb8283cdca5" />
+**TX**  
+`PC microphone -> Thetis TX DSP -> post-DSP TX speech PCM -> VAC2 -> IC-7100 USB Audio CODEC -> Icom SSB modulator/PA -> RF`
 
-# This project is now archived - 2nd April 2026
+The Red Pitaya is intended to remain RX-only in this configuration.
 
-This fork of the original Thetis, which I started tinkering with in 2019, has now been archived. I will not be performing maintenance or adding features to it for the foreseeable future. Whilst I may return to it from time to time for minor fixes and/or if I develop something for personal use that I feel may also benefit others, active development has stopped.
+## Frozen A/B/C source states
 
-There are a number of technical issues that would need to be addressed in order to take the project forward. The codebase still depends on an older .NET Framework version (4.8), which is increasingly outdated and is beginning to fall out of support with other libraries used by the project. Rendering is also based on SharpDX, which is itself an archived project. Although moving to a more modern rendering engine would be desirable, many suitable replacements do not properly support the older .NET Framework this fork relies on.
+| State | Branch | Frozen commit | Meaning |
+|---|---|---|---|
+| **A** | `master` | `852bf0ef0b4f3886a13fc2846489aee16f361872` | Untouched upstream-equivalent Thetis control |
+| **B** | `feature/independent-tx-audio-routing-phase1` | `591ee826db17acef1df6caed40d3bbe68251ad55` | Phase-1 duplex VAC2 processed-TX diagnostic |
+| **C** | `feature/independent-tx-audio-routing` | `8f7c6058477899b0e513c28ab9a87f14d46192e7` | Complete reversible Phase-2 implementation |
 
-Work on multiple RX slices is also on hold, as that would require a rewrite of the display engine. Given that the current display engine is based on SharpDX, it would not seem prudent to invest that effort into an archived and outdated library.
+### B — Phase 1 diagnostic
+B is intentionally a diagnostic intermediate build. It exposes the existing post-TX-DSP TX-monitor audio through VAC2 using the existing duplex IVAC/PortAudio mechanism. Its purpose is fault isolation, not the final user interface.
 
-The project is gradually falling behind, and bringing it up to date would require a substantial amount of rework. I have therefore decided to archive this repository and focus my efforts elsewhere. Thetis is hopefully a better experience than it once was, and with recent milestones now reached, including TCI audio/IQ streaming, the voice keyer, and radio network/detection improvements, I feel this is a good point to call it "done".
+### C — Phase 2 complete
+C is the intended implementation. VAC2 has two operating modes:
 
-Cheers to all who have enjoyed the ride, helped test, and found bugs. With the progression of AI, perhaps in a few years we will be able to ask it to 'modernise the project'. Time will tell.
+- **Normal VAC** — ordinary legacy duplex VAC2 behavior and settings.
+- **Processed TX Output** — a true PortAudio output-only stream carrying post-Thetis-TX-DSP speech, with no VAC2 input device and separate output device/sample-rate/buffer/exclusive-output/gain settings.
 
-73  
-MW0LGE - Richie
+Switching back to Normal VAC restores ordinary VAC2 operation.
 
+## Download ready-to-run binaries
 
-# Latest Release v2.10.3.13 - 1st April 2026
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3.13
+The frozen GitHub prerelease is here:
 
-# Latest Release v2.10.3.5 December, 24th 2023
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3.5
+**https://github.com/satfan52/Thetis/releases/tag/hybrid-sdr-testset-2026-09-03**
 
-# 2.10.3.4 (2023-19-11)
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3.4
+It contains ready-to-run x64 ZIPs for A, B and C plus SHA-256 checksums. **No compilation is required for hardware testing.** Extract each ZIP into a separate folder and run `Thetis.exe` directly.
 
-# 2.10.3.3 (2023-03-11)
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3.3
+The publication workflow independently checked out the exact frozen A/B/C commits, compiled all three successfully in Release x64, verified the executable was packaged at ZIP root, and only then published the prerelease.
 
-# 2.10.3.2 (2023-03-11)
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3.2
+## Recommended test sequence
 
-# 2.10.3.1 (2023-03-11)
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3.1
+Use **A -> B -> C** on the Red-Pitaya test PC.
 
-# 2.10.3 (2023-02-11)
-https://github.com/ramdor/Thetis/releases/tag/v2.10.3
+1. **A** proves the PC, Red Pitaya connection, Thetis receiver, network path and PC audio with untouched Thetis.
+2. **B** tests the basic post-TX-DSP VAC2 diagnostic route.
+3. **C** tests the complete reversible Processed TX Output implementation.
 
-# 2.10.2.2 (2023-13-10)
+See **[HARDWARE-TEST-CHECKLIST.md](HARDWARE-TEST-CHECKLIST.md)** for the controlled test procedure.
 
-# 2.10.2.1 (2023-11-10)
+## Validation status at freeze
 
-# 2.10.2 (2023-11-10)
+- **A:** compiled successfully and launched successfully on Windows.
+- **B:** compiled successfully; hardware signal-path test pending.
+- **C:** compiled successfully; the Phase-2 GUI was launched and visually inspected successfully on Windows; hardware signal-path test pending.
 
-# 2.10.0 (2023-19-06)
+## Why the documentation is on a separate branch
 
-# 2.9.0 (2022-03-04)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.9.0%20Change%20Log.pdf) for more details.
+`master` deliberately remains at the exact untouched upstream reference commit so it can serve as State A. The documentation is therefore kept on `docs/hybrid-sdr-project` rather than modifying the control branch.
 
-# 2.8.11 (2020-20-10)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.8.11%20Change%20Log.pdf) for more details.
+## RF safety
 
-# 2.8.9 (2020-13-10)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.8.9%20Change%20Log.pdf) for more details.
+Physically disconnect or otherwise protect the Red Pitaya TX/RF path for the initial hybrid tests; do not rely only on a software DRIVE control. If the Red Pitaya and IC-7100 share an antenna system, suitable hardwired T/R sequencing and receiver-front-end protection are required. Start IC-7100 RF testing at low power and preferably into a dummy load. PureSignal should remain OFF for this hybrid architecture.
 
-# 2.8.8 (2020-10-10)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.8.8%20Change%20Log.pdf) for more details.
-
-# 2.8.7 (2020-10-7)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.8.7%20Change%20Log.pdf) for more details.
-
-# 2.8.6 (2020-10-6)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.8.6%20Change%20Log.pdf) for more details.
-
-# 2.7.0 Not Officially Released
-
-# 2.6.9 (2020-1-24)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.6.9%20Change%20Log.pdf) for more details.
-
-# 2.6.8 (2019-11-3)
-See [ Thetis Change Log ](https://github.com/TAPR/OpenHPSDR-Thetis/blob/master/Thetis%20v2.6.8%20Change%20Log.pdf) for more details.
-
-# 2.6.7 (2019-4-29)
-- fixed bug where the VOX/DEXP LookAhead feature was enabled when VOX/DEXP was not.
-- corrected compatiblity issue with the ANAN-10E. This requires new firmare to be flashed. v10.3
-- corrected the Spectrum and Histogram diplay during transmit
-
-# 2.6.6 (2019-4-21)
-- corrects issue with EU region using commas
-- corrects issue with having out of band frequency on startup
-- fixed transmit filter not being displayed when using split
-
-# 2.6.5 (2019-4-18)
-- corrected issue with console remaining open after exiting Thetis
-- fixed problem of program crashing when recording while transmitting
-- fixed problem with program crashing when receiving a bad packet
-
-# 2.6.4 (2019-4-13)
-- improved VOX/DEXP features and performance
-- QSK cabibility for the ANAN-200D, 7000DLE, and 8000DLE models
-- fixed VAC1 startup problem
-- fixed VAC2 resampler problem
-- added option to use VAC2 on split
-- improved TX-RX and RX-TX transistion on voice modes
-- transverter T/R relay bug fixed
-- added control for BYPS-EXT1-XVTR RX ANT for 7000DLE
-
-  * see "Release Notes for 2-6-4.docx" for detailed information.
-
-# 2.6.0 (2018-4-10)
-- added diagnostic LED array
-- divided open collector controls into 3 groups (HF-VHF-SWL)
-- bug fix for step tune using MIDI
-
-# 2.5.9 (2018-3-29)
-- changed "MDECAY" constant to 0.99 in netInterface.c
-- added 2Hz step tune choice
-- corrected duplicate db import dialogs
-- modified behavior of sequence errors so that sequence errors are ignored for seq 0
-- changes to VAC includes tooltips for various controls, fix for the Output Ringbuffer latency Monitor control not working, and added the ability to reset the diagnostics
-- forced BPF1 into ByPass during transmit if PureSignal is enabled for Orion MkII boards only
-
-# 2.5.8 (2018-3-25)
-- changed "MDECAY" constant to 0.9 in netInterface.c
-- fixes for VFO A&B Lock 
-- NB/NB2 is turned OFF while transmitting when DUP is enabled
-- Added 2kHz Tune Step
-- Changed ANF behavior so that it is disabled when in CW mode
-- Removed the 750Hz CW filter and added a 150Hz CW filter
-- Increased display buffer to support larger than 4k displays
-
-# 2.5.7 (2018-3-25)
-- spectrum roll-off adjusted to clip 4%
-- calls to PeakFwdPower(…) and PeakRevPower(…) moved from netInterface.c to network.c
-- skin graphics added for chkRxAnt and chkVFOBLock controls
-
-# 2.5.6 (2018-3-25)
-- added MIDI/CAT updates
-- added independent VFO Locks
-
-# 2.5.5 (2018-3-24)
-- added support for ANAN-7000DLE
-- added 'Rx Ant' support
-
-# 2.5.4 (2018-3-22)
-- added Audio Adaptive Variable Resampler with monitor tools
+Related upstream discussion: `ramdor/Thetis#544`, “Limit TX audio monitor on VAC1 and/or 2”.
