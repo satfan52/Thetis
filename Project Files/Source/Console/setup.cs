@@ -300,7 +300,7 @@ namespace Thetis
             tpProcessedTXOutput.Controls.Add(grpProcessedTXWASAPI);
             tpProcessedTXOutput.Controls.Add(chkProcessedTXOutputEnable);
             tpProcessedTXOutput.Controls.Add(lblProcessedTXDescription);
-            tcAudio.TabPages.Insert(2, tpProcessedTXOutput);
+            EnsureProcessedTXOutputTab();
 
             foreach (object host in Audio.GetPAHosts())
                 comboProcessedTXDriver.Items.Add(host);
@@ -326,6 +326,26 @@ namespace Thetis
 
             ApplyProcessedTXOutputSettings(false);
         }
+
+        private void EnsureProcessedTXOutputTab()
+{
+    if (tcAudio == null || tpProcessedTXOutput == null) return;
+
+    // Thetis uses its own insertion helper for Setup pages. Reinsert the
+    // page through that path so later Setup/skin/cmASIO initialization
+    // cannot leave a dynamically-created page out of the visible tabs.
+    if (tcAudio.TabPages.Contains(tpProcessedTXOutput))
+        tcAudio.TabPages.Remove(tpProcessedTXOutput);
+
+    Common.TabControlInsert(tcAudio, tpProcessedTXOutput,
+        Math.Min(2, tcAudio.TabPages.Count));
+}
+
+protected override void OnShown(EventArgs e)
+{
+    base.OnShown(e);
+    EnsureProcessedTXOutputTab();
+}
 
         private void PopulateProcessedTXOutputs(bool chooseUSBCodec)
         {
