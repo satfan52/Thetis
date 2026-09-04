@@ -27192,6 +27192,7 @@ namespace Thetis
 
                 if (vac_enabled) VACEnabled = true;  //Don't trigger StopAudioIVAC if the VACs aren't needed now
                 if (vac2_enabled) VAC2Enabled = true;
+                if (Audio.ProcessedTXOutputEnabled) Audio.EnableProcessedTXOutput(true);
 
                 Thread.Sleep(100); // wait for hardware to settle before starting audio (possible sample rate change)
                 psform.ForcePS();
@@ -27457,6 +27458,12 @@ namespace Thetis
                 {
                     ivac.SetIVACrun(1, 0);
                     ivac.StopAudioIVAC(1);
+                }
+
+                if (Audio.ProcessedTXOutputEnabled)
+                {
+                    ivac.SetIVACrun(cmaster.CMrcvr, 0);
+                    ivac.StopAudioIVAC(cmaster.CMrcvr);
                 }
 
                 if (multimeter_thread != null)
