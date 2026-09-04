@@ -100,6 +100,24 @@ namespace Thetis
 
         #endregion
 
+        #region VAC2 Processed TX Output Controls
+
+        private System.Windows.Forms.LabelTS lblVAC2OperatingMode;
+        private System.Windows.Forms.ComboBoxTS comboVAC2OperatingMode;
+        private System.Windows.Forms.LabelTS lblVAC2ProcessedModeNote;
+        private System.Windows.Forms.LabelTS lblVAC2ProcessedDriver;
+        private System.Windows.Forms.ComboBoxTS comboVAC2ProcessedDriver;
+        private System.Windows.Forms.LabelTS lblVAC2ProcessedInput;
+        private System.Windows.Forms.LabelTS lblVAC2ProcessedOutput;
+        private System.Windows.Forms.ComboBoxTS comboVAC2ProcessedOutput;
+        private System.Windows.Forms.ComboBoxTS comboVAC2ProcessedSampleRate;
+        private System.Windows.Forms.ComboBoxTS comboVAC2ProcessedBuffer;
+        private System.Windows.Forms.LabelTS lblVAC2ProcessedGain;
+        private System.Windows.Forms.NumericUpDownTS udVAC2ProcessedTXGain;
+        private System.Windows.Forms.CheckBoxTS chkVAC2ProcessedExclusiveOut;
+
+        #endregion
+
         #region Constructor and Destructor
 
         public Setup(Console c)
@@ -120,12 +138,280 @@ namespace Thetis
             console = c;
             this.Owner = c;
 
+            InitializeVAC2ProcessedTXControls();
+
             _frmBandwidth = new frmBandwidth();
 
             LogTool.Completed("INITCOMPSETUP");
 
             //everything here moved to AfterConstructor, which is called during singleton instance // G7KLJ's idea/implementation
         }
+        private void InitializeVAC2ProcessedTXControls()
+        {
+            lblVAC2OperatingMode = new System.Windows.Forms.LabelTS();
+            lblVAC2OperatingMode.Name = "lblVAC2OperatingMode";
+            lblVAC2OperatingMode.Text = "Mode:";
+            lblVAC2OperatingMode.Location = new System.Drawing.Point(160, 219);
+            lblVAC2OperatingMode.Size = new System.Drawing.Size(40, 16);
+
+            comboVAC2OperatingMode = new System.Windows.Forms.ComboBoxTS();
+            comboVAC2OperatingMode.Name = "comboVAC2OperatingMode";
+            comboVAC2OperatingMode.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboVAC2OperatingMode.Location = new System.Drawing.Point(202, 216);
+            comboVAC2OperatingMode.Size = new System.Drawing.Size(210, 21);
+            comboVAC2OperatingMode.Items.Add("Normal VAC");
+            comboVAC2OperatingMode.Items.Add("Processed TX Output");
+            comboVAC2OperatingMode.SelectedIndex = 0;
+
+            lblVAC2ProcessedModeNote = new System.Windows.Forms.LabelTS();
+            lblVAC2ProcessedModeNote.Name = "lblVAC2ProcessedModeNote";
+            lblVAC2ProcessedModeNote.Text = "Post-TX-DSP audio; VAC2 input disabled";
+            lblVAC2ProcessedModeNote.Location = new System.Drawing.Point(160, 242);
+            lblVAC2ProcessedModeNote.Size = new System.Drawing.Size(250, 18);
+
+            lblVAC2ProcessedDriver = new System.Windows.Forms.LabelTS();
+            lblVAC2ProcessedDriver.Name = "lblVAC2ProcessedDriver";
+            lblVAC2ProcessedDriver.Text = "Driver:";
+            lblVAC2ProcessedDriver.Location = new System.Drawing.Point(8, 18);
+            lblVAC2ProcessedDriver.Size = new System.Drawing.Size(40, 16);
+
+            comboVAC2ProcessedDriver = new System.Windows.Forms.ComboBoxTS();
+            comboVAC2ProcessedDriver.Name = "comboVAC2ProcessedDriver";
+            comboVAC2ProcessedDriver.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboVAC2ProcessedDriver.Location = new System.Drawing.Point(56, 18);
+            comboVAC2ProcessedDriver.Size = new System.Drawing.Size(160, 21);
+
+            lblVAC2ProcessedInput = new System.Windows.Forms.LabelTS();
+            lblVAC2ProcessedInput.Name = "lblVAC2ProcessedInput";
+            lblVAC2ProcessedInput.Text = "Input: None (output-only)";
+            lblVAC2ProcessedInput.Location = new System.Drawing.Point(8, 45);
+            lblVAC2ProcessedInput.Size = new System.Drawing.Size(180, 16);
+
+            lblVAC2ProcessedOutput = new System.Windows.Forms.LabelTS();
+            lblVAC2ProcessedOutput.Name = "lblVAC2ProcessedOutput";
+            lblVAC2ProcessedOutput.Text = "Output:";
+            lblVAC2ProcessedOutput.Location = new System.Drawing.Point(8, 70);
+            lblVAC2ProcessedOutput.Size = new System.Drawing.Size(48, 16);
+
+            comboVAC2ProcessedOutput = new System.Windows.Forms.ComboBoxTS();
+            comboVAC2ProcessedOutput.Name = "comboVAC2ProcessedOutput";
+            comboVAC2ProcessedOutput.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboVAC2ProcessedOutput.Location = new System.Drawing.Point(56, 70);
+            comboVAC2ProcessedOutput.Size = new System.Drawing.Size(270, 21);
+
+            comboVAC2ProcessedSampleRate = new System.Windows.Forms.ComboBoxTS();
+            comboVAC2ProcessedSampleRate.Name = "comboVAC2ProcessedSampleRate";
+            comboVAC2ProcessedSampleRate.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboVAC2ProcessedSampleRate.Location = new System.Drawing.Point(16, 24);
+            comboVAC2ProcessedSampleRate.Size = new System.Drawing.Size(64, 21);
+            comboVAC2ProcessedSampleRate.Items.AddRange(new object[] { "44100", "48000", "96000", "192000" });
+            comboVAC2ProcessedSampleRate.SelectedItem = "48000";
+
+            comboVAC2ProcessedBuffer = new System.Windows.Forms.ComboBoxTS();
+            comboVAC2ProcessedBuffer.Name = "comboVAC2ProcessedBuffer";
+            comboVAC2ProcessedBuffer.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboVAC2ProcessedBuffer.Location = new System.Drawing.Point(17, 24);
+            comboVAC2ProcessedBuffer.Size = new System.Drawing.Size(64, 21);
+            comboVAC2ProcessedBuffer.Items.AddRange(new object[] { "64", "128", "256", "512", "1024", "2048" });
+            comboVAC2ProcessedBuffer.SelectedItem = "512";
+
+            lblVAC2ProcessedGain = new System.Windows.Forms.LabelTS();
+            lblVAC2ProcessedGain.Name = "lblVAC2ProcessedGain";
+            lblVAC2ProcessedGain.Text = "TX Out:";
+            lblVAC2ProcessedGain.Location = new System.Drawing.Point(8, 28);
+            lblVAC2ProcessedGain.Size = new System.Drawing.Size(42, 16);
+
+            udVAC2ProcessedTXGain = new System.Windows.Forms.NumericUpDownTS();
+            udVAC2ProcessedTXGain.Name = "udVAC2ProcessedTXGain";
+            udVAC2ProcessedTXGain.DecimalPlaces = 1;
+            udVAC2ProcessedTXGain.Increment = 0.5M;
+            udVAC2ProcessedTXGain.Minimum = -30M;
+            udVAC2ProcessedTXGain.Maximum = 20M;
+            udVAC2ProcessedTXGain.Value = 0M;
+            udVAC2ProcessedTXGain.Location = new System.Drawing.Point(50, 25);
+            udVAC2ProcessedTXGain.Size = new System.Drawing.Size(40, 20);
+
+            chkVAC2ProcessedExclusiveOut = new System.Windows.Forms.CheckBoxTS();
+            chkVAC2ProcessedExclusiveOut.Name = "chkVAC2ProcessedExclusiveOut";
+            chkVAC2ProcessedExclusiveOut.Text = "Exclusive Out";
+            chkVAC2ProcessedExclusiveOut.Location = new System.Drawing.Point(8, 19);
+            chkVAC2ProcessedExclusiveOut.Size = new System.Drawing.Size(84, 17);
+            chkVAC2ProcessedExclusiveOut.Checked = false;
+
+            tpVAC2.Controls.Add(lblVAC2OperatingMode);
+            tpVAC2.Controls.Add(comboVAC2OperatingMode);
+            tpVAC2.Controls.Add(lblVAC2ProcessedModeNote);
+            grpAudioDetails3.Controls.Add(lblVAC2ProcessedDriver);
+            grpAudioDetails3.Controls.Add(comboVAC2ProcessedDriver);
+            grpAudioDetails3.Controls.Add(lblVAC2ProcessedInput);
+            grpAudioDetails3.Controls.Add(lblVAC2ProcessedOutput);
+            grpAudioDetails3.Controls.Add(comboVAC2ProcessedOutput);
+            grpAudioSampleRate3.Controls.Add(comboVAC2ProcessedSampleRate);
+            grpAudioBuffer3.Controls.Add(comboVAC2ProcessedBuffer);
+            grpVAC2Gain.Controls.Add(lblVAC2ProcessedGain);
+            grpVAC2Gain.Controls.Add(udVAC2ProcessedTXGain);
+            grpAudioStereo3.Controls.Add(chkVAC2ProcessedExclusiveOut);
+
+            foreach (object host in Audio.GetPAHosts())
+                comboVAC2ProcessedDriver.Items.Add(host);
+
+            int defaultHost = 0;
+            for (int i = 0; i < comboVAC2ProcessedDriver.Items.Count; i++)
+                if (comboVAC2ProcessedDriver.Items[i].ToString().IndexOf("WASAPI", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    defaultHost = i;
+                    break;
+                }
+            if (comboVAC2ProcessedDriver.Items.Count > 0)
+                comboVAC2ProcessedDriver.SelectedIndex = defaultHost;
+            PopulateVAC2ProcessedOutputs(true);
+
+            comboVAC2OperatingMode.SelectedIndexChanged += comboVAC2OperatingMode_SelectedIndexChanged;
+            comboVAC2ProcessedDriver.SelectedIndexChanged += comboVAC2ProcessedDriver_SelectedIndexChanged;
+            comboVAC2ProcessedOutput.SelectedIndexChanged += comboVAC2ProcessedOutput_SelectedIndexChanged;
+            comboVAC2ProcessedSampleRate.SelectedIndexChanged += comboVAC2ProcessedSettingChanged;
+            comboVAC2ProcessedBuffer.SelectedIndexChanged += comboVAC2ProcessedSettingChanged;
+            udVAC2ProcessedTXGain.ValueChanged += udVAC2ProcessedTXGain_ValueChanged;
+            chkVAC2ProcessedExclusiveOut.CheckedChanged += chkVAC2ProcessedExclusiveOut_CheckedChanged;
+
+            ApplyVAC2ProcessedSettings(false);
+            UpdateVAC2OperatingModeUI(false);
+        }
+
+        private void PopulateVAC2ProcessedOutputs(bool chooseUSBCodec)
+        {
+            comboVAC2ProcessedOutput.Items.Clear();
+            if (comboVAC2ProcessedDriver.SelectedIndex < 0) return;
+
+            foreach (object device in Audio.GetPAOutputDevices(comboVAC2ProcessedDriver.SelectedIndex))
+                comboVAC2ProcessedOutput.Items.Add(device);
+
+            if (comboVAC2ProcessedOutput.Items.Count == 0) return;
+            int selected = 0;
+            if (chooseUSBCodec)
+                for (int i = 0; i < comboVAC2ProcessedOutput.Items.Count; i++)
+                    if (comboVAC2ProcessedOutput.Items[i].ToString().IndexOf("USB Audio CODEC", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        selected = i;
+                        break;
+                    }
+            comboVAC2ProcessedOutput.SelectedIndex = selected;
+        }
+
+        private void ApplyVAC2ProcessedSettings(bool restart)
+        {
+            if (comboVAC2ProcessedDriver.SelectedIndex >= 0)
+                Audio.VAC2ProcessedHost = comboVAC2ProcessedDriver.SelectedIndex;
+
+            if (comboVAC2ProcessedOutput.SelectedItem is PADeviceInfo)
+                Audio.VAC2ProcessedOutput = ((PADeviceInfo)comboVAC2ProcessedOutput.SelectedItem).Index;
+
+            int value;
+            if (comboVAC2ProcessedSampleRate.SelectedItem != null && Int32.TryParse(comboVAC2ProcessedSampleRate.SelectedItem.ToString(), out value))
+                Audio.VAC2ProcessedSampleRate = value;
+            if (comboVAC2ProcessedBuffer.SelectedItem != null && Int32.TryParse(comboVAC2ProcessedBuffer.SelectedItem.ToString(), out value))
+                Audio.VAC2ProcessedBlockSize = value;
+
+            Audio.VAC2ProcessedExclusiveOut = chkVAC2ProcessedExclusiveOut.Checked ? 1 : 0;
+            Audio.VAC2ProcessedGainDB = (double)udVAC2ProcessedTXGain.Value;
+
+            if (restart && Audio.VAC2ProcessedTXOutput)
+                Audio.RestartVAC2();
+        }
+
+        private void comboVAC2OperatingMode_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            bool processed = comboVAC2OperatingMode.SelectedIndex == 1;
+            ApplyVAC2ProcessedSettings(false);
+            UpdateVAC2OperatingModeUI(processed);
+            Audio.VAC2ProcessedTXOutput = processed;
+        }
+
+        private void comboVAC2ProcessedDriver_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            PopulateVAC2ProcessedOutputs(false);
+            ApplyVAC2ProcessedSettings(true);
+        }
+
+        private void comboVAC2ProcessedOutput_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            ApplyVAC2ProcessedSettings(true);
+        }
+
+        private void comboVAC2ProcessedSettingChanged(object sender, EventArgs e)
+        {
+            ApplyVAC2ProcessedSettings(true);
+        }
+
+        private void udVAC2ProcessedTXGain_ValueChanged(object sender, EventArgs e)
+        {
+            Audio.VAC2ProcessedGainDB = (double)udVAC2ProcessedTXGain.Value;
+        }
+
+        private void chkVAC2ProcessedExclusiveOut_CheckedChanged(object sender, EventArgs e)
+        {
+            ApplyVAC2ProcessedSettings(true);
+        }
+
+        private void UpdateVAC2OperatingModeUI(bool processed)
+        {
+            // Normal mode is deliberately the existing VAC2 UI and semantics.
+            lblAudioDriver3.Visible = !processed;
+            comboAudioDriver3.Visible = !processed;
+            lblAudioInput3.Visible = !processed;
+            comboAudioInput3.Visible = !processed;
+            lblAudioOutput3.Visible = !processed;
+            comboAudioOutput3.Visible = !processed;
+            chkVAC2ExclusiveIn.Visible = !processed;
+            chkVAC2ExclusiveOut.Visible = !processed;
+
+            lblVAC2ProcessedDriver.Visible = processed;
+            comboVAC2ProcessedDriver.Visible = processed;
+            lblVAC2ProcessedInput.Visible = processed;
+            lblVAC2ProcessedOutput.Visible = processed;
+            comboVAC2ProcessedOutput.Visible = processed;
+
+            comboAudioSampleRate3.Visible = !processed;
+            comboVAC2ProcessedSampleRate.Visible = processed;
+            comboAudioBuffer3.Visible = !processed;
+            comboVAC2ProcessedBuffer.Visible = processed;
+
+            lblVAC2GainRX.Visible = !processed;
+            udVAC2GainRX.Visible = !processed;
+            lblVAC2GainTX.Visible = !processed;
+            udVAC2GainTX.Visible = !processed;
+            lblVAC2ProcessedGain.Visible = processed;
+            udVAC2ProcessedTXGain.Visible = processed;
+
+            chkAudioStereo3.Visible = !processed;
+            chkVAC2ProcessedExclusiveOut.Visible = processed;
+
+            grpVAC2DirectIQ.Visible = !processed;
+            grpVAC2LatencyManual.Visible = !processed;
+            grpVAC2AutoEnable.Visible = !processed;
+            chkVAC2onSplit.Visible = !processed;
+            chkVAC2UseRX2.Visible = !processed;
+            chkVAC2Combine.Visible = !processed;
+            lblVAC2ProcessedModeNote.Visible = processed;
+
+            grpAudioDetails3.Text = processed ? "Processed TX Output Setup" : "Virtual Audio Cable 2 Setup";
+            grpAudioStereo3.Text = processed ? "WASAPI" : "Mono/Stereo";
+
+            if (processed)
+            {
+                lblVAC2ProcessedDriver.BringToFront();
+                comboVAC2ProcessedDriver.BringToFront();
+                lblVAC2ProcessedInput.BringToFront();
+                lblVAC2ProcessedOutput.BringToFront();
+                comboVAC2ProcessedOutput.BringToFront();
+                comboVAC2ProcessedSampleRate.BringToFront();
+                comboVAC2ProcessedBuffer.BringToFront();
+                lblVAC2ProcessedGain.BringToFront();
+                udVAC2ProcessedTXGain.BringToFront();
+                chkVAC2ProcessedExclusiveOut.BringToFront();
+            }
+        }
+
         internal void AfterConstructor()
         {
             LogTool.AddLogEntry("      Setup setup controls...", "SETUP_CONT");
