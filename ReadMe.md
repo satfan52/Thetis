@@ -1,3 +1,12 @@
+# Experimental Hybrid SDR A/B/C/D test set
+
+This branch contains the hardware-validated **Branch D** implementation: an independent processed-TX audio output for the Red Pitaya / IC-7100 configuration while VAC2 remains available for RX2.
+
+- [Branch D installation and configuration guide](HYBRID-SDR-BRANCH-D.md)
+- [Compiled A/B/C/D downloads](https://github.com/satfan52/Thetis/releases/tag/hybrid-sdr-testset-2026-09-03)
+
+This experimental test set is separate from the official Thetis releases described below.
+
 See LICENSE and LICENSE-DUAL-LICENSING for licensing details.
 
 # This project is now active again for some big changes that are on the way related to remote op - 2nd July 2026
