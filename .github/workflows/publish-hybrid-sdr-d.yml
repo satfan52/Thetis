@@ -1,4 +1,4 @@
-name: Fix and republish Hybrid SDR Branch D UI
+name: Build and publish Branch D designer UI fix
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   fix-build-publish:
-    name: Fix, rebuild, and publish Branch D
+    name: Declare, rebuild, and publish Branch D UI
     runs-on: windows-2025
     timeout-minutes: 60
 
@@ -25,61 +25,116 @@ jobs:
           fetch-depth: 0
           path: source
 
-      - name: Apply persistent TX Output tab fix
+      - name: Move TX Output page into Setup designer
         shell: python
         run: |
           from pathlib import Path
-
-          p = Path(r"source/Project Files/Source/Console/setup.cs")
-          raw = p.read_bytes()
-          bom = raw.startswith(b"\xef\xbb\xbf")
-          eol = "\r\n" if b"\r\n" in raw else "\n"
-          text = raw.decode("utf-8-sig").replace("\r\n", "\n")
-
-          expected = "4976793fb1792a2f36f2f4ccacaa970f7912fd92"
           import subprocess
+
+          expected = "1bbb590bae121fdb1173b3f7ba4a50ac37a74c8a"
           actual = subprocess.check_output(
               ["git", "-C", "source", "rev-parse", "HEAD"], text=True
           ).strip()
           if actual != expected:
               raise RuntimeError(f"Branch D moved unexpectedly: {actual}")
 
-          old_insert = "            tcAudio.TabPages.Insert(2, tpProcessedTXOutput);\n"
-          new_insert = "            EnsureProcessedTXOutputTab();\n"
-          if text.count(old_insert) != 1:
-              raise RuntimeError("Expected exactly one native TX Output tab insertion")
-          text = text.replace(old_insert, new_insert, 1)
+          def read(path):
+              raw = path.read_bytes()
+              return raw, raw.decode("utf-8-sig").replace("\r\n", "\n")
 
-          anchor = "        private void PopulateProcessedTXOutputs(bool chooseUSBCodec)\n"
-          addition = """        private void EnsureProcessedTXOutputTab()
-          {
-              if (tcAudio == null || tpProcessedTXOutput == null) return;
+          def write(path, raw, text):
+              eol = "\r\n" if b"\r\n" in raw else "\n"
+              encoded = text.replace("\n", eol).encode("utf-8")
+              if raw.startswith(b"\xef\xbb\xbf"):
+                  encoded = b"\xef\xbb\xbf" + encoded
+              path.write_bytes(encoded)
 
-              // Thetis uses its own insertion helper for Setup pages. Reinsert the
-              // page through that path so later Setup/skin/cmASIO initialization
-              // cannot leave a dynamically-created page out of the visible tabs.
-              if (tcAudio.TabPages.Contains(tpProcessedTXOutput))
-                  tcAudio.TabPages.Remove(tpProcessedTXOutput);
+          def once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
 
-              Common.TabControlInsert(tcAudio, tpProcessedTXOutput,
-                  Math.Min(2, tcAudio.TabPages.Count));
-          }
+          setup = Path(r"source/Project Files/Source/Console/setup.cs")
+          raw, text = read(setup)
+          text = once(
+              text,
+              "        private System.Windows.Forms.TabPage tpProcessedTXOutput;\n",
+              "",
+              "remove runtime tab field",
+          )
+          runtime_page_start = text.index(
+              "            tpProcessedTXOutput = new System.Windows.Forms.TabPage();"
+          )
+          first_child = text.index(
+              "            grpProcessedTXDevice = new System.Windows.Forms.GroupBoxTS();",
+              runtime_page_start,
+          )
+          text = text[:runtime_page_start] + text[first_child:]
+          text = once(
+              text,
+              "            tpProcessedTXOutput.Controls.Add(lblProcessedTXDescription);\n"
+              "            EnsureProcessedTXOutputTab();\n",
+              "            tpProcessedTXOutput.Controls.Add(lblProcessedTXDescription);\n",
+              "remove runtime insertion call",
+          )
+          helper_start = text.index("        private void EnsureProcessedTXOutputTab()")
+          next_method = text.index(
+              "        private void PopulateProcessedTXOutputs(bool chooseUSBCodec)",
+              helper_start,
+          )
+          text = text[:helper_start] + text[next_method:]
+          if "EnsureProcessedTXOutputTab" in text:
+              raise RuntimeError("Runtime tab reinsertion code remains")
+          write(setup, raw, text)
 
-          protected override void OnShown(EventArgs e)
-          {
-              base.OnShown(e);
-              EnsureProcessedTXOutputTab();
-          }
-
-          """.replace("          ", "")
-          if text.count(anchor) != 1:
-              raise RuntimeError("Processed TX output method anchor is not unique")
-          text = text.replace(anchor, addition + anchor, 1)
-
-          encoded = text.replace("\n", eol).encode("utf-8")
-          if bom:
-              encoded = b"\xef\xbb\xbf" + encoded
-          p.write_bytes(encoded)
+          designer = Path(r"source/Project Files/Source/Console/setup.designer.cs")
+          raw, text = read(designer)
+          text = once(
+              text,
+              "            this.tpAudioOptions = new System.Windows.Forms.TabPage();\n",
+              "            this.tpProcessedTXOutput = new System.Windows.Forms.TabPage();\n"
+              "            this.tpAudioOptions = new System.Windows.Forms.TabPage();\n",
+              "instantiate designer tab",
+          )
+          text = once(
+              text,
+              "            this.tcAudio.Controls.Add(this.tpVAC2);\n"
+              "            this.tcAudio.Controls.Add(this.tpAudioOptions);\n",
+              "            this.tcAudio.Controls.Add(this.tpVAC2);\n"
+              "            this.tcAudio.Controls.Add(this.tpProcessedTXOutput);\n"
+              "            this.tcAudio.Controls.Add(this.tpAudioOptions);\n",
+              "add designer tab to audio pages",
+          )
+          tab_anchor = (
+              "            this.tcAudio.TabIndex = 35;\n"
+              "            // \n"
+              "            // tpVAC\n"
+          )
+          tab_definition = (
+              "            this.tcAudio.TabIndex = 35;\n"
+              "            // \n"
+              "            // tpProcessedTXOutput\n"
+              "            // \n"
+              "            this.tpProcessedTXOutput.Location = new System.Drawing.Point(4, 22);\n"
+              "            this.tpProcessedTXOutput.Name = \"tpProcessedTXOutput\";\n"
+              "            this.tpProcessedTXOutput.Padding = new System.Windows.Forms.Padding(3);\n"
+              "            this.tpProcessedTXOutput.Size = new System.Drawing.Size(712, 404);\n"
+              "            this.tpProcessedTXOutput.TabIndex = 6;\n"
+              "            this.tpProcessedTXOutput.Text = \"TX Output\";\n"
+              "            this.tpProcessedTXOutput.UseVisualStyleBackColor = true;\n"
+              "            // \n"
+              "            // tpVAC\n"
+          )
+          text = once(text, tab_anchor, tab_definition, "declare designer tab properties")
+          text = once(
+              text,
+              "        private TabControl tcAudio;\n",
+              "        private TabControl tcAudio;\n"
+              "        private TabPage tpProcessedTXOutput;\n",
+              "declare designer tab field",
+          )
+          write(designer, raw, text)
 
       - name: Commit corrected Branch D
         shell: pwsh
@@ -87,15 +142,24 @@ jobs:
           Set-Location source
           git diff --check
           $changed = @(git diff --name-only)
-          if ($changed.Count -ne 1 -or $changed[0] -ne 'Project Files/Source/Console/setup.cs') {
-            throw "Unexpected product files changed: $($changed -join ', ')"
+          $expectedFiles = @(
+            'Project Files/Source/Console/setup.cs',
+            'Project Files/Source/Console/setup.designer.cs'
+          )
+          if ($changed.Count -ne 2) { throw "Expected two changed files: $($changed -join ', ')" }
+          foreach ($file in $expectedFiles) {
+            if ($changed -notcontains $file) { throw "Missing expected change: $file" }
           }
-          Select-String -Path 'Project Files/Source/Console/setup.cs' -Pattern 'Common.TabControlInsert\(tcAudio'
-          Select-String -Path 'Project Files/Source/Console/setup.cs' -Pattern 'protected override void OnShown'
+          Select-String -Path 'Project Files/Source/Console/setup.designer.cs' -SimpleMatch 'this.tpProcessedTXOutput = new System.Windows.Forms.TabPage();'
+          Select-String -Path 'Project Files/Source/Console/setup.designer.cs' -SimpleMatch 'this.tcAudio.Controls.Add(this.tpProcessedTXOutput);'
+          Select-String -Path 'Project Files/Source/Console/setup.designer.cs' -SimpleMatch 'this.tpProcessedTXOutput.Text = "TX Output";'
+          if (Select-String -Path 'Project Files/Source/Console/setup.cs' -SimpleMatch 'EnsureProcessedTXOutputTab') {
+            throw 'Runtime reinsertion workaround remains in setup.cs'
+          }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- 'Project Files/Source/Console/setup.cs'
-          git commit -m 'Fix dedicated TX Output tab visibility'
+          git add -- 'Project Files/Source/Console/setup.cs' 'Project Files/Source/Console/setup.designer.cs'
+          git commit -m 'Declare dedicated TX Output page in Setup designer'
           $commit = (git rev-parse HEAD).Trim()
           git push origin HEAD:refs/heads/feature/dedicated-processed-tx-output
           "D_COMMIT=$commit" >> $env:GITHUB_ENV
@@ -121,9 +185,9 @@ jobs:
         shell: pwsh
         run: |
           Set-Location source
-          & "${{ steps.msbuild.outputs.path }}" 'Project Files\Source\Thetis_VS2026.sln' /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-D-ui-fix.binlog
+          & "${{ steps.msbuild.outputs.path }}" 'Project Files\Source\Thetis_VS2026.sln' /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-D-designer-fix.binlog
 
-      - name: Package and verify corrected executable
+      - name: Package and verify designer-fixed executable
         shell: pwsh
         run: |
           $runtime = Join-Path $PWD 'source\Project Files\bin\x64\Release'
@@ -133,29 +197,29 @@ jobs:
           $bytes = [System.IO.File]::ReadAllBytes($exe)
           $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
           $unicode = [System.Text.Encoding]::Unicode.GetString($bytes)
-          if (-not $ascii.Contains('EnsureProcessedTXOutputTab')) {
-            throw 'Corrected TX Output tab method is not embedded in Thetis.exe'
+          if (-not $ascii.Contains('tpProcessedTXOutput')) {
+            throw 'Designer TX Output tab field is not embedded in Thetis.exe'
           }
           if (-not $unicode.Contains('TX Output')) {
             throw 'TX Output UI label is not embedded in Thetis.exe'
           }
 
-          $stage = Join-Path $PWD 'stage-D-ui-fix'
+          $stage = Join-Path $PWD 'stage-D-designer-fix'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item -Path (Join-Path $runtime '*') -Destination $stage -Recurse -Force
           @"
-          Thetis Hybrid SDR test state D — TX Output UI fix
+          Thetis Hybrid SDR test state D — Setup designer fix
           Purpose: Independent processed TX output while VAC2 remains available for RX2.
           Source branch: feature/dedicated-processed-tx-output
           Source commit: $env:D_COMMIT
           Build: GitHub Actions full Release x64 rebuild.
-          UI fix: TX Output is reinserted through Thetis' tab helper when Setup is shown.
+          UI fix: TX Output is declared in setup.designer.cs and added during InitializeComponent().
           Hardware status: Build verified; Red Pitaya / IC-7100 validation pending.
           Controls: Setup -> Audio -> TX Output.
           Run Thetis.exe directly from this extracted folder.
           "@ | Set-Content -Path (Join-Path $stage 'BUILD-INFO.txt') -Encoding UTF8
 
-          $filename = 'Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip'
+          $filename = 'Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip'
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $filename -CompressionLevel Optimal
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -173,20 +237,23 @@ jobs:
       - name: Upload corrected package as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hybrid-sdr-state-D-ui-fix
-          path: Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip
+          name: hybrid-sdr-state-D-designer-fix
+          path: Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish corrected D asset and checksums
+      - name: Publish designer-fixed D asset and checksums
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $tag = 'hybrid-sdr-testset-2026-09-03'
           $repo = $env:GITHUB_REPOSITORY
-          $newD = 'Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip'
-          $oldD = 'Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip'
+          $newD = 'Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip'
+          $staleD = @(
+            'Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip',
+            'Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip'
+          )
 
           gh release upload $tag $newD --clobber --repo $repo
 
@@ -207,8 +274,10 @@ jobs:
           gh release upload $tag $sums --clobber --repo $repo
 
           $assetNames = @(gh release view $tag --repo $repo --json assets --jq '.assets[].name')
-          if ($assetNames -contains $oldD) {
-            gh release delete-asset $tag $oldD --yes --repo $repo
+          foreach ($old in $staleD) {
+            if ($assetNames -contains $old) {
+              gh release delete-asset $tag $old --yes --repo $repo
+            }
           }
 
           @"
@@ -228,7 +297,7 @@ jobs:
           **D — Dedicated processed-TX output; VAC2 remains standard**
           feature/dedicated-processed-tx-output @ $env:D_COMMIT
 
-          D has been rebuilt with the TX Output tab visibility correction. Configure the external transmitter under Setup -> Audio -> TX Output. VAC1 remains available for microphone input and VAC2 remains available for its normal RX2/second-receiver role.
+          D has been rebuilt with TX Output declared in the normal Setup designer/build path. Configure the external transmitter under Setup -> Audio -> TX Output. VAC1 remains available for microphone input and VAC2 remains available for its normal RX2/second-receiver role.
 
           Corrected D download: $newD
 
