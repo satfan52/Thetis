@@ -1,1 +1,9 @@
-The ci/baseline-build branch contains temporary build and publication tooling. Radio test binaries and product source are published from the A/B/C product states documented in the public test-set release.
+# CI tooling branch — do not use for radio testing
+
+This branch exists only to build and publish the frozen Hybrid SDR A/B/C/D test set.
+
+Use the compiled packages on the release page or the corresponding product branch. Branch D is the hardware-validated final design: configure its independent processed-TX route under Setup -> Audio -> TX Output, while VAC2 remains available for its normal RX2 role.
+
+Release: https://github.com/satfan52/Thetis/releases/tag/hybrid-sdr-testset-2026-09-03
+
+Branch D guide: https://github.com/satfan52/Thetis/blob/feature/dedicated-processed-tx-output/HYBRID-SDR-BRANCH-D.md

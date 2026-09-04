@@ -1,4 +1,4 @@
-name: Publish Hybrid SDR frozen A-B-C test set
+name: Publish Hybrid SDR frozen A-B-C-D test set
 
 on:
   push:
@@ -25,16 +25,25 @@ jobs:
             filename: Thetis-HybridSDR-A-Untouched-x64.zip
             purpose: Untouched upstream-equivalent control
             hardware_status: Baseline operation verified on hardware.
+            configuration: Untouched control; use the existing audio configuration.
           - state: B
             ref: 591ee826db17acef1df6caed40d3bbe68251ad55
             filename: Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip
             purpose: Phase 1 duplex VAC2 processed-TX diagnostic
             hardware_status: Diagnostic concept validated on hardware.
+            configuration: Setup -> Audio -> VAC 2; use the diagnostic processed-TX route.
           - state: C
             ref: 5153394ce829f5979c44cae626789ebdb3455d9e
             filename: Thetis-HybridSDR-C-Phase2-Complete-x64.zip
             purpose: Phase 2 reversible Normal VAC / Processed TX Output implementation
             hardware_status: Corrected complete route validated with Red Pitaya and IC-7100.
+            configuration: Setup -> Audio -> VAC 2; select Processed TX Output mode.
+          - state: D
+            ref: 27d6b0ad64a737ac0cf385a6cb03e23da0612a35
+            filename: Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip
+            purpose: Dedicated processed-TX output while VAC2 remains standard
+            hardware_status: Dedicated TX Output and standard VAC2 operation validated with Red Pitaya and IC-7100.
+            configuration: Setup -> Audio -> TX Output; VAC2 remains available for RX2.
 
     steps:
       - name: Checkout exact frozen source
@@ -73,7 +82,7 @@ jobs:
         shell: pwsh
         run: |
           Push-Location source
-          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Build /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-${{ matrix.state }}.binlog
+          & "${{ steps.msbuild.outputs.path }}" "Project Files\Source\Thetis_VS2026.sln" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-${{ matrix.state }}.binlog
           Pop-Location
 
       - name: Package ready-to-run ZIP
@@ -91,6 +100,7 @@ jobs:
           Source commit: ${{ matrix.ref }}
           Build: GitHub Actions Release x64 publication build.
           Hardware status: ${{ matrix.hardware_status }}
+          Configuration: ${{ matrix.configuration }}
           Run Thetis.exe directly from this extracted folder.
           "@ | Set-Content -Path (Join-Path $stage 'BUILD-INFO.txt') -Encoding UTF8
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath '${{ matrix.filename }}' -CompressionLevel Optimal
@@ -140,6 +150,7 @@ jobs:
           test -f dist/Thetis-HybridSDR-A-Untouched-x64.zip
           test -f dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip
           test -f dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip
+          test -f dist/Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip
           (cd dist && sha256sum Thetis-HybridSDR-*.zip > Thetis-HybridSDR-SHA256SUMS.txt)
           cat dist/Thetis-HybridSDR-SHA256SUMS.txt
 
@@ -150,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG='hybrid-sdr-testset-2026-09-03'
-          TITLE='Hybrid SDR A/B/C frozen hardware test set — 2026-09-03'
+          TITLE='Hybrid SDR A/B/C/D hardware-validated test set — 2026-09-04'
           cat > release-notes.md <<'EOF'
           Experimental frozen test set for the Red Pitaya RX + Thetis DSP + IC-7100 RF TX project.
 
@@ -165,17 +176,22 @@ jobs:
           **C — Phase 2 complete**  
           `feature/independent-tx-audio-routing` @ `5153394ce829f5979c44cae626789ebdb3455d9e`
 
-          Recommended hardware-test order: **A -> B -> C**.
+          **D — Dedicated processed-TX output; VAC2 remains standard**  
+          `feature/dedicated-processed-tx-output` @ `27d6b0ad64a737ac0cf385a6cb03e23da0612a35`
 
-          A establishes the untouched Red Pitaya/Thetis control. B isolates the duplex processed-TX VAC2 diagnostic route. C is the intended reversible implementation with `Normal VAC` and `Processed TX Output` modes and a true PortAudio output-only TX path.
+          Recommended comparison order: **A -> B -> C -> D**. D is the final recommended design.
 
-          Hardware validation: A works as the untouched control; B validates the routing concept; corrected C successfully routes the VAC1 microphone through Thetis TX DSP and VAC2 Processed TX Output to the IC-7100. VAC1 TX Gain, COMP, and VAC2 TX Out were confirmed effective. Main MIC Gain remains intentionally inactive for VAC input, matching standard Thetis behavior.
+          A establishes the untouched Red Pitaya/Thetis control. B isolates the duplex processed-TX VAC2 diagnostic route. C validates the reversible VAC2-based implementation. D preserves VAC2 for its normal RX2 role and adds a separate processed-TX output under **Setup -> Audio -> TX Output**.
 
-          This is an experimental fork/test set, not an official Thetis release.
+          Hardware validation is complete. D was tested successfully with the Red Pitaya and IC-7100: VAC1 microphone audio passes through the normal Thetis TX DSP, the independent TX Output feeds the IC-7100, its dedicated gain and the Thetis compressor are effective, and VAC2 remains available for RX2.
+
+          Download D as `Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip`. Configuration details are in [the Branch D guide](https://github.com/satfan52/Thetis/blob/feature/dedicated-processed-tx-output/HYBRID-SDR-BRANCH-D.md).
+
+          This is an experimental hardware-tested fork/test set, not an official Thetis release.
           EOF
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --target 5153394ce829f5979c44cae626789ebdb3455d9e --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
+            gh release create "$TAG" dist/Thetis-HybridSDR-A-Untouched-x64.zip dist/Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip dist/Thetis-HybridSDR-C-Phase2-Complete-x64.zip dist/Thetis-HybridSDR-D-Dedicated-TX-Output-Designer-Fix-x64.zip dist/Thetis-HybridSDR-SHA256SUMS.txt --target 27d6b0ad64a737ac0cf385a6cb03e23da0612a35 --title "$TITLE" --notes-file release-notes.md --prerelease --repo "$GITHUB_REPOSITORY"
           fi
