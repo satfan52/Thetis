@@ -102,7 +102,6 @@ namespace Thetis
 
         #region Independent Processed TX Output Controls
 
-        private System.Windows.Forms.TabPage tpProcessedTXOutput;
         private System.Windows.Forms.GroupBoxTS grpProcessedTXDevice;
         private System.Windows.Forms.GroupBoxTS grpProcessedTXBuffer;
         private System.Windows.Forms.GroupBoxTS grpProcessedTXSampleRate;
@@ -154,13 +153,6 @@ namespace Thetis
 
         private void InitializeProcessedTXOutputControls()
         {
-            tpProcessedTXOutput = new System.Windows.Forms.TabPage();
-            tpProcessedTXOutput.Name = "tpProcessedTXOutput";
-            tpProcessedTXOutput.Text = "TX Output";
-            tpProcessedTXOutput.UseVisualStyleBackColor = true;
-            tpProcessedTXOutput.Padding = new System.Windows.Forms.Padding(3);
-            tpProcessedTXOutput.Size = new System.Drawing.Size(712, 404);
-
             grpProcessedTXDevice = new System.Windows.Forms.GroupBoxTS();
             grpProcessedTXDevice.Name = "grpProcessedTXDevice";
             grpProcessedTXDevice.Text = "Processed TX Output Setup";
@@ -300,7 +292,6 @@ namespace Thetis
             tpProcessedTXOutput.Controls.Add(grpProcessedTXWASAPI);
             tpProcessedTXOutput.Controls.Add(chkProcessedTXOutputEnable);
             tpProcessedTXOutput.Controls.Add(lblProcessedTXDescription);
-            EnsureProcessedTXOutputTab();
 
             foreach (object host in Audio.GetPAHosts())
                 comboProcessedTXDriver.Items.Add(host);
@@ -326,26 +317,6 @@ namespace Thetis
 
             ApplyProcessedTXOutputSettings(false);
         }
-
-        private void EnsureProcessedTXOutputTab()
-{
-    if (tcAudio == null || tpProcessedTXOutput == null) return;
-
-    // Thetis uses its own insertion helper for Setup pages. Reinsert the
-    // page through that path so later Setup/skin/cmASIO initialization
-    // cannot leave a dynamically-created page out of the visible tabs.
-    if (tcAudio.TabPages.Contains(tpProcessedTXOutput))
-        tcAudio.TabPages.Remove(tpProcessedTXOutput);
-
-    Common.TabControlInsert(tcAudio, tpProcessedTXOutput,
-        Math.Min(2, tcAudio.TabPages.Count));
-}
-
-protected override void OnShown(EventArgs e)
-{
-    base.OnShown(e);
-    EnsureProcessedTXOutputTab();
-}
 
         private void PopulateProcessedTXOutputs(bool chooseUSBCodec)
         {
