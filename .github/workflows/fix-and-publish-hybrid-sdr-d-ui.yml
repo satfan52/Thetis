@@ -1,0 +1,238 @@
+name: Fix and republish Hybrid SDR Branch D UI
+
+on:
+  push:
+    branches:
+      - ci/baseline-build
+    paths:
+      - .github/workflows/fix-and-publish-hybrid-sdr-d-ui.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-build-publish:
+    name: Fix, rebuild, and publish Branch D
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout current Branch D
+        uses: actions/checkout@v4
+        with:
+          ref: feature/dedicated-processed-tx-output
+          fetch-depth: 0
+          path: source
+
+      - name: Apply persistent TX Output tab fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path(r"source/Project Files/Source/Console/setup.cs")
+          raw = p.read_bytes()
+          bom = raw.startswith(b"\xef\xbb\xbf")
+          eol = "\r\n" if b"\r\n" in raw else "\n"
+          text = raw.decode("utf-8-sig").replace("\r\n", "\n")
+
+          expected = "4976793fb1792a2f36f2f4ccacaa970f7912fd92"
+          import subprocess
+          actual = subprocess.check_output(
+              ["git", "-C", "source", "rev-parse", "HEAD"], text=True
+          ).strip()
+          if actual != expected:
+              raise RuntimeError(f"Branch D moved unexpectedly: {actual}")
+
+          old_insert = "            tcAudio.TabPages.Insert(2, tpProcessedTXOutput);\n"
+          new_insert = "            EnsureProcessedTXOutputTab();\n"
+          if text.count(old_insert) != 1:
+              raise RuntimeError("Expected exactly one native TX Output tab insertion")
+          text = text.replace(old_insert, new_insert, 1)
+
+          anchor = "        private void PopulateProcessedTXOutputs(bool chooseUSBCodec)\n"
+          addition = """        private void EnsureProcessedTXOutputTab()
+          {
+              if (tcAudio == null || tpProcessedTXOutput == null) return;
+
+              // Thetis uses its own insertion helper for Setup pages. Reinsert the
+              // page through that path so later Setup/skin/cmASIO initialization
+              // cannot leave a dynamically-created page out of the visible tabs.
+              if (tcAudio.TabPages.Contains(tpProcessedTXOutput))
+                  tcAudio.TabPages.Remove(tpProcessedTXOutput);
+
+              Common.TabControlInsert(tcAudio, tpProcessedTXOutput,
+                  Math.Min(2, tcAudio.TabPages.Count));
+          }
+
+          protected override void OnShown(EventArgs e)
+          {
+              base.OnShown(e);
+              EnsureProcessedTXOutputTab();
+          }
+
+          """.replace("          ", "")
+          if text.count(anchor) != 1:
+              raise RuntimeError("Processed TX output method anchor is not unique")
+          text = text.replace(anchor, addition + anchor, 1)
+
+          encoded = text.replace("\n", eol).encode("utf-8")
+          if bom:
+              encoded = b"\xef\xbb\xbf" + encoded
+          p.write_bytes(encoded)
+
+      - name: Commit corrected Branch D
+        shell: pwsh
+        run: |
+          Set-Location source
+          git diff --check
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'Project Files/Source/Console/setup.cs') {
+            throw "Unexpected product files changed: $($changed -join ', ')"
+          }
+          Select-String -Path 'Project Files/Source/Console/setup.cs' -Pattern 'Common.TabControlInsert\(tcAudio'
+          Select-String -Path 'Project Files/Source/Console/setup.cs' -Pattern 'protected override void OnShown'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- 'Project Files/Source/Console/setup.cs'
+          git commit -m 'Fix dedicated TX Output tab visibility'
+          $commit = (git rev-parse HEAD).Trim()
+          git push origin HEAD:refs/heads/feature/dedicated-processed-tx-output
+          "D_COMMIT=$commit" >> $env:GITHUB_ENV
+          Write-Host "Corrected Branch D commit: $commit"
+
+      - name: Locate MSBuild
+        id: msbuild
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $path) { throw 'MSBuild.exe not found' }
+          "path=$path" >> $env:GITHUB_OUTPUT
+          & $path -version
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          Set-Location source
+          nuget restore 'Project Files\Source\Thetis_VS2026.sln' -NonInteractive
+
+      - name: Rebuild Release x64
+        shell: pwsh
+        run: |
+          Set-Location source
+          & "${{ steps.msbuild.outputs.path }}" 'Project Files\Source\Thetis_VS2026.sln' /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /v:minimal /bl:publish-D-ui-fix.binlog
+
+      - name: Package and verify corrected executable
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $PWD 'source\Project Files\bin\x64\Release'
+          $exe = Join-Path $runtime 'Thetis.exe'
+          if (-not (Test-Path $exe)) { throw "Thetis.exe not found at $exe" }
+
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+          $unicode = [System.Text.Encoding]::Unicode.GetString($bytes)
+          if (-not $ascii.Contains('EnsureProcessedTXOutputTab')) {
+            throw 'Corrected TX Output tab method is not embedded in Thetis.exe'
+          }
+          if (-not $unicode.Contains('TX Output')) {
+            throw 'TX Output UI label is not embedded in Thetis.exe'
+          }
+
+          $stage = Join-Path $PWD 'stage-D-ui-fix'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $runtime '*') -Destination $stage -Recurse -Force
+          @"
+          Thetis Hybrid SDR test state D — TX Output UI fix
+          Purpose: Independent processed TX output while VAC2 remains available for RX2.
+          Source branch: feature/dedicated-processed-tx-output
+          Source commit: $env:D_COMMIT
+          Build: GitHub Actions full Release x64 rebuild.
+          UI fix: TX Output is reinserted through Thetis' tab helper when Setup is shown.
+          Hardware status: Build verified; Red Pitaya / IC-7100 validation pending.
+          Controls: Setup -> Audio -> TX Output.
+          Run Thetis.exe directly from this extracted folder.
+          "@ | Set-Content -Path (Join-Path $stage 'BUILD-INFO.txt') -Encoding UTF8
+
+          $filename = 'Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $filename -CompressionLevel Optimal
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $PWD $filename))
+          try {
+            $rootExe = $zip.Entries | Where-Object { $_.FullName -eq 'Thetis.exe' }
+            $buildInfo = $zip.Entries | Where-Object { $_.FullName -eq 'BUILD-INFO.txt' }
+            if (-not $rootExe -or -not $buildInfo) { throw 'ZIP root verification failed' }
+            Write-Host "ZIP entries: $($zip.Entries.Count); Thetis.exe length: $($rootExe.Length)"
+          } finally {
+            $zip.Dispose()
+          }
+          Get-FileHash $filename -Algorithm SHA256 | Format-List
+
+      - name: Upload corrected package as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-sdr-state-D-ui-fix
+          path: Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish corrected D asset and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = 'hybrid-sdr-testset-2026-09-03'
+          $repo = $env:GITHUB_REPOSITORY
+          $newD = 'Thetis-HybridSDR-D-Dedicated-TX-Output-UI-Fix-x64.zip'
+          $oldD = 'Thetis-HybridSDR-D-Dedicated-TX-Output-x64.zip'
+
+          gh release upload $tag $newD --clobber --repo $repo
+
+          $dist = Join-Path $PWD 'dist'
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          Copy-Item $newD (Join-Path $dist $newD)
+          gh release download $tag --repo $repo --dir $dist --pattern 'Thetis-HybridSDR-A-Untouched-x64.zip'
+          gh release download $tag --repo $repo --dir $dist --pattern 'Thetis-HybridSDR-B-Phase1-Diagnostic-x64.zip'
+          gh release download $tag --repo $repo --dir $dist --pattern 'Thetis-HybridSDR-C-Phase2-Complete-x64.zip'
+
+          $lines = Get-ChildItem $dist -Filter '*.zip' | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $sums = Join-Path $dist 'Thetis-HybridSDR-SHA256SUMS.txt'
+          $lines | Set-Content -Path $sums -Encoding ASCII
+          Get-Content $sums
+          gh release upload $tag $sums --clobber --repo $repo
+
+          $assetNames = @(gh release view $tag --repo $repo --json assets --jq '.assets[].name')
+          if ($assetNames -contains $oldD) {
+            gh release delete-asset $tag $oldD --yes --repo $repo
+          }
+
+          @"
+          Experimental test set for the Red Pitaya RX + Thetis DSP + IC-7100 RF TX project.
+
+          No compilation is required. Extract each ZIP into a separate folder and run Thetis.exe.
+
+          **A — Untouched control**
+          master @ 852bf0ef0b4f3886a13fc2846489aee16f361872
+
+          **B — Phase 1 diagnostic**
+          feature/independent-tx-audio-routing-phase1 @ 591ee826db17acef1df6caed40d3bbe68251ad55
+
+          **C — VAC2 processed-TX implementation**
+          feature/independent-tx-audio-routing @ 5153394ce829f5979c44cae626789ebdb3455d9e
+
+          **D — Dedicated processed-TX output; VAC2 remains standard**
+          feature/dedicated-processed-tx-output @ $env:D_COMMIT
+
+          D has been rebuilt with the TX Output tab visibility correction. Configure the external transmitter under Setup -> Audio -> TX Output. VAC1 remains available for microphone input and VAC2 remains available for its normal RX2/second-receiver role.
+
+          Corrected D download: $newD
+
+          This is an experimental fork/test set, not an official Thetis release.
+          "@ | Set-Content -Path release-notes.md -Encoding UTF8
+
+          gh release edit $tag --title 'Hybrid SDR A/B/C/D hardware test set — 2026-09-03' --notes-file release-notes.md --prerelease --repo $repo
