@@ -32174,8 +32174,11 @@ namespace Thetis
             if (m_bVFOABandChangedByKeys)
             {
                 m_bVFOABandChangedByKeys = false;
+                string text = txtVFOABand.Text.Trim();
                 double typedFreq;
-                if (double.TryParse(txtVFOABand.Text, out typedFreq))
+                string normalizedText = text.Replace(',', '.');
+                if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
+                    double.TryParse(text, out typedFreq))
                 {
                     VFOASubFreq = typedFreq;
                     return;
@@ -32333,20 +32336,28 @@ namespace Thetis
             if ((KeyCode < 48 || KeyCode > 57) &&			// numeric keys
                 KeyCode != 8 &&								// backspace
                 !e.KeyChar.ToString().Equals(separator) &&	// decimal
+                !e.KeyChar.ToString().Equals(".") &&
+                !e.KeyChar.ToString().Equals(",") &&
                 KeyCode != 27)								// escape
             {
                 e.Handled = true;
             }
             else
             {
-                if (e.KeyChar.ToString().Equals(separator))
+                if (e.KeyChar.ToString().Equals(separator) || e.KeyChar == '.' || e.KeyChar == ',')
                 {
-                    e.Handled = (((TextBoxTS)sender).Text.IndexOf(separator) >= 0);
+                    e.Handled = (((TextBoxTS)sender).Text.IndexOf(separator) >= 0 || ((TextBoxTS)sender).Text.IndexOf('.') >= 0 || ((TextBoxTS)sender).Text.IndexOf(',') >= 0);
+                    if (!e.Handled) m_bVFOABandChangedByKeys = true;
                 }
                 else if (KeyCode == 27)
                 {
+                    m_bVFOABandChangedByKeys = false;
                     VFOASubFreq = saved_vfoa_sub_freq;
                     btnHidden.Focus();
+                }
+                else if ((KeyCode >= 48 && KeyCode <= 57) || KeyCode == 8)
+                {
+                    m_bVFOABandChangedByKeys = true;
                 }
             }
             if (e.KeyChar == (char)Keys.Enter)
