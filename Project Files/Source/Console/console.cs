@@ -18370,6 +18370,15 @@ namespace Thetis
                 VFOASubFrequencyChangeHandlers?.Invoke(ob, nb, RX1DSPMode, RX1Filter, old_vfoa_sub_freq_rounded, VFOASubFreq,
                     CentreFrequency, ClickTuneDisplay, ptbDisplayZoom.Value, radio.GetDSPRX(0, 1).RXOsc, 1);
             }
+
+            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+            {
+                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                _old_tx_freq = TXFreq;
+                _old_tx_band = TXBand;
+            }
         }
         public bool VFOASubInUse
         {
@@ -32162,19 +32171,24 @@ namespace Thetis
                 return;
             }
 
-            double vfoa = VFOAFreq;
-
-            double freq;
             if (m_bVFOABandChangedByKeys)
             {
-                freq = VFOASubFreq;// double.Parse(txtVFOABand.Text); //MW0LGE //[2.10.3.6]freq changes.
-                m_dVFOASubFreq = freq;
                 m_bVFOABandChangedByKeys = false;
+                double typedFreq;
+                if (double.TryParse(txtVFOABand.Text, out typedFreq))
+                {
+                    VFOASubFreq = typedFreq;
+                    return;
+                }
+                else
+                {
+                    txtVFOABand.Text = VFOASubFreq.ToString("f6");
+                    return;
+                }
             }
-            else
-            {
-                freq = VFOASubFreq;
-            }
+
+            double vfoa = VFOAFreq;
+            double freq = VFOASubFreq;
 
             Display.VFOASub = (long)(freq * 1e6);
             if (chkTUN.Checked && chkVFOATX.Checked && chkVFOSplit.Checked)
@@ -32294,6 +32308,15 @@ namespace Thetis
                     UpdateTXDDSFreq();
                 }
                 last_tx_xvtr_index = tx_xvtr_index;
+            }
+
+            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+            {
+                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                _old_tx_freq = TXFreq;
+                _old_tx_band = TXBand;
             }
         }
 
@@ -35709,6 +35732,15 @@ namespace Thetis
 
                 VFOASubFrequencyChangeHandlers?.Invoke(ob, nb, RX1DSPMode, RX1Filter, old_vfoa_sub_freq_rounded, VFOASubFreq,
                     CentreFrequency, ClickTuneDisplay, ptbDisplayZoom.Value, radio.GetDSPRX(0, 1).RXOsc, 1);
+            }
+
+            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+            {
+                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                _old_tx_freq = TXFreq;
+                _old_tx_band = TXBand;
             }
         }
         private bool _bOldVFOSplit = false; //MW0LGE_22a

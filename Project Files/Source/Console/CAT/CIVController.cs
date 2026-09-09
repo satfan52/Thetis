@@ -288,9 +288,12 @@ namespace Thetis
 
             _console.VFOAFrequencyChangeHandlers += OnVFOAFrequencyChanged;
             _console.VFOBFrequencyChangeHandlers += OnVFOBFrequencyChanged;
+            _console.VFOASubFrequencyChangeHandlers += OnVFOASubFrequencyChanged;
             _console.TXFrequncyChangedHandlers += OnTXFrequencyChanged;
             _console.MoxChangeHandlers += OnMoxChanged;
             _console.SplitChangedHandlers += OnSplitChanged;
+            _console.VFOTXChangedHandlers += OnVFOTXChanged;
+            _console.RX2EnabledChangedHandlers += OnRX2EnabledChanged;
             _console.ModeChangeHandlers += OnModeChanged;
             _console.FilterEdgesChangedHandlers += OnFilterEdgesChanged;
 
@@ -303,9 +306,12 @@ namespace Thetis
 
             _console.VFOAFrequencyChangeHandlers -= OnVFOAFrequencyChanged;
             _console.VFOBFrequencyChangeHandlers -= OnVFOBFrequencyChanged;
+            _console.VFOASubFrequencyChangeHandlers -= OnVFOASubFrequencyChanged;
             _console.TXFrequncyChangedHandlers -= OnTXFrequencyChanged;
             _console.MoxChangeHandlers -= OnMoxChanged;
             _console.SplitChangedHandlers -= OnSplitChanged;
+            _console.VFOTXChangedHandlers -= OnVFOTXChanged;
+            _console.RX2EnabledChangedHandlers -= OnRX2EnabledChanged;
             _console.ModeChangeHandlers -= OnModeChanged;
             _console.FilterEdgesChangedHandlers -= OnFilterEdgesChanged;
 
@@ -381,6 +387,28 @@ namespace Thetis
             }
         }
 
+        private void OnVFOASubFrequencyChanged(Band oldBand, Band newBand, DSPMode newMode, Filter newFilter, double oldFreq, double newFreq, double newCentreF, bool newCTUN, int newZoomSlider, double offset, int rx)
+        {
+            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
+
+            lock (_stateLock)
+            {
+                double txFreq = _console.TXFreq;
+                _pendingTxFreq = txFreq;
+                bool splitRequired = _syncSplitAndFullDuplex && (
+                    _console.VFOSplit || 
+                    _console.FullDuplex || 
+                    Math.Abs(txFreq - _pendingVfoAFreq) > 0.0000015
+                );
+
+                if (splitRequired != _lastSentSplit || splitRequired)
+                {
+                    _vfoBChangePending = true;
+                    _splitChangePending = true;
+                }
+            }
+        }
+
         private void OnTXFrequencyChanged(double old_frequency, double new_frequency, Band old_band, Band new_band, bool rx2_enabled, bool tx_vfob, double centre_freq)
         {
             if (_suppressOutgoingUpdates || !IsOpen) return;
@@ -438,6 +466,16 @@ namespace Thetis
         }
 
         private void OnSplitChanged(int rx, bool oldSplit, bool newSplit)
+        {
+            NotifySplitOrFullDuplexChanged();
+        }
+
+        private void OnVFOTXChanged(bool vfoB, bool oldState, bool newState)
+        {
+            NotifySplitOrFullDuplexChanged();
+        }
+
+        private void OnRX2EnabledChanged(bool enabled)
         {
             NotifySplitOrFullDuplexChanged();
         }
@@ -938,7 +976,8 @@ namespace Thetis
                     if (Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015 ||
                         Math.Abs(freqMHz - _pendingTxFreq) < 0.0000015 ||
                         Math.Abs(freqMHz - _console.TXFreq) < 0.0000015 ||
-                        Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015)
+                        Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015 ||
+                        (_console.RX2Enabled && Math.Abs(freqMHz - _console.VFOASubFreq) < 0.0000015))
                     {
                         return;
                     }
@@ -954,7 +993,8 @@ namespace Thetis
                 if (Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015 ||
                     Math.Abs(freqMHz - _pendingTxFreq) < 0.0000015 ||
                     Math.Abs(freqMHz - _console.TXFreq) < 0.0000015 ||
-                    Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015)
+                    Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015 ||
+                    (_console.RX2Enabled && Math.Abs(freqMHz - _console.VFOASubFreq) < 0.0000015))
                 {
                     return;
                 }
@@ -963,6 +1003,35 @@ namespace Thetis
             // 4. Check if the radio has VFO B selected (operator tuned dial on VFO B)
             if (_currentRadioSelectedVfo == CIVProtocol.VFO_B)
             {
+                if (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                {
+                    if (Math.Abs(freqMHz - _console.VFOASubFreq) < 0.0000015 || Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015)
+                    {
+                        return;
+                    }
+
+                    _suppressOutgoingUpdates = true;
+                    try
+                    {
+                        _console.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                _console.VFOASubFreq = freqMHz;
+                            }
+                            finally
+                            {
+                                _suppressOutgoingUpdates = false;
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        _suppressOutgoingUpdates = false;
+                    }
+                    return;
+                }
+
                 if (Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015 || Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015)
                 {
                     return;
