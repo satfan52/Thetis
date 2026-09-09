@@ -90,26 +90,32 @@ The IC-7100 provides a menu setting: **`SET > Connectors > USB AF/IF Output > MI
 
 ### 3.1 Thetis Configuration
 
-#### 1. Transmit Audio Routing
+#### 1. Transmit Audio Routing (PR #617)
 1. Connect the IC-7100 to your PC via standard USB cable (Silicon Labs CP210x drivers installed).
 2. In Thetis, open **Setup → Audio → TX Output**.
 3. Set **Driver** to `MME` or `Windows WASAPI`.
 4. Set **Output Device** to `USB Audio CODEC` (the IC-7100 sound card).
-5. Recommended Buffer Size: `512 samples`; Sample Rate: `48000 Hz`.
+5. Recommended Buffer Size: `128` or `512 samples`; Sample Rate: `48000 Hz`.
 6. Set **Gain**: `0.0 dB` (adjust to drive IC-7100 ALC to mid-scale).
 7. Check **Enable Processed TX Output**.
 
-#### 2. CI-V CAT Configuration
-1. In Thetis, open **Setup → CAT Control → CAT 1**.
-2. Select the virtual COM port assigned to the IC-7100 CI-V port (e.g. `COM3`).
+![Setup - Audio - Processed TX Output Tab](Documentation/Images/PR617_Setup_Audio_TX_Output_Tab.png)
+
+#### 2. CI-V CAT Configuration (PR #618)
+1. In Thetis, open **Setup → CAT Control → CAT 1 (Serial)**.
+2. Select the virtual COM port assigned to the IC-7100 CI-V port (e.g. `COM10`).
 3. Set **Baud Rate** to `19200` (or `38400`, matching radio settings), Parity `None`, Data `8`, Stop `1`.
 4. In **CAT1 Protocol & CI-V Settings**:
    - **Protocol**: Select `Icom CI-V (IC-7100)`.
    - **CI-V Addr (Hex)**: Ensure `88` is set.
-   - **CI-V Transceive**: Check `Enabled`.
+   - **CI-V Transceive**: Check `Enabled` (automatic bidirectional sync).
    - **Sync Split / Full Duplex**: Check `Enabled`.
    - **Follow IC-7100 Mic PTT**: Check if you wish to use the hand microphone PTT button to engage Thetis MOX.
-5. Check **Enable CAT**. The status will display active communication.
+5. Check **Enable CAT1**. The status will display active communication.
+
+![Setup - CAT Control - Serial Ports CI-V](Documentation/Images/PR618_Setup_CAT_Control_CIV_Tab.png)
+
+![CAT1 Protocol CI-V Settings Detail](Documentation/Images/PR618_CIV_Settings_Group.png)
 
 ---
 
