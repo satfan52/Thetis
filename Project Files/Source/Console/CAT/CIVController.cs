@@ -63,6 +63,8 @@ namespace Thetis
         private bool _lastSentPtt = false;
         private bool _lastSentSplit = false;
         private int _pttPollCounter = 0;
+        private byte _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+        private long _lastTxReleaseTime = 0;
 
         // Loop suppression when Thetis is being updated from the radio
         private bool _suppressOutgoingUpdates = false;
@@ -325,7 +327,12 @@ namespace Thetis
                 _pendingTxFreq = _console.TXFreq;
                 _pendingMode = _console.RX1DSPMode;
                 _pendingFilterWidth = Math.Abs(_console.RX1FilterHigh - _console.RX1FilterLow);
-                _pendingSplit = _console.VFOSplit || _console.FullDuplex;
+                bool splitRequired = _syncSplitAndFullDuplex && (
+                    _console.VFOSplit || 
+                    _console.FullDuplex || 
+                    Math.Abs(_console.TXFreq - _console.VFOAFreq) > 0.0000015
+                );
+                _pendingSplit = splitRequired;
 
                 _freqChangePending = true;
                 _vfoBChangePending = true;
@@ -342,6 +349,17 @@ namespace Thetis
             {
                 _pendingVfoAFreq = newFreq;
                 _freqChangePending = true;
+
+                bool splitRequired = _syncSplitAndFullDuplex && (
+                    _console.VFOSplit || 
+                    _console.FullDuplex || 
+                    Math.Abs(_pendingTxFreq - newFreq) > 0.0000015
+                );
+                if (splitRequired != _lastSentSplit)
+                {
+                    _splitChangePending = true;
+                    _vfoBChangePending = true;
+                }
 
                 if (oldMode != newMode || oldFilter != newFilter)
                 {
@@ -370,10 +388,16 @@ namespace Thetis
             lock (_stateLock)
             {
                 _pendingTxFreq = new_frequency;
-                // If Split or Full Duplex is active, TX frequency change must be pushed to the IC-7100 TX VFO
-                if (_syncSplitAndFullDuplex && (_console.VFOSplit || _console.FullDuplex))
+                bool splitRequired = _syncSplitAndFullDuplex && (
+                    _console.VFOSplit || 
+                    _console.FullDuplex || 
+                    Math.Abs(new_frequency - _pendingVfoAFreq) > 0.0000015
+                );
+
+                if (splitRequired != _lastSentSplit || splitRequired)
                 {
                     _vfoBChangePending = true;
+                    _splitChangePending = true;
                 }
             }
         }
@@ -381,6 +405,11 @@ namespace Thetis
         private void OnMoxChanged(int rx, bool oldMox, bool newMox)
         {
             if (_suppressOutgoingUpdates || !IsOpen) return;
+
+            if (!newMox && oldMox)
+            {
+                _lastTxReleaseTime = Stopwatch.GetTimestamp();
+            }
 
             // PTT changes bypass the flood control timer and are transmitted immediately
             SendImmediatePtt(newMox);
@@ -392,7 +421,12 @@ namespace Thetis
 
             lock (_stateLock)
             {
-                _pendingSplit = _console.VFOSplit || _console.FullDuplex;
+                bool splitRequired = _syncSplitAndFullDuplex && (
+                    _console.VFOSplit || 
+                    _console.FullDuplex || 
+                    Math.Abs(_console.TXFreq - _console.VFOAFreq) > 0.0000015
+                );
+                _pendingSplit = splitRequired;
                 _pendingTxFreq = _console.TXFreq;
                 _pendingVfoAFreq = _console.VFOAFreq;
                 _pendingVfoBFreq = _console.VFOBFreq;
@@ -451,10 +485,24 @@ namespace Thetis
 
             lock (_stateLock)
             {
-                if (_splitChangePending)
+                bool splitRequired = _syncSplitAndFullDuplex && (
+                    (_console != null && (_console.VFOSplit || _console.FullDuplex)) || 
+                    Math.Abs(_pendingTxFreq - _pendingVfoAFreq) > 0.0000015
+                );
+
+                if (splitRequired != _lastSentSplit)
                 {
                     doSplit = true;
-                    targetSplit = _pendingSplit;
+                    targetSplit = splitRequired;
+                    _splitChangePending = false;
+                    doVfoB = true;
+                    targetVfoBFreq = splitRequired ? _pendingTxFreq : _pendingVfoBFreq;
+                    _vfoBChangePending = false;
+                }
+                else if (_splitChangePending)
+                {
+                    doSplit = true;
+                    targetSplit = splitRequired;
                     _splitChangePending = false;
                 }
 
@@ -468,8 +516,8 @@ namespace Thetis
                 if (_vfoBChangePending)
                 {
                     doVfoB = true;
-                    // If Split or Full Duplex is active, unselected VFO mirrors Thetis TXFreq
-                    if (_syncSplitAndFullDuplex && (_console.VFOSplit || _console.FullDuplex))
+                    // If Split or Full Duplex is active (or TXFreq != VFOAFreq), unselected VFO mirrors Thetis TXFreq
+                    if (splitRequired)
                     {
                         targetVfoBFreq = _pendingTxFreq;
                     }
@@ -556,6 +604,36 @@ namespace Thetis
         {
             if (tx == _lastSentPtt) return;
 
+            if (tx)
+            {
+                // Pre-TX Check: If split operation is required, ensure IC-7100 Split is enabled
+                // and VFO B is set to the current transmit frequency before keying PTT.
+                bool splitRequired;
+                double txFreq;
+                double vfoAFreq;
+                lock (_stateLock)
+                {
+                    txFreq = _pendingTxFreq > 0 ? _pendingTxFreq : (_console != null ? _console.TXFreq : 0);
+                    vfoAFreq = _pendingVfoAFreq > 0 ? _pendingVfoAFreq : (_console != null ? _console.VFOAFreq : 0);
+                    splitRequired = _syncSplitAndFullDuplex && (
+                        (_console != null && (_console.VFOSplit || _console.FullDuplex)) || 
+                        Math.Abs(txFreq - vfoAFreq) > 0.0000015
+                    );
+                }
+
+                if (splitRequired)
+                {
+                    if (!_lastSentSplit)
+                    {
+                        SendSplit(true);
+                    }
+                    if (txFreq > 0 && Math.Abs(txFreq - _lastSentVfoBFreq) > 0.0000015)
+                    {
+                        SendVfoBFrequency(txFreq);
+                    }
+                }
+            }
+
             byte[] frame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, tx);
             SendFrame(frame);
             _lastSentPtt = tx;
@@ -564,6 +642,15 @@ namespace Thetis
         private void SendSplit(bool splitOn)
         {
             if (splitOn == _lastSentSplit) return;
+
+            if (splitOn)
+            {
+                // Ensure VFO A is the selected receiver VFO on the IC-7100 before enabling Split,
+                // so the IC-7100 transmits on VFO B (unselected) and receives on VFO A.
+                byte[] selVfoFrame = CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false);
+                SendFrame(selVfoFrame);
+                _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+            }
 
             byte[] frame = CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, splitOn);
             SendFrame(frame);
@@ -772,6 +859,18 @@ namespace Thetis
                     }
                     break;
 
+                // VFO selection report (0x07)
+                case CIVProtocol.CMD_VFO_SEL:
+                    if (frame.Length >= 6)
+                    {
+                        byte vfoId = frame[5];
+                        if (vfoId == CIVProtocol.VFO_A || vfoId == CIVProtocol.VFO_B)
+                        {
+                            _currentRadioSelectedVfo = vfoId;
+                        }
+                    }
+                    break;
+
                 // Data Mode report (0x1A 0x06)
                 case CIVProtocol.CMD_MISC_1A:
                     if (frame.Length >= 8 && frame[5] == CIVProtocol.SUBCMD_1A_DATA_MODE)
@@ -823,7 +922,76 @@ namespace Thetis
         {
             if (freqMHz <= 0 || _console == null) return;
 
-            // Check if delta is significant (> 1 Hz) and not an echo of our last sent frequency
+            // 1. Guard against updates while transmitting:
+            // When transmitting, the IC-7100 broadcasts the TX frequency (e.g. VFO B in split).
+            // Under no circumstances should transmit broadcasts be treated as receive VFO changes.
+            if (_console.MOX) return;
+
+            // 2. Post-TX Settling Window (350 ms):
+            // After PTT is released, the transceiver or CI-V bus may still be draining queued frames
+            // representing the transmit frequency. Drop any frequency matching the transmit frequency or VFO B.
+            if (_lastTxReleaseTime > 0)
+            {
+                double msSinceRelease = (double)(Stopwatch.GetTimestamp() - _lastTxReleaseTime) / Stopwatch.Frequency * 1000.0;
+                if (msSinceRelease < 350.0)
+                {
+                    if (Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015 ||
+                        Math.Abs(freqMHz - _pendingTxFreq) < 0.0000015 ||
+                        Math.Abs(freqMHz - _console.TXFreq) < 0.0000015 ||
+                        Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015)
+                    {
+                        return;
+                    }
+                }
+            }
+
+            // 3. Unselected VFO / Split TX Echo Suppression:
+            // When Split is active or TX frequency differs from VFO A, any incoming frequency that matches
+            // the TX frequency or VFO B must NOT be applied to VFO A.
+            bool isSplitOrDiff = _console.VFOSplit || _console.FullDuplex || Math.Abs(_console.TXFreq - _console.VFOAFreq) > 0.0000015;
+            if (isSplitOrDiff)
+            {
+                if (Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015 ||
+                    Math.Abs(freqMHz - _pendingTxFreq) < 0.0000015 ||
+                    Math.Abs(freqMHz - _console.TXFreq) < 0.0000015 ||
+                    Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015)
+                {
+                    return;
+                }
+            }
+
+            // 4. Check if the radio has VFO B selected (operator tuned dial on VFO B)
+            if (_currentRadioSelectedVfo == CIVProtocol.VFO_B)
+            {
+                if (Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015 || Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015)
+                {
+                    return;
+                }
+
+                _suppressOutgoingUpdates = true;
+                try
+                {
+                    _console.BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            _console.VFOBFreq = freqMHz;
+                        }
+                        finally
+                        {
+                            _suppressOutgoingUpdates = false;
+                        }
+                    }));
+                }
+                catch
+                {
+                    _suppressOutgoingUpdates = false;
+                }
+                return;
+            }
+
+            // 5. VFO A Update:
+            // Check if delta is significant (> 1.5 Hz) and not an echo of our last sent VFO A frequency
             if (Math.Abs(freqMHz - _console.VFOAFreq) < 0.0000015 || Math.Abs(freqMHz - _lastSentVfoAFreq) < 0.0000015)
             {
                 return;

@@ -1,4 +1,4 @@
-﻿/*  TCIServer.cs
+/*  TCIServer.cs
 
 This file is part of a program that implements a Software-Defined Radio.
 
@@ -3663,15 +3663,30 @@ namespace Thetis
                         return;
                     }
 
-					if (rx == 0)
+					int effectiveRx = rx;
+					if (effectiveRx == 0 && consoleThreadSafe.RX2Enabled)
 					{
-						if (consoleThreadSafe.RX2Enabled && consoleThreadSafe.VFOBTX)
+						bool onlyRx2Audio;
+						lock (m_objStreamLock)
+						{
+							onlyRx2Audio = m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0);
+						}
+
+						if (onlyRx2Audio)
+						{
+							effectiveRx = 1;
+						}
+					}
+
+					if (effectiveRx == 0)
+					{
+						if (consoleThreadSafe.RX2Enabled && !consoleThreadSafe.VFOBTX)
 							consoleThreadSafe.VFOATX = true;
 
 						if (consoleThreadSafe.MOX != bMox)
 							consoleThreadSafe.TCIPTT = bMox;
 					}
-                    else if (rx == 1 && consoleThreadSafe.RX2Enabled)
+                    else if (effectiveRx == 1 && consoleThreadSafe.RX2Enabled)
                     {
 						if (!consoleThreadSafe.VFOBTX)
 							consoleThreadSafe.VFOBTX = true;
