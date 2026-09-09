@@ -1985,6 +1985,7 @@ namespace Thetis
             AndromedaSiolisten = new SIO5ListenerII(this);
             AriesSiolisten = new SIO6ListenerII(this);
             GanymedeSiolisten = new SIO7ListenerII(this);
+            CIVControllerInstance = new CIVController(this);
 
             EQForm = new EQForm(this);
 
@@ -13278,6 +13279,7 @@ namespace Thetis
         public SIO5ListenerII AndromedaSiolisten { get; set; } = null;
         public SIO6ListenerII AriesSiolisten { get; set; } = null;
         public SIO7ListenerII GanymedeSiolisten { get; set; } = null;
+        public CIVController CIVControllerInstance { get; set; } = null;
 
         public bool HideTuneStep
         {
@@ -16828,15 +16830,38 @@ namespace Thetis
                 try
                 {
                     cat_enabled = value;
-                    if (Siolisten != null)  // if we've got a listener tell them about state change 
+                    if (cat_protocol == "Icom CI-V (IC-7100)")
                     {
-                        if (cat_enabled)
-                        {
-                            Siolisten.enableCAT();
-                        }
-                        else
-                        {
+                        if (Siolisten != null)
                             Siolisten.disableCAT();
+
+                        if (CIVControllerInstance != null)
+                        {
+                            if (cat_enabled)
+                            {
+                                CIVControllerInstance.Open("COM" + cat_port, cat_baud_rate, civ_address, civ_transceive, civ_sync_split, civ_sync_ptt);
+                            }
+                            else
+                            {
+                                CIVControllerInstance.Close();
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+                            CIVControllerInstance.Close();
+
+                        if (Siolisten != null)  // if we've got a listener tell them about state change 
+                        {
+                            if (cat_enabled)
+                            {
+                                Siolisten.enableCAT();
+                            }
+                            else
+                            {
+                                Siolisten.disableCAT();
+                            }
                         }
                     }
                 }
@@ -16845,8 +16870,7 @@ namespace Thetis
                     MessageBox.Show("Error enabling CAT on COM" + cat_port + ".\n" +
                         "Please check CAT settings and try again.",
                         "CAT Error",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                        MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
                     if (!IsSetupFormNull) SetupForm.CATEnabled = false;
                 }
             }
@@ -17066,6 +17090,48 @@ namespace Thetis
                 }
             }
             get { return cat4_enabled; }
+        }
+
+        private string cat_protocol = "Kenwood TS-2000";
+        public string CATProtocol
+        {
+            get { return cat_protocol; }
+            set { cat_protocol = value; }
+        }
+
+        private byte civ_address = 0x88;
+        public byte CIVAddress
+        {
+            get { return civ_address; }
+            set { civ_address = value; }
+        }
+
+        private bool civ_transceive = true;
+        public bool CIVTransceive
+        {
+            get { return civ_transceive; }
+            set { civ_transceive = value; }
+        }
+
+        private bool civ_sync_split = true;
+        public bool CIVSyncSplit
+        {
+            get { return civ_sync_split; }
+            set { civ_sync_split = value; }
+        }
+
+        private bool civ_sync_ptt = false;
+        public bool CIVSyncPTT
+        {
+            get { return civ_sync_ptt; }
+            set
+            {
+                civ_sync_ptt = value;
+                if (CIVControllerInstance != null)
+                {
+                    CIVControllerInstance.SyncPTT = value;
+                }
+            }
         }
 
         private int cat_rig_type;
@@ -19928,7 +19994,20 @@ namespace Thetis
                 if (!IsSetupFormNull)  //[2.10.3.5]MW0LGE added
                     Audio.ScopeTime = SetupForm.ScopeTime;
                 Display.SampleRateTX = value;
+
+                bool restartProcessedTx = Audio.ProcessedTXOutputEnabled && PowerOn;
+                if (restartProcessedTx)
+                {
+                    ivac.SetIVACrun(cmaster.CMrcvr, 0);
+                    ivac.StopAudioIVAC(cmaster.CMrcvr);
+                }
+
                 cmaster.SetXmtrChannelOutrate(0, value, cmaster.MONMixState);
+
+                if (restartProcessedTx)
+                {
+                    Audio.EnableProcessedTXOutput(true);
+                }
 
                 switch (_rx1_dsp_mode)
                 {
@@ -27217,6 +27296,8 @@ namespace Thetis
                     chkPower.Checked = false;
                     return;
                 }
+
+                if (Audio.ProcessedTXOutputEnabled) Audio.EnableProcessedTXOutput(true);
                 if (!IsSetupFormNull) SetupForm.BoardWarning = NetworkIO.BoardMismatch; //[2.10.3.9]MW0LGE show warning in setup if board does not match expected
 
                 //MW0LGE_21k9 these two moved after the audio start
@@ -36727,6 +36808,11 @@ namespace Thetis
 
                 if (current_click_tune_mode == ClickTuneMode.VFOB && !chkVFOSplit.Checked && !chkEnableMultiRX.Checked)
                     CurrentClickTuneMode = ClickTuneMode.VFOA;
+            }
+
+            if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+            {
+                CIVControllerInstance.NotifySplitOrFullDuplexChanged();
             }
         }
 
