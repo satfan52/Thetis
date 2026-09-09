@@ -249,6 +249,14 @@ namespace Thetis
         }
 
         /// <summary>
+        /// Frame to query Split status (0x0F).
+        /// </summary>
+        public static byte[] ReadSplitFrame(byte toAddr, byte fromAddr)
+        {
+            return CreateFrame(toAddr, fromAddr, CMD_SPLIT, null);
+        }
+
+        /// <summary>
         /// Frame to select active VFO (0x07 0x00 for VFO A, 0x07 0x01 for VFO B).
         /// </summary>
         public static byte[] SelectVfoFrame(byte toAddr, byte fromAddr, bool vfoB)
