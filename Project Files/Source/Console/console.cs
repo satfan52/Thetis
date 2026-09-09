@@ -19928,7 +19928,20 @@ namespace Thetis
                 if (!IsSetupFormNull)  //[2.10.3.5]MW0LGE added
                     Audio.ScopeTime = SetupForm.ScopeTime;
                 Display.SampleRateTX = value;
+
+                bool restartProcessedTx = Audio.ProcessedTXOutputEnabled && PowerOn;
+                if (restartProcessedTx)
+                {
+                    ivac.SetIVACrun(cmaster.CMrcvr, 0);
+                    ivac.StopAudioIVAC(cmaster.CMrcvr);
+                }
+
                 cmaster.SetXmtrChannelOutrate(0, value, cmaster.MONMixState);
+
+                if (restartProcessedTx)
+                {
+                    Audio.EnableProcessedTXOutput(true);
+                }
 
                 switch (_rx1_dsp_mode)
                 {
@@ -27192,7 +27205,6 @@ namespace Thetis
 
                 if (vac_enabled) VACEnabled = true;  //Don't trigger StopAudioIVAC if the VACs aren't needed now
                 if (vac2_enabled) VAC2Enabled = true;
-                if (Audio.ProcessedTXOutputEnabled) Audio.EnableProcessedTXOutput(true);
 
                 Thread.Sleep(100); // wait for hardware to settle before starting audio (possible sample rate change)
                 psform.ForcePS();
@@ -27217,6 +27229,8 @@ namespace Thetis
                     chkPower.Checked = false;
                     return;
                 }
+
+                if (Audio.ProcessedTXOutputEnabled) Audio.EnableProcessedTXOutput(true);
                 if (!IsSetupFormNull) SetupForm.BoardWarning = NetworkIO.BoardMismatch; //[2.10.3.9]MW0LGE show warning in setup if board does not match expected
 
                 //MW0LGE_21k9 these two moved after the audio start

@@ -1826,6 +1826,8 @@ namespace Thetis
 
             if (enable)
             {
+                if (console == null || !console.PowerOn) return;
+
                 int global_output = (int)PA19.PA_HostApiDeviceIndexToDeviceIndex(
                     processed_tx_output_host, processed_tx_output_device);
                 if (global_output < 0)
@@ -1851,7 +1853,9 @@ namespace Thetis
 
                 double out_latency = out_info.defaultLowOutputLatency;
 
+                // Stop any running stream first so PortAudio callback does not execute while resamplers are recreated
                 ivac.SetIVACrun(id, 0);
+                ivac.StopAudioIVAC(id);
                 ivac.SetIVACOutputOnly(id, 1);
                 ivac.SetIVACiqType(id, 0);
                 ivac.SetIVACstereo(id, 0);
