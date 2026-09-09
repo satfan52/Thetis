@@ -639,7 +639,7 @@ namespace Thetis
 
             // some default tci server states MW0LGE_21k9d
             chkCopyRX2VFObToVFOa.Checked = true;
-            chkUseRX1vfoaForRX2vfoa.Checked = true;
+            chkUseRX1vfoaForRX2vfoa.Checked = false;
             chkTCIsendInitialStateOnConnect.Checked = true;
             // some default tcpipcat server states
             chkWelcomeMessageTCPIPCat.Checked = true;

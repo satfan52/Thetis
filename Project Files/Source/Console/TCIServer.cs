@@ -2098,15 +2098,19 @@ namespace Thetis
         }
 		private void sendVFO(int rx, int chan, long vfo = -1)
         {
-			bool bVFOaUseRX2;
-			if (m_server != null && consoleThreadSafe != null)
-				bVFOaUseRX2 = consoleThreadSafe.RX2Enabled && m_server.UseRX1VFOaForRX2VFOa;
-			else
-				bVFOaUseRX2 = false;
+			bool onlyRx2Audio = false;
+			lock (m_objStreamLock)
+			{
+				onlyRx2Audio = m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0);
+			}
 
 			if (vfo == -1)
 			{
-				if (rx == 0)
+				if (rx == 0 && onlyRx2Audio && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+				{
+					vfo = (long)(consoleThreadSafe.VFOBFreq * 1e6);
+				}
+				else if (rx == 0)
 				{
 					if (chan == 0)
 						vfo = (long)(consoleThreadSafe.VFOAFreq * 1e6);
@@ -2115,21 +2119,18 @@ namespace Thetis
 				}
 				else if (rx == 1)
 				{
-					if(chan == 0)
-                    {
-						if(bVFOaUseRX2)
-							vfo = (long)(consoleThreadSafe.VFOAFreq * 1e6);
-						else
-							vfo = (long)(consoleThreadSafe.VFOBFreq * 1e6);
-					}
-                    else if (chan == 1)
-                    {
-						vfo = (long)(consoleThreadSafe.VFOBFreq * 1e6);
-					}
+					// For receiver 1 (RX2), Thetis tunes via VFOB. Both channel 0 and channel 1 track VFOB.
+					vfo = (long)(consoleThreadSafe.VFOBFreq * 1e6);
 				}					
 			}
 			string s = "vfo:" + rx.ToString() + "," + chan.ToString() + "," + vfo.ToString() + ";";
 			sendTextFrame(s);
+
+			if (rx == 1 && onlyRx2Audio)
+			{
+				string s0 = "vfo:0," + chan.ToString() + "," + vfo.ToString() + ";";
+				sendTextFrame(s0);
+			}
         }
 		private void sendIF(int rx, int chan, int offset = -999999999)
 		{
@@ -2494,7 +2495,7 @@ namespace Thetis
 				sendDDS(1);
 				sendIF(0, 0);
 				sendIF(0, 1);
-				sendIF(1, 1);
+				sendIF(1, 0);
 				sendIF(1, 1);
 				sendVFO(0, 0);
 				sendVFO(0, 1);
@@ -3741,7 +3742,19 @@ namespace Thetis
 					double dIF = lIF / 1e6;
 					double vfo;
 
-					if (rx == 0)
+					int effectiveRx = rx;
+					if (rx == 0 && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+					{
+						lock (m_objStreamLock)
+						{
+							if (m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0))
+							{
+								effectiveRx = 1;
+							}
+						}
+					}
+
+					if (effectiveRx == 0)
 					{
 						vfo = consoleThreadSafe.CentreFrequency + dIF;
 						vfo = Math.Round(vfo, 6);
@@ -3756,7 +3769,7 @@ namespace Thetis
 								consoleThreadSafe.VFOBFreq = vfo;
 						}
 					}
-					else if (rx == 1)
+					else if (effectiveRx == 1)
 					{
 						if (consoleThreadSafe.RX2Enabled)
 						{
@@ -3778,17 +3791,23 @@ namespace Thetis
 			}
 			else if (args.Length == 2)
 			{
-				bool bVFOaUseRX2;
-				if (m_server != null && consoleThreadSafe != null)
-					bVFOaUseRX2 = consoleThreadSafe.RX2Enabled && m_server.UseRX1VFOaForRX2VFOa;
-				else
-					bVFOaUseRX2 = false;
-
 				// query
 				if (bOK)
 				{
+					int effectiveRx = rx;
+					if (rx == 0 && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+					{
+						lock (m_objStreamLock)
+						{
+							if (m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0))
+							{
+								effectiveRx = 1;
+							}
+						}
+					}
+
 					double dIF = 0;
-					if (rx == 0)
+					if (effectiveRx == 0)
 					{
 						if (chan == 0)
 						{
@@ -3799,19 +3818,9 @@ namespace Thetis
 							dIF = consoleThreadSafe.VFOBFreq - consoleThreadSafe.CentreFrequency;
 						}
 					}
-					else if (rx == 1)
+					else if (effectiveRx == 1)
 					{
-						if (chan == 0)
-						{
-							if(bVFOaUseRX2)
-								dIF = consoleThreadSafe.VFOAFreq - consoleThreadSafe.CentreFrequency;
-							else
-								dIF = consoleThreadSafe.VFOBFreq - consoleThreadSafe.CentreRX2Frequency;
-						}
-						else
-						{
-							dIF = consoleThreadSafe.VFOBFreq - consoleThreadSafe.CentreRX2Frequency;
-						}
+						dIF = consoleThreadSafe.VFOBFreq - consoleThreadSafe.CentreRX2Frequency;
 					}
 
 					dIF *= 1e6; // into HZ
@@ -3877,12 +3886,6 @@ namespace Thetis
 			int chan = 0;
 			long freq = 0;
 
-			bool bVFOaUseRX2;
-			if (m_server != null && consoleThreadSafe != null)
-				bVFOaUseRX2 = consoleThreadSafe.RX2Enabled && m_server.UseRX1VFOaForRX2VFOa;
-			else
-				bVFOaUseRX2 = false;
-
 			bool bOK = int.TryParse(args[0], out rx);
 			if (bOK)
 				bOK = int.TryParse(args[1], out chan);
@@ -3896,7 +3899,19 @@ namespace Thetis
 					double vfo = freq / 1e6;
 					vfo = Math.Round(vfo, 6);
 
-					if (rx == 0)
+					int effectiveRx = rx;
+					if (rx == 0 && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+					{
+						lock (m_objStreamLock)
+						{
+							if (m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0))
+							{
+								effectiveRx = 1;
+							}
+						}
+					}
+
+					if (effectiveRx == 0)
 					{
 						if (chan == 0)
 						{
@@ -3909,28 +3924,14 @@ namespace Thetis
 								consoleThreadSafe.VFOBFreq = vfo;
 						}
 					}
-					else if (rx == 1)
+					else if (effectiveRx == 1)
 					{
 						if (consoleThreadSafe.RX2Enabled)
 						{
-							if (chan == 0)
-							{
-								if (bVFOaUseRX2)
-								{
-									if (consoleThreadSafe.VFOAFreq != vfo)
-										consoleThreadSafe.VFOAFreq = vfo;
-								}
-                                else
-                                {
-									if (consoleThreadSafe.VFOBFreq != vfo)
-										consoleThreadSafe.VFOBFreq = vfo;
-								}
-							}
-							else if (chan == 1)
-							{
-								if (consoleThreadSafe.VFOBFreq != vfo)
-									consoleThreadSafe.VFOBFreq = vfo;
-							}
+							// In Thetis, RX2 is tuned by VFOB.
+							// Setting VFO on receiver 1 (RX2) must update VFOBFreq, never VFOAFreq.
+							if (consoleThreadSafe.VFOBFreq != vfo)
+								consoleThreadSafe.VFOBFreq = vfo;
 						}
 					}
 				}
@@ -3939,8 +3940,20 @@ namespace Thetis
 			{
 				if (bOK)
 				{
+					int effectiveRx = rx;
+					if (rx == 0 && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+					{
+						lock (m_objStreamLock)
+						{
+							if (m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0))
+							{
+								effectiveRx = 1;
+							}
+						}
+					}
+
 					double vfo = 0;
-					if (rx == 0)
+					if (effectiveRx == 0)
 					{
 						if (chan == 0)
 						{
@@ -3951,26 +3964,17 @@ namespace Thetis
 							vfo = consoleThreadSafe.VFOBFreq;
 						}
 					}
-					else if (rx == 1)
+					else if (effectiveRx == 1)
 					{
-						if (chan == 0)
-						{
-							if (bVFOaUseRX2)
-								vfo = consoleThreadSafe.VFOAFreq;
-							else
-								vfo = consoleThreadSafe.VFOBFreq;
-						}
-						else
-						{
-							vfo = consoleThreadSafe.VFOBFreq;
-						}
+						// Receiver 1 (RX2) frequency is always VFOBFreq
+						vfo = consoleThreadSafe.VFOBFreq;
 					}
 
 					TCPIPtciSocketListener.VFOData vfod = new TCPIPtciSocketListener.VFOData()
 					{
 						cen = false,
 						centreMHz = -1,
-						rx = bVFOaUseRX2 ? 1 : rx,
+						rx = rx,
 						freqMHz = vfo,
 						offsetHz = -1,
 						chan = chan,
@@ -4062,12 +4066,24 @@ namespace Thetis
 					}
 					if (mode != DSPMode.FIRST)
 					{
-						if (rx == 0)
+						int effectiveRx = rx;
+						if (rx == 0 && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+						{
+							lock (m_objStreamLock)
+							{
+								if (m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0))
+								{
+									effectiveRx = 1;
+								}
+							}
+						}
+
+						if (effectiveRx == 0)
 						{
 							if(consoleThreadSafe.RX1DSPMode != mode)
 								consoleThreadSafe.RX1DSPMode = mode;
 						}
-						else if (rx == 1)
+						else if (effectiveRx == 1)
 						{
 							if(consoleThreadSafe.RX2DSPMode != mode)
 								consoleThreadSafe.RX2DSPMode = mode;
@@ -4078,11 +4094,23 @@ namespace Thetis
             else if (bOK && args.Length == 1)
             {
                 //query
-                if (rx == 0)
+				int effectiveRx = rx;
+				if (rx == 0 && consoleThreadSafe != null && consoleThreadSafe.RX2Enabled)
+				{
+					lock (m_objStreamLock)
+					{
+						if (m_audioStreamEnabled.Contains(1) && !m_audioStreamEnabled.Contains(0))
+						{
+							effectiveRx = 1;
+						}
+					}
+				}
+
+                if (effectiveRx == 0)
                 {
 					sendMode(rx, consoleThreadSafe.RX1DSPMode);
                 }
-				else if(rx == 1)
+				else if(effectiveRx == 1)
                 {
 					sendMode(rx, consoleThreadSafe.RX2DSPMode);
 				}
@@ -7268,17 +7296,11 @@ namespace Thetis
 		}
 		public void OnVFOAFrequencyChangeHandler(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider, double offset, int rx)
 		{
-            bool bVFOaUseRX2;
-            if (console != null)
-                bVFOaUseRX2 = console.RX2Enabled && UseRX1VFOaForRX2VFOa;
-            else
-                bVFOaUseRX2 = false;
-
             TCPIPtciSocketListener.VFOData vfod = new TCPIPtciSocketListener.VFOData()
             {
                 cen = false,
                 centreMHz = -1,
-                rx = bVFOaUseRX2 ? 1 : rx - 1,
+                rx = rx - 1,
                 freqMHz = newFreq,
                 offsetHz = (int)-offset,
                 chan = 0,
@@ -7299,6 +7321,26 @@ namespace Thetis
         }
 		public void OnVFOBFrequencyChangeHandler(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider, double offset, int rx)
 		{
+            int targetChan = 1;
+            int duplicateChan = -1;
+            bool replaceDup = false;
+
+            if (console != null && console.RX2Enabled && rx - 1 == 1)
+            {
+                // When RX2 is enabled, VFO B tunes RX2.
+                // In TCI, channel 0 is the primary VFO for receiver 1 (RX2).
+                // Send to channel 0 and duplicate to channel 1 for full compatibility.
+                targetChan = 0;
+                duplicateChan = 1;
+                replaceDup = false;
+            }
+            else
+            {
+                targetChan = 1;
+                duplicateChan = m_bCopyRX2VFObToVFOa && (console != null && console.RX2Enabled) ? 0 : -1;
+                replaceDup = m_bCopyRX2VFObToVFOa && _replace_if_copy_RX2VFObToVFOa && (console != null && console.RX2Enabled);
+            }
+
             TCPIPtciSocketListener.VFOData vfod = new TCPIPtciSocketListener.VFOData()
             {
                 cen = false,
@@ -7306,9 +7348,9 @@ namespace Thetis
                 rx = rx - 1,
                 freqMHz = newFreq,
                 offsetHz = (int)-offset,
-                chan = 1,
-                duplicate_tochan = m_bCopyRX2VFObToVFOa && console.RX2Enabled ? 0 : -1,
-                replace_if_duplicated = m_bCopyRX2VFObToVFOa && _replace_if_copy_RX2VFObToVFOa && console.RX2Enabled,
+                chan = targetChan,
+                duplicate_tochan = duplicateChan,
+                replace_if_duplicated = replaceDup,
                 sendIF = true
             };
 
