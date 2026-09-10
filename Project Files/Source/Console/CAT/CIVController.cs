@@ -1394,20 +1394,70 @@ namespace Thetis
                 }
             }
 
-            // 3. Unselected VFO / Split TX Echo Suppression:
-            // When Split is active or TX frequency differs from VFO A, any incoming frequency that matches
-            // the TX frequency or VFO B must NOT be applied to VFO A.
-            bool isSplitOrDiff = IsSplitRequired();
-            if (isSplitOrDiff)
+            // 3. Detect Radio-Initiated VFO Swap ([A/B] button on IC-7100):
+            // Since the IC-7100 does not broadcast a CI-V VFO report (0x07) in transceive mode,
+            // pressing [A/B] on the IC-7100 causes it to switch to the other VFO and broadcast
+            // that VFO's frequency.
+            // If the incoming frequency matches Thetis VFOB (and differs from VFOA),
+            // this signals that the operator pressed [A/B] on the IC-7100.
+            double targetVfoBFreq = (_console.VFOBTX || _console.VFOSplit) && _console.TXFreq > 0 
+                ? _console.TXFreq 
+                : _console.VFOBFreq;
+
+            bool matchesVfoB = (targetVfoBFreq > 0 && Math.Abs(freqMHz - targetVfoBFreq) < 0.0000015) ||
+                               (_lastSentVfoBFreq > 0 && Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015) ||
+                               (_console.VFOBFreq > 0 && Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015);
+
+            bool differsFromVfoA = Math.Abs(freqMHz - _console.VFOAFreq) > 0.0000015 &&
+                                   Math.Abs(freqMHz - _lastSentVfoAFreq) > 0.0000015;
+
+            if (matchesVfoB && differsFromVfoA)
             {
-                if (Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000015 ||
-                    Math.Abs(freqMHz - _pendingTxFreq) < 0.0000015 ||
-                    Math.Abs(freqMHz - _console.TXFreq) < 0.0000015 ||
-                    Math.Abs(freqMHz - _console.VFOBFreq) < 0.0000015 ||
-                    (_console.RX2Enabled && Math.Abs(freqMHz - _console.VFOASubFreq) < 0.0000015))
+                lock (_vfoSwapLock)
                 {
-                    return;
+                    bool selectB = (_currentRadioSelectedVfo == CIVProtocol.VFO_A);
+                    _currentRadioSelectedVfo = selectB ? CIVProtocol.VFO_B : CIVProtocol.VFO_A;
+                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                    _radioInitiatedSwapInProgress = true;
+
+                    lock (_stateLock)
+                    {
+                        double temp = _lastSentVfoAFreq;
+                        _lastSentVfoAFreq = _lastSentVfoBFreq;
+                        _lastSentVfoBFreq = temp;
+
+                        _pendingVfoAFreq = _lastSentVfoAFreq;
+                        _pendingVfoBFreq = _lastSentVfoBFreq;
+                        _pendingTxFreq = IsSplitRequired() ? _lastSentVfoBFreq : _lastSentVfoAFreq;
+
+                        _freqChangePending = false;
+                        _vfoBChangePending = false;
+                        _splitChangePending = false;
+                    }
+
+                    _suppressOutgoingUpdates = true;
+                    try
+                    {
+                        _console.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                _console.VFOSwap();
+                            }
+                            finally
+                            {
+                                _suppressOutgoingUpdates = false;
+                                _radioInitiatedSwapInProgress = false;
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        _suppressOutgoingUpdates = false;
+                        _radioInitiatedSwapInProgress = false;
+                    }
                 }
+                return;
             }
 
             // 4. VFO A Update:
@@ -1448,6 +1498,15 @@ namespace Thetis
         private void HandleIncomingMode(CIVMode mode, CIVFilter filter)
         {
             if (_console == null) return;
+            if (_isSwappingVfo || _radioInitiatedSwapInProgress) return;
+            if (_lastVfoSwapTime > 0)
+            {
+                double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
+                if (msSinceSwap < 300.0)
+                {
+                    return;
+                }
+            }
 
             DSPMode currentMode = _console.RX1DSPMode;
             DSPMode targetMode = currentMode;
