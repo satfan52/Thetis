@@ -1602,27 +1602,33 @@ namespace Thetis
                                 {
                                     _console.BeginInvoke(new Action(() =>
                                     {
-                                        // Capture RX2+SPLIT state HERE — on the UI thread, BEFORE VFOSwap()
-                                        // modifies VFOSplit / VFOBTX. Reading these properties from the
-                                        // background thread (outside BeginInvoke) is not safe and gives
-                                        // stale results; doing it here is both safe and reliable.
+                                        // Capture RX2+SPLIT state HERE — on the UI thread, BEFORE any modification.
                                         bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
                                         try
                                         {
-                                            _console.VFOSwap();
+                                            if (inRX2SplitMode)
+                                            {
+                                                // IC-7100 A/B pressed while in RX2+SPLIT special mode.
+                                                // The radio stays in split — we just need to exit the
+                                                // RX2+SPLIT special mode in Thetis by moving the TX box
+                                                // to VFO B. Do NOT call VFOSwap() — that would disrupt
+                                                // the split state. VFOBTX=true is the exit condition.
+                                                // Clear suppression FIRST so NotifySplitOrFullDuplexChanged()
+                                                // fires and pushes the updated state to the IC-7100.
+                                                _suppressOutgoingUpdates = false;
+                                                _console.VFOBTX = true;
+                                            }
+                                            else
+                                            {
+                                                _console.VFOSwap();
+                                            }
                                         }
                                         finally
                                         {
                                             _suppressOutgoingUpdates = false;
                                             _radioInitiatedSwapInProgress = false;
                                         }
-                                        // When RX2+SPLIT special mode was active before the swap,
-                                        // exit it by moving the TX box to VFO B. This keeps the
-                                        // IC-7100 in split mode and triggers ActivateSplit via the
-                                        // normal event chain to push the new VFO B freq to radio VFO B.
-                                        if (inRX2SplitMode)
-                                            _console.VFOBTX = true;
                                     }));
                                 }
                                 catch
@@ -1706,15 +1712,14 @@ namespace Thetis
                                             }
                                             else if (inRX2SplitMode)
                                             {
-                                                // IC-7100 A/B tap while in RX2+SPLIT mode sends 0x0F 0x00 (split-off).
-                                                // We interpret this as: "operator wants to swap VFOs, exit RX2+SPLIT
-                                                // special mode but remain in normal SPLIT."
-                                                // Step 1: swap VFOs in Thetis to mirror the radio's A/B press.
-                                                // Step 2: move TX box to VFO B — this exits RX2+SPLIT mode
-                                                //         and keeps the IC-7100 in split (VFOBTX path).
-                                                // _suppressOutgoingUpdates is true so these won't echo to radio.
-                                                _radioInitiatedSwapInProgress = true;
-                                                _console.VFOSwap();
+                                                // IC-7100 A/B tap while in RX2+SPLIT mode: exit RX2+SPLIT
+                                                // special mode in Thetis by moving the TX box to VFO B.
+                                                // The radio stays in split — we do NOT call VFOSwap() because
+                                                // that would disrupt the split state. VFOBTX=true alone
+                                                // is sufficient to exit RX2+SPLIT mode.
+                                                // Clear suppression FIRST so NotifySplitOrFullDuplexChanged()
+                                                // fires and pushes the updated split state to the IC-7100.
+                                                _suppressOutgoingUpdates = false;
                                                 _console.VFOBTX = true;
                                             }
                                             else
@@ -1726,8 +1731,6 @@ namespace Thetis
                                         finally
                                         {
                                             _suppressOutgoingUpdates = false;
-                                            if (inRX2SplitMode)
-                                                _radioInitiatedSwapInProgress = false;
                                         }
                                     }));
                                 }
