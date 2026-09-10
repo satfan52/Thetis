@@ -494,8 +494,74 @@ namespace Thetis
                 {
                     _splitChangePending = true;
                 }
-                _freqChangePending = true;
-                _vfoBChangePending = true;
+            }
+
+            try
+            {
+                _floodTimer?.Change(0, FLOOD_INTERVAL_MS);
+            }
+            catch { }
+        }
+
+        public void NotifyVFOAtoB()
+        {
+            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
+
+            lock (_vfoSwapLock)
+            {
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+
+                // Ensure radio is on VFO A so active VFO A is copied to inactive VFO B
+                if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
+                {
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                    Thread.Sleep(40);
+                }
+
+                // CI-V 0x07 0xA0: Equalize VFO A -> VFO B
+                SendFrame(CIVProtocol.EqualVfoFrame(_radioAddr, _hostAddr));
+
+                lock (_stateLock)
+                {
+                    _lastSentVfoBFreq = _console.VFOAFreq;
+                    _pendingVfoBFreq = _console.VFOAFreq;
+                    if (_console.VFOSplit || _console.VFOBTX)
+                    {
+                        _pendingTxFreq = _console.VFOAFreq;
+                    }
+                    _vfoBChangePending = false;
+                }
+            }
+        }
+
+        public void NotifyVFOBtoA()
+        {
+            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
+
+            lock (_vfoSwapLock)
+            {
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+
+                // Ensure radio is on VFO A
+                if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
+                {
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                    Thread.Sleep(40);
+                }
+
+                double freq = _console.VFOBFreq;
+                if (freq > 0)
+                {
+                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freq));
+                    lock (_stateLock)
+                    {
+                        _lastSentVfoAFreq = freq;
+                        _pendingVfoAFreq = freq;
+                        _freqChangePending = false;
+                    }
+                }
             }
         }
 
@@ -581,7 +647,6 @@ namespace Thetis
             double targetVfoBFreq = 0.0;
             bool doVfoA = false;
             bool doVfoB = false;
-            bool doVfoSwap = false;
             bool doMode = false;
             bool doSplit = false;
             bool targetSplit = false;
@@ -592,20 +657,7 @@ namespace Thetis
             {
                 bool splitRequired = IsSplitRequired();
 
-                // Detect VFO Swap initiated in Thetis (e.g. A<>B button clicked)
-                // When Thetis swaps VFOs, pending VFO A matches old VFO B, and pending VFO B matches old VFO A.
-                bool isVfoSwap = _freqChangePending && _vfoBChangePending &&
-                                 _lastSentVfoBFreq > 0 && _lastSentVfoAFreq > 0 &&
-                                 Math.Abs(_pendingVfoAFreq - _lastSentVfoBFreq) < 0.0000015 &&
-                                 Math.Abs(_pendingVfoBFreq - _lastSentVfoAFreq) < 0.0000015;
-
-                if (isVfoSwap)
-                {
-                    doVfoSwap = true;
-                    _freqChangePending = false;
-                    _vfoBChangePending = false;
-                }
-                else if (splitRequired != _lastSentSplit || _splitChangePending)
+                if (splitRequired != _lastSentSplit || _splitChangePending)
                 {
                     doSplit = true;
                     targetSplit = splitRequired;
@@ -678,11 +730,7 @@ namespace Thetis
             }
 
             // Dispatch pending commands sequentially
-            if (doVfoSwap)
-            {
-                SendVfoSwap();
-            }
-            else if (doSplit)
+            if (doSplit)
             {
                 if (targetSplit)
                 {
@@ -806,40 +854,32 @@ namespace Thetis
 
                 try
                 {
-                    // 1. Select VFO B on the radio
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
-                    Thread.Sleep(60);
-
-                    // 2. Set VFO B frequency (Split transmit frequency)
-                    if (vfoBFreq > 0)
+                    // 1. Ensure radio is on VFO A as receive VFO
+                    if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
                     {
-                        SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
-                        _lastSentVfoBFreq = vfoBFreq;
-                        Thread.Sleep(80); // 80ms allows IC-7100 PLL synthesizer to fully lock
+                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                        _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                        Thread.Sleep(30);
                     }
 
-                    // 3. Reselect VFO A on the radio (Split receive frequency)
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    Thread.Sleep(80);
-
-                    // 4. Fail-safe confirmation: Reselect VFO A a second time
-                    // Guarantees that even if the radio was busy during step 3, VFO A is definitely selected
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    Thread.Sleep(40);
-
-                    // 5. Only synchronize VFO A frequency if it differs from what was already set
-                    if (vfoAFreq > 0 && Math.Abs(vfoAFreq - _lastSentVfoAFreq) > 0.0000015)
-                    {
-                        SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
-                        _lastSentVfoAFreq = vfoAFreq;
-                        Thread.Sleep(80);
-                    }
-
-                    // 6. Turn Split ON with VFO A guaranteed as receive VFO
+                    // 2. Turn Split ON immediately so radio displays SPLIT
                     SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, true));
                     _lastSentSplit = true;
                     _actualRadioSplit = true;
-                    Thread.Sleep(60);
+                    Thread.Sleep(30);
+
+                    // 3. If VFO B frequency needs to be updated on radio:
+                    if (vfoBFreq > 0 && Math.Abs(vfoBFreq - _lastSentVfoBFreq) > 0.0000015)
+                    {
+                        // Select VFO B, set frequency, reselect VFO A
+                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
+                        Thread.Sleep(50);
+                        SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
+                        _lastSentVfoBFreq = vfoBFreq;
+                        Thread.Sleep(60);
+                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                        Thread.Sleep(40);
+                    }
                 }
                 finally
                 {
@@ -861,26 +901,18 @@ namespace Thetis
 
                 try
                 {
-                    // 1. Turn Split OFF
+                    // 1. Turn Split OFF immediately
                     SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, false));
                     _lastSentSplit = false;
                     _actualRadioSplit = false;
-                    Thread.Sleep(60);
+                    Thread.Sleep(30);
 
-                    // 2. Select VFO A as active receiver
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    Thread.Sleep(60);
-
-                    // 3. Confirm VFO A selection
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    Thread.Sleep(40);
-
-                    // 4. Confirm VFO A frequency only if needed
-                    if (vfoAFreq > 0 && Math.Abs(vfoAFreq - _lastSentVfoAFreq) > 0.0000015)
+                    // 2. Ensure VFO A is active receiver
+                    if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
                     {
-                        SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
-                        _lastSentVfoAFreq = vfoAFreq;
-                        Thread.Sleep(80);
+                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                        _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                        Thread.Sleep(30);
                     }
                 }
                 finally
@@ -1274,10 +1306,52 @@ namespace Thetis
                 case CIVProtocol.CMD_SPLIT:
                     if (frame.Length >= 7 && fromAddr == _radioAddr)
                     {
+                        if (_console != null && _console.MOX) break;
+
                         byte splitByte = frame[5];
                         if (splitByte == CIVProtocol.SPLIT_ON || splitByte == CIVProtocol.SPLIT_OFF)
                         {
-                            _actualRadioSplit = (splitByte == CIVProtocol.SPLIT_ON);
+                            bool isSplit = (splitByte == CIVProtocol.SPLIT_ON);
+                            _actualRadioSplit = isSplit;
+                            _lastSentSplit = isSplit;
+
+                            lock (_stateLock)
+                            {
+                                _pendingSplit = isSplit;
+                                _splitChangePending = false;
+                            }
+
+                            if (_console != null)
+                            {
+                                _suppressOutgoingUpdates = true;
+                                try
+                                {
+                                    _console.BeginInvoke(new Action(() =>
+                                    {
+                                        try
+                                        {
+                                            if (isSplit)
+                                            {
+                                                _console.VFOSplit = true;
+                                                _console.VFOBTX = true;
+                                            }
+                                            else
+                                            {
+                                                _console.VFOSplit = false;
+                                                _console.VFOATX = true;
+                                            }
+                                        }
+                                        finally
+                                        {
+                                            _suppressOutgoingUpdates = false;
+                                        }
+                                    }));
+                                }
+                                catch
+                                {
+                                    _suppressOutgoingUpdates = false;
+                                }
+                            }
                         }
                     }
                     break;
@@ -1305,7 +1379,14 @@ namespace Thetis
                 {
                     try
                     {
-                        _console.CopyVFOAtoB();
+                        if (_currentRadioSelectedVfo == CIVProtocol.VFO_B)
+                        {
+                            _console.CopyVFOBtoA();
+                        }
+                        else
+                        {
+                            _console.CopyVFOAtoB();
+                        }
                     }
                     finally
                     {

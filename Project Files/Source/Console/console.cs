@@ -35563,6 +35563,11 @@ namespace Thetis
                 vfob_dsp_mode = _rx1_dsp_mode;
                 vfob_filter = rx1_filter;
             }
+
+            if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+            {
+                CIVControllerInstance.NotifyVFOAtoB();
+            }
         }
 
         public void CopyVFOBtoA()
@@ -35601,6 +35606,11 @@ namespace Thetis
                 }
 
                 comboAGC.Text = comboRX2AGC.Text;
+            }
+
+            if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+            {
+                CIVControllerInstance.NotifyVFOBtoA();
             }
         }
 
@@ -39799,6 +39809,11 @@ namespace Thetis
             if (chkVFOATX.Checked) VFOTXChangedHandlers?.Invoke(false, m_bLastVFOATXsetting, true);  // MW0LGE_21k9c
 
             m_bLastVFOATXsetting = chkVFOATX.Checked; // MW0LGE_21k9d rc3
+
+            if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+            {
+                CIVControllerInstance.NotifySplitOrFullDuplexChanged();
+            }
         }
 
         private bool psstate = false;
@@ -39909,6 +39924,11 @@ namespace Thetis
             if (chkVFOBTX.Checked) VFOTXChangedHandlers?.Invoke(true, m_bLastVFOBTXsetting, true); // MW0LGE_21k9c
 
             m_bLastVFOBTXsetting = chkVFOBTX.Checked; // MW0LGE_21k9d rc3
+
+            if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+            {
+                CIVControllerInstance.NotifySplitOrFullDuplexChanged();
+            }
         }
 
         private void toolStripMenuItemRX1FilterConfigure_Click(object sender, EventArgs e)
