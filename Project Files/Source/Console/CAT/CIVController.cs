@@ -483,8 +483,15 @@ namespace Thetis
                 if (rx2SplitMode)
                 {
                     // Sub-frequency of VFO A → IC-7100 VFO B. VFOBFreq is irrelevant here.
-                    _pendingTxFreq = _console.TXFreq;
-                    _pendingVfoBFreq = _console.TXFreq;
+                    // TXFreq may still equal VFOAFreq at split-activation time if the sub-frequency
+                    // hasn't propagated yet. In that case fall back to _pendingTxFreq, which
+                    // OnVFOASubFrequencyChanged keeps correctly set to the current sub-frequency.
+                    double txFreq = _console.TXFreq;
+                    double vfoAFreq = _console.VFOAFreq;
+                    if (txFreq == vfoAFreq && _pendingTxFreq > 0 && _pendingTxFreq != vfoAFreq)
+                        txFreq = _pendingTxFreq;
+                    _pendingTxFreq = txFreq;
+                    _pendingVfoBFreq = txFreq;
                 }
                 else if (splitRequired && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex)
                 {
@@ -1677,17 +1684,37 @@ namespace Thetis
                             if (_console != null)
                             {
                                 double vfoAFreq = _console.VFOAFreq;
+                                // Snapshot RX2+SPLIT state on receive thread for use in cleanup guard below
+                                bool isRX2SplitSnap = !isSplit &&
+                                    _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
                                 _suppressOutgoingUpdates = true;
                                 try
                                 {
                                     _console.BeginInvoke(new Action(() =>
                                     {
+                                        // Capture state on the UI thread BEFORE modifying anything
+                                        bool inRX2SplitMode = !isSplit &&
+                                            _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+
                                         try
                                         {
                                             if (isSplit)
                                             {
                                                 _console.VFOSplit = true;
+                                                _console.VFOBTX = true;
+                                            }
+                                            else if (inRX2SplitMode)
+                                            {
+                                                // IC-7100 A/B tap while in RX2+SPLIT mode sends 0x0F 0x00 (split-off).
+                                                // We interpret this as: "operator wants to swap VFOs, exit RX2+SPLIT
+                                                // special mode but remain in normal SPLIT."
+                                                // Step 1: swap VFOs in Thetis to mirror the radio's A/B press.
+                                                // Step 2: move TX box to VFO B — this exits RX2+SPLIT mode
+                                                //         and keeps the IC-7100 in split (VFOBTX path).
+                                                // _suppressOutgoingUpdates is true so these won't echo to radio.
+                                                _radioInitiatedSwapInProgress = true;
+                                                _console.VFOSwap();
                                                 _console.VFOBTX = true;
                                             }
                                             else
@@ -1699,6 +1726,8 @@ namespace Thetis
                                         finally
                                         {
                                             _suppressOutgoingUpdates = false;
+                                            if (inRX2SplitMode)
+                                                _radioInitiatedSwapInProgress = false;
                                         }
                                     }));
                                 }
@@ -1718,9 +1747,10 @@ namespace Thetis
                                         SyncVfoBFromRadio(captureVfoAFreq);
                                     });
                                 }
-                                if (!isSplit && vfoAFreq > 0)
+                                if (!isSplit && !isRX2SplitSnap && vfoAFreq > 0)
                                 {
-                                    // Radio just switched to Simplex: ensure radio is on VFO A and displays VFO A frequency
+                                    // Radio just switched to Simplex: ensure radio is on VFO A and displays VFO A frequency.
+                                    // Skip this when we handled an RX2+SPLIT A/B tap — we're staying in split mode.
                                     ThreadPool.QueueUserWorkItem(_ =>
                                     {
                                         Thread.Sleep(80);
