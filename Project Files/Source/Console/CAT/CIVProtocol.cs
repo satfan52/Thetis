@@ -111,20 +111,42 @@ namespace Thetis
         }
 
         /// <summary>
-        /// Decodes 5 Icom Little-Endian BCD bytes into a frequency in MHz.
+        /// Decodes Icom Little-Endian BCD bytes (4, 5, or 6 bytes) into a frequency in MHz.
+        /// Strictly validates that all nibbles are valid BCD digits (0-9) and stops before EOM (0xFD).
         /// </summary>
-        public static double DecodeFrequency(byte[] bcd, int offset = 0)
+        public static double DecodeFrequency(byte[] frame, int offset = 0)
         {
-            if (bcd == null || bcd.Length < offset + 5) return 0.0;
+            if (frame == null || frame.Length <= offset) return 0.0;
+
+            // Determine how many BCD bytes exist before EOM (0xFD)
+            int eomIndex = -1;
+            for (int j = offset; j < frame.Length; j++)
+            {
+                if (frame[j] == EOM)
+                {
+                    eomIndex = j;
+                    break;
+                }
+            }
+
+            int bcdLen = (eomIndex >= 0) ? (eomIndex - offset) : (frame.Length - offset);
+            // Valid frequency frames contain 4 (CI-V 731 mode), 5 (standard HF/VHF/UHF), or 6 bytes (GHz)
+            if (bcdLen < 4 || bcdLen > 6) return 0.0;
 
             long hz = 0;
             long multiplier = 1;
 
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < bcdLen; i++)
             {
-                byte b = bcd[offset + i];
+                byte b = frame[offset + i];
                 int dLow = b & 0x0F;
                 int dHigh = (b >> 4) & 0x0F;
+
+                // Strict BCD validation: both nibbles must be decimal digits 0-9
+                if (dLow > 9 || dHigh > 9)
+                {
+                    return 0.0;
+                }
 
                 hz += (dLow + dHigh * 10) * multiplier;
                 multiplier *= 100;
