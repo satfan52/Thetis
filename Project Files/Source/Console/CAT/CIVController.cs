@@ -475,69 +475,87 @@ namespace Thetis
 
         public void NotifyVFOAtoB()
         {
-            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
+            if (_radioInitiatedSwapInProgress || !IsOpen || _console == null) return;
 
             lock (_vfoSwapLock)
             {
+                _isSwappingVfo = true;
                 _lastVfoSwapTime = Stopwatch.GetTimestamp();
 
-                // Ensure radio is on VFO A so active VFO A is copied to inactive VFO B
-                if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
+                try
                 {
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
-                    Thread.Sleep(40);
-                }
-
-                // CI-V 0x07 0xA0: Equalize VFO A -> VFO B
-                SendFrame(CIVProtocol.EqualVfoFrame(_radioAddr, _hostAddr));
-
-                lock (_stateLock)
-                {
-                    _lastSentVfoBFreq = _console.VFOAFreq;
-                    _pendingVfoBFreq = _console.VFOAFreq;
-                    if (_console.VFOSplit || _console.VFOBTX)
+                    // Ensure radio is on VFO A so active VFO A is copied to inactive VFO B
+                    if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
                     {
-                        _pendingTxFreq = _console.VFOAFreq;
+                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                        _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                        Thread.Sleep(40);
                     }
-                    _vfoBChangePending = false;
+
+                    // CI-V 0x07 0xA0: Equalize VFO A -> VFO B
+                    SendFrame(CIVProtocol.EqualVfoFrame(_radioAddr, _hostAddr));
+
+                    lock (_stateLock)
+                    {
+                        _lastSentVfoBFreq = _console.VFOAFreq;
+                        _pendingVfoBFreq = _console.VFOAFreq;
+                        if (_console.VFOSplit || _console.VFOBTX)
+                        {
+                            _pendingTxFreq = _console.VFOAFreq;
+                        }
+                        _vfoBChangePending = false;
+                    }
+                }
+                finally
+                {
+                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                    _isSwappingVfo = false;
                 }
             }
         }
 
         public void NotifyVFOBtoA()
         {
-            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
+            if (_radioInitiatedSwapInProgress || !IsOpen || _console == null) return;
 
             lock (_vfoSwapLock)
             {
+                _isSwappingVfo = true;
                 _lastVfoSwapTime = Stopwatch.GetTimestamp();
 
-                // Ensure radio is on VFO A
-                if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
+                try
                 {
-                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
-                    Thread.Sleep(40);
-                }
-
-                double freq = _console.VFOBFreq;
-                if (freq > 0)
-                {
-                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freq));
-                    lock (_stateLock)
+                    // Ensure radio is on VFO A
+                    if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
                     {
-                        _lastSentVfoAFreq = freq;
-                        _pendingVfoAFreq = freq;
-                        _freqChangePending = false;
+                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                        _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                        Thread.Sleep(40);
                     }
+
+                    double freq = _console.VFOBFreq;
+                    if (freq > 0)
+                    {
+                        SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freq));
+                        lock (_stateLock)
+                        {
+                            _lastSentVfoAFreq = freq;
+                            _pendingVfoAFreq = freq;
+                            _freqChangePending = false;
+                        }
+                    }
+                }
+                finally
+                {
+                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                    _isSwappingVfo = false;
                 }
             }
         }
 
         public void NotifyVFOSwap()
         {
-            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
+            if (_radioInitiatedSwapInProgress || !IsOpen || _console == null) return;
 
             lock (_vfoSwapLock)
             {
@@ -1263,19 +1281,11 @@ namespace Thetis
 
                         if (_isSwappingVfo || _radioInitiatedSwapInProgress) return;
 
-                        bool isEchoOfOurCommand = false;
-                        if (_lastVfoSwapTime > 0)
-                        {
-                            double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
-                            if (msSinceSwap < 300.0)
-                            {
-                                isEchoOfOurCommand = true;
-                            }
-                        }
+
 
                         if (vfoId == CIVProtocol.VFO_SWAP)
                         {
-                            if (isEchoOfOurCommand) return;
+
 
                             // Operator physically triggered VFO swap on the radio
                             lock (_vfoSwapLock)
@@ -1331,9 +1341,9 @@ namespace Thetis
 
                         if (vfoId == CIVProtocol.VFO_A || vfoId == CIVProtocol.VFO_B)
                         {
-                            if (vfoId == _currentRadioSelectedVfo || isEchoOfOurCommand)
+                            if (vfoId == _currentRadioSelectedVfo)
                             {
-                                return; // Echo of our own command or redundant
+                                return; // Redundant — radio already on this VFO
                             }
 
                             // Operator physically tapped [A/B] on the IC-7100!
@@ -1543,20 +1553,30 @@ namespace Thetis
             {
                 if (_recentSentFrames.Count == 0) return false;
 
-                foreach (var sentFrame in _recentSentFrames)
+                // Scan for a match, then consume it (one-shot: each sent frame
+                // suppresses exactly one echo, so a later identical frame from
+                // the radio operator is not accidentally dropped).
+                var frames = _recentSentFrames.ToArray();
+                for (int j = 0; j < frames.Length; j++)
                 {
-                    if (sentFrame.Length == frame.Length)
+                    var sentFrame = frames[j];
+                    if (sentFrame.Length != frame.Length) continue;
+
+                    bool match = true;
+                    for (int i = 0; i < frame.Length; i++)
                     {
-                        bool match = true;
-                        for (int i = 0; i < frame.Length; i++)
+                        if (sentFrame[i] != frame[i]) { match = false; break; }
+                    }
+
+                    if (match)
+                    {
+                        // Remove only the first matching entry and rebuild the queue
+                        _recentSentFrames.Clear();
+                        for (int k = 0; k < frames.Length; k++)
                         {
-                            if (sentFrame[i] != frame[i])
-                            {
-                                match = false;
-                                break;
-                            }
+                            if (k != j) _recentSentFrames.Enqueue(frames[k]);
                         }
-                        if (match) return true;
+                        return true;
                     }
                 }
             }
