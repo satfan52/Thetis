@@ -502,6 +502,31 @@ namespace Thetis
 
                 try
                 {
+                    // RX2+SPLIT special mode: IC-7100 VFO B holds the TX sub-frequency of VFO A;
+                    // Thetis VFO B is irrelevant to the radio. Only push VFO A to IC-7100 VFO A
+                    // and skip the equalize command that would overwrite the sub-frequency.
+                    if (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                    {
+                        double rxFreq = _console.VFOAFreq;
+                        if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
+                        {
+                            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                            _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                            Thread.Sleep(40);
+                        }
+                        if (rxFreq > 0)
+                        {
+                            SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, rxFreq));
+                            lock (_stateLock)
+                            {
+                                _lastSentVfoAFreq = rxFreq;
+                                _pendingVfoAFreq = rxFreq;
+                                _freqChangePending = false;
+                            }
+                        }
+                        return;
+                    }
+
                     // Ensure radio is on VFO A so active VFO A is copied to inactive VFO B
                     if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
                     {
@@ -543,6 +568,11 @@ namespace Thetis
 
                 try
                 {
+                    // Copies Thetis VFO B freq to IC-7100 VFO A (active VFO).
+                    // In RX2+SPLIT special mode (!VFOBTX) this still works correctly because
+                    // we only ever touch VFO A on the radio; IC-7100 VFO B (the sub-frequency)
+                    // is not disturbed here.
+
                     // Ensure radio is on VFO A
                     if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
                     {
@@ -582,6 +612,31 @@ namespace Thetis
 
                 try
                 {
+                    // RX2+SPLIT special mode: IC-7100 VFO B holds the TX sub-frequency of VFO A;
+                    // swapping the two VFOs on the radio would destroy that sub-frequency value.
+                    // Only push the current Thetis VFO A freq to IC-7100 VFO A and return.
+                    if (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                    {
+                        double rxFreq = _console.VFOAFreq;
+                        if (_currentRadioSelectedVfo != CIVProtocol.VFO_A)
+                        {
+                            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                            _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                            Thread.Sleep(40);
+                        }
+                        if (rxFreq > 0)
+                        {
+                            SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, rxFreq));
+                            lock (_stateLock)
+                            {
+                                _lastSentVfoAFreq = rxFreq;
+                                _pendingVfoAFreq = rxFreq;
+                                _freqChangePending = false;
+                            }
+                        }
+                        return;
+                    }
+
                     // 1. Send native Icom CI-V command to exchange VFO A and VFO B (0x07 0xB0)
                     SendFrame(CIVProtocol.SwapVfoFrame(_radioAddr, _hostAddr));
                     Thread.Sleep(50);
@@ -1000,6 +1055,23 @@ namespace Thetis
                     {
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
                         _lastSentVfoAFreq = vfoAFreq;
+                    }
+
+                    // 4. (RX2+SPLIT only) Push Thetis VFO B to IC-7100 VFO B so the radio's two
+                    //    VFOs are coherent now that RX2+SPLIT special mode is being left.
+                    //    We select VFO B, set the frequency, then return to VFO A.
+                    if (_console?.RX2Enabled == true)
+                    {
+                        double vfoBFreq = _console.VFOBFreq;
+                        if (vfoBFreq > 0)
+                        {
+                            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
+                            Thread.Sleep(40);
+                            SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
+                            Thread.Sleep(40);
+                            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                            _lastSentVfoBFreq = vfoBFreq;
+                        }
                     }
                 }
                 finally
@@ -1508,6 +1580,12 @@ namespace Thetis
                                             _suppressOutgoingUpdates = false;
                                             _radioInitiatedSwapInProgress = false;
                                         }
+                                        // When RX2+SPLIT special mode is active (VFOSplit && !VFOBTX),
+                                        // exit it by moving the TX box to VFO B. This keeps the IC-7100
+                                        // in split mode and triggers ActivateSplit via the normal event
+                                        // chain to push the new Thetis VFO B freq to IC-7100 VFO B.
+                                        if (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                                            _console.VFOBTX = true;
                                     }));
                                 }
                                 catch
