@@ -469,19 +469,33 @@ namespace Thetis
             lock (_stateLock)
             {
                 _pendingVfoAFreq = _console.VFOAFreq;
-                _pendingVfoBFreq = _console.VFOBFreq;
                 bool splitRequired = IsSplitRequired();
                 _pendingSplit = splitRequired;
                 _splitChangePending = true;
 
-                // When split is driven solely by VFOBTX (RX2/WSJT-X TX scenario),
-                // TXFreq still equals VFOAFreq because Thetis UI is in simplex.
-                // Use VFOBFreq as the TX frequency so ActivateSplit sets the correct
-                // DX frequency on the IC-7100 VFO B.
-                if (splitRequired && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex)
-                    _pendingTxFreq = _console.VFOBFreq;
-                else
+                // Determine the correct TX / VFO B frequency for IC-7100:
+                //   • RX2+SPLIT special mode (VFOSplit && !VFOBTX): the IC-7100 VFO B must hold
+                //     the VFO A sub-frequency (TXFreq), NOT Thetis VFO B which is a second receiver.
+                //   • VFOBTX-only split (RX2/WSJT-X, no VFOSplit): TXFreq == VFOAFreq in simplex,
+                //     so use VFOBFreq as the TX frequency.
+                //   • Normal split / all other cases: use TXFreq.
+                bool rx2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                if (rx2SplitMode)
+                {
+                    // Sub-frequency of VFO A → IC-7100 VFO B. VFOBFreq is irrelevant here.
                     _pendingTxFreq = _console.TXFreq;
+                    _pendingVfoBFreq = _console.TXFreq;
+                }
+                else if (splitRequired && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex)
+                {
+                    _pendingTxFreq = _console.VFOBFreq;
+                    _pendingVfoBFreq = _console.VFOBFreq;
+                }
+                else
+                {
+                    _pendingTxFreq = _console.TXFreq;
+                    _pendingVfoBFreq = _console.VFOBFreq;
+                }
             }
 
             try
@@ -1576,16 +1590,17 @@ namespace Thetis
                                     _splitChangePending = false;
                                 }
 
-                                // Capture RX2+SPLIT state NOW, before VFOSwap() has a chance
-                                // to modify VFOSplit / VFOBTX on the UI thread. The lambda
-                                // closes over this local so the check is reliable.
-                                bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
-
                                 _suppressOutgoingUpdates = true;
                                 try
                                 {
                                     _console.BeginInvoke(new Action(() =>
                                     {
+                                        // Capture RX2+SPLIT state HERE — on the UI thread, BEFORE VFOSwap()
+                                        // modifies VFOSplit / VFOBTX. Reading these properties from the
+                                        // background thread (outside BeginInvoke) is not safe and gives
+                                        // stale results; doing it here is both safe and reliable.
+                                        bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+
                                         try
                                         {
                                             _console.VFOSwap();
