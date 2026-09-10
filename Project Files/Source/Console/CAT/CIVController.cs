@@ -399,7 +399,12 @@ namespace Thetis
                 _vfoBChangePending = true;
                 _lastVfoBTuneTime = Stopwatch.GetTimestamp();
 
-                if (_console != null && _console.VFOBTX)
+                // Always track VFO B as the candidate TX freq when RX2 is enabled,
+                // so it is ready immediately when VFOBTX becomes true at PTT time.
+                // Without this, WSJT-X sets VFO B before PTT (VFOBTX=false), and
+                // _pendingTxFreq would never be updated, causing ActivateSplit() to
+                // use the wrong (simplex) frequency as the IC-7100 TX VFO B.
+                if (_console != null && (_console.VFOBTX || _console.RX2Enabled))
                 {
                     _pendingTxFreq = newFreq;
                 }
@@ -458,12 +463,20 @@ namespace Thetis
 
             lock (_stateLock)
             {
-                _pendingTxFreq = _console.TXFreq;
                 _pendingVfoAFreq = _console.VFOAFreq;
                 _pendingVfoBFreq = _console.VFOBFreq;
                 bool splitRequired = IsSplitRequired();
                 _pendingSplit = splitRequired;
                 _splitChangePending = true;
+
+                // When split is driven solely by VFOBTX (RX2/WSJT-X TX scenario),
+                // TXFreq still equals VFOAFreq because Thetis UI is in simplex.
+                // Use VFOBFreq as the TX frequency so ActivateSplit sets the correct
+                // DX frequency on the IC-7100 VFO B.
+                if (splitRequired && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex)
+                    _pendingTxFreq = _console.VFOBFreq;
+                else
+                    _pendingTxFreq = _console.TXFreq;
             }
 
             try
@@ -726,13 +739,19 @@ namespace Thetis
                         ? (double)(Stopwatch.GetTimestamp() - _lastVfoBTuneTime) / Stopwatch.Frequency * 1000.0 
                         : 9999.0;
 
-                    if (msSinceTune >= 400.0)
+                    // Bypass the debounce when VFOBTX is active (RX2/WSJT-X TX scenario):
+                    // WSJT-X sets VFO B just before PTT — the change is intentional and time-critical.
+                    bool urgentVfoBUpdate = splitRequired && _console != null && _console.VFOBTX;
+
+                    if (msSinceTune >= 400.0 || urgentVfoBUpdate)
                     {
                         if (splitRequired)
                         {
                             if (_pendingTxFreq <= 0 && _console != null)
                             {
-                                _pendingTxFreq = _console.TXFreq;
+                                // Use VFOBFreq when split is VFOBTX-driven (TXFreq == VFOAFreq in simplex).
+                                bool vfoBTxSplit = _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
+                                _pendingTxFreq = vfoBTxSplit ? _console.VFOBFreq : _console.TXFreq;
                             }
                             targetVfoBFreq = _pendingTxFreq;
                         }
@@ -1000,7 +1019,12 @@ namespace Thetis
                     double vfoAFreq;
                     lock (_stateLock)
                     {
-                        txFreq = _pendingTxFreq > 0 ? _pendingTxFreq : (_console != null ? _console.TXFreq : 0);
+                        // Fix D: If _pendingTxFreq is stale/zero and the split is driven by VFOBTX
+                        // (not VFOSplit/FullDuplex), use VFOBFreq as fallback — TXFreq equals VFOAFreq
+                        // in simplex and would point the radio at the wrong frequency.
+                        bool vfoBTxSplit = _console != null && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
+                        double fallbackFreq = vfoBTxSplit ? (_console?.VFOBFreq ?? 0) : (_console != null ? _console.TXFreq : 0);
+                        txFreq = _pendingTxFreq > 0 ? _pendingTxFreq : fallbackFreq;
                         vfoAFreq = _pendingVfoAFreq > 0 ? _pendingVfoAFreq : (_console != null ? _console.VFOAFreq : 0);
                         splitRequired = IsSplitRequired();
                     }
