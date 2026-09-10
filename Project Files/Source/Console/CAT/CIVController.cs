@@ -522,6 +522,11 @@ namespace Thetis
                                 _lastSentVfoAFreq = rxFreq;
                                 _pendingVfoAFreq = rxFreq;
                                 _freqChangePending = false;
+                                // Tell flood timer IC-7100 VFO B is already correct (sub-freq intact);
+                                // do NOT let it push _pendingVfoBFreq (now set to new Thetis VFO B)
+                                // which would overwrite the radio's sub-frequency.
+                                _pendingVfoBFreq = _lastSentVfoBFreq;
+                                _vfoBChangePending = false;
                             }
                         }
                         return;
@@ -632,6 +637,11 @@ namespace Thetis
                                 _lastSentVfoAFreq = rxFreq;
                                 _pendingVfoAFreq = rxFreq;
                                 _freqChangePending = false;
+                                // Tell flood timer IC-7100 VFO B is already correct (sub-freq intact);
+                                // do NOT let it push _pendingVfoBFreq (now set to new Thetis VFO B)
+                                // which would overwrite the radio's sub-frequency.
+                                _pendingVfoBFreq = _lastSentVfoBFreq;
+                                _vfoBChangePending = false;
                             }
                         }
                         return;
@@ -1566,6 +1576,11 @@ namespace Thetis
                                     _splitChangePending = false;
                                 }
 
+                                // Capture RX2+SPLIT state NOW, before VFOSwap() has a chance
+                                // to modify VFOSplit / VFOBTX on the UI thread. The lambda
+                                // closes over this local so the check is reliable.
+                                bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+
                                 _suppressOutgoingUpdates = true;
                                 try
                                 {
@@ -1580,11 +1595,11 @@ namespace Thetis
                                             _suppressOutgoingUpdates = false;
                                             _radioInitiatedSwapInProgress = false;
                                         }
-                                        // When RX2+SPLIT special mode is active (VFOSplit && !VFOBTX),
-                                        // exit it by moving the TX box to VFO B. This keeps the IC-7100
-                                        // in split mode and triggers ActivateSplit via the normal event
-                                        // chain to push the new Thetis VFO B freq to IC-7100 VFO B.
-                                        if (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                                        // When RX2+SPLIT special mode was active before the swap,
+                                        // exit it by moving the TX box to VFO B. This keeps the
+                                        // IC-7100 in split mode and triggers ActivateSplit via the
+                                        // normal event chain to push the new VFO B freq to radio VFO B.
+                                        if (inRX2SplitMode)
                                             _console.VFOBTX = true;
                                     }));
                                 }
