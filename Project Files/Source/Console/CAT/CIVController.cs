@@ -689,7 +689,7 @@ namespace Thetis
                 {
                     SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
                     _currentRadioSelectedVfo = CIVProtocol.VFO_A;
-                    Thread.Sleep(30);
+                    Thread.Sleep(50);
                 }
 
                 byte[] frame = CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freqMHz);
@@ -707,19 +707,11 @@ namespace Thetis
                 if (freqMHz <= 0 || Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000005) return;
                 _lastSentVfoBFreq = freqMHz;
 
-                // If VFO B is currently the active selected VFO on the radio, set it directly
-                if (_currentRadioSelectedVfo == CIVProtocol.VFO_B)
-                {
-                    byte[] directFrame = CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freqMHz);
-                    SendFrame(directFrame);
-                    return;
-                }
-
                 // IC-7100 does not support command 0x25 (unselected VFO).
                 // Set VFO B via the standard Icom sequence:
                 // 1. Select VFO B (0x07 0x01)
                 // 2. Set Frequency (0x05 [BCD])
-                // 3. Reselect VFO A (0x07 0x00)
+                // 3. Reselect VFO A (0x07 0x00) with confirmation
                 byte[] selVfoB = CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true);
                 byte[] setFreq = CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freqMHz);
                 byte[] selVfoA = CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false);
@@ -730,9 +722,12 @@ namespace Thetis
                 try
                 {
                     SendFrame(selVfoB);
-                    Thread.Sleep(40);
+                    Thread.Sleep(60);
                     SendFrame(setFreq);
-                    Thread.Sleep(40);
+                    Thread.Sleep(80); // 80ms allows IC-7100 PLL synthesizer to fully lock
+                    SendFrame(selVfoA);
+                    Thread.Sleep(80);
+                    // Fail-safe confirmation: Reselect VFO A a second time
                     SendFrame(selVfoA);
                     Thread.Sleep(40);
                 }
@@ -759,33 +754,38 @@ namespace Thetis
                 {
                     // 1. Select VFO B on the radio
                     SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
-                    Thread.Sleep(40);
+                    Thread.Sleep(60);
 
                     // 2. Set VFO B frequency (Split transmit frequency)
                     if (vfoBFreq > 0)
                     {
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
                         _lastSentVfoBFreq = vfoBFreq;
-                        Thread.Sleep(40);
+                        Thread.Sleep(80); // 80ms allows IC-7100 PLL synthesizer to fully lock
                     }
 
-                    // 3. Select VFO A on the radio (Split receive frequency)
+                    // 3. Reselect VFO A on the radio (Split receive frequency)
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    Thread.Sleep(80);
+
+                    // 4. Fail-safe confirmation: Reselect VFO A a second time
+                    // Guarantees that even if the radio was busy during step 3, VFO A is definitely selected
                     SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
                     Thread.Sleep(40);
 
-                    // 4. Set VFO A frequency
-                    if (vfoAFreq > 0)
+                    // 5. Only synchronize VFO A frequency if it differs from what was already set
+                    if (vfoAFreq > 0 && Math.Abs(vfoAFreq - _lastSentVfoAFreq) > 0.0000015)
                     {
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
                         _lastSentVfoAFreq = vfoAFreq;
-                        Thread.Sleep(40);
+                        Thread.Sleep(80);
                     }
 
-                    // 5. Turn Split ON
+                    // 6. Turn Split ON with VFO A guaranteed as receive VFO
                     SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, true));
                     _lastSentSplit = true;
                     _actualRadioSplit = true;
-                    Thread.Sleep(40);
+                    Thread.Sleep(60);
                 }
                 finally
                 {
@@ -811,18 +811,22 @@ namespace Thetis
                     SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, false));
                     _lastSentSplit = false;
                     _actualRadioSplit = false;
-                    Thread.Sleep(30);
+                    Thread.Sleep(60);
 
                     // 2. Select VFO A as active receiver
                     SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    Thread.Sleep(30);
+                    Thread.Sleep(60);
 
-                    // 3. Confirm VFO A frequency
-                    if (vfoAFreq > 0)
+                    // 3. Confirm VFO A selection
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    Thread.Sleep(40);
+
+                    // 4. Confirm VFO A frequency only if needed
+                    if (vfoAFreq > 0 && Math.Abs(vfoAFreq - _lastSentVfoAFreq) > 0.0000015)
                     {
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
                         _lastSentVfoAFreq = vfoAFreq;
-                        Thread.Sleep(30);
+                        Thread.Sleep(80);
                     }
                 }
                 finally
