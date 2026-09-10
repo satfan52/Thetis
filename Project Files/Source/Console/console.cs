@@ -5906,7 +5906,8 @@ namespace Thetis
 
             //MW0LGE_21d
             if (oldBand != RX1Band ||
-                oldFreq != VFOAFreq // or if the freq changes
+                oldFreq != VFOAFreq || // or if the freq changes
+                oldMode != RX1DSPMode // or if mode changes
                 )
                 SetBandChangeHanders?.Invoke(1, oldBand, RX1Band, oldMode, RX1DSPMode, oldFilter, RX1Filter, oldFreq, VFOAFreq,
                     oldCentreFreq, CentreFrequency, oldCtun, ClickTuneDisplay, oldZoomSlider, ptbDisplayZoom.Value);
