@@ -35671,6 +35671,11 @@ namespace Thetis
                 comboAGC.Text = comboRX2AGC.Text;
                 comboRX2AGC.Text = agc;
             }
+
+            if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+            {
+                CIVControllerInstance.NotifyVFOSwap();
+            }
         }
 
         private void UpdateVFOASub()
