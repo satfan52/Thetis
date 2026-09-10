@@ -495,15 +495,12 @@ namespace Thetis
 
         public void NotifyVFOSwap()
         {
-            if (_isSwappingVfo || _radioInitiatedSwapInProgress || !IsOpen || _console == null) return;
+            if (_radioInitiatedSwapInProgress || !IsOpen || _console == null) return;
 
-            if (_lastVfoSwapTime > 0)
+            ThreadPool.QueueUserWorkItem(_ =>
             {
-                double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
-                if (msSinceSwap < 800.0) return;
-            }
-
-            ExecuteSynchronizedVfoSwap(fromRadio: false);
+                ExecuteSynchronizedVfoSwap(fromRadio: false);
+            });
         }
 
         private void OnSplitChanged(int rx, bool oldSplit, bool newSplit)
@@ -1153,48 +1150,49 @@ namespace Thetis
                     {
                         byte vfoId = frame[5];
 
-                        if (_isSwappingVfo || _radioInitiatedSwapInProgress) return;
-                        if (_lastVfoSwapTime > 0)
-                        {
-                            double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
-                            if (msSinceSwap < 800.0) return;
-                        }
-
                         // Do not process VFO swaps while transmitting
                         if (_console != null && _console.MOX) return;
 
+                        if (_isSwappingVfo || _radioInitiatedSwapInProgress) return;
+
+                        bool isEchoOfOurCommand = false;
+                        if (_lastVfoSwapTime > 0)
+                        {
+                            double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
+                            if (msSinceSwap < 200.0)
+                            {
+                                isEchoOfOurCommand = true;
+                            }
+                        }
+
                         if (vfoId == CIVProtocol.VFO_SWAP)
                         {
-                            // Operator swapped VFO A and VFO B on the IC-7100
+                            if (isEchoOfOurCommand) return;
                             ExecuteSynchronizedVfoSwap(fromRadio: true);
                             return;
                         }
 
                         if (vfoId == CIVProtocol.VFO_EQUAL)
                         {
-                            // Operator equalized VFO A and VFO B on the IC-7100 (A=B)
                             HandleRadioVfoEqual();
                             return;
                         }
 
                         if (vfoId == CIVProtocol.VFO_B)
                         {
-                            // Operator tapped [A/B] on the IC-7100 to toggle to VFO B.
-                            // In Thetis, RX1 is hardwired to VFO A.
-                            // To keep VFO A as the active receive VFO on both Thetis and IC-7100,
-                            // we swap VFO registers so the requested frequency becomes VFO A.
+                            // Thetis never commands VFO_B, so this is always an unsolicited user tap on [A/B]
                             ExecuteSynchronizedVfoSwap(fromRadio: true);
                             return;
                         }
 
                         if (vfoId == CIVProtocol.VFO_A)
                         {
-                            if (_currentRadioSelectedVfo == CIVProtocol.VFO_B)
-                            {
-                                ExecuteSynchronizedVfoSwap(fromRadio: true);
-                                return;
-                            }
-                            _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                            // If we sent a swap/select command within the last 200ms, this is the radio's echo
+                            if (isEchoOfOurCommand) return;
+
+                            // Otherwise, operator tapped [A/B] on the radio while on VFO B to return to VFO A
+                            ExecuteSynchronizedVfoSwap(fromRadio: true);
+                            return;
                         }
                     }
                     break;
@@ -1249,14 +1247,11 @@ namespace Thetis
 
                         // 1. Swap VFO registers on the IC-7100 so the frequency the user selected is placed in VFO A
                         SendFrame(CIVProtocol.SwapVfoFrame(_radioAddr, _hostAddr));
-                        Thread.Sleep(60);
+                        Thread.Sleep(30);
 
                         // 2. Reselect VFO A on the IC-7100
                         SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                        Thread.Sleep(50);
-                        // Confirmation
-                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                        Thread.Sleep(30);
+                        Thread.Sleep(20);
 
                         // 3. Swap tracked frequencies immediately
                         lock (_stateLock)
@@ -1308,13 +1303,11 @@ namespace Thetis
                         // Initiated from Thetis (NotifyVFOSwap)
                         // 1. Swap VFO registers on the IC-7100
                         SendFrame(CIVProtocol.SwapVfoFrame(_radioAddr, _hostAddr));
-                        Thread.Sleep(60);
+                        Thread.Sleep(30);
 
                         // 2. Ensure VFO A remains selected as receive VFO on the IC-7100
                         SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                        Thread.Sleep(50);
-                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                        Thread.Sleep(30);
+                        Thread.Sleep(20);
 
                         // 3. Synchronize tracked frequencies with current Thetis state
                         lock (_stateLock)
@@ -1426,7 +1419,7 @@ namespace Thetis
             if (_lastVfoSwapTime > 0)
             {
                 double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
-                if (msSinceSwap < 800.0)
+                if (msSinceSwap < 200.0)
                 {
                     return;
                 }
