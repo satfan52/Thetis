@@ -328,28 +328,13 @@ namespace Thetis
 
         #region State Sync & Event Handlers
 
-        private bool IsSplitRequired(double txFreq, double vfoAFreq)
+        private bool IsSplitRequired()
         {
             if (!_syncSplitAndFullDuplex || _console == null) return false;
 
             return _console.VFOSplit || 
                    _console.FullDuplex || 
-                   _console.VFOBTX || 
-                   Math.Abs(txFreq - vfoAFreq) > 0.0000015;
-        }
-
-        private bool IsSplitRequired()
-        {
-            if (!_syncSplitAndFullDuplex || _console == null) return false;
-
-            double txFreq;
-            double vfoAFreq;
-            lock (_stateLock)
-            {
-                txFreq = _pendingTxFreq > 0 ? _pendingTxFreq : _console.TXFreq;
-                vfoAFreq = _pendingVfoAFreq > 0 ? _pendingVfoAFreq : _console.VFOAFreq;
-            }
-            return IsSplitRequired(txFreq, vfoAFreq);
+                   _console.VFOBTX;
         }
 
         public void SyncCurrentThetisState()
@@ -388,10 +373,9 @@ namespace Thetis
                 _pendingVfoAFreq = newFreq;
                 _freqChangePending = true;
 
-                bool splitRequired = IsSplitRequired(_pendingTxFreq, newFreq);
-                if (splitRequired != _lastSentSplit)
+                if (!IsSplitRequired())
                 {
-                    _splitChangePending = true;
+                    _pendingTxFreq = newFreq;
                 }
 
                 if (oldMode != newMode || oldFilter != newFilter)
@@ -417,12 +401,6 @@ namespace Thetis
                 {
                     _pendingTxFreq = newFreq;
                 }
-
-                bool splitRequired = IsSplitRequired(_pendingTxFreq, _pendingVfoAFreq);
-                if (splitRequired != _lastSentSplit)
-                {
-                    _splitChangePending = true;
-                }
             }
         }
 
@@ -434,14 +412,11 @@ namespace Thetis
             {
                 double txFreq = (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX) ? newFreq : _console.TXFreq;
                 _pendingTxFreq = txFreq;
-                _pendingVfoBFreq = txFreq;
-                _vfoBChangePending = true;
-                _lastVfoBTuneTime = Stopwatch.GetTimestamp();
-
-                bool splitRequired = IsSplitRequired(txFreq, _pendingVfoAFreq);
-                if (splitRequired != _lastSentSplit)
+                if (IsSplitRequired())
                 {
-                    _splitChangePending = true;
+                    _pendingVfoBFreq = txFreq;
+                    _vfoBChangePending = true;
+                    _lastVfoBTuneTime = Stopwatch.GetTimestamp();
                 }
             }
         }
@@ -453,14 +428,11 @@ namespace Thetis
             lock (_stateLock)
             {
                 _pendingTxFreq = new_frequency;
-                _pendingVfoBFreq = new_frequency;
-                _vfoBChangePending = true;
-                _lastVfoBTuneTime = Stopwatch.GetTimestamp();
-
-                bool splitRequired = IsSplitRequired(new_frequency, _pendingVfoAFreq);
-                if (splitRequired != _lastSentSplit)
+                if (IsSplitRequired())
                 {
-                    _splitChangePending = true;
+                    _pendingVfoBFreq = new_frequency;
+                    _vfoBChangePending = true;
+                    _lastVfoBTuneTime = Stopwatch.GetTimestamp();
                 }
             }
         }
@@ -487,7 +459,7 @@ namespace Thetis
                 _pendingTxFreq = _console.TXFreq;
                 _pendingVfoAFreq = _console.VFOAFreq;
                 _pendingVfoBFreq = _console.VFOBFreq;
-                bool splitRequired = IsSplitRequired(_pendingTxFreq, _pendingVfoAFreq);
+                bool splitRequired = IsSplitRequired();
                 _pendingSplit = splitRequired;
 
                 if (splitRequired != _lastSentSplit)
@@ -662,8 +634,6 @@ namespace Thetis
                     doSplit = true;
                     targetSplit = splitRequired;
                     _splitChangePending = false;
-                    _freqChangePending = false;
-                    _vfoBChangePending = false;
 
                     if (_pendingTxFreq <= 0 && _console != null)
                     {
@@ -677,46 +647,44 @@ namespace Thetis
                     targetVfoBFreq = _pendingTxFreq;
                     targetVfoAFreq = _pendingVfoAFreq;
                 }
-                else
+
+                if (_freqChangePending)
                 {
-                    if (_freqChangePending)
-                    {
-                        doVfoA = true;
-                        targetVfoAFreq = _pendingVfoAFreq;
-                        _freqChangePending = false;
-                    }
+                    doVfoA = true;
+                    targetVfoAFreq = _pendingVfoAFreq;
+                    _freqChangePending = false;
+                }
 
-                    if (_vfoBChangePending)
-                    {
-                        // Dampen VFO B swapping while actively tuning:
-                        // On the IC-7100, setting VFO B requires a VFO A -> VFO B -> VFO A swap sequence.
-                        // To avoid audio clicks and display flicker on every 1 Hz dial tick, wait 400ms after tuning pauses
-                        // before dispatching the swap (unless transmitting).
-                        double msSinceTune = _lastVfoBTuneTime > 0 
-                            ? (double)(Stopwatch.GetTimestamp() - _lastVfoBTuneTime) / Stopwatch.Frequency * 1000.0 
-                            : 9999.0;
+                if (_vfoBChangePending)
+                {
+                    // Dampen VFO B swapping while actively tuning:
+                    // On the IC-7100, setting VFO B requires a VFO A -> VFO B -> VFO A swap sequence.
+                    // To avoid audio clicks and display flicker on every 1 Hz dial tick, wait 400ms after tuning pauses
+                    // before dispatching the swap (unless transmitting).
+                    double msSinceTune = _lastVfoBTuneTime > 0 
+                        ? (double)(Stopwatch.GetTimestamp() - _lastVfoBTuneTime) / Stopwatch.Frequency * 1000.0 
+                        : 9999.0;
 
-                        if (msSinceTune >= 400.0)
+                    if (msSinceTune >= 400.0)
+                    {
+                        if (splitRequired)
                         {
-                            if (splitRequired)
+                            if (_pendingTxFreq <= 0 && _console != null)
                             {
-                                if (_pendingTxFreq <= 0 && _console != null)
-                                {
-                                    _pendingTxFreq = _console.TXFreq;
-                                }
-                                targetVfoBFreq = _pendingTxFreq;
+                                _pendingTxFreq = _console.TXFreq;
                             }
-                            else
-                            {
-                                targetVfoBFreq = _pendingVfoBFreq;
-                            }
-
-                            if (targetVfoBFreq > 0 && Math.Abs(targetVfoBFreq - _lastSentVfoBFreq) > 0.0000015)
-                            {
-                                doVfoB = true;
-                            }
-                            _vfoBChangePending = false;
+                            targetVfoBFreq = _pendingTxFreq;
                         }
+                        else
+                        {
+                            targetVfoBFreq = _pendingVfoBFreq;
+                        }
+
+                        if (targetVfoBFreq > 0 && Math.Abs(targetVfoBFreq - _lastSentVfoBFreq) > 0.0000015)
+                        {
+                            doVfoB = true;
+                        }
+                        _vfoBChangePending = false;
                     }
                 }
 
@@ -741,17 +709,15 @@ namespace Thetis
                     DeactivateSplit(targetVfoAFreq);
                 }
             }
-            else
-            {
-                if (doVfoA)
-                {
-                    SendVfoAFrequency(targetVfoAFreq);
-                }
 
-                if (doVfoB)
-                {
-                    SendVfoBFrequency(targetVfoBFreq);
-                }
+            if (doVfoA)
+            {
+                SendVfoAFrequency(targetVfoAFreq);
+            }
+
+            if (doVfoB)
+            {
+                SendVfoBFrequency(targetVfoBFreq);
             }
 
             if (doMode)
@@ -941,7 +907,7 @@ namespace Thetis
                     {
                         txFreq = _pendingTxFreq > 0 ? _pendingTxFreq : (_console != null ? _console.TXFreq : 0);
                         vfoAFreq = _pendingVfoAFreq > 0 ? _pendingVfoAFreq : (_console != null ? _console.VFOAFreq : 0);
-                        splitRequired = IsSplitRequired(txFreq, vfoAFreq);
+                        splitRequired = IsSplitRequired();
                     }
 
                     if (splitRequired)
@@ -1553,6 +1519,10 @@ namespace Thetis
             lock (_stateLock)
             {
                 _pendingVfoAFreq = freqMHz;
+                if (!IsSplitRequired())
+                {
+                    _pendingTxFreq = freqMHz;
+                }
             }
 
             _suppressOutgoingUpdates = true;
