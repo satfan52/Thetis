@@ -542,6 +542,7 @@ namespace Thetis
             double targetVfoBFreq = 0.0;
             bool doVfoA = false;
             bool doVfoB = false;
+            bool doVfoSwap = false;
             bool doMode = false;
             bool doSplit = false;
             bool targetSplit = false;
@@ -552,7 +553,20 @@ namespace Thetis
             {
                 bool splitRequired = IsSplitRequired();
 
-                if (splitRequired != _lastSentSplit || _splitChangePending)
+                // Detect VFO Swap initiated in Thetis (e.g. A<>B button clicked)
+                // When Thetis swaps VFOs, pending VFO A matches old VFO B, and pending VFO B matches old VFO A.
+                bool isVfoSwap = _freqChangePending && _vfoBChangePending &&
+                                 _lastSentVfoBFreq > 0 && _lastSentVfoAFreq > 0 &&
+                                 Math.Abs(_pendingVfoAFreq - _lastSentVfoBFreq) < 0.0000015 &&
+                                 Math.Abs(_pendingVfoBFreq - _lastSentVfoAFreq) < 0.0000015;
+
+                if (isVfoSwap)
+                {
+                    doVfoSwap = true;
+                    _freqChangePending = false;
+                    _vfoBChangePending = false;
+                }
+                else if (splitRequired != _lastSentSplit || _splitChangePending)
                 {
                     doSplit = true;
                     targetSplit = splitRequired;
@@ -625,7 +639,11 @@ namespace Thetis
             }
 
             // Dispatch pending commands sequentially
-            if (doSplit)
+            if (doVfoSwap)
+            {
+                SendVfoSwap();
+            }
+            else if (doSplit)
             {
                 if (targetSplit)
                 {
@@ -675,6 +693,44 @@ namespace Thetis
             if (!IsOpen || _suppressOutgoingUpdates || _isSwappingVfo) return;
             byte[] frame = CIVProtocol.ReadPttFrame(_radioAddr, _hostAddr);
             SendFrame(frame);
+        }
+
+        private void SendVfoSwap()
+        {
+            lock (_vfoSwapLock)
+            {
+                _isSwappingVfo = true;
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+
+                try
+                {
+                    // 1. Send native Icom VFO Swap command (0x07 0xB0)
+                    SendFrame(CIVProtocol.SwapVfoFrame(_radioAddr, _hostAddr));
+                    Thread.Sleep(60);
+
+                    // 2. Ensure VFO A remains the selected receive VFO on the IC-7100
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    Thread.Sleep(40);
+
+                    // 3. Swap tracked frequencies
+                    lock (_stateLock)
+                    {
+                        double temp = _lastSentVfoAFreq;
+                        _lastSentVfoAFreq = _lastSentVfoBFreq;
+                        _lastSentVfoBFreq = temp;
+
+                        _freqChangePending = false;
+                        _vfoBChangePending = false;
+                    }
+
+                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                }
+                finally
+                {
+                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                    _isSwappingVfo = false;
+                }
+            }
         }
 
         private void SendVfoAFrequency(double freqMHz)
@@ -1114,15 +1170,44 @@ namespace Thetis
                     if (frame.Length >= 6)
                     {
                         byte vfoId = frame[5];
-                        if (vfoId == CIVProtocol.VFO_A || vfoId == CIVProtocol.VFO_B)
+
+                        if (_isSwappingVfo) return;
+                        if (_lastVfoSwapTime > 0)
                         {
-                            if (_isSwappingVfo) return;
-                            if (_lastVfoSwapTime > 0)
-                            {
-                                double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
-                                if (msSinceSwap < 600.0) return;
-                            }
-                            _currentRadioSelectedVfo = vfoId;
+                            double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
+                            if (msSinceSwap < 600.0) return;
+                        }
+
+                        // Do not process VFO swaps while transmitting
+                        if (_console != null && _console.MOX) return;
+
+                        if (vfoId == CIVProtocol.VFO_SWAP)
+                        {
+                            // Operator swapped VFO A and VFO B on the IC-7100
+                            HandleRadioVfoSwap();
+                            return;
+                        }
+
+                        if (vfoId == CIVProtocol.VFO_EQUAL)
+                        {
+                            // Operator equalized VFO A and VFO B on the IC-7100 (A=B)
+                            HandleRadioVfoEqual();
+                            return;
+                        }
+
+                        if (vfoId == CIVProtocol.VFO_B)
+                        {
+                            // Operator tapped [A/B] on the IC-7100 to toggle to VFO B.
+                            // In Thetis, RX1 is hardwired to VFO A.
+                            // To keep VFO A as the active receive VFO on both Thetis and IC-7100,
+                            // we swap VFO registers so the requested frequency becomes VFO A.
+                            HandleRadioVfoToggleToB();
+                            return;
+                        }
+
+                        if (vfoId == CIVProtocol.VFO_A)
+                        {
+                            _currentRadioSelectedVfo = CIVProtocol.VFO_A;
                         }
                     }
                     break;
@@ -1157,6 +1242,157 @@ namespace Thetis
                         }
                     }
                     break;
+            }
+        }
+
+        private void HandleRadioVfoSwap()
+        {
+            if (_console == null) return;
+
+            lock (_vfoSwapLock)
+            {
+                _isSwappingVfo = true;
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+
+                try
+                {
+                    // Ensure IC-7100 has VFO A selected as receive VFO
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    Thread.Sleep(40);
+
+                    lock (_stateLock)
+                    {
+                        double temp = _lastSentVfoAFreq;
+                        _lastSentVfoAFreq = _lastSentVfoBFreq;
+                        _lastSentVfoBFreq = temp;
+
+                        _freqChangePending = false;
+                        _vfoBChangePending = false;
+                    }
+
+                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+
+                    _suppressOutgoingUpdates = true;
+                    try
+                    {
+                        _console.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                _console.VFOSwap();
+                            }
+                            finally
+                            {
+                                _suppressOutgoingUpdates = false;
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        _suppressOutgoingUpdates = false;
+                    }
+                }
+                finally
+                {
+                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                    _isSwappingVfo = false;
+                }
+            }
+        }
+
+        private void HandleRadioVfoToggleToB()
+        {
+            if (_console == null) return;
+
+            lock (_vfoSwapLock)
+            {
+                _isSwappingVfo = true;
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+
+                try
+                {
+                    // 1. Swap VFO registers on the IC-7100 so the frequency the user selected is placed in VFO A
+                    SendFrame(CIVProtocol.SwapVfoFrame(_radioAddr, _hostAddr));
+                    Thread.Sleep(60);
+
+                    // 2. Reselect VFO A on the IC-7100
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    Thread.Sleep(50);
+                    // Confirmation
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                    Thread.Sleep(30);
+
+                    lock (_stateLock)
+                    {
+                        double temp = _lastSentVfoAFreq;
+                        _lastSentVfoAFreq = _lastSentVfoBFreq;
+                        _lastSentVfoBFreq = temp;
+
+                        _freqChangePending = false;
+                        _vfoBChangePending = false;
+                    }
+
+                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+
+                    // 3. Swap VFOs in Thetis
+                    _suppressOutgoingUpdates = true;
+                    try
+                    {
+                        _console.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                _console.VFOSwap();
+                            }
+                            finally
+                            {
+                                _suppressOutgoingUpdates = false;
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        _suppressOutgoingUpdates = false;
+                    }
+                }
+                finally
+                {
+                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                    _isSwappingVfo = false;
+                }
+            }
+        }
+
+        private void HandleRadioVfoEqual()
+        {
+            if (_console == null) return;
+
+            _lastVfoSwapTime = Stopwatch.GetTimestamp();
+
+            lock (_stateLock)
+            {
+                _lastSentVfoBFreq = _lastSentVfoAFreq;
+                _vfoBChangePending = false;
+            }
+
+            _suppressOutgoingUpdates = true;
+            try
+            {
+                _console.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        _console.CopyVFOAtoB();
+                    }
+                    finally
+                    {
+                        _suppressOutgoingUpdates = false;
+                    }
+                }));
+            }
+            catch
+            {
+                _suppressOutgoingUpdates = false;
             }
         }
 

@@ -286,6 +286,22 @@ namespace Thetis
             return CreateFrame(toAddr, fromAddr, CMD_VFO_SEL, new byte[] { (byte)(vfoB ? VFO_B : VFO_A) });
         }
 
+        /// <summary>
+        /// Frame to swap VFO A and VFO B registers (0x07 0xB0).
+        /// </summary>
+        public static byte[] SwapVfoFrame(byte toAddr, byte fromAddr)
+        {
+            return CreateFrame(toAddr, fromAddr, CMD_VFO_SEL, new byte[] { VFO_SWAP });
+        }
+
+        /// <summary>
+        /// Frame to equalize VFO A and VFO B (0x07 0xA0).
+        /// </summary>
+        public static byte[] EqualVfoFrame(byte toAddr, byte fromAddr)
+        {
+            return CreateFrame(toAddr, fromAddr, CMD_VFO_SEL, new byte[] { VFO_EQUAL });
+        }
+
         #endregion
 
         #region Mode and Filter Mappings
