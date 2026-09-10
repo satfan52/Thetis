@@ -64,11 +64,11 @@ namespace Thetis
         private bool _lastSentSplit = false;
         private bool _actualRadioSplit = false;
         private int _pttPollCounter = 0;
-        private int _splitPollCounter = 0;
         private byte _currentRadioSelectedVfo = CIVProtocol.VFO_A;
         private long _lastTxReleaseTime = 0;
         private volatile bool _isSwappingVfo = false;
         private long _lastVfoSwapTime = 0;
+        private long _lastVfoBTuneTime = 0;
         private readonly object _vfoSwapLock = new object();
 
         // Loop suppression when Thetis is being updated from the radio
@@ -370,10 +370,6 @@ namespace Thetis
                 _modeChangePending = true;
                 _splitChangePending = true;
             }
-
-            // Query initial Split status from the radio
-            byte[] readSplitFrame = CIVProtocol.ReadSplitFrame(_radioAddr, _hostAddr);
-            SendFrame(readSplitFrame);
         }
 
         private void OnVFOAFrequencyChanged(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider, double offset, int rx)
@@ -386,10 +382,9 @@ namespace Thetis
                 _freqChangePending = true;
 
                 bool splitRequired = IsSplitRequired(_pendingTxFreq, newFreq);
-                if (splitRequired != _lastSentSplit || (splitRequired && !_actualRadioSplit) || (!splitRequired && _actualRadioSplit))
+                if (splitRequired != _lastSentSplit)
                 {
                     _splitChangePending = true;
-                    _vfoBChangePending = true;
                 }
 
                 if (oldMode != newMode || oldFilter != newFilter)
@@ -409,9 +404,16 @@ namespace Thetis
             {
                 _pendingVfoBFreq = newFreq;
                 _vfoBChangePending = true;
+                _lastVfoBTuneTime = Stopwatch.GetTimestamp();
+
                 if (_console != null && _console.VFOBTX)
                 {
                     _pendingTxFreq = newFreq;
+                }
+
+                bool splitRequired = IsSplitRequired(_pendingTxFreq, _pendingVfoAFreq);
+                if (splitRequired != _lastSentSplit)
+                {
                     _splitChangePending = true;
                 }
             }
@@ -426,11 +428,12 @@ namespace Thetis
                 double txFreq = (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX) ? newFreq : _console.TXFreq;
                 _pendingTxFreq = txFreq;
                 _pendingVfoBFreq = txFreq;
-                bool splitRequired = IsSplitRequired(txFreq, _pendingVfoAFreq);
+                _vfoBChangePending = true;
+                _lastVfoBTuneTime = Stopwatch.GetTimestamp();
 
-                if (splitRequired != _lastSentSplit || splitRequired)
+                bool splitRequired = IsSplitRequired(txFreq, _pendingVfoAFreq);
+                if (splitRequired != _lastSentSplit)
                 {
-                    _vfoBChangePending = true;
                     _splitChangePending = true;
                 }
             }
@@ -444,11 +447,12 @@ namespace Thetis
             {
                 _pendingTxFreq = new_frequency;
                 _pendingVfoBFreq = new_frequency;
-                bool splitRequired = IsSplitRequired(new_frequency, _pendingVfoAFreq);
+                _vfoBChangePending = true;
+                _lastVfoBTuneTime = Stopwatch.GetTimestamp();
 
-                if (splitRequired != _lastSentSplit || splitRequired)
+                bool splitRequired = IsSplitRequired(new_frequency, _pendingVfoAFreq);
+                if (splitRequired != _lastSentSplit)
                 {
-                    _vfoBChangePending = true;
                     _splitChangePending = true;
                 }
             }
@@ -479,7 +483,10 @@ namespace Thetis
                 bool splitRequired = IsSplitRequired(_pendingTxFreq, _pendingVfoAFreq);
                 _pendingSplit = splitRequired;
 
-                _splitChangePending = true;
+                if (splitRequired != _lastSentSplit)
+                {
+                    _splitChangePending = true;
+                }
                 _freqChangePending = true;
                 _vfoBChangePending = true;
             }
@@ -545,7 +552,7 @@ namespace Thetis
             {
                 bool splitRequired = IsSplitRequired();
 
-                if (splitRequired != _lastSentSplit || (splitRequired && !_actualRadioSplit) || (!splitRequired && _actualRadioSplit) || _splitChangePending)
+                if (splitRequired != _lastSentSplit || _splitChangePending)
                 {
                     doSplit = true;
                     targetSplit = splitRequired;
@@ -576,21 +583,35 @@ namespace Thetis
 
                     if (_vfoBChangePending)
                     {
-                        doVfoB = true;
-                        // If Split or Full Duplex is active (or TXFreq != VFOAFreq), unselected VFO mirrors Thetis TXFreq
-                        if (splitRequired)
+                        // Dampen VFO B swapping while actively tuning:
+                        // On the IC-7100, setting VFO B requires a VFO A -> VFO B -> VFO A swap sequence.
+                        // To avoid audio clicks and display flicker on every 1 Hz dial tick, wait 400ms after tuning pauses
+                        // before dispatching the swap (unless transmitting).
+                        double msSinceTune = _lastVfoBTuneTime > 0 
+                            ? (double)(Stopwatch.GetTimestamp() - _lastVfoBTuneTime) / Stopwatch.Frequency * 1000.0 
+                            : 9999.0;
+
+                        if (msSinceTune >= 400.0)
                         {
-                            if (_pendingTxFreq <= 0 && _console != null)
+                            if (splitRequired)
                             {
-                                _pendingTxFreq = _console.TXFreq;
+                                if (_pendingTxFreq <= 0 && _console != null)
+                                {
+                                    _pendingTxFreq = _console.TXFreq;
+                                }
+                                targetVfoBFreq = _pendingTxFreq;
                             }
-                            targetVfoBFreq = _pendingTxFreq;
+                            else
+                            {
+                                targetVfoBFreq = _pendingVfoBFreq;
+                            }
+
+                            if (targetVfoBFreq > 0 && Math.Abs(targetVfoBFreq - _lastSentVfoBFreq) > 0.0000015)
+                            {
+                                doVfoB = true;
+                            }
+                            _vfoBChangePending = false;
                         }
-                        else
-                        {
-                            targetVfoBFreq = _pendingVfoBFreq;
-                        }
-                        _vfoBChangePending = false;
                     }
                 }
 
@@ -647,27 +668,6 @@ namespace Thetis
                     }
                 }
             }
-
-            // Periodically poll Split status (every ~1000ms = 20 ticks)
-            if (_syncSplitAndFullDuplex)
-            {
-                _splitPollCounter++;
-                if (_splitPollCounter >= 20)
-                {
-                    _splitPollCounter = 0;
-                    if (!_isSwappingVfo && !_freqChangePending && !_vfoBChangePending && !_splitChangePending)
-                    {
-                        PollSplitCondition();
-                    }
-                }
-            }
-        }
-
-        private void PollSplitCondition()
-        {
-            if (!IsOpen || _suppressOutgoingUpdates || _isSwappingVfo) return;
-            byte[] frame = CIVProtocol.ReadSplitFrame(_radioAddr, _hostAddr);
-            SendFrame(frame);
         }
 
         private void PollPttCondition()
@@ -879,6 +879,8 @@ namespace Thetis
 
         private void SendSplit(bool splitOn, bool force = false)
         {
+            if (!force && splitOn == _lastSentSplit) return;
+
             if (splitOn)
             {
                 double vfoAFreq = _console != null ? _console.VFOAFreq : 0;
@@ -1142,22 +1144,12 @@ namespace Thetis
 
                 // Split report (0x0F)
                 case CIVProtocol.CMD_SPLIT:
-                    if (frame.Length >= 6)
+                    if (frame.Length >= 7 && fromAddr == _radioAddr)
                     {
                         byte splitByte = frame[5];
-                        bool radioSplit = (splitByte == CIVProtocol.SPLIT_ON);
-                        _actualRadioSplit = radioSplit;
-                        _lastSentSplit = radioSplit;
-
-                        // If Thetis requires split but the radio is in simplex,
-                        // or Thetis is simplex but the radio is in split, trigger sync
-                        if (_syncSplitAndFullDuplex)
+                        if (splitByte == CIVProtocol.SPLIT_ON || splitByte == CIVProtocol.SPLIT_OFF)
                         {
-                            bool needSplit = IsSplitRequired();
-                            if (needSplit != radioSplit)
-                            {
-                                _splitChangePending = true;
-                            }
+                            _actualRadioSplit = (splitByte == CIVProtocol.SPLIT_ON);
                         }
                     }
                     break;
