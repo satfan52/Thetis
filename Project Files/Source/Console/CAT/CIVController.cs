@@ -7,6 +7,7 @@
 //=================================================================
 
 using System;
+using System.IO;
 using System.IO.Ports;
 using System.Threading;
 using System.Collections.Generic;
@@ -89,6 +90,41 @@ namespace Thetis
         private readonly object _echoLock = new object();
 
         private bool _isDisposed = false;
+
+        #endregion
+
+        #region Debug Logging
+
+        private static readonly object _logLock = new object();
+        private const string LOG_FILE_PATH = @"C:\Thetis\civ_debug.log";
+
+        public static void Log(string format, params object[] args)
+        {
+            try
+            {
+                string text = (args != null && args.Length > 0) ? string.Format(format, args) : format;
+                string line = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}\r\n", DateTime.Now, text);
+                lock (_logLock)
+                {
+                    string dir = Path.GetDirectoryName(LOG_FILE_PATH);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+                    File.AppendAllText(LOG_FILE_PATH, line);
+                }
+            }
+            catch
+            {
+                // Never crash caller
+            }
+        }
+
+        public static string HexDump(byte[] bytes)
+        {
+            if (bytes == null) return "<null>";
+            return BitConverter.ToString(bytes).Replace("-", " ");
+        }
 
         #endregion
 
@@ -207,10 +243,23 @@ namespace Thetis
                     // Perform initial sync of current state to IC-7100
                     SyncCurrentThetisState();
 
+                    Log("================================================================================");
+                    Log("=== CI-V Controller Started on {0} at {1} baud (RadioAddr=0x{2:X2}, HostAddr=0x{3:X2}, Transceive={4}) ===",
+                        _portName, _baudRate, _radioAddr, _hostAddr, _transceiveEnabled);
+                    Log("=== Initial State: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}, VFOAFreq={4:F6}, VFOBFreq={5:F6} ===",
+                        _console != null && _console.RX2Enabled,
+                        _console != null && _console.VFOSplit,
+                        _console != null && _console.VFOBTX,
+                        _console != null && _console.VFOATX,
+                        _console != null ? _console.VFOAFreq : 0,
+                        _console != null ? _console.VFOBFreq : 0);
+                    Log("================================================================================");
+
                     return true;
                 }
                 catch (Exception ex)
                 {
+                    Log("[START:ERROR] Error opening {0}: {1}", _portName, ex.Message);
                     Debug.WriteLine(string.Format("[CIVController] Error opening {0}: {1}", _portName, ex.Message));
                     Stop();
                     return false;
@@ -220,6 +269,7 @@ namespace Thetis
 
         public void Stop()
         {
+            Log("=== CI-V Controller Stopped ===");
             lock (_portLock)
             {
                 UnsubscribeFromThetisEvents();
@@ -465,6 +515,13 @@ namespace Thetis
 
         public void NotifySplitOrFullDuplexChanged()
         {
+            Log("[NotifySplitChanged] called. suppress={0}, IsOpen={1}, RX2={2}, Split={3}, VFOBTX={4}, FullDuplex={5}",
+                _suppressOutgoingUpdates, IsOpen,
+                _console != null && _console.RX2Enabled,
+                _console != null && _console.VFOSplit,
+                _console != null && _console.VFOBTX,
+                _console != null && _console.FullDuplex);
+
             if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
 
             lock (_stateLock)
@@ -630,6 +687,12 @@ namespace Thetis
 
         public void NotifyVFOSwap()
         {
+            Log("[NotifyVFOSwap] called. swapInProgress={0}, IsOpen={1}, RX2={2}, Split={3}, VFOBTX={4}",
+                _radioInitiatedSwapInProgress, IsOpen,
+                _console != null && _console.RX2Enabled,
+                _console != null && _console.VFOSplit,
+                _console != null && _console.VFOBTX);
+
             if (_radioInitiatedSwapInProgress || !IsOpen || _console == null) return;
 
             lock (_vfoSwapLock)
@@ -1330,9 +1393,11 @@ namespace Thetis
 
                     _serialPort.Write(frame, 0, frame.Length);
                     _lastFrameSentTime = Stopwatch.GetTimestamp();
+                    Log("[TX] {0}", HexDump(frame));
                 }
                 catch (Exception ex)
                 {
+                    Log("[TX:ERROR] Error sending frame {0}: {1}", HexDump(frame), ex.Message);
                     Debug.WriteLine(string.Format("[CIVController] Error sending frame: {0}", ex.Message));
                 }
             }
@@ -1417,6 +1482,7 @@ namespace Thetis
                 _rxBuffer.CopyTo(0, frame, 0, frameLen);
                 _rxBuffer.RemoveRange(0, frameLen);
 
+                Log("[RX] {0}", HexDump(frame));
                 HandleCIVFrame(frame);
             }
         }
@@ -1424,11 +1490,16 @@ namespace Thetis
         private void HandleCIVFrame(byte[] frame)
         {
             // Minimum valid frame: FE FE [to] [from] [cmd] FD (6 bytes)
-            if (frame == null || frame.Length < 6) return;
+            if (frame == null || frame.Length < 6)
+            {
+                Log("[HANDLE:DROP] Frame too short: len={0}", frame != null ? frame.Length : 0);
+                return;
+            }
 
             // Check for echo of our own sent command
             if (IsLocalEcho(frame))
             {
+                // Already logged in IsLocalEcho
                 return;
             }
 
@@ -1439,29 +1510,37 @@ namespace Thetis
             // Frame must be directed to Host (0xE0) or Broadcast (0x00)
             if (toAddr != _hostAddr && toAddr != CIVProtocol.BROADCAST_ADDR)
             {
+                Log("[HANDLE:DROP] Unexpected toAddr=0x{0:X2} (expected 0x{1:X2} or 0x00)", toAddr, _hostAddr);
                 return;
             }
 
             // Frame must originate from Radio or Host (local loopback)
             if (fromAddr != _radioAddr && fromAddr != _hostAddr)
             {
+                Log("[HANDLE:DROP] Unexpected fromAddr=0x{0:X2} (expected 0x{1:X2} or 0x{2:X2})", fromAddr, _radioAddr, _hostAddr);
                 return;
             }
 
             // Acknowledgment or NAK
             if (cmd == CIVProtocol.ACK)
             {
+                Log("[HANDLE:ACK] ACK received from IC-7100");
                 Debug.WriteLine("[CIVController] ACK received from IC-7100");
                 return;
             }
             if (cmd == CIVProtocol.NAK)
             {
+                Log("[HANDLE:NAK] NAK received from IC-7100");
                 Debug.WriteLine("[CIVController] NAK received from IC-7100 (unsupported command or PLL out-of-lock)");
                 return;
             }
 
             // If transceive is disabled, ignore unsolicited status broadcasts from the radio
-            if (!_transceiveEnabled) return;
+            if (!_transceiveEnabled)
+            {
+                Log("[HANDLE:DROP] Transceive disabled, ignoring cmd=0x{0:X2}", cmd);
+                return;
+            }
 
             switch (cmd)
             {
@@ -1506,19 +1585,39 @@ namespace Thetis
                     {
                         byte vfoId = frame[5];
 
+                        Log("[HANDLE:VFO_SEL] vfoId=0x{0:X2}, MOX={1}, isSwappingVfo={2}, radioSwapInProgress={3}, rx2SplitHandled={4}, RX2={5}, Split={6}, VFOBTX={7}, VFOATX={8}",
+                            vfoId,
+                            _console != null && _console.MOX,
+                            _isSwappingVfo,
+                            _radioInitiatedSwapInProgress,
+                            _rx2SplitSwapHandled,
+                            _console != null && _console.RX2Enabled,
+                            _console != null && _console.VFOSplit,
+                            _console != null && _console.VFOBTX,
+                            _console != null && _console.VFOATX);
+
                         // Do not process VFO swaps while transmitting
-                        if (_console != null && _console.MOX) return;
+                        if (_console != null && _console.MOX)
+                        {
+                            Log("[HANDLE:VFO_SEL] Blocked by MOX");
+                            return;
+                        }
 
-                        if (_isSwappingVfo || _radioInitiatedSwapInProgress) return;
-
-
+                        if (_isSwappingVfo || _radioInitiatedSwapInProgress)
+                        {
+                            Log("[HANDLE:VFO_SEL] Blocked by isSwappingVfo={0} / radioInitiatedSwapInProgress={1}",
+                                _isSwappingVfo, _radioInitiatedSwapInProgress);
+                            return;
+                        }
 
                         if (vfoId == CIVProtocol.VFO_SWAP)
                         {
+                            Log("[HANDLE:VFO_SWAP] Entered. rx2SplitSwapHandled={0}", _rx2SplitSwapHandled);
                             // If CMD_SPLIT already handled an RX2+SPLIT A/B tap (the radio sent 0x0F 0x00 first),
                             // clear the flag and skip — we've already done VFOSwap+VFOBTX in that handler.
                             if (_rx2SplitSwapHandled)
                             {
+                                Log("[HANDLE:VFO_SWAP] Skipped because _rx2SplitSwapHandled was true");
                                 _rx2SplitSwapHandled = false;
                                 return;
                             }
@@ -1551,16 +1650,20 @@ namespace Thetis
                                     {
                                         // Capture RX2+SPLIT state BEFORE any modification (UI thread).
                                         bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                                        Log("[UI:VFO_SWAP] BeginInvoke: inRX2SplitMode={0}, RX2={1}, Split={2}, VFOBTX={3}, VFOATX={4}",
+                                            inRX2SplitMode, _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
                                         try
                                         {
                                             _console.VFOSwap();
+                                            Log("[UI:VFO_SWAP] After VFOSwap: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                                _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
                                             if (inRX2SplitMode)
                                             {
-                                                // User pressed A/B while in RX2+SPLIT special mode.
-                                                // Setting VFOBTX=true does both manual user steps in one call:
-                                                //   chkVFOBTX_CheckedChanged (~line 39875) auto-clears VFOSplit.
+                                                Log("[UI:VFO_SWAP] Setting VFOBTX = true...");
                                                 _suppressOutgoingUpdates = false;
                                                 _console.VFOBTX = true;
+                                                Log("[UI:VFO_SWAP] After VFOBTX=true: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                                    _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
                                             }
                                         }
                                         finally
@@ -1570,8 +1673,9 @@ namespace Thetis
                                         }
                                     }));
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
+                                    Log("[UI:VFO_SWAP:ERROR] {0}", ex.Message);
                                     _suppressOutgoingUpdates = false;
                                     _radioInitiatedSwapInProgress = false;
                                 }
@@ -1581,14 +1685,24 @@ namespace Thetis
 
                         if (vfoId == CIVProtocol.VFO_EQUAL)
                         {
+                            Log("[HANDLE:VFO_EQUAL] Entered.");
                             HandleRadioVfoEqual();
                             return;
                         }
 
                         if (vfoId == CIVProtocol.VFO_A || vfoId == CIVProtocol.VFO_B)
                         {
+                            Log("[HANDLE:VFO_A/B] vfoId=0x{0:X2}, currentSelected=0x{1:X2}, RX2={2}, Split={3}, VFOBTX={4}",
+                                vfoId, _currentRadioSelectedVfo,
+                                _console != null && _console.RX2Enabled,
+                                _console != null && _console.VFOSplit,
+                                _console != null && _console.VFOBTX);
+
                             if (vfoId == _currentRadioSelectedVfo)
+                            {
+                                Log("[HANDLE:VFO_A/B] Redundant vfoId=0x{0:X2}, ignoring", vfoId);
                                 return; // Redundant — radio already on this VFO
+                            }
 
                             lock (_vfoSwapLock)
                             {
@@ -1616,9 +1730,23 @@ namespace Thetis
                                 {
                                     _console.BeginInvoke(new Action(() =>
                                     {
+                                        bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                                        Log("[UI:VFO_A/B] inRX2SplitMode={0}, RX2={1}, Split={2}, VFOBTX={3}, VFOATX={4}",
+                                            inRX2SplitMode, _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
                                         try
                                         {
+                                            Log("[UI:VFO_A/B] Calling VFOSwap()...");
                                             _console.VFOSwap();
+                                            Log("[UI:VFO_A/B] After VFOSwap: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                                _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
+                                            if (inRX2SplitMode)
+                                            {
+                                                Log("[UI:VFO_A/B] Setting VFOBTX = true...");
+                                                _suppressOutgoingUpdates = false;
+                                                _console.VFOBTX = true;
+                                                Log("[UI:VFO_A/B] After VFOBTX=true: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                                    _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
+                                            }
                                         }
                                         finally
                                         {
@@ -1627,14 +1755,17 @@ namespace Thetis
                                         }
                                     }));
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
+                                    Log("[UI:VFO_A/B:ERROR] {0}", ex.Message);
                                     _suppressOutgoingUpdates = false;
                                     _radioInitiatedSwapInProgress = false;
                                 }
                             }
                             return;
                         }
+
+                        Log("[HANDLE:VFO_SEL] Unrecognized vfoId=0x{0:X2}", vfoId);
                     }
                     break;
 
@@ -1661,18 +1792,41 @@ namespace Thetis
                 case CIVProtocol.CMD_SPLIT:
                     if (frame.Length >= 7 && fromAddr == _radioAddr)
                     {
-                        if (_console != null && _console.MOX) break;
+                        byte splitByte = frame[5];
+                        bool isSplit = (splitByte == CIVProtocol.SPLIT_ON);
+
+                        Log("[HANDLE:SPLIT] splitByte=0x{0:X2} (isSplit={1}), MOX={2}, isSwapping={3}, swapInProgress={4}, readingVfoB={5}, actualRadioSplit={6}, lastSentSplit={7}, RX2={8}, Split={9}, VFOBTX={10}, VFOATX={11}",
+                            splitByte, isSplit,
+                            _console != null && _console.MOX,
+                            _isSwappingVfo, _radioInitiatedSwapInProgress, _readingRadioVfoBFreq,
+                            _actualRadioSplit, _lastSentSplit,
+                            _console != null && _console.RX2Enabled,
+                            _console != null && _console.VFOSplit,
+                            _console != null && _console.VFOBTX,
+                            _console != null && _console.VFOATX);
+
+                        if (_console != null && _console.MOX)
+                        {
+                            Log("[HANDLE:SPLIT] Ignored: MOX active");
+                            break;
+                        }
 
                         // Guard against spurious split reports during active VFO swaps or VFO B read:
-                        if (_isSwappingVfo || _radioInitiatedSwapInProgress || _readingRadioVfoBFreq) break;
+                        if (_isSwappingVfo || _radioInitiatedSwapInProgress || _readingRadioVfoBFreq)
+                        {
+                            Log("[HANDLE:SPLIT] Blocked by isSwapping={0} / swapInProgress={1} / readingVfoB={2}",
+                                _isSwappingVfo, _radioInitiatedSwapInProgress, _readingRadioVfoBFreq);
+                            break;
+                        }
 
-                        byte splitByte = frame[5];
                         if (splitByte == CIVProtocol.SPLIT_ON || splitByte == CIVProtocol.SPLIT_OFF)
                         {
-                            bool isSplit = (splitByte == CIVProtocol.SPLIT_ON);
-
                             // Ignore redundant echoes of what we sent or already confirmed
-                            if (isSplit == _lastSentSplit && isSplit == _actualRadioSplit) break;
+                            if (isSplit == _lastSentSplit && isSplit == _actualRadioSplit)
+                            {
+                                Log("[HANDLE:SPLIT] Ignored redundant split echo: isSplit={0}", isSplit);
+                                break;
+                            }
 
                             _actualRadioSplit = isSplit;
                             _lastSentSplit = isSplit;
@@ -1689,11 +1843,15 @@ namespace Thetis
                                 bool isRX2SplitSnap = !isSplit &&
                                     _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
+                                Log("[HANDLE:SPLIT] Evaluated isRX2SplitSnap={0} (!isSplit={1}, RX2={2}, Split={3}, !VFOBTX={4})",
+                                    isRX2SplitSnap, !isSplit, _console.RX2Enabled, _console.VFOSplit, !_console.VFOBTX);
+
                                 if (isRX2SplitSnap)
                                 {
                                     // IC-7100 pressed A/B while Thetis is in RX2+SPLIT special mode.
                                     // The radio sent 0x0F 0x00 (Split OFF). We handle the full swap here
                                     // and set a flag so that if 0x07 0xB0 (VFO_SWAP) follows, it is ignored.
+                                    Log("[HANDLE:SPLIT] Taking RX2+SPLIT A/B tap branch. Setting _rx2SplitSwapHandled = true");
                                     _rx2SplitSwapHandled = true;
                                     _suppressOutgoingUpdates = true;
                                     try
@@ -1702,12 +1860,17 @@ namespace Thetis
                                         {
                                             try
                                             {
-                                                // VFOSwap exchanges the display frequencies (Thetis VFO A ↔ VFO B).
+                                                Log("[UI:SPLIT_RX2] BeginInvoke: calling VFOSwap()...");
                                                 _console.VFOSwap();
-                                                // Setting VFOBTX=true does both manual user steps in one call:
-                                                //   chkVFOBTX_CheckedChanged (console.cs ~39875) auto-clears
-                                                //   chkVFOSplit when chkRX2 is checked → exits split.
+                                                Log("[UI:SPLIT_RX2] After VFOSwap: calling VFOBTX=true... RX2={0}, Split={1}, VFOBTX={2}",
+                                                    _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX);
                                                 _console.VFOBTX = true;
+                                                Log("[UI:SPLIT_RX2] Done: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                                    _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log("[UI:SPLIT_RX2:ERROR] {0}", ex.Message);
                                             }
                                             finally
                                             {
@@ -1715,14 +1878,16 @@ namespace Thetis
                                             }
                                         }));
                                     }
-                                    catch
+                                    catch (Exception ex)
                                     {
+                                        Log("[HANDLE:SPLIT:ERROR] BeginInvoke failed: {0}", ex.Message);
                                         _suppressOutgoingUpdates = false;
                                         _rx2SplitSwapHandled = false;
                                     }
                                 }
                                 else
                                 {
+                                    Log("[HANDLE:SPLIT] Taking standard branch (isSplit={0})", isSplit);
                                     _suppressOutgoingUpdates = true;
                                     try
                                     {
@@ -1740,6 +1905,12 @@ namespace Thetis
                                                     _console.VFOSplit = false;
                                                     _console.VFOATX = true;
                                                 }
+                                                Log("[UI:SPLIT_STD] Done setting split: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                                    _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                Log("[UI:SPLIT_STD:ERROR] {0}", ex.Message);
                                             }
                                             finally
                                             {
@@ -1747,8 +1918,9 @@ namespace Thetis
                                             }
                                         }));
                                     }
-                                    catch
+                                    catch (Exception ex)
                                     {
+                                        Log("[HANDLE:SPLIT:ERROR] BeginInvoke failed: {0}", ex.Message);
                                         _suppressOutgoingUpdates = false;
                                     }
                                     if (isSplit)
@@ -1793,6 +1965,10 @@ namespace Thetis
                             }
                         }
                     }
+                    break;
+
+                default:
+                    Log("[HANDLE:OTHER] cmd=0x{0:X2}, len={1}, frame={2}", cmd, frame.Length, HexDump(frame));
                     break;
             }
         }
@@ -1868,6 +2044,7 @@ namespace Thetis
                         {
                             if (k != j) _recentSentFrames.Enqueue(frames[k]);
                         }
+                        Log("[ECHO] Dropped local echo: {0}", HexDump(frame));
                         return true;
                     }
                 }
@@ -1943,6 +2120,9 @@ namespace Thetis
 
             if (matchesVfoB && differsFromVfoA)
             {
+                Log("[FREQ_IN:SWAP_DETECTED] freq={0:F6} MHz matches VfoB ({1:F6}) and differs from VfoA ({2:F6})",
+                    freqMHz, targetVfoBFreq, _console.VFOAFreq);
+
                 lock (_vfoSwapLock)
                 {
                     bool selectB = (_currentRadioSelectedVfo == CIVProtocol.VFO_A);
@@ -1970,9 +2150,27 @@ namespace Thetis
                     {
                         _console.BeginInvoke(new Action(() =>
                         {
+                            bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                            Log("[UI:FREQ_SWAP] BeginInvoke: inRX2SplitMode={0}, RX2={1}, Split={2}, VFOBTX={3}, VFOATX={4}",
+                                inRX2SplitMode, _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
                             try
                             {
+                                Log("[UI:FREQ_SWAP] Calling VFOSwap()...");
                                 _console.VFOSwap();
+                                Log("[UI:FREQ_SWAP] After VFOSwap: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                    _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
+                                if (inRX2SplitMode)
+                                {
+                                    Log("[UI:FREQ_SWAP] Setting VFOBTX = true...");
+                                    _suppressOutgoingUpdates = false;
+                                    _console.VFOBTX = true;
+                                    Log("[UI:FREQ_SWAP] After VFOBTX=true: RX2={0}, Split={1}, VFOBTX={2}, VFOATX={3}",
+                                        _console.RX2Enabled, _console.VFOSplit, _console.VFOBTX, _console.VFOATX);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Log("[UI:FREQ_SWAP:ERROR] {0}", ex.Message);
                             }
                             finally
                             {
@@ -1981,8 +2179,9 @@ namespace Thetis
                             }
                         }));
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Log("[FREQ_IN:ERROR] BeginInvoke failed: {0}", ex.Message);
                         _suppressOutgoingUpdates = false;
                         _radioInitiatedSwapInProgress = false;
                     }

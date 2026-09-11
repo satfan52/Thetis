@@ -35622,6 +35622,8 @@ namespace Thetis
 
         private void btnVFOSwap_Click(object sender, System.EventArgs e)
         {
+            CIVController.Log("[Thetis:UI] btnVFOSwap_Click: rx2={0}, VFOA={1:F6}, VFOB={2:F6}, Split={3}, VFOBTX={4}, VFOATX={5}",
+                rx2_enabled, VFOAFreq, VFOBFreq, chkVFOSplit.Checked, chkVFOBTX.Checked, chkVFOATX.Checked);
             if (!rx2_enabled)
             {
                 double temp = VFOAFreq;
@@ -35773,6 +35775,8 @@ namespace Thetis
         private bool _bOldVFOSplit = false; //MW0LGE_22a
         private void chkVFOSplit_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.Log("[Thetis:UI] chkVFOSplit_CheckedChanged: Checked={0}, rx2={1}, VFOBTX={2}, VFOATX={3}",
+                chkVFOSplit.Checked, rx2_enabled, chkVFOBTX.Checked, chkVFOATX.Checked);
             Display.SplitEnabled = chkVFOSplit.Checked;
             if (chkVFOSplit.Checked)
             {
@@ -39773,6 +39777,8 @@ namespace Thetis
 
         private void chkVFOATX_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.Log("[Thetis:UI] chkVFOATX_CheckedChanged: Checked={0}, rx2={1}, Split={2}, VFOBTX={3}",
+                chkVFOATX.Checked, rx2_enabled, chkVFOSplit.Checked, chkVFOBTX.Checked);
             if (chkVFOATX.Focused && !chkVFOATX.Checked) chkVFOATX.Checked = true;
             if (chkVFOATX.Checked)
             {
@@ -39843,6 +39849,8 @@ namespace Thetis
         private bool m_bLastVFOBTXsetting = false;
         private void chkVFOBTX_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.Log("[Thetis:UI] chkVFOBTX_CheckedChanged: Checked={0}, rx2={1}, Split={2}, VFOATX={3}",
+                chkVFOBTX.Checked, rx2_enabled, chkVFOSplit.Checked, chkVFOATX.Checked);
             if (chkVFOBTX.Focused && !chkVFOBTX.Checked) chkVFOBTX.Checked = true;
             Display.TXOnVFOB = chkVFOBTX.Checked;
             if (chkVFOBTX.Checked)
