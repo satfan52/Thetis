@@ -1050,6 +1050,7 @@ namespace Thetis
 
             //[2.10.3.5]MW0LGE setup all status icon items
             addStatusStripToolTipHandlers(); // improves #354
+            initDigitalSlicesStatusBar();
             UpdateStatusBarStatusIcons(StatusBarIconGroup.All);
 
             // start up options and applications
@@ -2462,6 +2463,7 @@ namespace Thetis
                 {
                     if (m_tcpTCIServer != null)
                     {
+                        HeadlessTciManager.Instance.StopAll();
                         m_tcpTCIServer.StopServer();
                         cmaster.TCIServer = null;
                     }
@@ -2481,6 +2483,17 @@ namespace Thetis
                         MessageBox.Show("Unable to start the server." + Environment.NewLine + Environment.NewLine + "[ " + m_tcpTCIServer.LastError + " ]", "TCI Server",
                             MessageBoxButtons.OK, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
                     }
+                    else if (NetworkIO.NumReceivers == 8)
+                    {
+                        try
+                        {
+                            HeadlessTciManager.Instance.StartAll(address, this);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.Print("Failed to start Headless TCI: " + ex.Message);
+                        }
+                    }
                 }
                 //
             }
@@ -2488,6 +2501,7 @@ namespace Thetis
             {
                 if (m_tcpTCIServer != null)
                 {
+                    HeadlessTciManager.Instance.StopAll();
                     m_tcpTCIServer.CloseLog();
                     m_tcpTCIServer.StopServer();
                     cmaster.TCIServer = null;
@@ -8235,6 +8249,21 @@ namespace Thetis
                     }
                     break;
                 case HPSDRModel.REDPITAYA: //DH1KLM
+                    if (NetworkIO.NumReceivers == 8)
+                    {
+                        P1_rxcount = 8;
+                        nddc = 8;
+                        P1_DDCConfig = 1;
+                        DDCEnable = 0xff; // all 8 DDCs enabled
+                        SyncEnable = 0;
+                        Rate[0] = rx1_rate;
+                        Rate[1] = rx1_rate;
+                        Rate[2] = rx1_rate;
+                        Rate[3] = rx1_rate;
+                        cntrl1 = rx_adc_ctrl1 & 0xff;
+                        cntrl2 = rx_adc_ctrl2 & 0x3f;
+                        break;
+                    }
                     P1_rxcount = 5;                     // RX5 used for puresignal feedback
                     nddc = 5;
                     if (!_mox)
@@ -28218,6 +28247,7 @@ namespace Thetis
             if (m_tcpTCIServer != null)
             {
                 shutdownLogStringToPath("Before m_tcpTCIServer.StopServer()");
+                HeadlessTciManager.Instance.StopAll();
                 m_tcpTCIServer.StopServer();
                 cmaster.TCIServer = null;
                 removeTCIDelegates();
@@ -48087,7 +48117,10 @@ namespace Thetis
                 setupSerialCatStatusBar();
 
             if (iconGroup == StatusBarIconGroup.All || iconGroup == StatusBarIconGroup.TCI) //tci
+            {
                 toolStripStatusLabel_TCI.Visible = m_tcpTCIServer != null ? m_tcpTCIServer.IsServerRunning : false;
+                UpdateDigitalSlicesStatus();
+            }
         }
 
         private bool m_bAutoPowerOn = false;
@@ -48155,6 +48188,190 @@ namespace Thetis
             if (m_statusBarToolTip != null)
                 m_statusBarToolTip.Hide(statusStripMain);
         }
+
+        #region Digital Slices Status Strip (Release F)
+        private ToolStripStatusLabel m_lblDigitalSlices = null;
+
+        private void initDigitalSlicesStatusBar()
+        {
+            if (m_lblDigitalSlices != null) return;
+
+            m_lblDigitalSlices = new ToolStripStatusLabel();
+            m_lblDigitalSlices.Name = "toolStripStatusLabel_DigitalSlices";
+            m_lblDigitalSlices.DisplayStyle = ToolStripItemDisplayStyle.Text;
+            m_lblDigitalSlices.AutoSize = true;
+            m_lblDigitalSlices.BorderSides = ToolStripStatusLabelBorderSides.All;
+            m_lblDigitalSlices.BorderStyle = Border3DStyle.Etched;
+            m_lblDigitalSlices.Margin = new Padding(3, 1, 3, 1);
+            m_lblDigitalSlices.Text = "DIG: Idle";
+            m_lblDigitalSlices.ToolTipText = "Release F Digital Slices (RX3..RX8): Idle";
+
+            m_lblDigitalSlices.MouseEnter += (s, e) => { statusStripMain.Cursor = Cursors.Hand; };
+            m_lblDigitalSlices.MouseLeave += (s, e) => { statusStripMain.Cursor = Cursors.Default; toolTipItemMouseLeave(s, e); };
+            m_lblDigitalSlices.MouseHover += toolTipItemMouseHover;
+            m_lblDigitalSlices.Click += (s, e) => ShowDigitalSlicesInfo();
+
+            int insertIndex = statusStripMain.Items.IndexOf(toolStripStatusLabel_TCI);
+            if (insertIndex >= 0)
+            {
+                statusStripMain.Items.Insert(insertIndex + 1, m_lblDigitalSlices);
+            }
+            else
+            {
+                statusStripMain.Items.Add(m_lblDigitalSlices);
+            }
+
+            HeadlessSliceManager.Instance.SliceFrequencyChanged += (rx, freq) => UpdateDigitalSlicesStatus();
+            HeadlessSliceManager.Instance.SliceModeChanged += (rx, mode) => UpdateDigitalSlicesStatus();
+            HeadlessSliceManager.Instance.SliceStreamingChanged += (rx, streaming) => UpdateDigitalSlicesStatus();
+            TxArbiter.Instance.DigitalTxStateChanged += (rx) => UpdateDigitalSlicesStatus();
+
+            UpdateDigitalSlicesStatus();
+        }
+
+        private void UpdateDigitalSlicesStatus()
+        {
+            if (m_lblDigitalSlices == null) return;
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+
+            if (this.InvokeRequired)
+            {
+                try
+                {
+                    this.BeginInvoke((Action)UpdateDigitalSlicesStatus);
+                }
+                catch { }
+                return;
+            }
+
+            try
+            {
+                if (NetworkIO.NumReceivers < 8)
+                {
+                    m_lblDigitalSlices.Visible = false;
+                    return;
+                }
+                m_lblDigitalSlices.Visible = true;
+
+                int activeTx = TxArbiter.Instance.ActiveDigitalRx;
+                var allSlices = HeadlessSliceManager.Instance.GetAllSlices();
+                var activeStreaming = allSlices.FindAll(s => s.IsStreamingAudio);
+
+                if (activeTx >= 0)
+                {
+                    var txSlice = HeadlessSliceManager.Instance.GetSlice(activeTx);
+                    string freqStr = txSlice != null ? txSlice.FrequencyMHz.ToString("F3") : "";
+                    string modeStr = txSlice != null ? txSlice.Mode.ToString() : "DIGU";
+
+                    m_lblDigitalSlices.Text = $"TX{activeTx + 1} {freqStr}M [{modeStr}]";
+                    m_lblDigitalSlices.BackColor = Color.Firebrick;
+                    m_lblDigitalSlices.ForeColor = Color.White;
+                    m_lblDigitalSlices.Font = new Font(statusStripMain.Font.FontFamily, statusStripMain.Font.Size, FontStyle.Bold);
+                }
+                else if (activeStreaming.Count > 0)
+                {
+                    if (activeStreaming.Count == 1)
+                    {
+                        var s0 = activeStreaming[0];
+                        m_lblDigitalSlices.Text = $"DIG: RX{s0.RxIndex + 1} {s0.FrequencyMHz:F3}M";
+                    }
+                    else if (activeStreaming.Count == 2)
+                    {
+                        var s0 = activeStreaming[0];
+                        var s1 = activeStreaming[1];
+                        m_lblDigitalSlices.Text = $"DIG: RX{s0.RxIndex + 1} {s0.FrequencyMHz:F3}M | RX{s1.RxIndex + 1} {s1.FrequencyMHz:F3}M";
+                    }
+                    else
+                    {
+                        string list = string.Join(",", activeStreaming.Select(s => $"RX{s.RxIndex + 1}"));
+                        m_lblDigitalSlices.Text = $"DIG: {list} ({activeStreaming.Count} active)";
+                    }
+
+                    m_lblDigitalSlices.BackColor = Color.FromArgb(0, 110, 50);
+                    m_lblDigitalSlices.ForeColor = Color.White;
+                    m_lblDigitalSlices.Font = new Font(statusStripMain.Font.FontFamily, statusStripMain.Font.Size, FontStyle.Bold);
+                }
+                else
+                {
+                    m_lblDigitalSlices.Text = "DIG: Idle";
+                    m_lblDigitalSlices.BackColor = Color.Transparent;
+                    m_lblDigitalSlices.ForeColor = this.StatusBarTextColour;
+                    m_lblDigitalSlices.Font = statusStripMain.Font;
+                }
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("Release F - Digital Slices (RX3..RX8):");
+                foreach (var s in allSlices)
+                {
+                    int port = 50003 + ((s.RxIndex - 2) / 2) * 2;
+                    int trx = (s.RxIndex - 2) % 2;
+                    string state = (activeTx == s.RxIndex) ? "TRANSMITTING (CI-V PTT)" : (s.IsStreamingAudio ? "STREAMING (Active)" : "Dormant (0% CPU)");
+                    sb.AppendLine($"  RX{s.RxIndex + 1} (Port {port} TRX {trx}): {s.FrequencyMHz:F6} MHz [{s.Mode}] - {state}");
+                }
+                if (activeTx >= 0)
+                {
+                    sb.AppendLine($"\n*** DIGITAL TRANSMISSION ACTIVE on RX{activeTx + 1} via IC-7100 ***");
+                    sb.AppendLine("Voice PTT / Mic VOX will immediately preempt.");
+                }
+                else if (activeStreaming.Count > 0)
+                {
+                    sb.AppendLine($"\n{activeStreaming.Count} slice(s) actively decoding audio.");
+                }
+                else
+                {
+                    sb.AppendLine("\nAll digital slices dormant (0% DSP CPU).");
+                }
+                sb.AppendLine("Click for full status summary.");
+                m_lblDigitalSlices.ToolTipText = sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UpdateDigitalSlicesStatus] Exception: {ex.Message}");
+            }
+        }
+
+        private void ShowDigitalSlicesInfo()
+        {
+            try
+            {
+                var allSlices = HeadlessSliceManager.Instance.GetAllSlices();
+                int activeTx = TxArbiter.Instance.ActiveDigitalRx;
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("=== Thetis Release F - Red Pitaya 8-Receiver Status ===");
+                sb.AppendLine();
+                sb.AppendLine("VOICE OPERATION (Transceiver):");
+                sb.AppendLine("  VFO A (RX1) / VFO B (RX2) on TCI Port 50001");
+                sb.AppendLine("  Voice Transmitting: " + (TxArbiter.Instance.IsVoiceTransmitting ? "YES (Voice PTT / Mic VOX active)" : "No (Idle)"));
+                sb.AppendLine();
+                sb.AppendLine("DIGITAL SLICES (Dormant on-demand, 0% DSP CPU when idle):");
+                foreach (var s in allSlices)
+                {
+                    int primaryPort = 50002 + ((s.RxIndex - 2) / 2) * 2;
+                    int altPort = primaryPort + 1;
+                    int trx = (s.RxIndex - 2) % 2;
+                    string status = (activeTx == s.RxIndex) ? "TRANSMITTING (CI-V PTT)" : (s.IsStreamingAudio ? "STREAMING (Active)" : "Dormant (0% CPU)");
+                    sb.AppendLine($"  RX{s.RxIndex + 1} -> Ports {primaryPort}/{altPort} TRX {trx}: {s.FrequencyMHz:F6} MHz [{s.Mode}] Filter {s.FilterLow}-{s.FilterHigh} Hz ({status})");
+                }
+                sb.AppendLine();
+                sb.AppendLine("TX ARBITRATION & INTERLOCK:");
+                sb.AppendLine("  Voice Priority: Absolute (Voice PTT / Mic VOX preempts any digital slice)");
+                sb.AppendLine("  Digital Preemption: LIFO (Last digital transmitter wins)");
+                sb.AppendLine("  Active Digital TX: " + (activeTx >= 0 ? $"RX{activeTx + 1} ({HeadlessSliceManager.Instance.GetSlice(activeTx)?.FrequencyMHz:F6} MHz)" : "None (Idle)"));
+                sb.AppendLine("  IC-7100 CI-V: " + ((CIVControllerInstance != null && CIVControllerInstance.IsOpen) ? "Connected & Synchronized" : "Not Open"));
+                sb.AppendLine();
+                sb.AppendLine("WebSocket TCI Endpoints:");
+                sb.AppendLine("  ws://localhost:50002/ or ws://localhost:50003/ (RX3 / RX4)");
+                sb.AppendLine("  ws://localhost:50004/ or ws://localhost:50005/ (RX5 / RX6)");
+                sb.AppendLine("  ws://localhost:50006/ or ws://localhost:50007/ (RX7 / RX8)");
+
+                MessageBox.Show(this, sb.ToString(), "Release F - Digital Slices & TX Status", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Error: " + ex.Message, "Status", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        #endregion
 
         #region StepAttenuator data
         //[2.10.3.6]MW0LGE moved all this to functions to make it easier to diagnose issues
