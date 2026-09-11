@@ -68,6 +68,7 @@ namespace Thetis
         private long _lastTxReleaseTime = 0;
         private volatile bool _isSwappingVfo = false;
         private volatile bool _radioInitiatedSwapInProgress = false;
+        private volatile bool _rx2SplitSwapHandled = false;   // set by CMD_SPLIT when it handles the A/B tap in RX2+SPLIT mode
         private long _lastVfoSwapTime = 0;
         private long _lastVfoBTuneTime = 0;
         private readonly object _vfoSwapLock = new object();
@@ -1514,7 +1515,13 @@ namespace Thetis
 
                         if (vfoId == CIVProtocol.VFO_SWAP)
                         {
-
+                            // If CMD_SPLIT already handled an RX2+SPLIT A/B tap (the radio sent 0x0F 0x00 first),
+                            // clear the flag and skip — we've already done VFOSwap+VFOBTX in that handler.
+                            if (_rx2SplitSwapHandled)
+                            {
+                                _rx2SplitSwapHandled = false;
+                                return;
+                            }
 
                             // Operator physically triggered VFO swap on the radio
                             lock (_vfoSwapLock)
@@ -1550,13 +1557,8 @@ namespace Thetis
                                             if (inRX2SplitMode)
                                             {
                                                 // User pressed A/B while in RX2+SPLIT special mode.
-                                                // Programmatically replicate the two manual steps:
-                                                //   1. Click SPLT to exit split mode
-                                                //   2. Check TXbox on VFO B
-                                                // Setting VFOBTX=true does BOTH in one call: chkVFOBTX_CheckedChanged
-                                                // (console.cs line ~39875) automatically sets chkVFOSplit.Checked=false
-                                                // when chkRX2.Checked==true.
-                                                // Clear suppression first so NotifySplitOrFullDuplexChanged() fires.
+                                                // Setting VFOBTX=true does both manual user steps in one call:
+                                                //   chkVFOBTX_CheckedChanged (~line 39875) auto-clears VFOSplit.
                                                 _suppressOutgoingUpdates = false;
                                                 _console.VFOBTX = true;
                                             }
@@ -1687,72 +1689,106 @@ namespace Thetis
                                 bool isRX2SplitSnap = !isSplit &&
                                     _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
-                                _suppressOutgoingUpdates = true;
-                                try
+                                if (isRX2SplitSnap)
                                 {
-                                    _console.BeginInvoke(new Action(() =>
+                                    // IC-7100 pressed A/B while Thetis is in RX2+SPLIT special mode.
+                                    // The radio sent 0x0F 0x00 (Split OFF). We handle the full swap here
+                                    // and set a flag so that if 0x07 0xB0 (VFO_SWAP) follows, it is ignored.
+                                    _rx2SplitSwapHandled = true;
+                                    _suppressOutgoingUpdates = true;
+                                    try
                                     {
-                                        try
+                                        _console.BeginInvoke(new Action(() =>
                                         {
-                                            if (isSplit)
-                                            {
-                                                _console.VFOSplit = true;
-                                                _console.VFOBTX = true;
-                                            }
-                                            else
-                                            {
-                                                _console.VFOSplit = false;
-                                                _console.VFOATX = true;
-                                            }
-                                        }
-                                        finally
-                                        {
-                                            _suppressOutgoingUpdates = false;
-                                        }
-                                    }));
-                                }
-                                catch
-                                {
-                                    _suppressOutgoingUpdates = false;
-                                }
-                                if (isSplit)
-                                {
-                                    // IC-7100 initiated Split: synchronize IC-7100's VFO B → Thetis VFO B.
-                                    // SyncVfoBFromRadio temporarily selects VFO B (which cancels split on IC-7100),
-                                    // captures the VFO B freq from the 0x03 response, then re-activates split.
-                                    double captureVfoAFreq = vfoAFreq;
-                                    ThreadPool.QueueUserWorkItem(_ =>
-                                    {
-                                        Thread.Sleep(80); // let IC-7100 split-ON settle
-                                        SyncVfoBFromRadio(captureVfoAFreq);
-                                    });
-                                }
-                                if (!isSplit && !isRX2SplitSnap && vfoAFreq > 0)
-                                {
-                                    // Radio just switched to Simplex: ensure radio is on VFO A and displays VFO A frequency.
-                                    // Skip this when we handled an RX2+SPLIT A/B tap — we're staying in split mode.
-                                    ThreadPool.QueueUserWorkItem(_ =>
-                                    {
-                                        Thread.Sleep(80);
-                                        lock (_vfoSwapLock)
-                                        {
-                                            _isSwappingVfo = true;
-                                            _lastVfoSwapTime = Stopwatch.GetTimestamp();
                                             try
                                             {
-                                                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                                                _currentRadioSelectedVfo = CIVProtocol.VFO_A;
-                                                Thread.Sleep(40);
-                                                SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
-                                                _lastSentVfoAFreq = vfoAFreq;
+                                                // VFOSwap exchanges the display frequencies (Thetis VFO A ↔ VFO B).
+                                                _console.VFOSwap();
+                                                // Setting VFOBTX=true does both manual user steps in one call:
+                                                //   chkVFOBTX_CheckedChanged (console.cs ~39875) auto-clears
+                                                //   chkVFOSplit when chkRX2 is checked → exits split.
+                                                _console.VFOBTX = true;
                                             }
                                             finally
                                             {
-                                                _lastVfoSwapTime = Stopwatch.GetTimestamp();
-                                                _isSwappingVfo = false;
+                                                _suppressOutgoingUpdates = false;
                                             }
-                                        }
-                                    });
+                                        }));
+                                    }
+                                    catch
+                                    {
+                                        _suppressOutgoingUpdates = false;
+                                        _rx2SplitSwapHandled = false;
+                                    }
+                                }
+                                else
+                                {
+                                    _suppressOutgoingUpdates = true;
+                                    try
+                                    {
+                                        _console.BeginInvoke(new Action(() =>
+                                        {
+                                            try
+                                            {
+                                                if (isSplit)
+                                                {
+                                                    _console.VFOSplit = true;
+                                                    _console.VFOBTX = true;
+                                                }
+                                                else
+                                                {
+                                                    _console.VFOSplit = false;
+                                                    _console.VFOATX = true;
+                                                }
+                                            }
+                                            finally
+                                            {
+                                                _suppressOutgoingUpdates = false;
+                                            }
+                                        }));
+                                    }
+                                    catch
+                                    {
+                                        _suppressOutgoingUpdates = false;
+                                    }
+                                    if (isSplit)
+                                    {
+                                        // IC-7100 initiated Split: synchronize IC-7100's VFO B → Thetis VFO B.
+                                        // SyncVfoBFromRadio temporarily selects VFO B (which cancels split on IC-7100),
+                                        // captures the VFO B freq from the 0x03 response, then re-activates split.
+                                        double captureVfoAFreq = vfoAFreq;
+                                        ThreadPool.QueueUserWorkItem(_ =>
+                                        {
+                                            Thread.Sleep(80); // let IC-7100 split-ON settle
+                                            SyncVfoBFromRadio(captureVfoAFreq);
+                                        });
+                                    }
+                                    if (!isSplit && vfoAFreq > 0)
+                                    {
+                                        // Radio just switched to Simplex: ensure radio is on VFO A and displays VFO A frequency.
+                                        ThreadPool.QueueUserWorkItem(_ =>
+                                        {
+                                            Thread.Sleep(80);
+                                            lock (_vfoSwapLock)
+                                            {
+                                                _isSwappingVfo = true;
+                                                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                                                try
+                                                {
+                                                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                                                    _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+                                                    Thread.Sleep(40);
+                                                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
+                                                    _lastSentVfoAFreq = vfoAFreq;
+                                                }
+                                                finally
+                                                {
+                                                    _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                                                    _isSwappingVfo = false;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
