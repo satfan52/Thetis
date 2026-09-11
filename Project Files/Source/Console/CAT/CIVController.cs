@@ -1570,8 +1570,10 @@ namespace Thetis
 
                         if (vfoId == CIVProtocol.VFO_A || vfoId == CIVProtocol.VFO_B)
                         {
+                            System.Diagnostics.Debug.WriteLine($"[CIV] CMD_VFO_SEL VFO_A/B: vfoId=0x{vfoId:X2} _currentRadioSelectedVfo=0x{_currentRadioSelectedVfo:X2}");
                             if (vfoId == _currentRadioSelectedVfo)
                             {
+                                System.Diagnostics.Debug.WriteLine("[CIV] CMD_VFO_SEL: blocked by redundant VFO guard");
                                 return; // Redundant — radio already on this VFO
                             }
 
@@ -1605,10 +1607,13 @@ namespace Thetis
                                         // Capture RX2+SPLIT state HERE — on the UI thread, BEFORE any modification.
                                         bool inRX2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
+                                        System.Diagnostics.Debug.WriteLine($"[CIV] CMD_VFO_SEL BeginInvoke: inRX2SplitMode={inRX2SplitMode} RX2={_console.RX2Enabled} VFOSplit={_console.VFOSplit} VFOBTX={_console.VFOBTX}");
+
                                         try
                                         {
                                             if (inRX2SplitMode)
                                             {
+                                                System.Diagnostics.Debug.WriteLine("[CIV] CMD_VFO_SEL BeginInvoke: branch=RX2+SPLIT exit, setting VFOBTX=true");
                                                 // IC-7100 A/B pressed while in RX2+SPLIT special mode.
                                                 // The radio stays in split — we just need to exit the
                                                 // RX2+SPLIT special mode in Thetis by moving the TX box
@@ -1618,9 +1623,11 @@ namespace Thetis
                                                 // fires and pushes the updated state to the IC-7100.
                                                 _suppressOutgoingUpdates = false;
                                                 _console.VFOBTX = true;
+                                                System.Diagnostics.Debug.WriteLine($"[CIV] CMD_VFO_SEL BeginInvoke: after VFOBTX=true: VFOBTX={_console.VFOBTX} VFOSplit={_console.VFOSplit}");
                                             }
                                             else
                                             {
+                                                System.Diagnostics.Debug.WriteLine("[CIV] CMD_VFO_SEL BeginInvoke: branch=normal VFOSwap");
                                                 _console.VFOSwap();
                                             }
                                         }
@@ -1663,20 +1670,23 @@ namespace Thetis
 
                 // Split report (0x0F)
                 case CIVProtocol.CMD_SPLIT:
+                    System.Diagnostics.Debug.WriteLine($"[CIV] CMD_SPLIT: frame.Length={frame.Length} fromAddr=0x{fromAddr:X2} radioAddr=0x{_radioAddr:X2}");
                     if (frame.Length >= 7 && fromAddr == _radioAddr)
                     {
-                        if (_console != null && _console.MOX) break;
+                        if (_console != null && _console.MOX) { System.Diagnostics.Debug.WriteLine("[CIV] CMD_SPLIT: blocked by MOX"); break; }
 
                         // Guard against spurious split reports during active VFO swaps or VFO B read:
-                        if (_isSwappingVfo || _radioInitiatedSwapInProgress || _readingRadioVfoBFreq) break;
+                        System.Diagnostics.Debug.WriteLine($"[CIV] CMD_SPLIT: isSwappingVfo={_isSwappingVfo} radioInitSwap={_radioInitiatedSwapInProgress} readingVfoB={_readingRadioVfoBFreq}");
+                        if (_isSwappingVfo || _radioInitiatedSwapInProgress || _readingRadioVfoBFreq) { System.Diagnostics.Debug.WriteLine("[CIV] CMD_SPLIT: blocked by swap/read guard"); break; }
 
                         byte splitByte = frame[5];
                         if (splitByte == CIVProtocol.SPLIT_ON || splitByte == CIVProtocol.SPLIT_OFF)
                         {
                             bool isSplit = (splitByte == CIVProtocol.SPLIT_ON);
+                            System.Diagnostics.Debug.WriteLine($"[CIV] CMD_SPLIT: isSplit={isSplit} _lastSentSplit={_lastSentSplit} _actualRadioSplit={_actualRadioSplit}");
 
                             // Ignore redundant echoes of what we sent or already confirmed
-                            if (isSplit == _lastSentSplit && isSplit == _actualRadioSplit) break;
+                            if (isSplit == _lastSentSplit && isSplit == _actualRadioSplit) { System.Diagnostics.Debug.WriteLine("[CIV] CMD_SPLIT: blocked by redundant-echo guard"); break; }
 
                             _actualRadioSplit = isSplit;
                             _lastSentSplit = isSplit;
@@ -1703,15 +1713,19 @@ namespace Thetis
                                         bool inRX2SplitMode = !isSplit &&
                                             _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
+                                        System.Diagnostics.Debug.WriteLine($"[CIV] CMD_SPLIT BeginInvoke: isSplit={isSplit} inRX2SplitMode={inRX2SplitMode} RX2={_console.RX2Enabled} VFOSplit={_console.VFOSplit} VFOBTX={_console.VFOBTX}");
+
                                         try
                                         {
                                             if (isSplit)
                                             {
+                                                System.Diagnostics.Debug.WriteLine("[CIV] CMD_SPLIT BeginInvoke: branch=isSplit");
                                                 _console.VFOSplit = true;
                                                 _console.VFOBTX = true;
                                             }
                                             else if (inRX2SplitMode)
                                             {
+                                                System.Diagnostics.Debug.WriteLine("[CIV] CMD_SPLIT BeginInvoke: branch=RX2+SPLIT exit, setting VFOBTX=true");
                                                 // IC-7100 A/B tap while in RX2+SPLIT mode: exit RX2+SPLIT
                                                 // special mode in Thetis by moving the TX box to VFO B.
                                                 // The radio stays in split — we do NOT call VFOSwap() because
@@ -1721,9 +1735,11 @@ namespace Thetis
                                                 // fires and pushes the updated split state to the IC-7100.
                                                 _suppressOutgoingUpdates = false;
                                                 _console.VFOBTX = true;
+                                                System.Diagnostics.Debug.WriteLine($"[CIV] CMD_SPLIT BeginInvoke: after VFOBTX=true: VFOBTX={_console.VFOBTX} VFOSplit={_console.VFOSplit}");
                                             }
                                             else
                                             {
+                                                System.Diagnostics.Debug.WriteLine("[CIV] CMD_SPLIT BeginInvoke: branch=simplex/normal");
                                                 _console.VFOSplit = false;
                                                 _console.VFOATX = true;
                                             }
