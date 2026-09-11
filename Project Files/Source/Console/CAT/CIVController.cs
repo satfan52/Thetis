@@ -95,24 +95,13 @@ namespace Thetis
 
         #region Debug Logging
 
-        private static readonly object _logLock = new object();
-        private const string LOG_FILE_PATH = @"C:\Thetis\civ_debug.log";
-
+        [System.Diagnostics.Conditional("DEBUG")]
         public static void Log(string format, params object[] args)
         {
             try
             {
                 string text = (args != null && args.Length > 0) ? string.Format(format, args) : format;
-                string line = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}\r\n", DateTime.Now, text);
-                lock (_logLock)
-                {
-                    string dir = Path.GetDirectoryName(LOG_FILE_PATH);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    {
-                        Directory.CreateDirectory(dir);
-                    }
-                    File.AppendAllText(LOG_FILE_PATH, line);
-                }
+                System.Diagnostics.Debug.WriteLine(string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] [CIV] {1}", DateTime.Now, text));
             }
             catch
             {
