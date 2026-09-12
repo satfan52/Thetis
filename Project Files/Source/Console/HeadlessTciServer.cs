@@ -52,7 +52,7 @@ namespace Thetis
                 // 50004 & 50005 -> RX5 (DDC 4) and RX6 (DDC 5)
                 // 50006 & 50007 -> RX7 (DDC 6) and RX8 (DDC 7)
                 int[] ports = new int[] { 50002, 50003, 50004, 50005, 50006, 50007 };
-                int[] baseRxs = new int[] { 2, 2, 4, 4, 6, 6 };
+                int[] baseRxs = new int[] { 2, 3, 4, 5, 6, 7 };
 
                 for (int i = 0; i < ports.Length; i++)
                 {
@@ -244,25 +244,11 @@ namespace Thetis
         private readonly List<HeadlessTciClientHandler> _clients = new List<HeadlessTciClientHandler>();
         private readonly object _clientsLock = new object();
 
-        // Audio buffering per TRX (0 and 1)
-        private readonly float[][] _leftBuffers = new float[2][];
-        private readonly float[][] _rightBuffers = new float[2][];
-        private readonly int[] _bufferCounts = new int[2];
-        private readonly object _audioLock = new object();
-        private const int PACKET_SAMPLES = 2048;
-
         public HeadlessTciServer(IPAddress address, int port, int baseRxIndex)
         {
             _address = address;
             Port = port;
             BaseRxIndex = baseRxIndex;
-
-            for (int trx = 0; trx < 2; trx++)
-            {
-                _leftBuffers[trx] = new float[PACKET_SAMPLES];
-                _rightBuffers[trx] = new float[PACKET_SAMPLES];
-                _bufferCounts[trx] = 0;
-            }
         }
 
         public void Start()
@@ -387,82 +373,103 @@ namespace Thetis
         {
             if (trx < 0 || trx > 1 || left == null || right == null || nsamples <= 0) return;
 
-            // Check if any client wants audio for this trx
-            bool hasListeners = false;
             lock (_clientsLock)
             {
                 for (int i = 0; i < _clients.Count; i++)
                 {
-                    if (_clients[i].WantsAudio(trx)) { hasListeners = true; break; }
-                }
-            }
-            if (!hasListeners) return;
-
-            lock (_audioLock)
-            {
-                int srcOffset = 0;
-                while (srcOffset < nsamples)
-                {
-                    int toCopy = Math.Min(nsamples - srcOffset, PACKET_SAMPLES - _bufferCounts[trx]);
-                    Array.Copy(left, srcOffset, _leftBuffers[trx], _bufferCounts[trx], toCopy);
-                    Array.Copy(right, srcOffset, _rightBuffers[trx], _bufferCounts[trx], toCopy);
-                    _bufferCounts[trx] += toCopy;
-                    srcOffset += toCopy;
-
-                    if (_bufferCounts[trx] >= PACKET_SAMPLES)
+                    var c = _clients[i];
+                    if (c.WantsAudio(trx))
                     {
-                        // Build TCI audio packet
-                        byte[] payload = BuildTciAudioStreamPacket(trx, sampleRate, _leftBuffers[trx], _rightBuffers[trx], PACKET_SAMPLES);
-                        byte[] wsFrame = MakeWebSocketBinaryFrame(payload);
-
-                        lock (_clientsLock)
-                        {
-                            foreach (var c in _clients)
-                            {
-                                if (c.WantsAudio(trx))
-                                {
-                                    c.SendRawBytes(wsFrame);
-                                }
-                            }
-                        }
-
-                        _bufferCounts[trx] = 0;
+                        c.PublishAudio(trx, sampleRate, left, right, nsamples);
                     }
                 }
             }
         }
 
-        private static byte[] BuildTciAudioStreamPacket(int trx, int sampleRate, float[] left, float[] right, int count)
+        internal static byte[] EncodeAudioSamples(float[] samples, TCISampleType sampleType)
         {
-            // 64 byte TCI stream header + count * 2 channels * 4 bytes
-            int payloadSamples = count * 2;
-            int payloadBytes = payloadSamples * 4;
-            byte[] packet = new byte[64 + payloadBytes];
+            if (samples == null || samples.Length == 0) return Array.Empty<byte>();
+
+            if (sampleType == TCISampleType.FLOAT32)
+            {
+                byte[] data = new byte[samples.Length * 4];
+                Buffer.BlockCopy(samples, 0, data, 0, data.Length);
+                return data;
+            }
+
+            if (sampleType == TCISampleType.INT16)
+            {
+                byte[] data = new byte[samples.Length * 2];
+                int offset = 0;
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    float clipped = Math.Max(-1.0f, Math.Min(1.0f, samples[i]));
+                    short s16 = (short)Math.Round(clipped * 32767.0f);
+                    data[offset++] = (byte)(s16 & 0xFF);
+                    data[offset++] = (byte)((s16 >> 8) & 0xFF);
+                }
+                return data;
+            }
+
+            if (sampleType == TCISampleType.INT24)
+            {
+                byte[] data = new byte[samples.Length * 3];
+                int offset = 0;
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    float clipped = Math.Max(-1.0f, Math.Min(1.0f, samples[i]));
+                    int s24 = (int)Math.Round(clipped * 8388607.0f);
+                    data[offset++] = (byte)(s24 & 0xFF);
+                    data[offset++] = (byte)((s24 >> 8) & 0xFF);
+                    data[offset++] = (byte)((s24 >> 16) & 0xFF);
+                }
+                return data;
+            }
+
+            if (sampleType == TCISampleType.INT32)
+            {
+                byte[] data = new byte[samples.Length * 4];
+                int offset = 0;
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    float clipped = Math.Max(-1.0f, Math.Min(1.0f, samples[i]));
+                    int s32 = (int)Math.Round(clipped * 2147483647.0f);
+                    data[offset++] = (byte)(s32 & 0xFF);
+                    data[offset++] = (byte)((s32 >> 8) & 0xFF);
+                    data[offset++] = (byte)((s32 >> 16) & 0xFF);
+                    data[offset++] = (byte)((s32 >> 24) & 0xFF);
+                }
+                return data;
+            }
+
+            byte[] fallback = new byte[samples.Length * 4];
+            Buffer.BlockCopy(samples, 0, fallback, 0, fallback.Length);
+            return fallback;
+        }
+
+        internal static byte[] BuildAudioPayload(int trx, int sampleRate, TCISampleType sampleType, int length, int channels, byte[] samplePayload)
+        {
+            int payloadLen = samplePayload != null ? samplePayload.Length : 0;
+            byte[] packet = new byte[64 + payloadLen];
 
             WriteUInt32(packet, 0, (uint)trx);
             WriteUInt32(packet, 4, (uint)sampleRate);
-            WriteUInt32(packet, 8, 3); // FLOAT32 = 3
+            WriteUInt32(packet, 8, (uint)sampleType);
             WriteUInt32(packet, 12, 0);
             WriteUInt32(packet, 16, 0);
-            WriteUInt32(packet, 20, (uint)payloadSamples);
+            WriteUInt32(packet, 20, (uint)length);
             WriteUInt32(packet, 24, 1); // RX_AUDIO_STREAM = 1
-            WriteUInt32(packet, 28, 2); // 2 channels (stereo)
+            WriteUInt32(packet, 28, (uint)channels);
 
-            // Interleave left and right floats
-            int offset = 64;
-            for (int i = 0; i < count; i++)
+            if (payloadLen > 0)
             {
-                byte[] lb = BitConverter.GetBytes(left[i]);
-                packet[offset++] = lb[0]; packet[offset++] = lb[1]; packet[offset++] = lb[2]; packet[offset++] = lb[3];
-
-                byte[] rb = BitConverter.GetBytes(right[i]);
-                packet[offset++] = rb[0]; packet[offset++] = rb[1]; packet[offset++] = rb[2]; packet[offset++] = rb[3];
+                Buffer.BlockCopy(samplePayload, 0, packet, 64, payloadLen);
             }
 
             return packet;
         }
 
-        private static void WriteUInt32(byte[] buffer, int offset, uint value)
+        public static void WriteUInt32(byte[] buffer, int offset, uint value)
         {
             buffer[offset] = (byte)(value & 0xFF);
             buffer[offset + 1] = (byte)((value >> 8) & 0xFF);
@@ -553,6 +560,16 @@ namespace Thetis
         private readonly bool[] _wantsAudio = new bool[2];
         private readonly object _sendLock = new object();
 
+        public int AudioStreamSamples { get; private set; } = 2048;
+        public int AudioStreamChannels { get; private set; } = 2;
+        internal TCISampleType AudioSampleType { get; private set; } = TCISampleType.FLOAT32;
+        public int AudioSampleRate { get; private set; } = 48000;
+        public long AudioPacketsSent { get; private set; } = 0;
+
+        private readonly List<float>[] _pendingLeft = new List<float>[] { new List<float>(), new List<float>() };
+        private readonly List<float>[] _pendingRight = new List<float>[] { new List<float>(), new List<float>() };
+        private readonly object _audioLock = new object();
+
         public HeadlessTciClientHandler(HeadlessTciServer server, TcpClient client)
         {
             _server = server;
@@ -581,6 +598,64 @@ namespace Thetis
             _stop = true;
             try { _stream?.Close(); } catch { }
             try { _client?.Close(); } catch { }
+            lock (_audioLock)
+            {
+                _pendingLeft[0].Clear();
+                _pendingRight[0].Clear();
+                _pendingLeft[1].Clear();
+                _pendingRight[1].Clear();
+            }
+        }
+
+        public void PublishAudio(int trx, int sampleRate, float[] left, float[] right, int nsamples)
+        {
+            if (_stop || !_handshakeDone || trx < 0 || trx > 1 || !_wantsAudio[trx] || left == null || nsamples <= 0) return;
+
+            int targetRate = AudioSampleRate > 0 ? AudioSampleRate : 48000;
+            int packetSamples = AudioStreamSamples > 0 ? AudioStreamSamples : 2048;
+            int channels = AudioStreamChannels == 1 ? 1 : 2;
+            TCISampleType sampleType = AudioSampleType;
+
+            lock (_audioLock)
+            {
+                var pl = _pendingLeft[trx];
+                var pr = _pendingRight[trx];
+
+                for (int i = 0; i < nsamples; i++)
+                {
+                    pl.Add(left[i]);
+                    pr.Add(right != null && i < right.Length ? right[i] : left[i]);
+                }
+
+                while (pl.Count >= packetSamples)
+                {
+                    int interleavedCount = packetSamples * channels;
+                    float[] interleaved = new float[interleavedCount];
+
+                    if (channels == 1)
+                    {
+                        pl.CopyTo(0, interleaved, 0, packetSamples);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < packetSamples; i++)
+                        {
+                            interleaved[2 * i] = pl[i];
+                            interleaved[2 * i + 1] = pr[i];
+                        }
+                    }
+
+                    pl.RemoveRange(0, packetSamples);
+                    pr.RemoveRange(0, packetSamples);
+
+                    byte[] encoded = HeadlessTciServer.EncodeAudioSamples(interleaved, sampleType);
+                    byte[] payload = HeadlessTciServer.BuildAudioPayload(trx, targetRate, sampleType, interleavedCount, channels, encoded);
+                    byte[] wsFrame = HeadlessTciServer.MakeWebSocketBinaryFrame(payload);
+
+                    SendRawBytes(wsFrame);
+                    AudioPacketsSent++;
+                }
+            }
         }
 
         public void SendRawBytes(byte[] bytes)
@@ -819,6 +894,11 @@ namespace Thetis
                         if (args.Length > 0 && int.TryParse(args[0], out int stopTrx) && stopTrx >= 0 && stopTrx <= 1)
                         {
                             _wantsAudio[stopTrx] = false;
+                            lock (_audioLock)
+                            {
+                                _pendingLeft[stopTrx].Clear();
+                                _pendingRight[stopTrx].Clear();
+                            }
                             SendTextFrame($"audio_stop:{stopTrx};");
 
                             int rx = _server.BaseRxIndex + stopTrx;
@@ -1057,8 +1137,8 @@ namespace Thetis
                         break;
 
                     case "audio_samplerate":
-                        if (args.Length > 0) SendTextFrame($"audio_samplerate:{args[0]};");
-                        else SendTextFrame("audio_samplerate:48000;");
+                        if (args.Length > 0 && int.TryParse(args[0], out int asr)) AudioSampleRate = asr;
+                        SendTextFrame($"audio_samplerate:{AudioSampleRate};");
                         break;
 
                     case "iq_samplerate":
@@ -1067,18 +1147,34 @@ namespace Thetis
                         break;
 
                     case "audio_stream_sample_type":
-                        if (args.Length > 0) SendTextFrame($"audio_stream_sample_type:{args[0]};");
-                        else SendTextFrame("audio_stream_sample_type:float32;");
+                        if (args.Length > 0)
+                        {
+                            switch (args[0].Trim().ToLowerInvariant())
+                            {
+                                case "int16": AudioSampleType = TCISampleType.INT16; break;
+                                case "int24": AudioSampleType = TCISampleType.INT24; break;
+                                case "int32": AudioSampleType = TCISampleType.INT32; break;
+                                case "float32":
+                                default: AudioSampleType = TCISampleType.FLOAT32; break;
+                            }
+                        }
+                        SendTextFrame($"audio_stream_sample_type:{AudioSampleType.ToString().ToLowerInvariant()};");
                         break;
 
                     case "audio_stream_channels":
-                        if (args.Length > 0) SendTextFrame($"audio_stream_channels:{args[0]};");
-                        else SendTextFrame("audio_stream_channels:2;");
+                        if (args.Length > 0 && int.TryParse(args[0], out int asc) && (asc == 1 || asc == 2))
+                        {
+                            AudioStreamChannels = asc;
+                        }
+                        SendTextFrame($"audio_stream_channels:{AudioStreamChannels};");
                         break;
 
                     case "audio_stream_samples":
-                        if (args.Length > 0) SendTextFrame($"audio_stream_samples:{args[0]};");
-                        else SendTextFrame("audio_stream_samples:2048;");
+                        if (args.Length > 0 && int.TryParse(args[0], out int asamp) && asamp >= 100 && asamp <= 2048)
+                        {
+                            AudioStreamSamples = asamp;
+                        }
+                        SendTextFrame($"audio_stream_samples:{AudioStreamSamples};");
                         break;
 
                     case "tx_stream_audio_buffering":

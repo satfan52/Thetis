@@ -1199,6 +1199,7 @@ int getControlByteIn(int n)
 PORT
 void EnableRx(int id, int enable) 
 {
+	if (prn == NULL) return;
 	if (prn->rx[id].enable != enable)
 	{
 		prn->rx[id].enable = enable & 0x1;
@@ -1211,6 +1212,7 @@ PORT
 void EnableRxs(int rxs) 
 {
 	int i, sum = 0;
+	if (prn == NULL) return;
 
 	for (i = 0; i < 4; i++)
 	{
@@ -1239,6 +1241,7 @@ void EnableRxs(int rxs)
 PORT
 void EnableRxSync(int id, int sync)
 {
+	if (prn == NULL) return;
 	if (prn->rx[id].sync != sync)
 	{
 		prn->rx[id].sync = sync & 0xff;
@@ -1257,7 +1260,8 @@ void Protocol1DDCConfig(int ddcconfig, int en_diversity, int rxcount, int inddc)
 PORT
 void SetDDCRate(int id, int rate)
 {
-		switch (rate)
+	if (prn == NULL) return;
+	switch (rate)
 		{
 		case 0:
 			prn->rx[id].sampling_rate = 0;

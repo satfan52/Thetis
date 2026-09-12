@@ -387,6 +387,12 @@ void MetisReadThreadMainLoop(void)
 								twist(spr, 3, 4, 1);
 								xrouter(0, 0, 2, spr, prn->RxBuff[2]);
 								break;
+							case 8:
+								for (iddc = 0; iddc < 8; iddc++)
+								{
+									xrouter(0, 0, iddc, spr, prn->RxBuff[iddc]);
+								}
+								break;
 							}
 							mic_sample_count = 0;
 
@@ -499,7 +505,9 @@ void WriteMainLoop(char* bufp)
 			// DDC1 is TX freq if Hermes-II && TX && Puresignal; 
 			// RX1 freq if Orion;
 			// else RX2 freq if Hermes
-			if ((nddc == 2) && (XmitBit == 1) && (prn->puresignal_run))
+			if (nddc == 8)
+				ddc_freq = prn->rx[1].frequency;
+			else if ((nddc == 2) && (XmitBit == 1) && (prn->puresignal_run))
 				ddc_freq = prn->tx[0].frequency;
 			else if (nddc == 5)
 				ddc_freq = prn->rx[0].frequency;
@@ -525,7 +533,9 @@ void WriteMainLoop(char* bufp)
 		case 5: //RX3 VFO (DDC2)
 			C0 |= 8;
 			// if Orion, DDC2 is RX2 frequency; else TX frequency for Hermes
-			if (nddc == 5)
+			if (nddc == 8)
+				ddc_freq = prn->rx[2].frequency;
+			else if (nddc == 5)
 				ddc_freq = prn->rx[3].frequency;
 			else
 				ddc_freq = prn->tx[0].frequency;
@@ -537,8 +547,10 @@ void WriteMainLoop(char* bufp)
 
 		case 6: //RX4 VFO (DDC3)
 			C0 |= 0x0a;
-			// DDC3 is TX frequency always
-			ddc_freq = prn->tx[0].frequency;
+			if (nddc == 8)
+				ddc_freq = prn->rx[3].frequency;
+			else
+				ddc_freq = prn->tx[0].frequency;
 			C1 = (ddc_freq >> 24) & 0xff; // byte 0 of rx4 freq 
 			C2 = (ddc_freq >> 16) & 0xff; // byte 1 of rx4 freq 
 			C3 = (ddc_freq >> 8) & 0xff; // byte 2 of rx4 freq 
@@ -547,28 +559,34 @@ void WriteMainLoop(char* bufp)
 
 		case 7: //RX5 VFO (DDC4)
 			C0 |= 0x0c;
-			// DDC4 is TX frequency for Orion2 TX with puresignal, otherwise not used, so make TX always
-			ddc_freq = prn->tx[0].frequency;
+			if (nddc == 8)
+				ddc_freq = prn->rx[4].frequency;
+			else
+				ddc_freq = prn->tx[0].frequency;
 			C1 = (ddc_freq >> 24) & 0xff; // byte 0 of rx5 freq 
-			C2 = (ddc_freq >> 16) & 0xff; // byte 1 of rx5 freq 
+			C2 = (nddc == 8) ? ((ddc_freq >> 16) & 0xff) : ((ddc_freq >> 16) & 0xff); // byte 1 of rx5 freq 
 			C3 = (ddc_freq >> 8) & 0xff; // byte 2 of rx5 freq 
 			C4 = (ddc_freq) & 0xff; // byte 3 of rx5 freq 
 			break;
 
-		case 8: //RX6 VFO
+		case 8: //RX6 VFO (DDC5)
 			C0 |= 0x0e;
-			// DDC5 not used
-			ddc_freq = prn->rx[0].frequency;
+			if (nddc == 8)
+				ddc_freq = prn->rx[5].frequency;
+			else
+				ddc_freq = prn->rx[0].frequency;
 			C1 = (ddc_freq >> 24) & 0xff; // byte 0 of rx6 freq 
 			C2 = (ddc_freq >> 16) & 0xff; // byte 1 of rx6 freq 
 			C3 = (ddc_freq >> 8) & 0xff; // byte 2 of rx6 freq 
 			C4 = (ddc_freq) & 0xff; // byte 3 of rx6 freq 
 			break;
 
-		case 9: //RX7 VFO
+		case 9: //RX7 VFO (DDC6)
 			C0 |= 0x10;
-			// DDC6 not used
-			ddc_freq = prn->rx[0].frequency;
+			if (nddc == 8)
+				ddc_freq = prn->rx[6].frequency;
+			else
+				ddc_freq = prn->rx[0].frequency;
 			C1 = (ddc_freq >> 24) & 0xff; // byte 0 of rx7 freq 
 			C2 = (ddc_freq >> 16) & 0xff; // byte 1 of rx7 freq 
 			C3 = (ddc_freq >> 8) & 0xff; // byte 2 of rx7 freq 
@@ -654,15 +672,26 @@ void WriteMainLoop(char* bufp)
 			C4 = (prn->tx[0].epwm_max & 0b00000011);
 			break;
 
-		case 16: // BPF2
+		case 16: // BPF2 or RX8 VFO (DDC7)
 			C0 |= 0x24; //C0 0010 010x
-			C1 = (prbpfilter2->_13MHz_HPF & 1) | ((prbpfilter2->_20MHz_HPF & 1) << 1) |
-				((prbpfilter2->_9_5MHz_HPF & 1) << 2) | ((prbpfilter2->_6_5MHz_HPF & 1) << 3) |
-				((prbpfilter2->_1_5MHz_HPF & 1) << 4) | ((prbpfilter2->_Bypass & 1) << 5) |
-				((prbpfilter2->_6M_preamp & 1) << 6) | ((prbpfilter2->_rx2_gnd) << 7);
-			C2 = (xvtr_enable & 1) | ((prn->puresignal_run & 1) << 6);
-			C3 = 0;
-			C4 = 0;
+			if (nddc == 8)
+			{
+				ddc_freq = prn->rx[7].frequency;
+				C1 = (ddc_freq >> 24) & 0xff; // byte 0 of rx8 freq 
+				C2 = (ddc_freq >> 16) & 0xff; // byte 1 of rx8 freq 
+				C3 = (ddc_freq >> 8) & 0xff;  // byte 2 of rx8 freq 
+				C4 = (ddc_freq) & 0xff;       // byte 3 of rx8 freq 
+			}
+			else
+			{
+				C1 = (prbpfilter2->_13MHz_HPF & 1) | ((prbpfilter2->_20MHz_HPF & 1) << 1) |
+					((prbpfilter2->_9_5MHz_HPF & 1) << 2) | ((prbpfilter2->_6_5MHz_HPF & 1) << 3) |
+					((prbpfilter2->_1_5MHz_HPF & 1) << 4) | ((prbpfilter2->_Bypass & 1) << 5) |
+					((prbpfilter2->_6M_preamp & 1) << 6) | ((prbpfilter2->_rx2_gnd) << 7);
+				C2 = (xvtr_enable & 1) | ((prn->puresignal_run & 1) << 6);
+				C3 = 0;
+				C4 = 0;
+			}
 			break;
 
 		case 17: // HPSDRModel_ANVELINAPRO3 only, extra OC pins

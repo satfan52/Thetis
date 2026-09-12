@@ -2546,6 +2546,69 @@ namespace Thetis
 
         #endregion
 
+        #region Digital Slice TX Steering (Release F)
+
+        /// <summary>
+        /// Steers the IC-7100 to the digital slice frequency and DATA mode, then keys CI-V PTT.
+        /// Used by TxArbiter when a digital slice (RX3..RX8) requests transmission.
+        /// </summary>
+        public void SteerAndKeyForDigitalTx(double freqMHz, DSPMode mode)
+        {
+            if (!IsOpen) return;
+
+            lock (_vfoSwapLock)
+            {
+                // 1. Select VFO A
+                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+
+                // 2. Set Frequency
+                if (freqMHz > 0)
+                {
+                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freqMHz));
+                    lock (_stateLock)
+                    {
+                        _lastSentVfoAFreq = freqMHz;
+                    }
+                }
+
+                // 3. Set Mode to DATA (e.g. USB-D / DATA1)
+                CIVMode civMode;
+                CIVFilter civFilter;
+                CIVDataMode dataMode;
+                CIVProtocol.MapThetisMode(mode, 3000, out civMode, out civFilter, out dataMode);
+                if (dataMode == CIVDataMode.OFF) dataMode = CIVDataMode.DATA1;
+                SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, civMode, civFilter));
+                SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, dataMode, civFilter));
+
+                // 4. Assert PTT
+                byte[] pttFrame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, true);
+                SendFrame(pttFrame);
+                _lastSentPtt = true;
+            }
+        }
+
+        /// <summary>
+        /// Releases CI-V PTT for digital slice and restores IC-7100 to the current Thetis Voice state.
+        /// </summary>
+        public void ReleaseDigitalTx()
+        {
+            if (!IsOpen) return;
+
+            lock (_vfoSwapLock)
+            {
+                // 1. Unkey PTT
+                byte[] pttFrame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, false);
+                SendFrame(pttFrame);
+                _lastSentPtt = false;
+
+                // 2. Restore Thetis Voice VFO state (freq, mode, filter width, split)
+                SyncCurrentThetisState();
+            }
+        }
+
+        #endregion
+
         #region IDisposable
 
         public void Dispose()

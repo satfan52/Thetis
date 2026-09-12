@@ -442,6 +442,9 @@
     <Compile Include="CAT\UsbBCDCable.cs" />
     <Compile Include="CAT\CIVProtocol.cs" />
     <Compile Include="CAT\CIVController.cs" />
+    <Compile Include="HeadlessSliceManager.cs" />
+    <Compile Include="TxArbiter.cs" />
+    <Compile Include="HeadlessTciServer.cs" />
     <Compile Include="Channel.cs" />
     <Compile Include="clsAudioRecordPlayback.cs" />
     <Compile Include="clsBandStackManager.cs" />

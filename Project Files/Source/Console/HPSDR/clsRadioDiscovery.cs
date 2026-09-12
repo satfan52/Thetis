@@ -1,4 +1,4 @@
-﻿/*  clsRadioDiscovery.cs
+/*  clsRadioDiscovery.cs
 
 This file is part of a program that implements a Software-Defined Radio.
 
@@ -1155,7 +1155,11 @@ namespace Thetis
                 r.CodeVersion = data[9];
                 r.BetaVersion = 0;
 
-                if (len > 20)
+                if (len >= 20 && data[11] == (byte)'R' && data[12] == (byte)'_' && data[13] == (byte)'P' && data[19] == 8)
+                {
+                    r.NumRxs = 8;
+                }
+                else if (len > 20)
                 {
                     r.MercuryVersion0 = data[14];
                     r.MercuryVersion1 = data[15];

@@ -1,4 +1,4 @@
-﻿/*  cmaster.cs
+/*  cmaster.cs
 
 This file is part of a program that implements a Software-Defined Radio.
 
@@ -409,7 +409,7 @@ namespace Thetis
        
 
         // number of software receivers
-        private static int cmRCVR = 5;  
+        private static int cmRCVR = 8;  
         public static int CMrcvr
         {
             get { return cmRCVR; }
@@ -497,23 +497,25 @@ namespace Thetis
         {
             // set radio structure
             int[] cmSPC = new int[1] {2};
-            int[] cmInboundSize = new int[8] { 240, 240, 240, 240, 240, 720, 240, 240 };
+            int[] cmInboundSize = new int[11] { 240, 240, 240, 240, 240, 240, 240, 240, 720, 240, 240 };
             fixed (int* pcmSPC = cmSPC, pcmIbSize = cmInboundSize)
-                cmaster.SetRadioStructure(8, cmRCVR, 1, cmSubRCVR, 1, pcmSPC, pcmIbSize, 1536000, 48000, 384000);
+                cmaster.SetRadioStructure(11, cmRCVR, 1, cmSubRCVR, 1, pcmSPC, pcmIbSize, 1536000, 48000, 384000);
 
             // send function pointers
             cmaster.SendCallbacks();
 
             // set default rates
-            int[] xcm_inrates = new int[8] {192000, 192000, 192000, 192000, 192000, 48000, 192000, 192000};
+            int[] xcm_inrates = new int[11] { 192000, 192000, 192000, 192000, 192000, 192000, 192000, 192000, 48000, 192000, 192000 };
             int aud_outrate = 48000;
-            int[] rcvr_ch_outrates = new int[5] {48000, 48000, 48000, 48000, 48000};
+            int[] rcvr_ch_outrates = new int[8] { 48000, 48000, 48000, 48000, 48000, 48000, 48000, 48000 };
             int[] xmtr_ch_outrates = new int[1] { 192000 };
             fixed (int* p1 = xcm_inrates, p2 = rcvr_ch_outrates, p3 = xmtr_ch_outrates)
                 cmaster.SetCMDefaultRates(p1, aud_outrate, p2, p3);
 
             // create receivers, transmitters, specials, and buffers
             cmaster.CreateRadio();
+            IsRadioCreated = true;
+            CMLoadRouterAll(HardwareSpecific.Model);
 
             // get transmitter identifiers
             int txinid = cmaster.inid(1, 0);        // stream id
@@ -713,6 +715,23 @@ namespace Thetis
                             case HPSDRModel.ANAN8000D:
                             case HPSDRModel.ANVELINAPRO3:
                             case HPSDRModel.REDPITAYA: //DH1KLM
+                                if (NetworkIO.NumReceivers == 8)
+                                {
+                                    int[] EIGHT_DDC_Function = new int[64];
+                                    int[] EIGHT_DDC_Callid = new int[64];
+                                    for (int s = 0; s < 8; s++)
+                                    {
+                                        for (int v = 0; v < 8; v++)
+                                        {
+                                            EIGHT_DDC_Function[s * 8 + v] = 1;
+                                            EIGHT_DDC_Callid[s * 8 + v] = s;
+                                        }
+                                    }
+                                    int[] EIGHT_DDC_nstreams = new int[8] { 1, 1, 1, 1, 1, 1, 1, 1 };
+                                    fixed (int* pstreams = &EIGHT_DDC_nstreams[0], pfunction = &EIGHT_DDC_Function[0], pcallid = &EIGHT_DDC_Callid[0])
+                                        LoadRouterAll((void*)0, 0, 8, 1, 8, pstreams, pfunction, pcallid);
+                                    break;
+                                }
                                 int[] FIVE_DDC_Function = new int[24]
                                     {
                                     2, 2, 2, 2, 2, 2, 2, 2,     // DDC0+DDC1, port 1035, Call 0
@@ -1158,6 +1177,23 @@ namespace Thetis
         {
             get { return _tciServer; }
             set { _tciServer = value; }
+        }
+
+        public static bool IsRadioCreated { get; set; } = false;
+
+        public static Action<int, int, float[], float[], int> HeadlessAudioPublisher { get; set; }
+
+        public static void UpdateRXTCIRunState()
+        {
+            if (TCIServer != null)
+            {
+                TCIServer.RefreshStreamRunState();
+            }
+            else
+            {
+                bool anyHeadless = HeadlessSliceManager.Instance.IsAnyStreaming;
+                SetRXTCIRun(anyHeadless ? 1 : 0);
+            }
         }
 
         private static void ensureTCIStreamThreads()
@@ -1782,7 +1818,9 @@ namespace Thetis
 
         private static unsafe void OnTCIRxAudioOutSamples(int id, int nsamples, double* data)
         {
-            if (TCIServer == null || data == null || nsamples <= 0) return;
+            if (data == null || nsamples <= 0) return;
+            if (id < 2 && TCIServer == null) return;
+            if (id >= 2 && HeadlessAudioPublisher == null) return;
 
             float[] left = rentTCIFloatBuffer(nsamples);
             float[] right = rentTCIFloatBuffer(nsamples);
@@ -1792,10 +1830,25 @@ namespace Thetis
                 right[i] = (float)data[2 * i + 1];
             }
 
+            int sampleRate = GetChannelOutputRate(0, id);
+            if (sampleRate <= 0) sampleRate = 48000;
+            if (id >= 2)
+            {
+                try
+                {
+                    HeadlessAudioPublisher?.Invoke(id, sampleRate, left, right, nsamples);
+                }
+                finally
+                {
+                    returnTCIFloatBuffer(left);
+                    returnTCIFloatBuffer(right);
+                }
+                return;
+            }
+
             TCIAudioBlock block = rentTCIAudioBlock();
             block.Receiver = id;
-            block.SampleRate = GetChannelOutputRate(0, id);
-            block.SamplesPerChannel = nsamples;
+            block.SampleRate = sampleRate;            block.SamplesPerChannel = nsamples;
             block.Left = left;
             block.Right = right;
             enqueueTCIAudio(block);

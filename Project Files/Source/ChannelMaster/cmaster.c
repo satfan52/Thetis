@@ -454,6 +454,7 @@ PORT
 void SetXcmInrate (int in_id, int rate)	// 2014-12-18:  called for streams 0, 1, 3, 4 (RX).  Stream 2 (TX) called in CMCreateCMaster().
 {
 	int i, rx, tx, sp0;
+	if (pcm == NULL || pcm->cmSTREAM == 0 || in_id < 0 || in_id >= pcm->cmSTREAM) return;
 	EnterCriticalSection (&pcm->update[in_id]);
 	if (pcm->xcm_inrate[in_id] != rate)
 	{
@@ -510,6 +511,7 @@ void SetXcmInrate (int in_id, int rate)	// 2014-12-18:  called for streams 0, 1,
 PORT
 void SetCMAudioOutrate (int in_id, int rate)		// 2014-11-24:  NOT called by console because this is fixed at 48K by the
 {													//   protocol and that is the default rate being set at creation.
+	if (pcm == NULL || pcm->cmSTREAM == 0 || in_id < 0 || in_id >= pcm->cmSTREAM) return;
 	EnterCriticalSection (&pcm->update[in_id]);
 	pcm->audio_outrate = rate;
 	pcm->audio_outsize = getbuffsize (rate);
@@ -523,8 +525,11 @@ PORT
 void SetRcvrChannelOutrate (int rcvr_id, int rate, int state)	// 2014-12-18:  NOT called by console as values are set at creation and
 {																//   not changed.
 	int j;
-	int in_id = inid (0, rcvr_id);
+	int in_id;
 	int mix_in_id;
+	if (pcm == NULL || pcm->cmSTREAM == 0 || rcvr_id < 0 || rcvr_id >= pcm->cmRCVR) return;
+	in_id = inid (0, rcvr_id);
+	if (in_id < 0 || in_id >= pcm->cmSTREAM) return;
 	EnterCriticalSection (&pcm->update[in_id]);
 	pcm->rcvr[rcvr_id].ch_outrate = rate;
 	pcm->rcvr[rcvr_id].ch_outsize = getbuffsize (rate);
@@ -549,10 +554,14 @@ void SetRcvrChannelOutrate (int rcvr_id, int rate, int state)	// 2014-12-18:  NO
 PORT
 void SetXmtrChannelOutrate (int xmtr_id, int rate, int state)	// 2014-11-24:  Called by console when TX rate is set
 {
-	int in_id = inid (1, xmtr_id);
-	int mix_in_id = mixinid (inid (1, xmtr_id), 0);
+	int in_id;
+	int mix_in_id;
 	int size = getbuffsize (rate);
 	int i;
+	if (pcm == NULL || pcm->cmSTREAM == 0 || xmtr_id < 0 || xmtr_id >= pcm->cmXMTR) return;
+	in_id = inid (1, xmtr_id);
+	if (in_id < 0 || in_id >= pcm->cmSTREAM) return;
+	mix_in_id = mixinid (inid (1, xmtr_id), 0);
 	EnterCriticalSection (&pcm->update[in_id]);
 	pcm->xmtr[xmtr_id].ch_outrate = rate;									// channel out_rate
 	pcm->xmtr[xmtr_id].ch_outsize = size;									// channel out_size

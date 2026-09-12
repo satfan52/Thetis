@@ -184,6 +184,7 @@ namespace Thetis
             cmaster.StopTCIStreamThreads();
 
             cmaster.DestroyRadio();            
+            cmaster.IsRadioCreated = false;
 		}
 
         private static bool _cache_impulse = true;

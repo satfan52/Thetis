@@ -22,6 +22,7 @@ namespace Thetis
         public static bool FWVersionsChecked { get; set; } = false;
         public static string GetFWVersionErrorMsg { get; set; } = "";
         public static string BoardMismatch { get; set; } = "";
+        public static int NumReceivers { get; set; } = 8;
 
         public static int InitRadio()
         {
@@ -156,6 +157,7 @@ namespace Thetis
                 FWCodeVersion = ri.CodeVersion;
                 BetaVersion = ri.BetaVersion;
                 Protocol2VersionSupported = ri.Protocol2Supported;
+                NumReceivers = ri.NumRxs > 0 ? ri.NumRxs : (HardwareSpecific.Model == HPSDRModel.REDPITAYA ? (ri.CodeVersion == 32 ? 5 : 8) : 5);
 
                 //[2.10.3.9]MW0LGE added board check, issue icon shown in setup
                 bool board_is_expected_for_model;
@@ -211,7 +213,7 @@ namespace Thetis
             SetOutputPowerFactor(i);
         }
 
-        private static double[][] _lastVFOfreq = new double[2][] { new double[] { 0.0, 0.0, 0.0, 0.0 }, new double[] { 0.0 } };
+        private static double[][] _lastVFOfreq = new double[2][] { new double[] { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 }, new double[] { 0.0 } };
         unsafe public static void VFOfreq(int id, double f, int tx)
         {
             _lastVFOfreq[tx][id] = f;
@@ -238,10 +240,8 @@ namespace Thetis
         {
             if (!Console.FreqCalibrationRunning)    // we can't be applying freq correction when cal is running 
             {
-                VFOfreq(0, _lastVFOfreq[0][0], 0);
-                VFOfreq(1, _lastVFOfreq[0][1], 0);
-                VFOfreq(2, _lastVFOfreq[0][2], 0);
-                VFOfreq(3, _lastVFOfreq[0][3], 0);
+                for (int i = 0; i < _lastVFOfreq[0].Length; i++)
+                    VFOfreq(i, _lastVFOfreq[0][i], 0);
                 VFOfreq(0, _lastVFOfreq[1][0], 1);
             }
         }

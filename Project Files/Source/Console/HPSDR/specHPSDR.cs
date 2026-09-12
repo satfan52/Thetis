@@ -1,4 +1,4 @@
-﻿/*
+/*
 *
 * Copyright (C) 2010-2018  Doug Wigley 
 * 
@@ -28,23 +28,23 @@ namespace Thetis
 {
     public class SpecRX
     {
-        private const int NUM_RX_DISP = 8;
+        private const int NUM_RX_DISP = 32;
         private SpecHPSDR[] spec_rx;        
 
         public SpecRX()
         {
             spec_rx = new SpecHPSDR[NUM_RX_DISP];
 
-           // for (int i = 0; i < NUM_RX_DISP; i++)
-           // {
             spec_rx[cmaster.inid(0, 0)] = new SpecHPSDR(cmaster.inid(0, 0));
             spec_rx[cmaster.inid(0, 1)] = new SpecHPSDR(cmaster.inid(0, 1));
             spec_rx[cmaster.inid(1, 0)] = new SpecHPSDR(cmaster.inid(1, 0));
-           // }
         }
 
         public SpecHPSDR GetSpecRX(int disp)
         {
+            if (disp < 0 || disp >= spec_rx.Length) return null;
+            if (spec_rx[disp] == null)
+                spec_rx[disp] = new SpecHPSDR(disp);
             return spec_rx[disp];
         }
     }

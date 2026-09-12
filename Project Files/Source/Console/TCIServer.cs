@@ -8057,33 +8057,37 @@ namespace Thetis
                 }
             }
 		}
-        internal void RefreshStreamRunState()
+        public void RefreshStreamRunState()
         {
             bool run = false;
 
             lock (m_objLocker)
             {
-                if (m_server == null || m_socketListenersList == null) return;
-
-                bool hasReadyClient = false;
-
-                foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+                if (m_server != null && m_socketListenersList != null)
                 {
-                    if (socketListener == null || !socketListener.IsReadyForStreaming())
-                        continue;
+                    bool hasReadyClient = false;
 
-                    hasReadyClient = true;
-
-                    if (socketListener.WantsAnyRxStream())
+                    foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
                     {
-                        run = true;
-                        break;
-                    }
-                }
+                        if (socketListener == null || !socketListener.IsReadyForStreaming())
+                            continue;
 
-                if (!run && hasReadyClient && m_bAlwaysStreamIQ)
-                    run = true;
+                        hasReadyClient = true;
+
+                        if (socketListener.WantsAnyRxStream())
+                        {
+                            run = true;
+                            break;
+                        }
+                    }
+
+                    if (!run && hasReadyClient && m_bAlwaysStreamIQ)
+                        run = true;
+                }
             }
+
+            if (!run && HeadlessSliceManager.Instance.IsAnyStreaming)
+                run = true;
 
             cmaster.SetRXTCIRun(run ? 1 : 0);
         }
