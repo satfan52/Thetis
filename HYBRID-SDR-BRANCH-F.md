@@ -4,6 +4,39 @@ Branch F extends Branch E with a **multi-port headless TCI server** that exposes
 
 ---
 
+## 0. Motivation & Background
+
+### Why Branch F Was Created
+
+The Red Pitaya SDR, running OpenHPSDR/Hermes-compatible firmware, supports **up to 8 DDC receivers** (DDC0–DDC7) over the HPSDR Protocol 2 Ethernet interface. Standard Thetis exposes only 2 of these (RX1/DDC0 and RX2/DDC1) to TCI clients on a single WebSocket port (50001), leaving receivers 3–8 inaccessible to external digital mode software.
+
+The goal of Branch F is to make all 8 receivers simultaneously available to independent digital mode applications — each on its own dedicated TCI port — while preserving the main operator position on port 50001 with full capabilities for voice operation, panadapter display, and CI-V transceiver control.
+
+### Use Case
+
+A typical Branch F station configuration:
+
+- **RX1 (port 50001)**: Main operator position — Thetis GUI with full panadapter, waterfall, DSP features, voice TX via IC-7100 CI-V, and Processed TX Output.
+- **RX3 (port 50003)**: WSJT-X for FT8 on one band.
+- **RX4 (port 50004)**: JTDX for FT8/FT4 on another band.
+- **RX5 (port 50005)**: JS8Call for JS8 on a third band.
+- **RX6 (port 50006)**: CW Skimmer or spot aggregator.
+- **RX7–RX8 (ports 50007–50008)**: Additional monitoring or recording.
+
+All 8 receivers run simultaneously on the same Red Pitaya hardware, each tuned to an independent frequency, each with its own digital mode application connected via a dedicated TCI WebSocket port.
+
+### Hardware Compatibility
+
+> **⚠️ Tested with Red Pitaya only.**
+>
+> Branch F was developed and verified exclusively against the **Red Pitaya SDR** running OpenHPSDR/Hermes-compatible firmware with 8 DDC support. The 8-receiver router pipeline in `ChannelMaster.dll` and the `networkproto1.c` DDC configuration were validated against this hardware.
+>
+> Other HPSDR-compatible radios that support 7 or more DDCs (e.g., ANAN-7000DLE, ANAN-8000DLE, Orion MkII) use the same HPSDR Protocol 2 router tables and may work, but have **not been tested**. Radios with fewer DDCs (ANAN-10, ANAN-100, Hermes, ANAN-G2E) do not expose receivers beyond RX2 and are not compatible with the headless multi-port feature.
+>
+> The headless TCI server requires a hardware receiver capable of providing at least 3 DDC streams. On 2-DDC hardware, ports 50003–50008 will accept connections and negotiate, but no audio will flow.
+
+---
+
 ## 1. Overview & Operational Architecture
 
 Branch F adds a parallel TCI server infrastructure alongside the existing TCI server on port 50001. Each headless port presents itself as an independent single-TRX radio, mapped one-to-one to a hardware DDC:
@@ -79,7 +112,61 @@ Dequeues audio, resamples to native transmitter input rate, and feeds into the W
 
 ---
 
-## 3. Capability Comparison: Port 50001 vs. Ports 50003–50008
+## 3. Audio Level Management
+
+### Full TCI Server (port 50001) — Fully Client-Controllable
+
+The original server exposes three independent gain stages, all controllable by the TCI client:
+
+| Control | TCI Command | What It Does | Range |
+| :--- | :--- | :--- | :--- |
+| AGC mode | `agc_mode:0,fast` | Sets AGC timing: OFF/LONG/SLOW/MED/FAST/CUSTOM | 6 modes |
+| AGC on/off | `agc_auto_ex:0,false` | Enables/disables AGC | true/false |
+| AGC manual gain | `agc_gain:0,80` | Manual gain when AGC is off/auto | -20 to +120 dB |
+| RX volume | `rx_volume:0,0,-10.0` | Per-receiver output gain (PanelGain1) | 0 dB = unity (1.0), -60 dB = muted |
+| Master AF volume | `volume:-8` | Global AF volume applied after per-receiver gain | 0 dB = unity, -60 dB = muted |
+
+The AGC top (maximum gain ceiling) and default mode are set by the operator in the Thetis UI and can be overridden by the TCI client. At `rx_volume:0,0,0` (0 dB), the output gain is unity (1.0) — full volume with no attenuation.
+
+### Headless TCI Server (ports 50002–50008) — Hardcoded AGC + Calibrated Output
+
+| Control | Status | Details |
+| :--- | :--- | :--- |
+| AGC mode | **Hardcoded MED** | Set once on slice activation, not changeable by client |
+| AGC on/off | **Always on** | No `agc_auto_ex` handler |
+| AGC manual gain | **Not available** | No `agc_gain` handler |
+| AGC top | **Hardcoded 90 dB** | Maximum gain ceiling the AGC can apply for weak signals |
+| RX volume | **Partially controllable** | `rx_volume` adjusts output, but with a fixed -26 dB calibration offset |
+| Master AF volume | **Ignored** | Always echoes `volume:0`, no effect |
+
+The headless audio chain is:
+
+```
+Raw IQ → [DSP: shift, resample, bandpass, NR, AGC(MED, top=90dB), filter, squelch] → Panel Gain (×0.05) → Output
+```
+
+**AGC** is active and provides automatic leveling — it continuously adapts gain based on signal strength (up to 90 dB of gain for very weak signals). This is not a fixed 90 dB gain; 90 dB is the ceiling on how much gain the AGC may apply.
+
+**Panel Gain** applies a fixed 0.05× attenuation (-26 dB) after AGC. This calibration prevents clipping when streaming to digital mode software. The `rx_volume` command scales this:
+
+$$\text{gainFactor} = 10^{\text{volDb}/20} \times 0.05$$
+
+| `rx_volume` value | Full server gain | Headless gain | Headless level |
+| :--- | :--- | :--- | :--- |
+| 0 dB (default) | 1.0 (unity) | 0.05 | -26 dB |
+| +6 dB | 2.0 | 0.10 | -20 dB |
+| -14 dB | 0.2 | 0.01 | -40 dB |
+| -26 dB | 0.05 | 0.0025 | -52 dB |
+
+At `rx_volume:0,0,0` (the value WSJT-X sends by default), the full server outputs unity gain (1.0, full volume). The headless server outputs 0.05 (-26 dB) — already attenuated to a safe level for digital mode software.
+
+### Rationale for Hardcoded AGC
+
+The headless server is designed for "set and forget" digital mode operation. FT8/JS8/RTTY work well with MED AGC and -26 dB attenuation. Allowing per-client AGC control would add complexity for limited benefit in the target use case. For operators who need full AGC control (e.g., CW skimming with AGC off), the original server on port 50001 remains available.
+
+---
+
+## 4. Capability Comparison: Port 50001 vs. Ports 50003–50008
 
 ### Fully supported on headless ports
 
@@ -93,7 +180,7 @@ Dequeues audio, resamples to native transmitter input rate, and feeds into the W
 | RX filter band | `rx_filter_band` → WDSP bandpass/NBP/SNBA |
 | PTT (trx) | `trx:0,bool` — arbitrated by TxArbiter |
 | Tune | `tune:0,bool` — same arbitration path |
-| RX volume / gain | `rx_volume` → `WDSP.SetRXAPanelGain1()` with -26 dB calibration |
+| RX volume / gain | `rx_volume` → `WDSP.SetRXAPanelGain1()` with -26 dB calibration (see §3) |
 | Stream format negotiation | `audio_stream_sample_type`, `audio_stream_channels`, `audio_stream_samples`, `tx_stream_audio_buffering` |
 | Audio sample rate | `audio_samplerate` negotiation |
 | Start/Stop (power) | `start`/`stop` toggles radio power |
@@ -122,7 +209,7 @@ Dequeues audio, resamples to native transmitter input rate, and feeds into the W
 | IQ streaming | No `iq_start`/`iq_stop` handler; no `PublishIQSamples`. CW Skimmers and panadapter clients requiring raw IQ will not work on headless ports. |
 | Sub-RX / channels | Single channel only (`channels_count:1`) |
 | Second TRX | Single TRX per port (`trx_count:1`) |
-| AGC control | Hardcoded to MED mode, top=90 dB. No `agc_mode`/`agc_gain`/`agc_auto_ex` handling. |
+| AGC control | Hardcoded to MED mode, top=90 dB. No `agc_mode`/`agc_gain`/`agc_auto_ex` handling. (See §3 for details.) |
 | Noise blanker | No `rx_nb_enable`/`rx_nb2_enable` handling |
 | Noise reduction | No `rx_nr_enable`/`rx_nr_enable_ex` handling |
 | Binaural (BIN) | No `rx_bin_enable` handling |
@@ -131,7 +218,7 @@ Dequeues audio, resamples to native transmitter input rate, and feeds into the W
 | DDS (panadapter center) | Not handled |
 | VFO lock (per-VFO) | Not handled |
 | VFO swap | Not handled |
-| Line out (VAC control) | Not handled |
+| Line out (VAC control) | Not handled — VAC1/VAC2 are global shared resources already dedicated to Processed TX Output and RX2 audio. Headless ports have their own TX audio path that bypasses VAC entirely. |
 | Spots | Not handled |
 | TX profiles | Not handled |
 | Sensors / S-meter | No periodic sensor reporting |
@@ -139,7 +226,7 @@ Dequeues audio, resamples to native transmitter input rate, and feeds into the W
 
 ---
 
-## 4. TX Arbitration Model
+## 5. TX Arbitration Model
 
 The `TxArbiter` implements a priority-based TX interlock unique to the headless ports:
 
@@ -151,11 +238,13 @@ The `TxArbiter` implements a priority-based TX interlock unique to the headless 
 
 ---
 
-## 5. Verification Results
+## 6. Verification Results
+
+> All tests were performed against **live Red Pitaya hardware** (192.168.129.52) running OpenHPSDR-compatible firmware with 8 DDC support. No other radio hardware was used.
 
 ### Multi-Channel Audio Streaming (all 8 ports)
 
-Tested with `test_all_channels_audio.py` — 8-second streaming per port against live Red Pitaya hardware:
+Tested with `test_all_channels_audio.py` — 8-second streaming per port:
 
 | Port | RX | Packets | Bandwidth | Interval (avg) | Dropouts | Result |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -191,7 +280,7 @@ Tested with `test_tune_port_50008.py` — simulated WSJT-X Tune sequence:
 
 ---
 
-## 6. Source Tree & Commits
+## 7. Source Tree & Commits
 
 - **Repository**: [satfan52/Thetis](https://github.com/satfan52/Thetis)
 - **Branch**: `F`
@@ -210,7 +299,7 @@ Tested with `test_tune_port_50008.py` — simulated WSJT-X Tune sequence:
 
 ---
 
-## 7. Branch Lineage
+## 8. Branch Lineage
 
 ```
 master
