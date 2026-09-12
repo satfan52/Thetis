@@ -1118,7 +1118,14 @@ namespace Thetis
                         break;
 
                     case "rx_volume":
-                        if (args.Length >= 2 && int.TryParse(args[0], out int volTrx) && int.TryParse(args[1], out int volChan))
+                        if (args.Length >= 3 && int.TryParse(args[0], out int setVolTrx) && int.TryParse(args[1], out int setVolChan) && double.TryParse(args[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double volDb))
+                        {
+                            int rx = _server.BaseRxIndex + setVolTrx;
+                            double gainFactor = Math.Pow(10.0, volDb / 20.0) * 0.05;
+                            HeadlessSliceManager.Instance.SetSliceGain(rx, gainFactor);
+                            SendTextFrame($"rx_volume:{setVolTrx},{setVolChan},{volDb:0.00};");
+                        }
+                        else if (args.Length >= 2 && int.TryParse(args[0], out int volTrx) && int.TryParse(args[1], out int volChan))
                         {
                             SendTextFrame($"rx_volume:{volTrx},{volChan},0.00;");
                         }

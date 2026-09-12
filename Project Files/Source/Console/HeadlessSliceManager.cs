@@ -23,6 +23,7 @@ namespace Thetis
         public int FilterHigh { get; set; } = 3000;
         public bool IsActive { get; set; } = false;
         public bool IsStreamingAudio { get; set; } = false;
+        public double AudioGain { get; set; } = 0.05;
 
         public HeadlessSlice(int rxIndex)
         {
@@ -141,6 +142,23 @@ namespace Thetis
             SliceFilterChanged?.Invoke(rx, lowHz, highHz);
         }
 
+        public void SetSliceGain(int rx, double gain)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.AudioGain = Math.Max(0.001, Math.Min(2.0, gain));
+                if (slice.IsActive && cmaster.IsRadioCreated)
+                {
+                    try
+                    {
+                        WDSP.SetRXAPanelGain1(slice.ChannelId, slice.AudioGain);
+                    }
+                    catch { }
+                }
+            }
+        }
+
         [HandleProcessCorruptedStateExceptions]
         [SecurityCritical]
         public void ActivateAudio(int rx)
@@ -171,7 +189,7 @@ namespace Thetis
                             WDSP.SetRXASNBAOutputBandwidth(slice.ChannelId, slice.FilterLow, slice.FilterHigh);
                             WDSP.SetRXAAGCMode(slice.ChannelId, AGCMode.MED);
                             WDSP.SetRXAAGCTop(slice.ChannelId, 90.0);
-                            WDSP.SetRXAPanelGain1(slice.ChannelId, 1.0);
+                            WDSP.SetRXAPanelGain1(slice.ChannelId, slice.AudioGain);
 
                             // Turn ON WDSP processing for this slice channel
                             WDSP.SetChannelState(slice.ChannelId, 1, 0);
