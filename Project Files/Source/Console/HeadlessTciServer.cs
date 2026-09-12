@@ -22,7 +22,7 @@ using System.Collections.Generic;
 
 namespace Thetis
 {
-    public sealed class HeadlessTciManager
+    public sealed class HeadlessTciManager : ITciTxAudioSource
     {
         public static HeadlessTciManager Instance { get; } = new HeadlessTciManager();
 
@@ -33,6 +33,91 @@ namespace Thetis
         private HeadlessTciManager() { }
 
         public bool IsRunning => _isRunning;
+        public Console Console { get; private set; }
+
+        public TCITxStereoInputMode TXStereoInputMode => TCITxStereoInputMode.Both;
+
+        public bool UsesActiveTCITxAudio()
+        {
+            if (!_isRunning) return false;
+            int activeRx = TxArbiter.Instance.ActiveDigitalRx;
+            if (activeRx == -1) return false;
+
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                {
+                    if (_servers[i].BaseRxIndex == activeRx)
+                    {
+                        return _servers[i].UsesActiveTCITxAudio();
+                    }
+                }
+            }
+            return false;
+        }
+
+        public bool TryGetTxAudioRequestSettings(out int sampleRate, out int samples, out int bufferingMs)
+        {
+            sampleRate = 48000;
+            samples = 2048;
+            bufferingMs = 100;
+            if (!_isRunning) return false;
+
+            int activeRx = TxArbiter.Instance.ActiveDigitalRx;
+            if (activeRx == -1) return false;
+
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                {
+                    if (_servers[i].BaseRxIndex == activeRx)
+                    {
+                        return _servers[i].TryGetTxAudioRequestSettings(out sampleRate, out samples, out bufferingMs);
+                    }
+                }
+            }
+            return false;
+        }
+
+        public void SendTxChrono(int receiver)
+        {
+            if (!_isRunning) return;
+            int activeRx = TxArbiter.Instance.ActiveDigitalRx;
+            if (activeRx == -1) return;
+
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                {
+                    if (_servers[i].BaseRxIndex == activeRx)
+                    {
+                        _servers[i].SendTxChrono(receiver);
+                        return;
+                    }
+                }
+            }
+        }
+
+        public bool TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio)
+        {
+            queuedAudio = null;
+            if (!_isRunning) return false;
+
+            int activeRx = TxArbiter.Instance.ActiveDigitalRx;
+            if (activeRx == -1) return false;
+
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                {
+                    if (_servers[i].BaseRxIndex == activeRx)
+                    {
+                        return _servers[i].TryDequeueTxAudio(out queuedAudio);
+                    }
+                }
+            }
+            return false;
+        }
 
         public void StartAll(IPAddress bindAddress, Console console)
         {
@@ -40,6 +125,7 @@ namespace Thetis
             {
                 if (_isRunning) StopAll();
 
+                Console = console;
                 TxArbiter.Instance.Initialize(console);
                 TxArbiter.Instance.DigitalSlicePreempted += OnSlicePreempted;
 
@@ -47,15 +133,16 @@ namespace Thetis
                 HeadlessSliceManager.Instance.SliceModeChanged += OnSliceModeChanged;
                 HeadlessSliceManager.Instance.SliceFilterChanged += OnSliceFilterChanged;
 
-                // Bind ports 50003..50008 matching RX3..RX8 directly (Port = 50000 + RX#)
+                // Bind ports 50002..50008 matching RX2..RX8 directly (Port = 50000 + RX#)
+                // 50002 -> RX2 (DDC 1)
                 // 50003 -> RX3 (DDC 2)
                 // 50004 -> RX4 (DDC 3)
                 // 50005 -> RX5 (DDC 4)
                 // 50006 -> RX6 (DDC 5)
                 // 50007 -> RX7 (DDC 6)
                 // 50008 -> RX8 (DDC 7)
-                int[] ports = new int[] { 50003, 50004, 50005, 50006, 50007, 50008 };
-                int[] baseRxs = new int[] { 2, 3, 4, 5, 6, 7 };
+                int[] ports = new int[] { 50002, 50003, 50004, 50005, 50006, 50007, 50008 };
+                int[] baseRxs = new int[] { 1, 2, 3, 4, 5, 6, 7 };
 
                 for (int i = 0; i < ports.Length; i++)
                 {
@@ -91,6 +178,7 @@ namespace Thetis
                 HeadlessSliceManager.Instance.DeactivateAll();
                 TxArbiter.Instance.Shutdown();
 
+                Console = null;
                 _isRunning = false;
             }
         }
@@ -104,9 +192,9 @@ namespace Thetis
                 for (int i = 0; i < _servers.Count; i++)
                 {
                     var s = _servers[i];
-                    if (rx >= s.BaseRxIndex && rx < s.BaseRxIndex + 2)
+                    if (rx == s.BaseRxIndex)
                     {
-                        s.PublishAudio(rx - s.BaseRxIndex, sampleRate, left, right, nsamples);
+                        s.PublishAudio(0, sampleRate, left, right, nsamples);
                     }
                 }
             }
@@ -119,9 +207,9 @@ namespace Thetis
                 for (int i = 0; i < _servers.Count; i++)
                 {
                     var s = _servers[i];
-                    if (rx >= s.BaseRxIndex && rx < s.BaseRxIndex + 2)
+                    if (rx == s.BaseRxIndex)
                     {
-                        if (s.IsTrxStreaming(rx - s.BaseRxIndex)) return true;
+                        if (s.IsTrxStreaming(0)) return true;
                     }
                 }
             }
@@ -137,9 +225,10 @@ namespace Thetis
                 for (int i = 0; i < _servers.Count; i++)
                 {
                     var s = _servers[i];
-                    if (rx >= s.BaseRxIndex && rx < s.BaseRxIndex + 2)
+                    if (rx == s.BaseRxIndex)
                     {
-                        s.BroadcastTrxState(rx - s.BaseRxIndex, false);
+                        s.OnSlicePreempted();
+                        s.BroadcastTrxState(0, false);
                     }
                 }
             }
@@ -155,9 +244,9 @@ namespace Thetis
                 for (int i = 0; i < _servers.Count; i++)
                 {
                     var s = _servers[i];
-                    if (rx >= s.BaseRxIndex && rx < s.BaseRxIndex + 2)
+                    if (rx == s.BaseRxIndex)
                     {
-                        s.BroadcastVfo(rx - s.BaseRxIndex, freqHz);
+                        s.BroadcastVfo(0, freqHz);
                     }
                 }
             }
@@ -173,9 +262,9 @@ namespace Thetis
                 for (int i = 0; i < _servers.Count; i++)
                 {
                     var s = _servers[i];
-                    if (rx >= s.BaseRxIndex && rx < s.BaseRxIndex + 2)
+                    if (rx == s.BaseRxIndex)
                     {
-                        s.BroadcastMode(rx - s.BaseRxIndex, modeStr);
+                        s.BroadcastMode(0, modeStr);
                     }
                 }
             }
@@ -190,9 +279,9 @@ namespace Thetis
                 for (int i = 0; i < _servers.Count; i++)
                 {
                     var s = _servers[i];
-                    if (rx >= s.BaseRxIndex && rx < s.BaseRxIndex + 2)
+                    if (rx == s.BaseRxIndex)
                     {
-                        s.BroadcastFilter(rx - s.BaseRxIndex, lowHz, highHz);
+                        s.BroadcastFilter(0, lowHz, highHz);
                     }
                 }
             }
@@ -297,6 +386,8 @@ namespace Thetis
                 {
                     TcpClient client = _listener.AcceptTcpClient();
                     client.NoDelay = true;
+                    client.SendBufferSize = 131072;
+                    client.ReceiveBufferSize = 65536;
                     var handler = new HeadlessTciClientHandler(this, client);
                     lock (_clientsLock)
                     {
@@ -331,13 +422,10 @@ namespace Thetis
                 _clients.Remove(client);
             }
 
-            for (int trx = 0; trx < 2; trx++)
+            int rx = BaseRxIndex;
+            if (!HeadlessTciManager.Instance.IsAnyClientStreaming(rx))
             {
-                int rx = BaseRxIndex + trx;
-                if (!HeadlessTciManager.Instance.IsAnyClientStreaming(rx))
-                {
-                    HeadlessSliceManager.Instance.DeactivateAudio(rx);
-                }
+                HeadlessSliceManager.Instance.DeactivateAudio(rx);
             }
         }
 
@@ -354,7 +442,8 @@ namespace Thetis
 
         public void BroadcastVfo(int trx, long freqHz)
         {
-            BroadcastText($"vfo:{trx},0,{freqHz};");
+            BroadcastText($"vfo:0,0,{freqHz};");
+            BroadcastText($"vfo:0,1,{freqHz};");
         }
 
         public void BroadcastMode(int trx, string modeStr)
@@ -370,6 +459,80 @@ namespace Thetis
         public void BroadcastTrxState(int trx, bool isTx)
         {
             BroadcastText($"trx:{trx},{isTx.ToString().ToLowerInvariant()};");
+        }
+
+        public void OnSlicePreempted()
+        {
+            lock (_clientsLock)
+            {
+                foreach (var c in _clients)
+                {
+                    c.OnPreempted();
+                }
+            }
+        }
+
+        public bool UsesActiveTCITxAudio()
+        {
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    if (_clients[i].IsTransmitting) return true;
+                }
+            }
+            return false;
+        }
+
+        public bool TryGetTxAudioRequestSettings(out int sampleRate, out int samples, out int bufferingMs)
+        {
+            sampleRate = 48000;
+            samples = 2048;
+            bufferingMs = 100;
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    if (_clients[i].IsTransmitting)
+                    {
+                        sampleRate = _clients[i].AudioSampleRate;
+                        samples = _clients[i].AudioStreamSamples;
+                        bufferingMs = _clients[i].TxStreamAudioBufferingMs;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        public void SendTxChrono(int receiver)
+        {
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    if (_clients[i].IsTransmitting)
+                    {
+                        _clients[i].SendTxChrono(receiver);
+                    }
+                }
+            }
+        }
+
+        public bool TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio)
+        {
+            queuedAudio = null;
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    if (_clients[i].IsTransmitting && _clients[i].TryDequeueTxAudio(out queuedAudio))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         public void PublishAudio(int trx, int sampleRate, float[] left, float[] right, int nsamples)
@@ -550,6 +713,90 @@ namespace Thetis
             Buffer.BlockCopy(payload, 0, frame, headerLen, length);
             return frame;
         }
+
+        public static byte[] BuildChronoPayload(int receiver, int sampleRate, TCISampleType sampleType, int length, int channels)
+        {
+            byte[] packet = new byte[64];
+            WriteUInt32(packet, 0, (uint)receiver);
+            WriteUInt32(packet, 4, (uint)sampleRate);
+            WriteUInt32(packet, 8, (uint)sampleType);
+            WriteUInt32(packet, 12, 0);
+            WriteUInt32(packet, 16, 0);
+            WriteUInt32(packet, 20, (uint)length);
+            WriteUInt32(packet, 24, (uint)TCIStreamType.TX_CHRONO);
+            WriteUInt32(packet, 28, (uint)channels);
+            return packet;
+        }
+
+        public static int GetBytesPerSample(TCISampleType sampleType)
+        {
+            switch (sampleType)
+            {
+                case TCISampleType.INT16: return 2;
+                case TCISampleType.INT24: return 3;
+                case TCISampleType.INT32:
+                case TCISampleType.FLOAT32:
+                default:
+                    return 4;
+            }
+        }
+
+        public static float[] DecodeSamples(byte[] payload, int offset, int count, TCISampleType sampleType)
+        {
+            float[] samples = new float[count];
+            for (int i = 0; i < count; i++)
+            {
+                switch (sampleType)
+                {
+                    case TCISampleType.INT16:
+                        short s16 = BitConverter.ToInt16(payload, offset);
+                        samples[i] = s16 / 32768.0f;
+                        offset += 2;
+                        break;
+                    case TCISampleType.INT24:
+                        int s24 = (payload[offset] | (payload[offset + 1] << 8) | (payload[offset + 2] << 16));
+                        if ((s24 & 0x800000) != 0) s24 |= unchecked((int)0xFF000000);
+                        samples[i] = s24 / 8388608.0f;
+                        offset += 3;
+                        break;
+                    case TCISampleType.INT32:
+                        samples[i] = BitConverter.ToInt32(payload, offset) / 2147483648.0f;
+                        offset += 4;
+                        break;
+                    case TCISampleType.FLOAT32:
+                    default:
+                        samples[i] = BitConverter.ToSingle(payload, offset);
+                        offset += 4;
+                        break;
+                }
+            }
+            return samples;
+        }
+
+        public static double[] ConvertStreamSamplesToComplex(float[] samples, int channels)
+        {
+            if (channels < 1) channels = 1;
+            int complexSamples = channels <= 1 ? samples.Length : samples.Length / channels;
+            double[] complex = new double[complexSamples * 2];
+            if (channels == 1)
+            {
+                for (int i = 0; i < complexSamples; i++)
+                {
+                    double val = samples[i];
+                    complex[2 * i] = val;
+                    complex[2 * i + 1] = val;
+                }
+            }
+            else
+            {
+                for (int i = 0, j = 0; i < complexSamples; i++, j += channels)
+                {
+                    complex[2 * i] = samples[j];
+                    complex[2 * i + 1] = samples[j + 1];
+                }
+            }
+            return complex;
+        }
     }
 
     public sealed class HeadlessTciClientHandler
@@ -558,9 +805,16 @@ namespace Thetis
         private readonly TcpClient _client;
         private NetworkStream _stream;
         private Thread _thread;
+        private Thread _sendThread;
         private volatile bool _stop = false;
         private bool _handshakeDone = false;
         private readonly bool[] _wantsAudio = new bool[2];
+
+        // Dedicated outbound frame queue and background sender thread.
+        // Guarantees network TCP writes NEVER block the real-time DSP audio callback thread.
+        private readonly Queue<byte[]> _outboundFrames = new Queue<byte[]>();
+        private readonly object _outboundLock = new object();
+        private readonly AutoResetEvent _outboundEvent = new AutoResetEvent(false);
         private readonly object _sendLock = new object();
 
         public int AudioStreamSamples { get; private set; } = 2048;
@@ -569,8 +823,24 @@ namespace Thetis
         public int AudioSampleRate { get; private set; } = 48000;
         public long AudioPacketsSent { get; private set; } = 0;
 
-        private readonly List<float>[] _pendingLeft = new List<float>[] { new List<float>(), new List<float>() };
-        private readonly List<float>[] _pendingRight = new List<float>[] { new List<float>(), new List<float>() };
+        private volatile bool _isTransmitting = false;
+        public bool IsTransmitting => _isTransmitting;
+        public int TxStreamAudioBufferingMs { get; private set; } = 100;
+        private bool _seenModernTxAudioNegotiation = false;
+
+        private const int MAX_TX_AUDIO_QUEUE_BLOCKS = 32;
+        private const int MAX_TX_AUDIO_QUEUE_COMPLEX_SAMPLES = 65536;
+        private readonly Queue<TCIQueuedTxAudio> _txAudioQueue = new Queue<TCIQueuedTxAudio>();
+        private readonly object _txQueueLock = new object();
+        private int _txQueuedComplexSamples = 0;
+
+        // Circular ring buffer for audio accumulation (zero heap allocations & zero array-copy shifts during streaming)
+        private const int RING_BUFFER_SIZE = 32768;
+        private readonly float[] _ringLeft = new float[RING_BUFFER_SIZE];
+        private readonly float[] _ringRight = new float[RING_BUFFER_SIZE];
+        private int _audioBufRead = 0;
+        private int _audioBufWrite = 0;
+        private int _audioBufCount = 0;
         private readonly object _audioLock = new object();
 
         public HeadlessTciClientHandler(HeadlessTciServer server, TcpClient client)
@@ -585,6 +855,52 @@ namespace Thetis
             return _wantsAudio[trx];
         }
 
+        public void OnPreempted()
+        {
+            _isTransmitting = false;
+            ClearQueuedTxAudio();
+        }
+
+        public void ClearQueuedTxAudio()
+        {
+            lock (_txQueueLock)
+            {
+                _txAudioQueue.Clear();
+                _txQueuedComplexSamples = 0;
+            }
+        }
+
+        public void SendTxChrono(int receiver)
+        {
+            if (_stop || !_handshakeDone) return;
+            int sampleRate = AudioSampleRate;
+            int samples = AudioStreamSamples;
+            int channels = AudioStreamChannels;
+            TCISampleType sampleType = AudioSampleType;
+            int requestLength = _seenModernTxAudioNegotiation ? samples * Math.Max(1, channels) : samples;
+            byte[] payload = HeadlessTciServer.BuildChronoPayload(receiver, sampleRate, sampleType, requestLength, channels);
+            byte[] wsFrame = HeadlessTciServer.MakeWebSocketBinaryFrame(payload);
+            SendRawBytes(wsFrame);
+        }
+
+        public bool TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio)
+        {
+            lock (_txQueueLock)
+            {
+                if (_txAudioQueue.Count > 0)
+                {
+                    queuedAudio = _txAudioQueue.Dequeue();
+                    if (queuedAudio != null)
+                    {
+                        _txQueuedComplexSamples = Math.Max(0, _txQueuedComplexSamples - Math.Max(0, queuedAudio.ComplexSamples));
+                    }
+                    return true;
+                }
+            }
+            queuedAudio = null;
+            return false;
+        }
+
         public void Start()
         {
             _stream = _client.GetStream();
@@ -594,25 +910,74 @@ namespace Thetis
                 Name = $"HeadlessTciClient_{_server.Port}"
             };
             _thread.Start();
+
+            _sendThread = new Thread(SendLoop)
+            {
+                IsBackground = true,
+                Name = $"HeadlessTciSend_{_server.Port}",
+                Priority = ThreadPriority.AboveNormal
+            };
+            _sendThread.Start();
         }
 
         public void Close()
         {
             _stop = true;
+            _isTransmitting = false;
+            ClearQueuedTxAudio();
+            _outboundEvent.Set();
             try { _stream?.Close(); } catch { }
             try { _client?.Close(); } catch { }
+            lock (_outboundLock)
+            {
+                _outboundFrames.Clear();
+            }
             lock (_audioLock)
             {
-                _pendingLeft[0].Clear();
-                _pendingRight[0].Clear();
-                _pendingLeft[1].Clear();
-                _pendingRight[1].Clear();
+                _audioBufCount = 0;
+                _audioBufRead = 0;
+                _audioBufWrite = 0;
+            }
+        }
+
+        private void SendLoop()
+        {
+            while (!_stop && _client.Connected)
+            {
+                byte[] frame = null;
+                lock (_outboundLock)
+                {
+                    if (_outboundFrames.Count > 0)
+                    {
+                        frame = _outboundFrames.Dequeue();
+                    }
+                }
+
+                if (frame != null)
+                {
+                    try
+                    {
+                        lock (_sendLock)
+                        {
+                            _stream.Write(frame, 0, frame.Length);
+                        }
+                    }
+                    catch
+                    {
+                        Close();
+                        break;
+                    }
+                }
+                else
+                {
+                    _outboundEvent.WaitOne(100);
+                }
             }
         }
 
         public void PublishAudio(int trx, int sampleRate, float[] left, float[] right, int nsamples)
         {
-            if (_stop || !_handshakeDone || trx < 0 || trx > 1 || !_wantsAudio[trx] || left == null || nsamples <= 0) return;
+            if (_stop || !_handshakeDone || trx != 0 || !_wantsAudio[0] || left == null || nsamples <= 0) return;
 
             int targetRate = AudioSampleRate > 0 ? AudioSampleRate : 48000;
             int packetSamples = AudioStreamSamples > 0 ? AudioStreamSamples : 2048;
@@ -621,38 +986,50 @@ namespace Thetis
 
             lock (_audioLock)
             {
-                var pl = _pendingLeft[trx];
-                var pr = _pendingRight[trx];
+                // Discard excess if ring buffer would overflow to preserve low latency without memory growth
+                if (_audioBufCount + nsamples > RING_BUFFER_SIZE)
+                {
+                    int overflow = (_audioBufCount + nsamples) - RING_BUFFER_SIZE;
+                    _audioBufRead = (_audioBufRead + overflow) % RING_BUFFER_SIZE;
+                    _audioBufCount -= overflow;
+                }
 
                 for (int i = 0; i < nsamples; i++)
                 {
-                    pl.Add(left[i]);
-                    pr.Add(right != null && i < right.Length ? right[i] : left[i]);
+                    _ringLeft[_audioBufWrite] = left[i];
+                    _ringRight[_audioBufWrite] = (right != null && i < right.Length) ? right[i] : left[i];
+                    _audioBufWrite = (_audioBufWrite + 1) % RING_BUFFER_SIZE;
+                    _audioBufCount++;
                 }
 
-                while (pl.Count >= packetSamples)
+                while (_audioBufCount >= packetSamples)
                 {
                     int interleavedCount = packetSamples * channels;
                     float[] interleaved = new float[interleavedCount];
 
                     if (channels == 1)
                     {
-                        pl.CopyTo(0, interleaved, 0, packetSamples);
+                        for (int i = 0; i < packetSamples; i++)
+                        {
+                            int idx = (_audioBufRead + i) % RING_BUFFER_SIZE;
+                            interleaved[i] = _ringLeft[idx];
+                        }
                     }
                     else
                     {
                         for (int i = 0; i < packetSamples; i++)
                         {
-                            interleaved[2 * i] = pl[i];
-                            interleaved[2 * i + 1] = pr[i];
+                            int idx = (_audioBufRead + i) % RING_BUFFER_SIZE;
+                            interleaved[2 * i] = _ringLeft[idx];
+                            interleaved[2 * i + 1] = _ringRight[idx];
                         }
                     }
 
-                    pl.RemoveRange(0, packetSamples);
-                    pr.RemoveRange(0, packetSamples);
+                    _audioBufRead = (_audioBufRead + packetSamples) % RING_BUFFER_SIZE;
+                    _audioBufCount -= packetSamples;
 
                     byte[] encoded = HeadlessTciServer.EncodeAudioSamples(interleaved, sampleType);
-                    byte[] payload = HeadlessTciServer.BuildAudioPayload(trx, targetRate, sampleType, interleavedCount, channels, encoded);
+                    byte[] payload = HeadlessTciServer.BuildAudioPayload(0, targetRate, sampleType, interleavedCount, channels, encoded);
                     byte[] wsFrame = HeadlessTciServer.MakeWebSocketBinaryFrame(payload);
 
                     SendRawBytes(wsFrame);
@@ -664,17 +1041,16 @@ namespace Thetis
         public void SendRawBytes(byte[] bytes)
         {
             if (_stop || !_handshakeDone || bytes == null || bytes.Length == 0) return;
-            try
+            lock (_outboundLock)
             {
-                lock (_sendLock)
+                // Cap queue at 32 frames (~1.3s of audio) to prevent memory growth if client network lags
+                if (_outboundFrames.Count >= 32)
                 {
-                    _stream.Write(bytes, 0, bytes.Length);
+                    _outboundFrames.Dequeue(); // Drop oldest frame to maintain low real-time latency
                 }
+                _outboundFrames.Enqueue(bytes);
             }
-            catch
-            {
-                Close();
-            }
+            _outboundEvent.Set();
         }
 
         public void SendTextFrame(string message)
@@ -717,13 +1093,10 @@ namespace Thetis
             finally
             {
                 // Release any active TX if this client was transmitting
-                for (int trx = 0; trx < 2; trx++)
+                int rx = _server.BaseRxIndex;
+                if (TxArbiter.Instance.ActiveDigitalRx == rx)
                 {
-                    int rx = _server.BaseRxIndex + trx;
-                    if (TxArbiter.Instance.ActiveDigitalRx == rx)
-                    {
-                        TxArbiter.Instance.ReleaseDigitalTx(rx);
-                    }
+                    TxArbiter.Instance.ReleaseDigitalTx(rx);
                 }
 
                 _server.RemoveClient(this);
@@ -756,8 +1129,8 @@ namespace Thetis
             SendTextFrame("protocol:ExpertSDR3,2.0;");
             SendTextFrame("device:SunSDR2PRO;");
             SendTextFrame("receive_only:false;");
-            SendTextFrame("trx_count:2;");
-            SendTextFrame("channels_count:2;");
+            SendTextFrame("trx_count:1;");
+            SendTextFrame("channels_count:1;");
             SendTextFrame("vfo_limits:0,61440000;");
             SendTextFrame("if_limits:-24000,24000;");
             SendTextFrame("modulations_list:AM,SAM,DSB,LSB,USB,CWL,CWU,NFM,DIGL,DIGU;");
@@ -768,34 +1141,31 @@ namespace Thetis
             SendTextFrame("audio_stream_samples:2048;");
             SendTextFrame("tx_stream_audio_buffering:100;");
 
-            for (int trx = 0; trx < 2; trx++)
-            {
-                int rx = _server.BaseRxIndex + trx;
-                var slice = HeadlessSliceManager.Instance.GetSlice(rx);
-                long freqHz = slice != null ? (long)(slice.FrequencyMHz * 1e6) : 14074000;
-                string modeStr = slice != null ? HeadlessTciManager.ModeToString(slice.Mode) : "DIGU";
-                int low = slice != null ? slice.FilterLow : 300;
-                int high = slice != null ? slice.FilterHigh : 3000;
+            int rx = _server.BaseRxIndex;
+            var slice = HeadlessSliceManager.Instance.GetSlice(rx);
+            long freqHz = slice != null ? (long)(slice.FrequencyMHz * 1e6) : 14074000;
+            string modeStr = slice != null ? HeadlessTciManager.ModeToString(slice.Mode) : "DIGU";
+            int low = slice != null ? slice.FilterLow : 300;
+            int high = slice != null ? slice.FilterHigh : 3000;
 
-                SendTextFrame($"vfo:{trx},0,{freqHz};");
-                SendTextFrame($"vfo:{trx},1,{freqHz};");
-                SendTextFrame($"if:{trx},0,0;");
-                SendTextFrame($"if:{trx},1,0;");
-                SendTextFrame($"modulation:{trx},{modeStr};");
-                SendTextFrame($"rx_filter_band:{trx},{low},{high};");
-                SendTextFrame($"rx_channel_enable:{trx},0,true;");
-                SendTextFrame($"rx_channel_enable:{trx},1,false;");
-                SendTextFrame($"rx_enable:{trx},true;");
-                SendTextFrame($"tx_enable:{trx},true;");
-                SendTextFrame($"split_enable:{trx},false;");
-                SendTextFrame($"rit_enable:{trx},false;");
-                SendTextFrame($"xit_enable:{trx},false;");
-                SendTextFrame($"lock:{trx},false;");
-                SendTextFrame($"sql_enable:{trx},false;");
-                SendTextFrame($"trx:{trx},false;");
-                SendTextFrame($"drive:{trx},100;");
-                SendTextFrame($"tune_drive:{trx},100;");
-            }
+            SendTextFrame($"vfo:0,0,{freqHz};");
+            SendTextFrame($"vfo:0,1,{freqHz};");
+            SendTextFrame("if:0,0,0;");
+            SendTextFrame("if:0,1,0;");
+            SendTextFrame($"modulation:0,{modeStr};");
+            SendTextFrame($"rx_filter_band:0,{low},{high};");
+            SendTextFrame("rx_channel_enable:0,0,true;");
+            SendTextFrame("rx_channel_enable:0,1,false;");
+            SendTextFrame("rx_enable:0,true;");
+            SendTextFrame("tx_enable:0,true;");
+            SendTextFrame("split_enable:0,false;");
+            SendTextFrame("rit_enable:0,false;");
+            SendTextFrame("xit_enable:0,false;");
+            SendTextFrame("lock:0,false;");
+            SendTextFrame("sql_enable:0,false;");
+            SendTextFrame("trx:0,false;");
+            SendTextFrame("drive:0,100;");
+            SendTextFrame("tune_drive:0,100;");
 
             SendTextFrame("mute:false;");
             SendTextFrame("start;");
@@ -854,6 +1224,10 @@ namespace Thetis
                     string text = Encoding.UTF8.GetString(payload);
                     HandleClientTextCommands(text);
                 }
+                else if (opcode == 0x02) // Binary
+                {
+                    HandleClientBinaryFrame(payload);
+                }
                 else if (opcode == 0x08) // Close
                 {
                     Close();
@@ -864,6 +1238,82 @@ namespace Thetis
                     byte[] pong = new byte[] { 0x8A, 0x00 };
                     SendRawBytes(pong);
                 }
+            }
+        }
+
+        private void HandleClientBinaryFrame(byte[] payload)
+        {
+            if (payload == null || payload.Length < 64) return;
+
+            int receiver = BitConverter.ToInt32(payload, 0);
+            int sampleRate = BitConverter.ToInt32(payload, 4);
+            TCISampleType sampleType = (TCISampleType)BitConverter.ToUInt32(payload, 8);
+            int length = BitConverter.ToInt32(payload, 20);
+            TCIStreamType streamType = (TCIStreamType)BitConverter.ToUInt32(payload, 24);
+            int headerChannels = BitConverter.ToInt32(payload, 28);
+
+            if (streamType != TCIStreamType.TX_AUDIO_STREAM || length <= 0) return;
+
+            int bytesPerSample = HeadlessTciServer.GetBytesPerSample(sampleType);
+            int dataOffset = 64;
+            int actualDataBytes = payload.Length - dataOffset;
+            if (actualDataBytes < bytesPerSample) return;
+
+            int actualValueCount = actualDataBytes / bytesPerSample;
+            int channels;
+            int decodedValueCount;
+            bool modernHeader = (headerChannels == 1 || headerChannels == 2);
+
+            if (modernHeader)
+            {
+                channels = headerChannels;
+                decodedValueCount = Math.Min(length, actualValueCount);
+                if (channels > 1) decodedValueCount -= decodedValueCount % channels;
+            }
+            else
+            {
+                if (actualValueCount >= length * 2) channels = 2;
+                else channels = 1;
+                decodedValueCount = Math.Min(length, actualValueCount);
+                if (channels > 1) decodedValueCount -= decodedValueCount % channels;
+            }
+
+            if (decodedValueCount <= 0) return;
+
+            float[] decoded = HeadlessTciServer.DecodeSamples(payload, dataOffset, decodedValueCount, sampleType);
+            for (int i = 0; i < decoded.Length; i++)
+            {
+                float sample = decoded[i];
+                if (float.IsNaN(sample) || float.IsInfinity(sample)) decoded[i] = 0.0f;
+                else if (sample > 4.0f) decoded[i] = 4.0f;
+                else if (sample < -4.0f) decoded[i] = -4.0f;
+            }
+
+            int complexSamples = channels <= 1 ? decoded.Length : decoded.Length / channels;
+
+            TCIQueuedTxAudio queuedAudio = new TCIQueuedTxAudio()
+            {
+                Receiver = receiver,
+                SampleRate = sampleRate,
+                SampleType = sampleType,
+                Channels = channels,
+                ComplexSamples = complexSamples,
+                Samples = HeadlessTciServer.ConvertStreamSamplesToComplex(decoded, channels)
+            };
+
+            lock (_txQueueLock)
+            {
+                while (_txAudioQueue.Count >= MAX_TX_AUDIO_QUEUE_BLOCKS ||
+                       (_txQueuedComplexSamples + queuedAudio.ComplexSamples) > MAX_TX_AUDIO_QUEUE_COMPLEX_SAMPLES)
+                {
+                    if (_txAudioQueue.Count == 0) break;
+                    TCIQueuedTxAudio dropped = _txAudioQueue.Dequeue();
+                    if (dropped != null)
+                        _txQueuedComplexSamples = Math.Max(0, _txQueuedComplexSamples - Math.Max(0, dropped.ComplexSamples));
+                }
+
+                _txAudioQueue.Enqueue(queuedAudio);
+                _txQueuedComplexSamples += Math.Max(0, queuedAudio.ComplexSamples);
             }
         }
 
@@ -884,107 +1334,102 @@ namespace Thetis
                 switch (name)
                 {
                     case "audio_start":
-                        if (args.Length > 0 && int.TryParse(args[0], out int startTrx) && startTrx >= 0 && startTrx <= 1)
-                        {
-                            _wantsAudio[startTrx] = true;
-                            int rx = _server.BaseRxIndex + startTrx;
-                            HeadlessSliceManager.Instance.ActivateAudio(rx);
-                            SendTextFrame($"audio_start:{startTrx};");
-                        }
+                        _wantsAudio[0] = true;
+                        _wantsAudio[1] = true;
+                        HeadlessSliceManager.Instance.ActivateAudio(_server.BaseRxIndex);
+                        SendTextFrame("audio_start:0;");
                         break;
 
                     case "audio_stop":
-                        if (args.Length > 0 && int.TryParse(args[0], out int stopTrx) && stopTrx >= 0 && stopTrx <= 1)
+                        _wantsAudio[0] = false;
+                        _wantsAudio[1] = false;
+                        lock (_audioLock)
                         {
-                            _wantsAudio[stopTrx] = false;
-                            lock (_audioLock)
-                            {
-                                _pendingLeft[stopTrx].Clear();
-                                _pendingRight[stopTrx].Clear();
-                            }
-                            SendTextFrame($"audio_stop:{stopTrx};");
-
-                            int rx = _server.BaseRxIndex + stopTrx;
-                            if (!HeadlessTciManager.Instance.IsAnyClientStreaming(rx))
-                            {
-                                HeadlessSliceManager.Instance.DeactivateAudio(rx);
-                            }
+                            _audioBufCount = 0;
+                            _audioBufRead = 0;
+                            _audioBufWrite = 0;
+                        }
+                        SendTextFrame("audio_stop:0;");
+                        if (!HeadlessTciManager.Instance.IsAnyClientStreaming(_server.BaseRxIndex))
+                        {
+                            HeadlessSliceManager.Instance.DeactivateAudio(_server.BaseRxIndex);
                         }
                         break;
 
                     case "vfo":
-                        if (args.Length >= 3 && int.TryParse(args[0], out int vfoTrx) && vfoTrx >= 0 && vfoTrx <= 1)
+                        if (args.Length >= 3)
                         {
                             if (double.TryParse(args[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double freqHz))
                             {
-                                int rx = _server.BaseRxIndex + vfoTrx;
+                                int rx = _server.BaseRxIndex;
                                 double newFreqMHz = freqHz / 1e6;
                                 HeadlessSliceManager.Instance.SetFrequency(rx, newFreqMHz);
                                 if (TxArbiter.Instance.ActiveDigitalRx == rx)
                                 {
                                     TxArbiter.Instance.UpdateDigitalTxFrequency(rx, newFreqMHz);
                                 }
-                                _server.BroadcastText($"vfo:{vfoTrx},{args[1]},{freqHz:0};");
+                                _server.BroadcastText($"vfo:0,0,{freqHz:0};");
+                                _server.BroadcastText($"vfo:0,1,{freqHz:0};");
                             }
                         }
-                        else if (args.Length == 2 && int.TryParse(args[0], out int qTrx) && qTrx >= 0 && qTrx <= 1)
+                        else if (args.Length >= 2)
                         {
-                            int rx = _server.BaseRxIndex + qTrx;
+                            int rx = _server.BaseRxIndex;
                             var slice = HeadlessSliceManager.Instance.GetSlice(rx);
                             long freqHz = slice != null ? (long)(slice.FrequencyMHz * 1e6) : 14074000;
-                            SendTextFrame($"vfo:{qTrx},{args[1]},{freqHz};");
+                            SendTextFrame($"vfo:0,{args[1]},{freqHz};");
                         }
                         break;
 
                     case "if":
-                        if (args.Length >= 2 && int.TryParse(args[0], out int ifTrx) && ifTrx >= 0 && ifTrx <= 1)
+                        if (args.Length >= 2)
                         {
-                            SendTextFrame($"if:{ifTrx},{args[1]},0;");
+                            SendTextFrame($"if:0,{args[1]},0;");
                         }
                         break;
 
                     case "modulation":
-                        if (args.Length >= 2 && int.TryParse(args[0], out int modTrx) && modTrx >= 0 && modTrx <= 1)
+                        if (args.Length >= 2)
                         {
-                            int rx = _server.BaseRxIndex + modTrx;
+                            int rx = _server.BaseRxIndex;
                             DSPMode mode = HeadlessTciManager.ParseDSPMode(args[1]);
                             HeadlessSliceManager.Instance.SetMode(rx, mode);
-                            _server.BroadcastText($"modulation:{modTrx},{args[1].ToUpperInvariant()};");
+                            _server.BroadcastText($"modulation:0,{args[1].ToUpperInvariant()};");
                         }
-                        else if (args.Length == 1 && int.TryParse(args[0], out int qModTrx) && qModTrx >= 0 && qModTrx <= 1)
+                        else if (args.Length == 1)
                         {
-                            int rx = _server.BaseRxIndex + qModTrx;
+                            int rx = _server.BaseRxIndex;
                             var slice = HeadlessSliceManager.Instance.GetSlice(rx);
                             string modeStr = slice != null ? HeadlessTciManager.ModeToString(slice.Mode) : "DIGU";
-                            SendTextFrame($"modulation:{qModTrx},{modeStr};");
+                            SendTextFrame($"modulation:0,{modeStr};");
                         }
                         break;
 
                     case "rx_filter_band":
-                        if (args.Length >= 3 && int.TryParse(args[0], out int filTrx) && filTrx >= 0 && filTrx <= 1)
+                        if (args.Length >= 3)
                         {
                             if (int.TryParse(args[1], out int low) && int.TryParse(args[2], out int high))
                             {
-                                int rx = _server.BaseRxIndex + filTrx;
+                                int rx = _server.BaseRxIndex;
                                 HeadlessSliceManager.Instance.SetFilter(rx, low, high);
-                                _server.BroadcastText($"rx_filter_band:{filTrx},{low},{high};");
+                                _server.BroadcastText($"rx_filter_band:0,{low},{high};");
                             }
                         }
-                        else if (args.Length == 1 && int.TryParse(args[0], out int qFilTrx) && qFilTrx >= 0 && qFilTrx <= 1)
+                        else if (args.Length == 1)
                         {
-                            int rx = _server.BaseRxIndex + qFilTrx;
+                            int rx = _server.BaseRxIndex;
                             var slice = HeadlessSliceManager.Instance.GetSlice(rx);
                             int low = slice != null ? slice.FilterLow : 300;
                             int high = slice != null ? slice.FilterHigh : 3000;
-                            SendTextFrame($"rx_filter_band:{qFilTrx},{low},{high};");
+                            SendTextFrame($"rx_filter_band:0,{low},{high};");
                         }
                         break;
 
                     case "trx":
-                        if (args.Length >= 2 && int.TryParse(args[0], out int trx) && trx >= 0 && trx <= 1)
+                        if (args.Length >= 2)
                         {
                             bool wantsTx = bool.TryParse(args[1], out bool b) && b;
-                            int rx = _server.BaseRxIndex + trx;
+                            int rx = _server.BaseRxIndex;
 
                             if (wantsTx)
                             {
@@ -993,28 +1438,75 @@ namespace Thetis
                                 DSPMode mode = slice != null ? slice.Mode : DSPMode.DIGU;
 
                                 bool granted = TxArbiter.Instance.RequestDigitalTx(rx, freq, mode);
-                                _server.BroadcastTrxState(trx, granted);
+                                _isTransmitting = granted;
+                                if (granted)
+                                {
+                                    ClearQueuedTxAudio();
+                                    cmaster.SignalTciTxStream();
+                                }
+                                _server.BroadcastTrxState(0, granted);
                             }
                             else
                             {
+                                _isTransmitting = false;
+                                ClearQueuedTxAudio();
                                 TxArbiter.Instance.ReleaseDigitalTx(rx);
-                                _server.BroadcastTrxState(trx, false);
+                                _server.BroadcastTrxState(0, false);
                             }
                         }
-                        else if (args.Length == 1 && int.TryParse(args[0], out int qTrxTrx) && qTrxTrx >= 0 && qTrxTrx <= 1)
+                        else if (args.Length == 1)
                         {
-                            int rx = _server.BaseRxIndex + qTrxTrx;
+                            int rx = _server.BaseRxIndex;
                             bool isTx = TxArbiter.Instance.ActiveDigitalRx == rx;
-                            SendTextFrame($"trx:{qTrxTrx},{isTx.ToString().ToLowerInvariant()};");
+                            SendTextFrame($"trx:0,{isTx.ToString().ToLowerInvariant()};");
+                        }
+                        break;
+
+                    case "tune":
+                        if (args.Length >= 2)
+                        {
+                            bool wantsTune = bool.TryParse(args[1], out bool b) && b;
+                            int rx = _server.BaseRxIndex;
+
+                            if (wantsTune)
+                            {
+                                var slice = HeadlessSliceManager.Instance.GetSlice(rx);
+                                double freq = slice != null ? slice.FrequencyMHz : 14.074;
+                                DSPMode mode = slice != null ? slice.Mode : DSPMode.DIGU;
+
+                                bool granted = TxArbiter.Instance.RequestDigitalTx(rx, freq, mode);
+                                _isTransmitting = granted;
+                                if (granted)
+                                {
+                                    ClearQueuedTxAudio();
+                                    cmaster.SignalTciTxStream();
+                                }
+                                SendTextFrame($"tune:0,{granted.ToString().ToLowerInvariant()};");
+                                _server.BroadcastTrxState(0, granted);
+                            }
+                            else
+                            {
+                                _isTransmitting = false;
+                                ClearQueuedTxAudio();
+                                TxArbiter.Instance.ReleaseDigitalTx(rx);
+                                SendTextFrame("tune:0,false;");
+                                _server.BroadcastTrxState(0, false);
+                            }
+                        }
+                        else if (args.Length == 1)
+                        {
+                            int rx = _server.BaseRxIndex;
+                            bool isTx = TxArbiter.Instance.ActiveDigitalRx == rx;
+                            SendTextFrame($"tune:0,{isTx.ToString().ToLowerInvariant()};");
                         }
                         break;
 
                     case "rx_channel_enable":
-                        if (args.Length >= 2 && int.TryParse(args[0], out int ceTrx) && int.TryParse(args[1], out int ceChan))
+                        if (args.Length >= 2 && int.TryParse(args[1], out int ceChan))
                         {
                             bool en = ceChan == 0;
                             if (args.Length >= 3 && bool.TryParse(args[2], out bool b)) en = b;
-                            SendTextFrame($"rx_channel_enable:{ceTrx},{ceChan},{en.ToString().ToLowerInvariant()};");
+                            SendTextFrame($"rx_channel_enable:0,{ceChan},{en.ToString().ToLowerInvariant()};");
                         }
                         break;
 
@@ -1177,6 +1669,7 @@ namespace Thetis
                         break;
 
                     case "audio_stream_channels":
+                        _seenModernTxAudioNegotiation = true;
                         if (args.Length > 0 && int.TryParse(args[0], out int asc) && (asc == 1 || asc == 2))
                         {
                             AudioStreamChannels = asc;
@@ -1185,6 +1678,7 @@ namespace Thetis
                         break;
 
                     case "audio_stream_samples":
+                        _seenModernTxAudioNegotiation = true;
                         if (args.Length > 0 && int.TryParse(args[0], out int asamp) && asamp >= 100 && asamp <= 2048)
                         {
                             AudioStreamSamples = asamp;
@@ -1193,15 +1687,28 @@ namespace Thetis
                         break;
 
                     case "tx_stream_audio_buffering":
-                        if (args.Length > 0) SendTextFrame($"tx_stream_audio_buffering:{args[0]};");
-                        else SendTextFrame("tx_stream_audio_buffering:100;");
+                        if (args.Length > 0 && int.TryParse(args[0], out int bufMs))
+                        {
+                            TxStreamAudioBufferingMs = Math.Max(20, Math.Min(500, bufMs));
+                        }
+                        SendTextFrame($"tx_stream_audio_buffering:{TxStreamAudioBufferingMs};");
                         break;
 
                     case "start":
+                        var cStart = HeadlessTciManager.Instance.Console;
+                        if (cStart != null && !cStart.PowerOn)
+                        {
+                            try { cStart.PowerOn = true; } catch { }
+                        }
                         SendTextFrame("start;");
                         break;
 
                     case "stop":
+                        var cStop = HeadlessTciManager.Instance.Console;
+                        if (cStop != null && cStop.PowerOn)
+                        {
+                            try { cStop.PowerOn = false; } catch { }
+                        }
                         SendTextFrame("stop;");
                         break;
 

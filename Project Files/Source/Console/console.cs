@@ -8260,6 +8260,10 @@ namespace Thetis
                         Rate[1] = rx1_rate;
                         Rate[2] = rx1_rate;
                         Rate[3] = rx1_rate;
+                        Rate[4] = rx1_rate;
+                        Rate[5] = rx1_rate;
+                        Rate[6] = rx1_rate;
+                        Rate[7] = rx1_rate;
                         cntrl1 = rx_adc_ctrl1 & 0xff;
                         cntrl2 = rx_adc_ctrl2 & 0x3f;
                         break;
@@ -8497,11 +8501,13 @@ namespace Thetis
 
             NetworkIO.EnableRxs(DDCEnable);
             NetworkIO.EnableRxSync(0, SyncEnable);
-            for (i = 0; i < 4; i++)
+            int maxDdc = (NetworkIO.NumReceivers == 8 ? 8 : 4);
+            for (i = 0; i < maxDdc; i++)
                 NetworkIO.SetDDCRate(i, Rate[i]);
             NetworkIO.SetADC_cntrl1(cntrl1);
             NetworkIO.SetADC_cntrl2(cntrl2);
             NetworkIO.CmdRx();
+            TciLog.Log($"[UpdateDDCs] Protocol1DDCConfig: DDCConfig={P1_DDCConfig}, div={P1_diversity}, rxcnt={P1_rxcount}, nddc={nddc}, DDCEnable=0x{DDCEnable:X2}, SyncEnable=0x{SyncEnable:X2}");
             NetworkIO.Protocol1DDCConfig(P1_DDCConfig, P1_diversity, P1_rxcount, nddc);
 
             //MW0LGE_21e
@@ -15432,31 +15438,18 @@ namespace Thetis
 
             if (MOX)//[2.10.3.13]MW0LGE
             {
-                // Do not reposition voice panadapter display during digital slice transmission
-                if (TxArbiter.Instance.ActiveDigitalRx == -1)
+                if (RX2Enabled && VFOBTX) 
                 {
-                    if (RX2Enabled && VFOBTX) 
-                    {
-                        // rx2
-                        Display.CentreFreqRX2 = tx_dds_freq_mhz;
-                    }
-                    else
-                    {
-                        Display.CentreFreqRX1 = tx_dds_freq_mhz;
-                    }
+                    // rx2
+                    Display.CentreFreqRX2 = tx_dds_freq_mhz;
+                }
+                else
+                {
+                    Display.CentreFreqRX1 = tx_dds_freq_mhz;
                 }
             }
 
             NetworkIO.VFOfreq(0, tx_dds_freq_mhz, 1);
-        }
-
-        public void UpdateDigitalTxDdsFrequency(double freqMHz)
-        {
-            if (TxArbiter.Instance.ActiveDigitalRx != -1 && freqMHz > 0)
-            {
-                tx_dds_freq_mhz = freqMHz;
-                UpdateTXDDSFreq();
-            }
         }
 
         private void UpdateAlexTXFilter()
@@ -27294,6 +27287,7 @@ namespace Thetis
 
             if (chkPower.Checked)
             {
+                TciLog.Log($"[chkPower] Power turning ON. NumReceivers={NetworkIO.NumReceivers}, protocol={NetworkIO.CurrentRadioProtocol}");
                 chkPower.BackColor = button_selected_color;
                 txtVFOAFreq.ForeColor = vfo_text_light_color;
                 txtVFOAMSD.ForeColor = vfo_text_light_color;
@@ -27343,11 +27337,14 @@ namespace Thetis
                 enableAudioAmplfier(); // MW0LGE_22b
 
                 if (!IsSetupFormNull) SetupForm.BoardWarning = ""; // no board warning
+                TciLog.Log($"[chkPower] Calling Audio.Start()...");
                 if (!Audio.Start())   // starts JanusAudio running
                 {
+                    TciLog.Log($"[chkPower] Audio.Start() FAILED!");
                     chkPower.Checked = false;
                     return;
                 }
+                TciLog.Log($"[chkPower] Audio.Start() SUCCEEDED!");
 
                 if (Audio.ProcessedTXOutputEnabled) Audio.EnableProcessedTXOutput(true);
                 if (!IsSetupFormNull) SetupForm.BoardWarning = NetworkIO.BoardMismatch; //[2.10.3.9]MW0LGE show warning in setup if board does not match expected
@@ -27521,6 +27518,7 @@ namespace Thetis
                 if (radio.GetDSPRX(1, 0).Active) WDSP.SetChannelState(WDSP.id(2, 0), 1, 1);
 
                 DataFlowing = true;
+                HeadlessSliceManager.Instance.SyncActiveSlices();
                 SetupForm.UpdateGeneraHardware();
                 SetMicGain();
                 chkQSK_CheckStateChanged(this, EventArgs.Empty);
@@ -29507,24 +29505,15 @@ namespace Thetis
                     }
                 }
 
-                if (TxArbiter.Instance.ActiveDigitalRx != -1)
-                {
-                    freq = TxArbiter.Instance.ActiveDigitalFrequency;
-                    Audio.TXDSPMode = TxArbiter.Instance.ActiveDigitalMode;
-                    tx_dds_freq_mhz = freq;
-                }
+                if (chkVFOBTX.Checked || (!chkRX2.Checked && chkVFOSplit.Checked))
+                    freq = VFOBFreq;
+                else if (chkRX2.Checked && chkVFOSplit.Checked)
+                    freq = VFOASubFreq;
                 else
-                {
-                    if (chkVFOBTX.Checked || (!chkRX2.Checked && chkVFOSplit.Checked))
-                        freq = VFOBFreq;
-                    else if (chkRX2.Checked && chkVFOSplit.Checked)
-                        freq = VFOASubFreq;
-                    else
-                        freq = VFOAFreq;
+                    freq = VFOAFreq;
 
-                    if (chkXIT.Checked)
-                        freq += (int)udXIT.Value * 0.000001;
-                }
+                if (chkXIT.Checked)
+                    freq += (int)udXIT.Value * 0.000001;
 
                 if (!calibrating)
                 {
@@ -29796,32 +29785,6 @@ namespace Thetis
                 pa_fwd_power = 0;
                 pa_rev_power = 0;
                 HighSWR = false;
-
-                // Restore TX DSP Mode and transmitter DDS frequency for Voice VFO
-                if (!rx2_enabled)
-                {
-                    Audio.TXDSPMode = _rx1_dsp_mode;
-                    tx_dds_freq_mhz = chkVFOBTX.Checked ? VFOBFreq : VFOAFreq;
-                }
-                else
-                {
-                    if (chkVFOBTX.Checked)
-                    {
-                        Audio.TXDSPMode = _rx2_dsp_mode;
-                        tx_dds_freq_mhz = VFOBFreq;
-                    }
-                    else if (chkVFOSplit.Checked)
-                    {
-                        Audio.TXDSPMode = _rx1_dsp_mode;
-                        tx_dds_freq_mhz = VFOASubFreq;
-                    }
-                    else
-                    {
-                        Audio.TXDSPMode = _rx1_dsp_mode;
-                        tx_dds_freq_mhz = VFOAFreq;
-                    }
-                }
-                UpdateTXDDSFreq();
             }
 
             if (tx) UIMOXChangedTrue();
@@ -48351,10 +48314,9 @@ namespace Thetis
                 sb.AppendLine("Release F - Digital Slices (RX3..RX8):");
                 foreach (var s in allSlices)
                 {
-                    int port = 50003 + ((s.RxIndex - 2) / 2) * 2;
-                    int trx = (s.RxIndex - 2) % 2;
+                    int port = 50001 + s.RxIndex;
                     string state = (activeTx == s.RxIndex) ? "TRANSMITTING (CI-V PTT)" : (s.IsStreamingAudio ? "STREAMING (Active)" : "Dormant (0% CPU)");
-                    sb.AppendLine($"  RX{s.RxIndex + 1} (Port {port} TRX {trx}): {s.FrequencyMHz:F6} MHz [{s.Mode}] - {state}");
+                    sb.AppendLine($"  RX{s.RxIndex + 1} (Port {port}): {s.FrequencyMHz:F6} MHz [{s.Mode}] - {state}");
                 }
                 if (activeTx >= 0)
                 {

@@ -513,8 +513,10 @@ namespace Thetis
                 cmaster.SetCMDefaultRates(p1, aud_outrate, p2, p3);
 
             // create receivers, transmitters, specials, and buffers
+            TciLog.Log("CreateChannelMaster: calling CreateRadio");
             cmaster.CreateRadio();
             IsRadioCreated = true;
+            TciLog.Log("CreateChannelMaster: calling CMLoadRouterAll");
             CMLoadRouterAll(HardwareSpecific.Model);
 
             // get transmitter identifiers
@@ -567,6 +569,26 @@ namespace Thetis
 
         public static void CMLoadRouterAll(HPSDRModel model)
         {
+            TciLog.Log($"CMLoadRouterAll: NumReceivers={NetworkIO.NumReceivers}, model={model}, protocol={NetworkIO.CurrentRadioProtocol}");
+            if (NetworkIO.NumReceivers == 8)
+            {
+                int[] EIGHT_DDC_Function = new int[64];
+                int[] EIGHT_DDC_Callid = new int[64];
+                for (int s = 0; s < 8; s++)
+                {
+                    for (int v = 0; v < 8; v++)
+                    {
+                        EIGHT_DDC_Function[s * 8 + v] = 1;
+                        EIGHT_DDC_Callid[s * 8 + v] = s;
+                    }
+                }
+                int[] EIGHT_DDC_nstreams = new int[8] { 1, 1, 1, 1, 1, 1, 1, 1 };
+                fixed (int* pstreams = &EIGHT_DDC_nstreams[0], pfunction = &EIGHT_DDC_Function[0], pcallid = &EIGHT_DDC_Callid[0])
+                    LoadRouterAll((void*)0, 0, 8, 1, 8, pstreams, pfunction, pcallid);
+                TciLog.Log("CMLoadRouterAll: 8-DDC router configured successfully");
+                return;
+            }
+
             switch (NetworkIO.CurrentRadioProtocol)
             {
                 case RadioProtocol.USB: //Protocol 1
@@ -1293,17 +1315,39 @@ namespace Thetis
                 m_tciTxStreamEvent.WaitOne(1000);
             }
         }
+
+        public static void SignalTciTxStream()
+        {
+            m_tciTxStreamEvent?.Set();
+        }
+
+        public static void ResetTCITxState()
+        {
+            resetTCITxState();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void serviceTCITxProtocol()
         {
-            TCPIPtciServer tciServer = TCIServer;
-            if (tciServer == null || !tciServer.UsesActiveTCITxAudio() || !Audio.MOX)
+            ITciTxAudioSource tciSource = null;
+            int receiver = 0;
+
+            if (TxArbiter.Instance.ActiveDigitalRx != -1)
+            {
+                tciSource = HeadlessTciManager.Instance;
+                receiver = 0;
+            }
+            else if (Audio.MOX)
+            {
+                tciSource = TCIServer;
+                receiver = Audio.RX2Enabled && Audio.VFOBTX ? 1 : 0;
+            }
+
+            if (tciSource == null || !tciSource.UsesActiveTCITxAudio())
             {
                 resetTCITxState();
                 return;
             }
-
-            int receiver = Audio.RX2Enabled && Audio.VFOBTX ? 1 : 0;
 
             if (m_cachedTxInputRate <= 0)
                 m_cachedTxInputRate = GetInputRate(1, 0);
@@ -1327,7 +1371,7 @@ namespace Thetis
                 m_tciTxInputRate = targetRate;
             }
 
-            if (!tciServer.TryGetTxAudioRequestSettings(out int requestRate, out int requestSamples, out int bufferingMs))
+            if (!tciSource.TryGetTxAudioRequestSettings(out int requestRate, out int requestSamples, out int bufferingMs))
             {
                 resetTCITxState();
                 return;
@@ -1337,7 +1381,7 @@ namespace Thetis
             if (requestSamples <= 0) requestSamples = 480;
             if (bufferingMs < 50) bufferingMs = 50;
 
-            while (tciServer.TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio))
+            while (tciSource.TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio))
             {
                 lock (m_objTCITxStateLock)
                 {
@@ -1348,7 +1392,7 @@ namespace Thetis
                 if (queuedAudio == null || queuedAudio.Receiver != receiver)
                     continue;
 
-                queueTCITxAudio(queuedAudio, targetRate, tciServer.TXStereoInputMode);
+                queueTCITxAudio(queuedAudio, targetRate, tciSource.TXStereoInputMode);
             }
 
             int txBlock = GetBuffSize(targetRate);
@@ -1395,10 +1439,11 @@ namespace Thetis
                 if (!canRequest)
                     break;
 
-                tciServer.SendTxChrono(receiver);
+                tciSource.SendTxChrono(receiver);
                 requestsNeeded--;
             }
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void resetTCITxState()
         {
@@ -1818,8 +1863,9 @@ namespace Thetis
 
         private static unsafe void OnTCIRxAudioOutSamples(int id, int nsamples, double* data)
         {
+            TciLog.ReportAudioSample(id, nsamples);
             if (data == null || nsamples <= 0) return;
-            if (id < 2 && TCIServer == null) return;
+            if (id < 2 && TCIServer == null && HeadlessAudioPublisher == null) return;
             if (id >= 2 && HeadlessAudioPublisher == null) return;
 
             float[] left = rentTCIFloatBuffer(nsamples);
@@ -1832,26 +1878,30 @@ namespace Thetis
 
             int sampleRate = GetChannelOutputRate(0, id);
             if (sampleRate <= 0) sampleRate = 48000;
-            if (id >= 2)
+
+            if (id >= 1 && HeadlessAudioPublisher != null)
             {
                 try
                 {
-                    HeadlessAudioPublisher?.Invoke(id, sampleRate, left, right, nsamples);
+                    HeadlessAudioPublisher.Invoke(id, sampleRate, left, right, nsamples);
                 }
-                finally
-                {
-                    returnTCIFloatBuffer(left);
-                    returnTCIFloatBuffer(right);
-                }
+                catch { }
+            }
+
+            if (id < 2 && TCIServer != null)
+            {
+                TCIAudioBlock block = rentTCIAudioBlock();
+                block.Receiver = id;
+                block.SampleRate = sampleRate;
+                block.SamplesPerChannel = nsamples;
+                block.Left = left;
+                block.Right = right;
+                enqueueTCIAudio(block);
                 return;
             }
 
-            TCIAudioBlock block = rentTCIAudioBlock();
-            block.Receiver = id;
-            block.SampleRate = sampleRate;            block.SamplesPerChannel = nsamples;
-            block.Left = left;
-            block.Right = right;
-            enqueueTCIAudio(block);
+            returnTCIFloatBuffer(left);
+            returnTCIFloatBuffer(right);
         }
 
         private static unsafe void OnTCITxAudioInSamples(int nsamples, double* data)
@@ -2414,5 +2464,81 @@ namespace Thetis
     }
 
 #endregion
+
+    public static class TciLog
+    {
+        private static readonly object _lock = new object();
+        private static readonly string _logPath = @"C:\Thetis\tci_flow.log";
+        private static readonly int[] _calls = new int[8];
+        private static readonly long[] _samples = new long[8];
+        private static DateTime _lastReportTime = DateTime.UtcNow;
+
+        public static void ReportAudioSample(int id, int nsamples)
+        {
+            if (id < 0 || id >= 8) return;
+
+            bool shouldLog = false;
+            string report = null;
+
+            lock (_lock)
+            {
+                _calls[id]++;
+                _samples[id] += nsamples;
+
+                if (_calls[id] == 1)
+                {
+                    shouldLog = true;
+                    report = $"{DateTime.UtcNow:HH:mm:ss.fff} AUDIO FLOW FIRST PACKET: RX{id + 1} samps={nsamples}";
+                }
+                else
+                {
+                    DateTime now = DateTime.UtcNow;
+                    if ((now - _lastReportTime).TotalSeconds >= 1.0)
+                    {
+                        _lastReportTime = now;
+                        shouldLog = true;
+                        var sb = new System.Text.StringBuilder();
+                        for (int i = 0; i < 8; i++)
+                        {
+                            if (_calls[i] > 0)
+                            {
+                                sb.Append($"RX{i + 1}: calls={_calls[i]}, samps={_samples[i]} | ");
+                            }
+                        }
+                        if (sb.Length > 0)
+                        {
+                            report = $"{now:HH:mm:ss.fff} AUDIO FLOW: " + sb.ToString().TrimEnd(' ', '|');
+                        }
+                    }
+                }
+            }
+
+            if (shouldLog && report != null)
+            {
+                try
+                {
+                    string dir = System.IO.Path.GetDirectoryName(_logPath);
+                    if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.AppendAllText(_logPath, report + Environment.NewLine);
+                }
+                catch { }
+            }
+        }
+
+        public static void Log(string message)
+        {
+            try
+            {
+                string line = $"{DateTime.UtcNow:HH:mm:ss.fff} {message}{Environment.NewLine}";
+                lock (_lock)
+                {
+                    string dir = System.IO.Path.GetDirectoryName(_logPath);
+                    if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.AppendAllText(_logPath, line);
+                }
+            }
+            catch { }
+        }
+    }
 
 }

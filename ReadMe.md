@@ -1,10 +1,11 @@
-# Experimental Hybrid SDR A/B/C/D/E test set
+# Experimental Hybrid SDR A/B/C/D/E/F test set
 
-This branch contains the **Branch E** implementation: Full bidirectional Icom CI-V integration on CAT 1 combined with the stabilized independent processed-TX audio output for the Red Pitaya / IC-7100 configuration while VAC2 remains available for RX2.
+This branch contains the **Branch F** implementation: Multi-port headless TCI server exposing RX3–RX8 on WebSocket ports 50003–50008, with full digital TX flow control, TxArbiter voice/digital preemption, and CI-V state snapshot/restore — built on top of Branch E's CI-V integration and Processed TX Output.
 
+- [Branch F documentation (multi-port TCI server)](HYBRID-SDR-BRANCH-F.md)
 - [Branch E installation and configuration guide](HYBRID-SDR-BRANCH-E.md)
 - [Branch D installation and configuration guide](HYBRID-SDR-BRANCH-D.md)
-- [Compiled A/B/C/D/E downloads](https://github.com/satfan52/Thetis/releases)
+- [Compiled A/B/C/D/E/F downloads](https://github.com/satfan52/Thetis/releases)
 
 This experimental test set is separate from the official Thetis releases described below.
 

@@ -3,8 +3,8 @@
     "ReleaseBuild": "",
     "ReleaseURL": "https://github.com/ramdor/Thetis/releases/tag/v2.10.3.12",
     "ReleaseName": "Latest Release",
-    "DevelopmentVersion": "",
-    "DevelopmentBuild": "",
-    "DevelopmentURL": "",
-    "DevelopmentName": ""
+    "DevelopmentVersion": "2.10.3.12-F",
+    "DevelopmentBuild": "Multi-Port Headless TCI (RX3-RX8)",
+    "DevelopmentURL": "https://github.com/satfan52/Thetis/tree/F",
+    "DevelopmentName": "Branch F — Headless TCI Server"
 }

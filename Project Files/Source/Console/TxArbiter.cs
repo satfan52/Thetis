@@ -21,7 +21,8 @@ namespace Thetis
         private int _activeDigitalRx = -1; // -1 = idle
         private double _activeDigitalFrequency = 0;
         private DSPMode _activeDigitalMode = DSPMode.DIGU;
-        private bool _isDigitalMox = false;
+        private DSPMode _savedVoiceMode = DSPMode.USB;
+        private bool _dspTxEngaged = false;
         private readonly object _lock = new object();
 
         /// <summary>
@@ -56,6 +57,24 @@ namespace Thetis
             bool wasActive = false;
             lock (_lock)
             {
+                if (_dspTxEngaged && _console != null)
+                {
+                    try
+                    {
+                        cmaster.SetTXTCIAudioRun(0, 0);
+                        cmaster.ResetTCITxState();
+                        cmaster.SignalTciTxStream();
+                        WDSP.SetChannelState(WDSP.id(1, 0), 0, 1);
+                        var dspTx = _console.radio?.GetDSPTX(0);
+                        if (dspTx != null)
+                        {
+                            dspTx.CurrentDSPMode = _savedVoiceMode;
+                        }
+                    }
+                    catch { }
+                    _dspTxEngaged = false;
+                }
+
                 if (_activeDigitalRx != -1)
                 {
                     try
@@ -68,17 +87,6 @@ namespace Thetis
                     _activeDigitalMode = DSPMode.DIGU;
                     wasActive = true;
                 }
-            }
-
-            if (_isDigitalMox)
-            {
-                _isDigitalMox = false;
-                try
-                {
-                    if (_console != null && _console.MOX)
-                        _console.MOX = false;
-                }
-                catch { }
             }
 
             if (wasActive)
@@ -111,23 +119,10 @@ namespace Thetis
             }
         }
 
-        public bool IsDigitalMox => _isDigitalMox;
-
         public bool IsVoiceTransmitting
         {
             get
             {
-                if (_isDigitalMox)
-                {
-                    if (_console != null)
-                    {
-                        var mode = _console.CurrentPTTMode;
-                        if (mode == PTTMode.MIC || mode == PTTMode.VOX || mode == PTTMode.CW || mode == PTTMode.MANUAL)
-                            return true;
-                    }
-                    return false;
-                }
-
                 if (_console != null && _console.MOX) return true;
                 return Audio.MOX;
             }
@@ -135,39 +130,7 @@ namespace Thetis
 
         private void OnMoxChanged(int rx, bool oldMox, bool newMox)
         {
-            if (!newMox)
-            {
-                // If MOX turned off while digital slice was active, check if it was manually unkeyed by operator
-                if (_isDigitalMox)
-                {
-                    int abortRx = -1;
-                    lock (_lock)
-                    {
-                        if (_activeDigitalRx != -1)
-                        {
-                            abortRx = _activeDigitalRx;
-                            _activeDigitalRx = -1;
-                            _activeDigitalFrequency = 0;
-                            _activeDigitalMode = DSPMode.DIGU;
-                        }
-                    }
-                    _isDigitalMox = false;
-                    if (abortRx != -1)
-                    {
-                        try
-                        {
-                            _console?.CIVControllerInstance?.ReleaseDigitalTx();
-                        }
-                        catch { }
-                        DigitalSlicePreempted?.Invoke(abortRx);
-                        DigitalTxStateChanged?.Invoke(-1);
-                    }
-                }
-                return;
-            }
-
-            // Ignore MOX assertion triggered by our own digital slice!
-            if (_isDigitalMox) return;
+            if (!newMox) return;
 
             // Voice MOX / VOX / Mic PTT activated! Immediately preempt any digital slice!
             int preemptedRx = -1;
@@ -184,6 +147,18 @@ namespace Thetis
 
             if (preemptedRx != -1)
             {
+                try
+                {
+                    if (_dspTxEngaged && _console != null)
+                    {
+                        cmaster.SetTXTCIAudioRun(0, 0);
+                        cmaster.ResetTCITxState();
+                        cmaster.SignalTciTxStream();
+                        _dspTxEngaged = false;
+                    }
+                }
+                catch { }
+
                 try
                 {
                     _console?.CIVControllerInstance?.ReleaseDigitalTx();
@@ -224,7 +199,30 @@ namespace Thetis
 
             DigitalTxStateChanged?.Invoke(rx);
 
-            // 1. Steer IC-7100 to slice frequency and DATA mode, force Simplex, then key CI-V PTT
+            // Engage WDSP TX channel and route TCI audio
+            try
+            {
+                if (_console != null)
+                {
+                    var dspTx = _console.radio?.GetDSPTX(0);
+                    if (dspTx != null)
+                    {
+                        if (!_dspTxEngaged)
+                        {
+                            _savedVoiceMode = dspTx.CurrentDSPMode;
+                        }
+                        dspTx.CurrentDSPMode = mode;
+                    }
+
+                    WDSP.SetChannelState(WDSP.id(1, 0), 1, 0);
+                    cmaster.SetTXTCIAudioRun(0, 1);
+                    cmaster.SignalTciTxStream();
+                    _dspTxEngaged = true;
+                }
+            }
+            catch { }
+
+            // Steer IC-7100 to slice frequency and DATA mode, force Simplex, then key CI-V PTT
             try
             {
                 if (_console != null && _console.CIVControllerInstance != null && _console.CIVControllerInstance.IsOpen)
@@ -233,20 +231,6 @@ namespace Thetis
                 }
             }
             catch { }
-
-            // 2. Set Thetis MOX to true (with _isDigitalMox = true so OnMoxChanged does not self-preempt)
-            if (_console != null && !_console.MOX)
-            {
-                _isDigitalMox = true;
-                try
-                {
-                    if (_console.InvokeRequired)
-                        _console.BeginInvoke(new Action(() => { if (!_console.MOX) _console.MOX = true; }));
-                    else
-                        _console.MOX = true;
-                }
-                catch { }
-            }
 
             return true;
         }
@@ -267,7 +251,25 @@ namespace Thetis
 
             if (wasActive)
             {
-                // 1. Release CI-V digital steering and restore IC-7100 state
+                try
+                {
+                    if (_dspTxEngaged && _console != null)
+                    {
+                        cmaster.SetTXTCIAudioRun(0, 0);
+                        cmaster.ResetTCITxState();
+                        cmaster.SignalTciTxStream();
+                        WDSP.SetChannelState(WDSP.id(1, 0), 0, 1);
+                        var dspTx = _console.radio?.GetDSPTX(0);
+                        if (dspTx != null)
+                        {
+                            dspTx.CurrentDSPMode = _savedVoiceMode;
+                        }
+                        _dspTxEngaged = false;
+                    }
+                }
+                catch { }
+
+                // Release CI-V digital steering and restore IC-7100 state
                 try
                 {
                     if (_console != null && _console.CIVControllerInstance != null && _console.CIVControllerInstance.IsOpen)
@@ -276,23 +278,6 @@ namespace Thetis
                     }
                 }
                 catch { }
-
-                // 2. Unkey Thetis MOX if it was keyed for digital slice
-                if (_isDigitalMox)
-                {
-                    _isDigitalMox = false;
-                    try
-                    {
-                        if (_console != null && _console.MOX)
-                        {
-                            if (_console.InvokeRequired)
-                                _console.BeginInvoke(new Action(() => { if (_console.MOX) _console.MOX = false; }));
-                            else
-                                _console.MOX = false;
-                        }
-                    }
-                    catch { }
-                }
 
                 DigitalTxStateChanged?.Invoke(-1);
             }
@@ -314,15 +299,6 @@ namespace Thetis
                 }
             }
             catch { }
-
-            if (_console != null && _isDigitalMox)
-            {
-                try
-                {
-                    _console.UpdateDigitalTxDdsFrequency(freqMHz);
-                }
-                catch { }
-            }
         }
     }
 }

@@ -1679,6 +1679,26 @@ namespace Thetis
                             return;
                         }
 
+                        if (_lastVfoSwapTime > 0)
+                        {
+                            double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
+                            if (msSinceSwap < 500.0)
+                            {
+                                Log("[HANDLE:VFO_SEL] Blocked by vfoSwap debounce: msSinceSwap={0:F1}", msSinceSwap);
+                                return;
+                            }
+                        }
+
+                        if (_lastTxReleaseTime > 0)
+                        {
+                            double msSinceRelease = (double)(Stopwatch.GetTimestamp() - _lastTxReleaseTime) / Stopwatch.Frequency * 1000.0;
+                            if (msSinceRelease < 500.0)
+                            {
+                                Log("[HANDLE:VFO_SEL] Blocked by txRelease debounce: msSinceRelease={0:F1}", msSinceRelease);
+                                return;
+                            }
+                        }
+
                         if (vfoId == CIVProtocol.VFO_SWAP)
                         {
                             Log("[HANDLE:VFO_SWAP] Entered. rx2SplitSwapHandled={0}", _rx2SplitSwapHandled);
@@ -1886,6 +1906,26 @@ namespace Thetis
                             Log("[HANDLE:SPLIT] Blocked by isSwapping={0} / swapInProgress={1} / readingVfoB={2}",
                                 _isSwappingVfo, _radioInitiatedSwapInProgress, _readingRadioVfoBFreq);
                             break;
+                        }
+
+                        if (_lastVfoSwapTime > 0)
+                        {
+                            double msSinceSwap = (double)(Stopwatch.GetTimestamp() - _lastVfoSwapTime) / Stopwatch.Frequency * 1000.0;
+                            if (msSinceSwap < 500.0)
+                            {
+                                Log("[HANDLE:SPLIT] Blocked by vfoSwap debounce: msSinceSwap={0:F1}", msSinceSwap);
+                                break;
+                            }
+                        }
+
+                        if (_lastTxReleaseTime > 0)
+                        {
+                            double msSinceRelease = (double)(Stopwatch.GetTimestamp() - _lastTxReleaseTime) / Stopwatch.Frequency * 1000.0;
+                            if (msSinceRelease < 500.0)
+                            {
+                                Log("[HANDLE:SPLIT] Blocked by txRelease debounce: msSinceRelease={0:F1}", msSinceRelease);
+                                break;
+                            }
                         }
 
                         if (splitByte == CIVProtocol.SPLIT_ON || splitByte == CIVProtocol.SPLIT_OFF)
@@ -2682,6 +2722,7 @@ namespace Thetis
                 SendFrame(pttFrame);
                 _lastSentPtt = false;
                 _lastTxReleaseTime = Stopwatch.GetTimestamp();
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
 
                 // 2. Restore VFO A Frequency and Mode
                 SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
@@ -2694,28 +2735,19 @@ namespace Thetis
                 SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoAMode, _savedDigitalVfoAFilter));
                 SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoADataMode, _savedDigitalVfoAFilter));
 
-                // 3. Restore VFO B Frequency and Mode
-                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
-                _currentRadioSelectedVfo = CIVProtocol.VFO_B;
-
-                if (_savedDigitalVfoBFreq > 0)
+                // 3. Restore selected VFO if it was VFO B
+                if (_savedDigitalSelectedVfo == CIVProtocol.VFO_B)
                 {
-                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, _savedDigitalVfoBFreq));
+                    SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
+                    _currentRadioSelectedVfo = CIVProtocol.VFO_B;
                 }
-                SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoBMode, _savedDigitalVfoBFilter));
-                SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoBDataMode, _savedDigitalVfoBFilter));
 
-                // 4. Restore selected VFO (A or B)
-                bool selectB = (_savedDigitalSelectedVfo == CIVProtocol.VFO_B);
-                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, selectB));
-                _currentRadioSelectedVfo = _savedDigitalSelectedVfo;
-
-                // 5. Restore Split state
+                // 4. Restore Split state
                 SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, _savedDigitalSplit));
                 _actualRadioSplit = _savedDigitalSplit;
                 _lastSentSplit = _savedDigitalSplit;
 
-                // 6. Restore tracker variables
+                // 5. Restore tracker variables
                 lock (_stateLock)
                 {
                     _lastSentVfoAFreq = _savedDigitalVfoAFreq;
@@ -2730,11 +2762,10 @@ namespace Thetis
                     _modeChangePending = false;
                 }
 
+                _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                _lastTxReleaseTime = Stopwatch.GetTimestamp();
                 _isDigitalSliceTxActive = false;
                 _suppressOutgoingUpdates = false;
-
-                // Re-sync with Thetis to guarantee full consistency
-                SyncCurrentThetisState();
             }
         }
 

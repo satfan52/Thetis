@@ -47,8 +47,8 @@ namespace Thetis
 
         private HeadlessSliceManager()
         {
-            // Headless slices 2..7 correspond to DDC 2..7 (RX3..RX8)
-            for (int rx = 2; rx < 8; rx++)
+            // Headless slices 1..7 correspond to DDC 1..7 (RX2..RX8)
+            for (int rx = 1; rx < 8; rx++)
             {
                 _slices[rx] = new HeadlessSlice(rx);
             }
@@ -232,6 +232,24 @@ namespace Thetis
                         if (s.IsStreamingAudio) return true;
                     }
                     return false;
+                }
+            }
+        }
+
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
+        public void SyncActiveSlices()
+        {
+            lock (_lock)
+            {
+                if (!cmaster.IsRadioCreated) return;
+                foreach (var s in _slices.Values)
+                {
+                    if (s.IsStreamingAudio)
+                    {
+                        s.IsActive = false;
+                        ActivateAudio(s.RxIndex);
+                    }
                 }
             }
         }

@@ -340,7 +340,7 @@ namespace Thetis
         Both
     }
 
-    internal enum TCIStreamType : uint
+    public enum TCIStreamType : uint
     {
         IQ_STREAM = 0,
         RX_AUDIO_STREAM = 1,
@@ -349,7 +349,7 @@ namespace Thetis
         LINEOUT_STREAM = 4
     }
 
-    internal enum TCISampleType : uint
+    public enum TCISampleType : uint
     {
         INT16 = 0,
         INT24 = 1,
@@ -358,7 +358,7 @@ namespace Thetis
     }
 
 
-    internal sealed class TCIQueuedTxAudio
+    public sealed class TCIQueuedTxAudio
     {
         public int Receiver;
         public int SampleRate;
@@ -366,6 +366,15 @@ namespace Thetis
         public int Channels;
         public int ComplexSamples;
         public double[] Samples;
+    }
+
+    public interface ITciTxAudioSource
+    {
+        bool UsesActiveTCITxAudio();
+        bool TryGetTxAudioRequestSettings(out int sampleRate, out int samples, out int bufferingMs);
+        void SendTxChrono(int receiver);
+        bool TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio);
+        TCITxStereoInputMode TXStereoInputMode { get; }
     }
 
     internal sealed class TCIPendingFloatBuffer
@@ -3227,6 +3236,7 @@ namespace Thetis
         }
 		private void handleStart()
         {
+			TciLog.Log($"[TCIServer.handleStart] power was {consoleThreadSafe?.PowerOn}");
 			if(!consoleThreadSafe.PowerOn)
 				consoleThreadSafe.PowerOn = true;
         }
@@ -6338,6 +6348,7 @@ namespace Thetis
         }
         private void handleAudioStart(string[] args, bool enable)
         {
+            TciLog.Log($"[TCIServer.handleAudioStart] args={(args != null ? string.Join(",", args) : "null")}, enable={enable}");
             if (args.Length != 1) return;
             if (!int.TryParse(args[0], out int receiver)) return;
             lock (m_objStreamLock)
@@ -6523,7 +6534,7 @@ namespace Thetis
         }
     }
 
-	public class TCPIPtciServer
+	public class TCPIPtciServer : ITciTxAudioSource
 	{
 		//
 		public delegate void ClientConnected();
@@ -8089,6 +8100,7 @@ namespace Thetis
             if (!run && HeadlessSliceManager.Instance.IsAnyStreaming)
                 run = true;
 
+            TciLog.Log($"[TCIServer.RefreshStreamRunState] run={run}, SetRXTCIRun({(run ? 1 : 0)})");
             cmaster.SetRXTCIRun(run ? 1 : 0);
         }
 
@@ -8234,7 +8246,7 @@ namespace Thetis
             }
         }
 
-        internal bool UsesActiveTCITxAudio()
+        public bool UsesActiveTCITxAudio()
         {
             lock (m_objLocker)
             {
@@ -8242,7 +8254,7 @@ namespace Thetis
                 return activeListener != null && activeListener.UsesActiveTCITxAudio();
             }
         }
-        internal bool TryGetTxAudioRequestSettings(out int sampleRate, out int samples, out int bufferingMs)
+        public bool TryGetTxAudioRequestSettings(out int sampleRate, out int samples, out int bufferingMs)
         {
             sampleRate = 0;
             samples = 0;
@@ -8274,7 +8286,7 @@ namespace Thetis
             }
         }
 
-        internal bool TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio)
+        public bool TryDequeueTxAudio(out TCIQueuedTxAudio queuedAudio)
         {
             lock (m_objLocker)
             {
