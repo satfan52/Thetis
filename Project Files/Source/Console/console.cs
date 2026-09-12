@@ -48346,11 +48346,9 @@ namespace Thetis
                 sb.AppendLine("DIGITAL SLICES (Dormant on-demand, 0% DSP CPU when idle):");
                 foreach (var s in allSlices)
                 {
-                    int primaryPort = 50002 + ((s.RxIndex - 2) / 2) * 2;
-                    int altPort = primaryPort + 1;
-                    int trx = (s.RxIndex - 2) % 2;
+                    int dedicatedPort = 50001 + s.RxIndex;
                     string status = (activeTx == s.RxIndex) ? "TRANSMITTING (CI-V PTT)" : (s.IsStreamingAudio ? "STREAMING (Active)" : "Dormant (0% CPU)");
-                    sb.AppendLine($"  RX{s.RxIndex + 1} -> Ports {primaryPort}/{altPort} TRX {trx}: {s.FrequencyMHz:F6} MHz [{s.Mode}] Filter {s.FilterLow}-{s.FilterHigh} Hz ({status})");
+                    sb.AppendLine($"  RX{s.RxIndex + 1} -> TCI Port {dedicatedPort}: {s.FrequencyMHz:F6} MHz [{s.Mode}] Filter {s.FilterLow}-{s.FilterHigh} Hz ({status})");
                 }
                 sb.AppendLine();
                 sb.AppendLine("TX ARBITRATION & INTERLOCK:");
@@ -48359,10 +48357,11 @@ namespace Thetis
                 sb.AppendLine("  Active Digital TX: " + (activeTx >= 0 ? $"RX{activeTx + 1} ({HeadlessSliceManager.Instance.GetSlice(activeTx)?.FrequencyMHz:F6} MHz)" : "None (Idle)"));
                 sb.AppendLine("  IC-7100 CI-V: " + ((CIVControllerInstance != null && CIVControllerInstance.IsOpen) ? "Connected & Synchronized" : "Not Open"));
                 sb.AppendLine();
-                sb.AppendLine("WebSocket TCI Endpoints:");
-                sb.AppendLine("  ws://localhost:50002/ or ws://localhost:50003/ (RX3 / RX4)");
-                sb.AppendLine("  ws://localhost:50004/ or ws://localhost:50005/ (RX5 / RX6)");
-                sb.AppendLine("  ws://localhost:50006/ or ws://localhost:50007/ (RX7 / RX8)");
+                sb.AppendLine("TCI Network Endpoints for WSJT-X / JTDX (Set 'Receiver: 1' on each):");
+                for (int rx = 3; rx <= 8; rx++)
+                {
+                    sb.AppendLine($"  RX{rx} -> 127.0.0.1:{50000 + rx}");
+                }
 
                 MessageBox.Show(this, sb.ToString(), "Release F - Digital Slices & TX Status", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }

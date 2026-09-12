@@ -47,11 +47,14 @@ namespace Thetis
                 HeadlessSliceManager.Instance.SliceModeChanged += OnSliceModeChanged;
                 HeadlessSliceManager.Instance.SliceFilterChanged += OnSliceFilterChanged;
 
-                // Bind ports 50002..50007
-                // 50002 & 50003 -> RX3 (DDC 2) and RX4 (DDC 3)
-                // 50004 & 50005 -> RX5 (DDC 4) and RX6 (DDC 5)
-                // 50006 & 50007 -> RX7 (DDC 6) and RX8 (DDC 7)
-                int[] ports = new int[] { 50002, 50003, 50004, 50005, 50006, 50007 };
+                // Bind ports 50003..50008 matching RX3..RX8 directly (Port = 50000 + RX#)
+                // 50003 -> RX3 (DDC 2)
+                // 50004 -> RX4 (DDC 3)
+                // 50005 -> RX5 (DDC 4)
+                // 50006 -> RX6 (DDC 5)
+                // 50007 -> RX7 (DDC 6)
+                // 50008 -> RX8 (DDC 7)
+                int[] ports = new int[] { 50003, 50004, 50005, 50006, 50007, 50008 };
                 int[] baseRxs = new int[] { 2, 3, 4, 5, 6, 7 };
 
                 for (int i = 0; i < ports.Length; i++)
