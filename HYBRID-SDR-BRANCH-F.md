@@ -10,16 +10,16 @@ Branch F adds a parallel TCI server infrastructure alongside the existing TCI se
 
 | Port | TCI RX | DDC | Source | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| 50001 | RX1 | DDC0 | `TCIServer.cs` (original) | Full-capability main operator position |
-| 50002 | RX2 | DDC1 | `HeadlessTciServer.cs` | Headless — second receiver |
-| 50003 | RX3 | DDC2 | `HeadlessTciServer.cs` | Headless — digital slice |
-| 50004 | RX4 | DDC3 | `HeadlessTciServer.cs` | Headless — digital slice |
-| 50005 | RX5 | DDC4 | `HeadlessTciServer.cs` | Headless — digital slice |
-| 50006 | RX6 | DDC5 | `HeadlessTciServer.cs` | Headless — digital slice |
-| 50007 | RX7 | DDC6 | `HeadlessTciServer.cs` | Headless — digital slice |
-| 50008 | RX8 | DDC7 | `HeadlessTciServer.cs` | Headless — digital slice |
+| 50001 | RX1 (TRX 0), RX2 (TRX 1) | DDC0, DDC1 | `TCIServer.cs` (original) | Full-capability main operator position. WSJT-X can connect here as RX2 using TRX 1. |
+| 50002 | RX2 (TRX 0) | DDC1 | `HeadlessTciServer.cs` | Headless — dedicated single-TRX entry point for RX2 (same receiver as port 50001 TRX 1, simplified interface) |
+| 50003 | RX3 (TRX 0) | DDC2 | `HeadlessTciServer.cs` | Headless — digital slice |
+| 50004 | RX4 (TRX 0) | DDC3 | `HeadlessTciServer.cs` | Headless — digital slice |
+| 50005 | RX5 (TRX 0) | DDC4 | `HeadlessTciServer.cs` | Headless — digital slice |
+| 50006 | RX6 (TRX 0) | DDC5 | `HeadlessTciServer.cs` | Headless — digital slice |
+| 50007 | RX7 (TRX 0) | DDC6 | `HeadlessTciServer.cs` | Headless — digital slice |
+| 50008 | RX8 (TRX 0) | DDC7 | `HeadlessTciServer.cs` | Headless — digital slice |
 
-Each headless port advertises `trx_count:1` and `channels_count:1`, presenting a simplified single-receiver interface to connecting clients.
+Each headless port advertises `trx_count:1` and `channels_count:1`, presenting a simplified single-receiver interface to connecting clients. Port 50002 exposes the same RX2 receiver that is also available as TRX 1 on port 50001 — but through the headless server with its simplified capability set.
 
 ---
 
