@@ -918,7 +918,12 @@ namespace Thetis
                             if (double.TryParse(args[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double freqHz))
                             {
                                 int rx = _server.BaseRxIndex + vfoTrx;
-                                HeadlessSliceManager.Instance.SetFrequency(rx, freqHz / 1e6);
+                                double newFreqMHz = freqHz / 1e6;
+                                HeadlessSliceManager.Instance.SetFrequency(rx, newFreqMHz);
+                                if (TxArbiter.Instance.ActiveDigitalRx == rx)
+                                {
+                                    TxArbiter.Instance.UpdateDigitalTxFrequency(rx, newFreqMHz);
+                                }
                                 _server.BroadcastText($"vfo:{vfoTrx},{args[1]},{freqHz:0};");
                             }
                         }

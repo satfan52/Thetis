@@ -74,6 +74,20 @@ namespace Thetis
         private long _lastVfoBTuneTime = 0;
         private readonly object _vfoSwapLock = new object();
 
+        // Digital Slice TX Steering & State Snapshot (Release F)
+        private volatile bool _isDigitalSliceTxActive = false;
+        public bool IsDigitalSliceTxActive => _isDigitalSliceTxActive;
+        private byte _savedDigitalSelectedVfo = CIVProtocol.VFO_A;
+        private bool _savedDigitalSplit = false;
+        private double _savedDigitalVfoAFreq = 0;
+        private double _savedDigitalVfoBFreq = 0;
+        private CIVMode _savedDigitalVfoAMode = CIVMode.USB;
+        private CIVFilter _savedDigitalVfoAFilter = CIVFilter.FIL2;
+        private CIVDataMode _savedDigitalVfoADataMode = CIVDataMode.OFF;
+        private CIVMode _savedDigitalVfoBMode = CIVMode.USB;
+        private CIVFilter _savedDigitalVfoBFilter = CIVFilter.FIL2;
+        private CIVDataMode _savedDigitalVfoBDataMode = CIVDataMode.OFF;
+
         // VFO B read-from-radio infrastructure (used when IC-7100 initiates split)
         private volatile bool _readingRadioVfoBFreq = false;
         private double _capturedVfoBFreq = 0.0;
@@ -386,7 +400,7 @@ namespace Thetis
 
         public void SyncCurrentThetisState()
         {
-            if (!IsOpen || _console == null) return;
+            if (!IsOpen || _console == null || _isDigitalSliceTxActive) return;
 
             lock (_vfoSwapLock)
             {
@@ -863,7 +877,7 @@ namespace Thetis
 
         private void OnFloodTimerTick(object state)
         {
-            if (!IsOpen || _suppressOutgoingUpdates || _isSwappingVfo || _radioInitiatedSwapInProgress) return;
+            if (!IsOpen || _suppressOutgoingUpdates || _isSwappingVfo || _radioInitiatedSwapInProgress || _isDigitalSliceTxActive) return;
 
             double targetVfoAFreq = 0.0;
             double targetVfoBFreq = 0.0;
@@ -1579,6 +1593,14 @@ namespace Thetis
             {
                 Log("[HANDLE:NAK] NAK received from IC-7100");
                 Debug.WriteLine("[CIVController] NAK received from IC-7100 (unsupported command or PLL out-of-lock)");
+                return;
+            }
+
+            // If digital slice TX is active, drop unsolicited status broadcasts from the radio
+            // to prevent them from corrupting Thetis voice state or triggering spurious VFO swaps.
+            if (_isDigitalSliceTxActive)
+            {
+                Log("[HANDLE:DROP] Digital slice TX active, ignoring cmd=0x{0:X2}", cmd);
                 return;
             }
 
@@ -2549,7 +2571,7 @@ namespace Thetis
         #region Digital Slice TX Steering (Release F)
 
         /// <summary>
-        /// Steers the IC-7100 to the digital slice frequency and DATA mode, then keys CI-V PTT.
+        /// Steers the IC-7100 to the digital slice frequency and DATA mode, forces Simplex, then keys CI-V PTT.
         /// Used by TxArbiter when a digital slice (RX3..RX8) requests transmission.
         /// </summary>
         public void SteerAndKeyForDigitalTx(double freqMHz, DSPMode mode)
@@ -2558,11 +2580,48 @@ namespace Thetis
 
             lock (_vfoSwapLock)
             {
-                // 1. Select VFO A
+                _isDigitalSliceTxActive = true;
+                _suppressOutgoingUpdates = true;
+
+                // Snapshot current radio & voice states before digital transmission
+                lock (_stateLock)
+                {
+                    _savedDigitalSelectedVfo = _currentRadioSelectedVfo;
+                    _savedDigitalSplit = _actualRadioSplit;
+                    _savedDigitalVfoAFreq = _lastSentVfoAFreq > 0 ? _lastSentVfoAFreq : (_console != null ? _console.VFOAFreq : 14.074);
+
+                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                    bool vfoBTxSplit = _console != null && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
+                    if (rx2Split)
+                        _savedDigitalVfoBFreq = _console.VFOASubFreq > 0 ? _console.VFOASubFreq : _console.TXFreq;
+                    else if (vfoBTxSplit)
+                        _savedDigitalVfoBFreq = _console.VFOBFreq;
+                    else if (IsSplitRequired())
+                        _savedDigitalVfoBFreq = _console != null ? _console.TXFreq : 14.074;
+                    else
+                        _savedDigitalVfoBFreq = _lastSentVfoBFreq > 0 ? _lastSentVfoBFreq : (_console != null ? _console.VFOBFreq : 14.074);
+
+                    DSPMode vfoAMode = _console != null ? _console.RX1DSPMode : DSPMode.USB;
+                    int vfoAFilterWidth = _console != null ? Math.Abs(_console.RX1FilterHigh - _console.RX1FilterLow) : 2700;
+                    CIVProtocol.MapThetisMode(vfoAMode, vfoAFilterWidth, out _savedDigitalVfoAMode, out _savedDigitalVfoAFilter, out _savedDigitalVfoADataMode);
+
+                    DSPMode vfoBMode = (_console != null && _console.RX2Enabled) ? _console.RX2DSPMode : vfoAMode;
+                    int vfoBFilterWidth = (_console != null && _console.RX2Enabled) ? Math.Abs(_console.RX2FilterHigh - _console.RX2FilterLow) : vfoAFilterWidth;
+                    CIVProtocol.MapThetisMode(vfoBMode, vfoBFilterWidth, out _savedDigitalVfoBMode, out _savedDigitalVfoBFilter, out _savedDigitalVfoBDataMode);
+                }
+
+                Log("[DIGITAL_TX:START] freq={0:F6} MHz, mode={1}. Saved radio state: VFO={2}, Split={3}, VfoA={4:F6}, VfoB={5:F6}",
+                    freqMHz, mode, _savedDigitalSelectedVfo == CIVProtocol.VFO_B ? "B" : "A",
+                    _savedDigitalSplit, _savedDigitalVfoAFreq, _savedDigitalVfoBFreq);
+
+                // 1. Force Split OFF on IC-7100 to guarantee Simplex transmission on VFO A
+                SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, false));
+
+                // 2. Select VFO A
                 SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
                 _currentRadioSelectedVfo = CIVProtocol.VFO_A;
 
-                // 2. Set Frequency
+                // 3. Set Frequency to digital slice frequency
                 if (freqMHz > 0)
                 {
                     SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freqMHz));
@@ -2572,7 +2631,7 @@ namespace Thetis
                     }
                 }
 
-                // 3. Set Mode to DATA (e.g. USB-D / DATA1)
+                // 4. Set Mode to DATA (e.g. USB-D / DATA1)
                 CIVMode civMode;
                 CIVFilter civFilter;
                 CIVDataMode dataMode;
@@ -2581,7 +2640,7 @@ namespace Thetis
                 SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, civMode, civFilter));
                 SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, dataMode, civFilter));
 
-                // 4. Assert PTT
+                // 5. Assert PTT
                 byte[] pttFrame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, true);
                 SendFrame(pttFrame);
                 _lastSentPtt = true;
@@ -2589,7 +2648,24 @@ namespace Thetis
         }
 
         /// <summary>
-        /// Releases CI-V PTT for digital slice and restores IC-7100 to the current Thetis Voice state.
+        /// Dynamically updates the IC-7100 VFO A frequency while digital slice TX is active.
+        /// </summary>
+        public void UpdateDigitalTxFrequency(double freqMHz)
+        {
+            if (!IsOpen || !_isDigitalSliceTxActive || freqMHz <= 0) return;
+
+            lock (_vfoSwapLock)
+            {
+                SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, freqMHz));
+                lock (_stateLock)
+                {
+                    _lastSentVfoAFreq = freqMHz;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Releases CI-V PTT for digital slice and restores IC-7100 to the saved Voice state.
         /// </summary>
         public void ReleaseDigitalTx()
         {
@@ -2597,12 +2673,67 @@ namespace Thetis
 
             lock (_vfoSwapLock)
             {
-                // 1. Unkey PTT
+                Log("[DIGITAL_TX:END] Releasing digital TX. Restoring radio state: VFO={0}, Split={1}, VfoA={2:F6}, VfoB={3:F6}",
+                    _savedDigitalSelectedVfo == CIVProtocol.VFO_B ? "B" : "A",
+                    _savedDigitalSplit, _savedDigitalVfoAFreq, _savedDigitalVfoBFreq);
+
+                // 1. Unkey PTT immediately
                 byte[] pttFrame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, false);
                 SendFrame(pttFrame);
                 _lastSentPtt = false;
+                _lastTxReleaseTime = Stopwatch.GetTimestamp();
 
-                // 2. Restore Thetis Voice VFO state (freq, mode, filter width, split)
+                // 2. Restore VFO A Frequency and Mode
+                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+
+                if (_savedDigitalVfoAFreq > 0)
+                {
+                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, _savedDigitalVfoAFreq));
+                }
+                SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoAMode, _savedDigitalVfoAFilter));
+                SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoADataMode, _savedDigitalVfoAFilter));
+
+                // 3. Restore VFO B Frequency and Mode
+                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
+                _currentRadioSelectedVfo = CIVProtocol.VFO_B;
+
+                if (_savedDigitalVfoBFreq > 0)
+                {
+                    SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, _savedDigitalVfoBFreq));
+                }
+                SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoBMode, _savedDigitalVfoBFilter));
+                SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, _savedDigitalVfoBDataMode, _savedDigitalVfoBFilter));
+
+                // 4. Restore selected VFO (A or B)
+                bool selectB = (_savedDigitalSelectedVfo == CIVProtocol.VFO_B);
+                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, selectB));
+                _currentRadioSelectedVfo = _savedDigitalSelectedVfo;
+
+                // 5. Restore Split state
+                SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, _savedDigitalSplit));
+                _actualRadioSplit = _savedDigitalSplit;
+                _lastSentSplit = _savedDigitalSplit;
+
+                // 6. Restore tracker variables
+                lock (_stateLock)
+                {
+                    _lastSentVfoAFreq = _savedDigitalVfoAFreq;
+                    _lastSentVfoBFreq = _savedDigitalVfoBFreq;
+                    _pendingVfoAFreq = _savedDigitalVfoAFreq;
+                    _pendingVfoBFreq = _savedDigitalVfoBFreq;
+                    _pendingTxFreq = _savedDigitalSplit ? _savedDigitalVfoBFreq : _savedDigitalVfoAFreq;
+                    _pendingSplit = _savedDigitalSplit;
+                    _freqChangePending = false;
+                    _vfoBChangePending = false;
+                    _splitChangePending = false;
+                    _modeChangePending = false;
+                }
+
+                _isDigitalSliceTxActive = false;
+                _suppressOutgoingUpdates = false;
+
+                // Re-sync with Thetis to guarantee full consistency
                 SyncCurrentThetisState();
             }
         }

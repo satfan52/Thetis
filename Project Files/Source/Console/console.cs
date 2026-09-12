@@ -15432,18 +15432,31 @@ namespace Thetis
 
             if (MOX)//[2.10.3.13]MW0LGE
             {
-                if (RX2Enabled && VFOBTX) 
+                // Do not reposition voice panadapter display during digital slice transmission
+                if (TxArbiter.Instance.ActiveDigitalRx == -1)
                 {
-                    // rx2
-                    Display.CentreFreqRX2 = tx_dds_freq_mhz;
-                }
-                else
-                {
-                    Display.CentreFreqRX1 = tx_dds_freq_mhz;
+                    if (RX2Enabled && VFOBTX) 
+                    {
+                        // rx2
+                        Display.CentreFreqRX2 = tx_dds_freq_mhz;
+                    }
+                    else
+                    {
+                        Display.CentreFreqRX1 = tx_dds_freq_mhz;
+                    }
                 }
             }
 
             NetworkIO.VFOfreq(0, tx_dds_freq_mhz, 1);
+        }
+
+        public void UpdateDigitalTxDdsFrequency(double freqMHz)
+        {
+            if (TxArbiter.Instance.ActiveDigitalRx != -1 && freqMHz > 0)
+            {
+                tx_dds_freq_mhz = freqMHz;
+                UpdateTXDDSFreq();
+            }
         }
 
         private void UpdateAlexTXFilter()
@@ -29494,15 +29507,24 @@ namespace Thetis
                     }
                 }
 
-                if (chkVFOBTX.Checked || (!chkRX2.Checked && chkVFOSplit.Checked))
-                    freq = VFOBFreq;
-                else if (chkRX2.Checked && chkVFOSplit.Checked)
-                    freq = VFOASubFreq;
+                if (TxArbiter.Instance.ActiveDigitalRx != -1)
+                {
+                    freq = TxArbiter.Instance.ActiveDigitalFrequency;
+                    Audio.TXDSPMode = TxArbiter.Instance.ActiveDigitalMode;
+                    tx_dds_freq_mhz = freq;
+                }
                 else
-                    freq = VFOAFreq;
+                {
+                    if (chkVFOBTX.Checked || (!chkRX2.Checked && chkVFOSplit.Checked))
+                        freq = VFOBFreq;
+                    else if (chkRX2.Checked && chkVFOSplit.Checked)
+                        freq = VFOASubFreq;
+                    else
+                        freq = VFOAFreq;
 
-                if (chkXIT.Checked)
-                    freq += (int)udXIT.Value * 0.000001;
+                    if (chkXIT.Checked)
+                        freq += (int)udXIT.Value * 0.000001;
+                }
 
                 if (!calibrating)
                 {
@@ -29774,6 +29796,32 @@ namespace Thetis
                 pa_fwd_power = 0;
                 pa_rev_power = 0;
                 HighSWR = false;
+
+                // Restore TX DSP Mode and transmitter DDS frequency for Voice VFO
+                if (!rx2_enabled)
+                {
+                    Audio.TXDSPMode = _rx1_dsp_mode;
+                    tx_dds_freq_mhz = chkVFOBTX.Checked ? VFOBFreq : VFOAFreq;
+                }
+                else
+                {
+                    if (chkVFOBTX.Checked)
+                    {
+                        Audio.TXDSPMode = _rx2_dsp_mode;
+                        tx_dds_freq_mhz = VFOBFreq;
+                    }
+                    else if (chkVFOSplit.Checked)
+                    {
+                        Audio.TXDSPMode = _rx1_dsp_mode;
+                        tx_dds_freq_mhz = VFOASubFreq;
+                    }
+                    else
+                    {
+                        Audio.TXDSPMode = _rx1_dsp_mode;
+                        tx_dds_freq_mhz = VFOAFreq;
+                    }
+                }
+                UpdateTXDDSFreq();
             }
 
             if (tx) UIMOXChangedTrue();
