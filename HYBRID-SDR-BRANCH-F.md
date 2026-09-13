@@ -185,6 +185,11 @@ The headless server is designed for "set and forget" digital mode operation. FT8
 | Audio sample rate | `audio_samplerate` negotiation |
 | Start/Stop (power) | `start`/`stop` toggles radio power |
 | Full handshake | Init banner + `ready` |
+| IQ streaming | Branch G: `iq_start`/`iq_stop`/`iq_samplerate` — float32 interleaved IQ_STREAM frames (frame type 0), linear-interpolated resampling to 48/96/192/384 kHz (default 96 kHz ≈ 0.77 MB/s per receiver) |
+| DDS (panadapter center) | Branch G: `dds:0,<hz>` sets slice center frequency — required by CW Skimmer to interpret IQ frequency range |
+| S-meter | Branch G: `rx_sensors_enable:<bool>,<interval_ms>` — periodic `rx_sensors`/`rx_channel_sensors` frames in dBFS computed from streaming audio RMS (100–2000 ms) |
+| AGC control | Branch G: `agc_mode`, `agc_auto_ex`, `agc_gain` — functional via WDSP on the slice channel; default MED/90 dB |
+| Mute | Branch G: `mute:true/false` — functional per-client audio mute |
 
 ### Limited / echo-only on headless ports
 
@@ -198,18 +203,17 @@ The headless server is designed for "set and forget" digital mode operation. FT8
 | Drive / tune_drive | Echo only | Accepted, not applied to hardware |
 | rx_enable / tx_enable | Echo only | Acknowledged |
 | rx_channel_enable | Echo only | Acknowledged, no sub-RX support |
-| Mute / volume | Stub | `mute` → `false`, `volume` → `0` |
+| Mute | Functional (Branch G) | `mute:true/false` silences this client's audio stream |
+| Master AF volume | Stub | `volume` always echoes `0` |
 | CW macros / keyer | Stub | Echoes fixed speed (30), no keyer control |
-| IQ sample rate | Echo only | Echoed, but no IQ stream sent |
 
 ### Not supported on headless ports (available on port 50001 only)
 
 | Capability | Notes |
 | :--- | :--- |
-| IQ streaming | No `iq_start`/`iq_stop` handler; no `PublishIQSamples`. CW Skimmers and panadapter clients requiring raw IQ will not work on headless ports. |
 | Sub-RX / channels | Single channel only (`channels_count:1`) |
 | Second TRX | Single TRX per port (`trx_count:1`) |
-| AGC control | Hardcoded to MED mode, top=90 dB. No `agc_mode`/`agc_gain`/`agc_auto_ex` handling. (See §3 for details.) |
+| AGC top / hang / custom parameters | Only mode/gain/auto are supported; AGC top stays 90 dB (see §3) |
 | Noise blanker | No `rx_nb_enable`/`rx_nb2_enable` handling |
 | Noise reduction | No `rx_nr_enable`/`rx_nr_enable_ex` handling |
 | Binaural (BIN) | No `rx_bin_enable` handling |

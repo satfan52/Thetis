@@ -1,11 +1,12 @@
 # Experimental Hybrid SDR A/B/C/D/E/F test set
 
-This branch contains the **Branch F** implementation: Multi-port headless TCI server exposing RX3–RX8 on WebSocket ports 50003–50008, with full digital TX flow control, TxArbiter voice/digital preemption, and CI-V state snapshot/restore — built on top of Branch E's CI-V integration and Processed TX Output.
+This branch contains the **Branch G** implementation: the Branch F multi-port headless TCI server (RX3–RX8 on WebSocket ports 50002–50008, TX flow control, TxArbiter voice/digital preemption, CI-V state snapshot/restore) plus the SDR-software compatibility set — IQ streaming for CW Skimmer/panadapters, DDS panadapter center, S-meter reporting, functional AGC control and mute.
 
+- [Branch G documentation (SDR software compatibility)](HYBRID-SDR-BRANCH-G.md)
 - [Branch F documentation (multi-port TCI server)](HYBRID-SDR-BRANCH-F.md)
 - [Branch E installation and configuration guide](HYBRID-SDR-BRANCH-E.md)
 - [Branch D installation and configuration guide](HYBRID-SDR-BRANCH-D.md)
-- [Compiled A/B/C/D/E/F downloads](https://github.com/satfan52/Thetis/releases)
+- [Compiled A/B/C/D/E/F/G downloads](https://github.com/satfan52/Thetis/releases)
 
 This experimental test set is separate from the official Thetis releases described below.
 

@@ -3,8 +3,8 @@
     "ReleaseBuild": "",
     "ReleaseURL": "https://github.com/ramdor/Thetis/releases/tag/v2.10.3.12",
     "ReleaseName": "Latest Release",
-    "DevelopmentVersion": "2.10.3.12-F",
-    "DevelopmentBuild": "Multi-Port Headless TCI (RX3-RX8)",
-    "DevelopmentURL": "https://github.com/satfan52/Thetis/tree/F",
-    "DevelopmentName": "Branch F — Headless TCI Server"
+    "DevelopmentVersion": "2.10.3.12-G",
+    "DevelopmentBuild": "Headless TCI SDR Compatibility (IQ, DDS, S-meter, AGC)",
+    "DevelopmentURL": "https://github.com/satfan52/Thetis/tree/G",
+    "DevelopmentName": "Branch G — Headless TCI SDR Compatibility"
 }
