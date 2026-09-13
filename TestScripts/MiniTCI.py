@@ -283,10 +283,24 @@ class PanFall(tk.Canvas):
         z = iq[0:2 * n:2].astype(np.float32) + 1j * iq[1:2 * n:2].astype(np.float32)
         w = np.hanning(n).astype(np.float32)
         spec = np.fft.fftshift(np.fft.fft(z * w))
+        # notch the DC spike (Red Pitaya LO leakage paints a full-height line at
+        # center that ruins the auto-range and pins the S-meter)
+        n_dc = max(1, int(round(600.0 / (self.rate / n))))   # bins within +/-600 Hz
+        c = n // 2
+        fill_lo, fill_hi = max(0, c - 3 * n_dc), min(n, c + 3 * n_dc + 1)
+        spec[c - n_dc:c + n_dc + 1] = min(spec[fill_lo], spec[fill_hi])
         db = (20 * np.log10(np.abs(spec) / n + 1e-10)).astype(np.float32)
-        # Branch G S-meter: signal dBFS from IQ power (AGC-flattened audio RMS is
-        # useless as a meter - it pins at the AGC target). Report peak bin level.
-        self.peak_dbfs = float(db.max()) if len(db) else -140.0
+        # Branch G S-meter: peak level WITHIN the receiver passband (offset around
+        # the VFO), so out-of-passband junk doesn't move the needle.
+        self.peak_dbfs = -140.0
+        if self.center_hz and self.vfo_hz:
+            lo_f = self.vfo_hz + self.filt[0] - self.center_hz
+            hi_f = self.vfo_hz + self.filt[1] - self.center_hz
+            i1 = int(lo_f / self.rate * len(db)) + len(db) // 2
+            i2 = int(hi_f / self.rate * len(db)) + len(db) // 2
+            i1, i2 = max(0, min(i1, len(db) - 1)), max(0, min(i2, len(db)))
+            if i2 > i1:
+                self.peak_dbfs = float(db[i1:i2].max())
 
         # map each canvas column to its frequency within the DISPLAY span,
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
@@ -554,7 +568,6 @@ class MiniTCI(tk.Tk):
             "mic_gain": self.mic_var.get(),
             "agc_mode": self.agc_var.get(),
             "agc_gain": self.agc_gain_var.get(),
-            "agc_auto": self.agc_auto_var.get(),
             "y_zero": self.yzero_var.get(),
             "y_scale": self.yscale_var.get(),
             "zoom": self.zoom_var.get(),
@@ -727,7 +740,7 @@ class MiniTCI(tk.Tk):
         self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
 
         # analog-style S-meter: S0..S9 scale + dB over S9, peak-hold needle
-        self.sm = tk.Canvas(r3, width=230, height=40, bg=C["panel"], highlightthickness=0)
+        self.sm = tk.Canvas(r3, width=230, height=54, bg=C["panel"], highlightthickness=0)
         self.sm.pack(side="left", padx=16)
         smL = 8; smR = 222; smY = 22
         self._sm_x0, self._sm_x1, self._sm_y = smL, smR, smY
@@ -758,8 +771,8 @@ class MiniTCI(tk.Tk):
                                           fill="#1a1f29", width=2)
         self.sm_peak = self.sm.create_line(smL, smY - 8, smL, smY - 2,
                                            fill="#c0392b", width=2)
-        self.sm_txt = self.sm.create_text(smR, 36, text="−140 dBFS", anchor="e",
-                                          fill=C["fg"], font=("Consolas", 8))
+        self.sm_txt = self.sm.create_text(smR, 50, text="−140 dBFS", anchor="e",
+                                          fill=C["fg"], font=("Consolas", 9, "bold"))
         self._sm_peak_db = -140.0
         self.state_lbl = tk.Label(r3, text="● disconnected", bg=C["panel"], fg=C["dim"],
                                   font=("Segoe UI", 9))
