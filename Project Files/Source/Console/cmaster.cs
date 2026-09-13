@@ -574,17 +574,16 @@ namespace Thetis
             {
                 int[] EIGHT_DDC_Function = new int[64];
                 int[] EIGHT_DDC_Callid = new int[64];
-                // DDC s must feed receiver channel 2*s to match the ChannelMaster
-                // channel layout (cmSubRCVR=2: RX1=ch0/1, RX2=ch2/3, RX3=ch4/5 ...).
-                // The previous mapping (callid = s) routed DDC1 into RX1's sub-receiver
-                // and shifted every later receiver by one, which broke the RX2
-                // panafall in the main GUI (second trace showed the wrong DDC).
+                // callid = stream id within ChannelMaster (inid(0, s) = receiver s's
+                // spec/panadapter stream). DDC s -> stream s: RX1 display reads
+                // stream 0, RX2 display reads stream 1, etc. (callid = 2*s crashes -
+                // pebuff[] only has cmSTREAMS=11 entries; stream ids are 0..10.)
                 for (int s = 0; s < 8; s++)
                 {
                     for (int v = 0; v < 8; v++)
                     {
                         EIGHT_DDC_Function[s * 8 + v] = 1;
-                        EIGHT_DDC_Callid[s * 8 + v] = 2 * s;
+                        EIGHT_DDC_Callid[s * 8 + v] = s;
                     }
                 }
                 int[] EIGHT_DDC_nstreams = new int[8] { 1, 1, 1, 1, 1, 1, 1, 1 };
