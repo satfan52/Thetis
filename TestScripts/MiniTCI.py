@@ -377,6 +377,20 @@ class MiniTCI(tk.Tk):
                      values=MODES).pack(side="left")
         self.mode_var.trace_add("write", self._mode_changed)
 
+        ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.agc_var = tk.StringVar(value="MED")
+        self.agc_box = ttk.Combobox(r1, textvariable=self.agc_var, width=8, state="readonly",
+                                    values=["OFF", "FAST", "MED", "SLOW", "LONG", "CUSTOM"])
+        self.agc_box.pack(side="left")
+        self.agc_var.trace_add("write", self._agc_changed)
+        self.agc_auto_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(r1, text="Auto", variable=self.agc_auto_var,
+                        command=self._agc_auto_changed).pack(side="left", padx=(6, 2))
+        ttk.Label(r1, text="Gain:", padding=(8, 0, 2, 0)).pack(side="left")
+        self.agc_gain_var = tk.DoubleVar(value=40)
+        ttk.Scale(r1, from_=-20, to=120, variable=self.agc_gain_var, length=90,
+                  command=self._agc_gain_changed).pack(side="left", padx=2)
+
         # --- row 2: frequency
         r2 = ttk.Frame(self); r2.pack(fill="x", padx=10, pady=2)
         self.freq_lbl = tk.Label(r2, text="14.074.000 kHz", bg=C["panel"], fg=C["tune"],
@@ -400,10 +414,10 @@ class MiniTCI(tk.Tk):
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
         ttk.Label(r3, text="Volume:").pack(side="left")
-        self.vol_var = tk.DoubleVar(value=30)
+        self.vol_var = tk.DoubleVar(value=80)
         ttk.Scale(r3, from_=0, to=100, variable=self.vol_var, length=140,
                   command=self._vol_changed).pack(side="left", padx=4)
-        self.volume = 0.30
+        self.volume = 0.85
 
         self._out_devs = list_output_devices()
         self._in_devs = list_input_devices()
@@ -507,7 +521,8 @@ class MiniTCI(tk.Tk):
         outdata[:, 1] = outdata[:, 0]
 
     def _vol_changed(self, v):
-        self.volume = float(v) / 100.0
+        # makeup gain: server ships -26 dB calibrated audio; allow up to ~+21 dB
+        self.volume = (float(v) / 100.0) * 1.2
 
     def _mic_changed(self, v):
         self.mic_gain = float(v) / 100.0
@@ -517,7 +532,10 @@ class MiniTCI(tk.Tk):
         self.text_q.put(d)
 
     def tci_audio(self, data, rate, chans):
-        # mono-ize then resample to OUT_RATE
+        # mono-ize then resample to OUT_RATE. Server sends 4096-value blocks
+        # (2048 stereo samples = 85ms); the old 40-block queue allowed >3s of
+        # latency. Keep at most ~4 blocks (~340ms) so playback stays near-live
+        # and drop-oldest never yanks the read pointer mid-block.
         if chans == 2:
             mono = data[0::2].copy()
         else:
@@ -525,13 +543,22 @@ class MiniTCI(tk.Tk):
         if rate != OUT_RATE:
             mono = resample(mono, int(len(mono) * OUT_RATE / rate))
         self.audio_blocks.append(mono)
-        while len(self.audio_blocks) > 40:      # ~0.85 s cap
+        while len(self.audio_blocks) > 5:       # ~0.34 s hard cap = low latency
             self.audio_blocks.popleft()
             self.audio_pos = 0
 
     def tci_iq(self, data, rate):
+        # Server streams tiny IQ frames (hundreds of samples); accumulate into
+        # larger FFT blocks for a defined panadapter/waterfall.
         try:
-            self._iq_q.put_nowait((data, rate))
+            self._iq_acc = np.concatenate((self._iq_acc, data)) \
+                if getattr(self, "_iq_acc", None) is not None else data.copy()
+            self._iq_acc_rate = rate
+            target = 8192  # interleaved values (4096 complex)
+            while len(self._iq_acc) >= target:
+                block = self._iq_acc[:target]
+                self._iq_acc = self._iq_acc[target:]
+                self._iq_q.put_nowait((block, rate))
         except Exception:
             pass
 
@@ -630,6 +657,9 @@ class MiniTCI(tk.Tk):
             self.send(f"modulation:0,{self.mode};")
             lo, hi = FILTERS.get(self.mode, (100, 2900))
             self.send(f"rx_filter_band:0,{lo},{hi};")
+            self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
+            self.send(f"agc_auto_ex:0,{str(self.agc_auto_var.get()).lower()};")
+            self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
         elif s == "connecting":
             self.conn_btn.config(text="Cancel")
             self.state_lbl.config(text="● connecting…", fg=C["tune"])
@@ -759,6 +789,39 @@ class MiniTCI(tk.Tk):
         self.pan.filt = (lo, hi)
         self.send(f"modulation:0,{self.mode};")
         self.send(f"rx_filter_band:0,{lo},{hi};")
+
+    def _agc_mode_to_tci(self, name):
+        return {"OFF": "off", "FIXED": "fixed", "FAST": "fast",
+                "MED": "normal", "SLOW": "slow", "LONG": "long",
+                "CUSTOM": "custom"}.get(name, "normal")
+
+    def _agc_changed(self, *_):
+        if not self.connected:
+            return
+        mode = self.agc_var.get()
+        self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
+        # OFF -> switch to manual gain (agc_auto false) and push gain
+        if mode == "OFF":
+            self.agc_auto_var.set(False)
+            self.send("agc_auto_ex:0,false;")
+            self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+        else:
+            self.agc_auto_var.set(True)
+            self.send("agc_auto_ex:0,true;")
+
+    def _agc_auto_changed(self):
+        if not self.connected:
+            return
+        auto = self.agc_auto_var.get()
+        self.send(f"agc_auto_ex:0,{str(auto).lower()};")
+        if not auto:
+            self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+            if self.agc_var.get() != "OFF":
+                self.agc_var.set("OFF")
+
+    def _agc_gain_changed(self, v):
+        if self.connected and not self.agc_auto_var.get():
+            self.send(f"agc_gain:0,{int(float(v))};")
 
     def _pan_click(self, e):
         if self.pan.center_hz:
