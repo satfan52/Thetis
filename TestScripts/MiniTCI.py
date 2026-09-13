@@ -1085,7 +1085,7 @@ class MiniTCI(tk.Tk):
                 # synchronously: pan.update is pure numpy (~5ms at 8192 samples),
                 # and _blit needs the result immediately - a worker thread here
                 # races the blit and paints nothing on first connect.
-                data2, rate2 = data, rate
+                data2, rate2, dc2 = data, rate, dcenter
                 while True:
                     try:
                         data2, rate2, dc2 = self._iq_q.get_nowait()
