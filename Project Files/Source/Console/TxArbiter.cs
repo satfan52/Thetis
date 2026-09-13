@@ -22,8 +22,10 @@ namespace Thetis
         private double _activeDigitalFrequency = 0;
         private DSPMode _activeDigitalMode = DSPMode.DIGU;
         private DSPMode _savedVoiceMode = DSPMode.USB;
-        private bool _dspTxEngaged = false;
-        // Branch G: suppress OnMoxChanged preemption while WE assert MOX for digital TX
+        private bool _dspTxEngaged = false;
+
+        // Branch G: suppress OnMoxChanged preemption while WE assert MOX for digital TX
+
         private volatile bool _suppressMoxPreempt = false;
         private readonly object _lock = new object();
 
@@ -132,8 +134,10 @@ namespace Thetis
 
         private void OnMoxChanged(int rx, bool oldMox, bool newMox)
         {
-            if (!newMox) return;
-            // Branch G: ignore MOX transitions that WE caused for digital TX
+            if (!newMox) return;
+
+            // Branch G: ignore MOX transitions that WE caused for digital TX
+
             if (_suppressMoxPreempt) return;
 
             // Voice MOX / VOX / Mic PTT activated! Immediately preempt any digital slice!
@@ -225,7 +229,20 @@ namespace Thetis
                 }
             }
             catch { }
-
+            // Branch G (user request): assert MOX so Thetis/Red Pitaya actually
+            // TRANSMITS on the target frequency (previously RX-only full duplex -
+            // RF only came from the IC-7100). Also makes the Thetis MOX indicator
+            // reflect the transmission and enables the TUN audio path.
+            try
+            {
+                if (_console != null && !_console.MOX)
+                {
+                    _suppressMoxPreempt = true;
+                    _console.MOX = true;
+                    _suppressMoxPreempt = false;
+                }
+            }
+            catch { }
             // Steer IC-7100 to slice frequency and DATA mode, force Simplex, then key CI-V PTT
             try
             {
