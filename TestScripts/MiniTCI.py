@@ -152,7 +152,7 @@ class TciClient:
         try:
             async with websockets.connect(
                     uri, max_size=None,
-                    ping_interval=10, ping_timeout=20,
+                    ping_interval=15, ping_timeout=30,
                     close_timeout=5) as ws:
                 self._oq = asyncio.Queue()
                 self.on_state("connected")
@@ -386,6 +386,7 @@ class MiniTCI(tk.Tk):
         self.chrono_reqs = collections.deque()
         self.chrono_lock = threading.Lock()
         self.tx_pos = 0
+        self._iq_acc_bytes = bytearray()
 
         self.audio_blocks = collections.deque()
         self.audio_pos = 0
@@ -606,17 +607,24 @@ class MiniTCI(tk.Tk):
             self.audio_pos = 0
 
     def tci_iq(self, data, rate):
-        # Server streams tiny IQ frames (hundreds of samples); accumulate into
-        # larger FFT blocks for a defined panadapter/waterfall.
+        # Server streams ~750 tiny IQ frames/s; per-frame np.concatenate copies
+        # starve the asyncio loop (GIL) -> ping timeouts -> disconnects. Accumulate
+        # raw bytes instead (O(1) append) and convert once per block.
         try:
-            self._iq_acc = np.concatenate((self._iq_acc, data)) \
-                if getattr(self, "_iq_acc", None) is not None else data.copy()
-            self._iq_acc_rate = rate
-            target = 8192  # interleaved values (4096 complex)
-            while len(self._iq_acc) >= target:
-                block = self._iq_acc[:target]
-                self._iq_acc = self._iq_acc[target:]
-                self._iq_q.put_nowait((block, rate))
+            self._iq_acc_bytes.extend(data.tobytes())
+            target = 8192 * 4  # 8192 interleaved float32 values
+            while len(self._iq_acc_bytes) >= target:
+                block = np.frombuffer(bytes(self._iq_acc_bytes[:target]), dtype="<f4")
+                del self._iq_acc_bytes[:target]
+                try:
+                    self._iq_q.put_nowait((block, rate))
+                except Exception:
+                    # UI stalled - drop the OLDEST block so new data keeps flowing
+                    try:
+                        self._iq_q.get_nowait()
+                        self._iq_q.put_nowait((block, rate))
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -696,6 +704,8 @@ class MiniTCI(tk.Tk):
         self.chrono_reqs = collections.deque()
         self.tx_audio_q = collections.deque(maxlen=64)
         self.tx_pos = 0
+        self._iq_acc_bytes = bytearray()
+        self._last_draw = 0.0
         c = TciClient(port)
         self.client = c
         self._set_state("connecting")      # set UI state BEFORE the thread can race us
@@ -750,7 +760,10 @@ class MiniTCI(tk.Tk):
             data, rate = self._iq_q.get_nowait()
             if rate and int(rate) != int(self.pan.span):
                 self.pan.span = float(rate)
-            self.pan.update(data)
+            now2 = time.time()
+            if now2 - getattr(self, "_last_draw", 0) > 0.08:   # ~12 fps max
+                self._last_draw = now2
+                self.pan.update(data)
         except (queue.Empty, AttributeError):
             pass
 
