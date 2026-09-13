@@ -13,6 +13,7 @@ Run:  python3 MiniTCI.py
 
 import asyncio
 import collections
+import time
 import queue
 import struct
 import threading
@@ -225,6 +226,8 @@ class PanFall(tk.Canvas):
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
         self._wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
+        self._ready = None
+        self._ready_ys = None
         self._photo = None
         self._col = None
         self._pil = PIL_OK
@@ -306,6 +309,7 @@ class PanFall(tk.Canvas):
         return lut[idx]
 
     def _draw(self):
+        """Compute numpy arrays only (called from any thread). Tk-safe."""
         col = getattr(self, "_col", None)
         if col is None:
             return
@@ -322,24 +326,33 @@ class PanFall(tk.Canvas):
             yy = np.clip(ys + dy, 0, PAN_H - 1)
             pan[yy, np.arange(CANVAS_W)] = trace
 
+        # finished composite (pan + waterfall); UI thread blits it
+        self._ready = np.vstack([pan, self._wf_img])
+        self._ready_ys = ys
+
+    def _blit(self):
+        """Main-thread only: convert finished arrays to PhotoImage + draw overlays."""
+        arr = getattr(self, "_ready", None)
+        if arr is None:
+            return
+        self.delete("all")
         if self._pil:
-            self._photo = ImageTk.PhotoImage(Image.fromarray(
-                np.vstack([pan, self._wf_img])))
-            self.delete("all")
+            self._photo = ImageTk.PhotoImage(Image.fromarray(arr))
             self.create_image(0, 0, image=self._photo, anchor="nw")
         else:
-            self.delete("all")
-            pts = []
-            for x in range(0, CANVAS_W, 3):
-                y = ys[x]
-                pts += [x, y]
-            self.create_line(pts, fill=C["green"], width=1)
+            ys = getattr(self, "_ready_ys", None)
+            if ys is not None:
+                pts = []
+                for x in range(0, CANVAS_W, 3):
+                    pts += [x, ys[x]]
+                self.create_line(pts, fill=C["green"], width=1)
+        self._draw_overlays()
 
+    def _draw_overlays(self):
         # grid
         for i in range(1, 4):
             y = i * PAN_H / 4
             self.create_line(0, y, CANVAS_W, y, fill=C["grid"])
-
         # labels
         for k in range(-4, 5):
             off = k * self.span / 8
@@ -348,14 +361,12 @@ class PanFall(tk.Canvas):
                 self.create_text(x, PAN_H + 10,
                                  text=f"{off / 1000:+.0f}k",
                                  fill="#9aa4b2", font=("Segoe UI", 7))
-
         # filter overlay (relative to VFO)
         if self.center_hz and self.vfo_hz:
             x1 = self.f2x(self.vfo_hz + self.filt[0])
             x2 = self.f2x(self.vfo_hz + self.filt[1])
             if x2 > x1 and x2 > 0 and x1 < CANVAS_W:
                 self.create_rectangle(x1, 0, x2, PAN_H, fill="", outline=C["tune"])
-
         # vfo line
         if self.center_hz:
             x = self.f2x(self.vfo_hz)
@@ -531,14 +542,16 @@ class MiniTCI(tk.Tk):
             dev = self._find_dev(self._out_devs, self.out_dev_var.get()) \
                 if hasattr(self, "out_dev_var") else None
             kwargs = dict(samplerate=OUT_RATE, channels=2, dtype="float32",
-                          blocksize=1024, callback=self._out_cb)
+                          blocksize=1024)
             if dev is not None:
-                kwargs = {"device": dev, "samplerate": OUT_RATE, "channels": 2,
-                          "dtype": "float32", "blocksize": 1024,
-                          "callback": self._out_cb}
+                kwargs["device"] = dev
             self.out_stream = sd.OutputStream(**kwargs)
             self.out_stream.start()
-            self.logprint(f"output device: {'default' if dev is None else self.out_dev_var.get()}")
+            if not getattr(self, "_pump_started", False):
+                self._pump_started = True
+                threading.Thread(target=self._audio_pump, daemon=True).start()
+            name = "default" if dev is None else self.out_dev_var.get()
+            self.logprint(f"output device: {name}")
         except Exception as e:
             self.out_stream = None
             self.logprint(f"audio out error: {e}")
@@ -561,22 +574,43 @@ class MiniTCI(tk.Tk):
             self.out_stream = None
         self._open_output()
 
-    def _out_cb(self, outdata, frames, t, status):
-        filled = 0
-        while filled < frames and self.audio_blocks:
-            blk = self.audio_blocks[0]
-            take = min(len(blk) - self.audio_pos, frames - filled)
-            seg = blk[self.audio_pos:self.audio_pos + take]
-            outdata[filled:filled + take, 0] = seg
-            filled += take
-            self.audio_pos += take
-            if self.audio_pos >= len(blk):
-                self.audio_blocks.popleft()
-                self.audio_pos = 0
-        if filled < frames:
-            outdata[filled:, 0] = 0.0
-        outdata[:, 0] *= self.volume
-        outdata[:, 1] = outdata[:, 0]
+    def _audio_pump(self):
+        """Blocking audio writer on its own thread - immune to Tk/GIL stalls.
+        sounddevice blocking write() has its own internal timing; this thread
+        only needs to feed chunks slightly faster than real time."""
+        CHUNK = 1024
+        mono_buf = np.zeros(CHUNK, dtype=np.float32)
+        while True:
+            try:
+                if self.out_stream is None:
+                    time.sleep(0.1)
+                    continue
+                filled = 0
+                while filled < CHUNK:
+                    if not self.audio_blocks:
+                        mono_buf[filled:] = 0.0
+                        break
+                    blk = self.audio_blocks[0]
+                    take = min(len(blk) - self.audio_pos, CHUNK - filled)
+                    if take <= 0:
+                        self.audio_blocks.popleft()
+                        self.audio_pos = 0
+                        continue
+                    mono_buf[filled:filled + take] = blk[self.audio_pos:self.audio_pos + take]
+                    filled += take
+                    self.audio_pos += take
+                    if self.audio_pos >= len(blk):
+                        self.audio_blocks.popleft()
+                        self.audio_pos = 0
+                stereo = np.empty((CHUNK, 2), dtype=np.float32)
+                stereo[:, 0] = mono_buf * self.volume
+                stereo[:, 1] = mono_buf * self.volume
+                try:
+                    self.out_stream.write(stereo)
+                except Exception:
+                    time.sleep(0.05)
+            except Exception:
+                time.sleep(0.1)
 
     def _vol_changed(self, v):
         # makeup gain: server ships -26 dB calibrated audio; +6 dB over previous
@@ -763,13 +797,22 @@ class MiniTCI(tk.Tk):
             now2 = time.time()
             if now2 - getattr(self, "_last_draw", 0) > 0.08:   # ~12 fps max
                 self._last_draw = now2
-                self.pan.update(data)
+                # FFT+numpy on a worker thread; Tk blit happens right after
+                threading.Thread(target=self._pan_worker, args=(data,),
+                                 daemon=True).start()
+                self.pan._blit()
         except (queue.Empty, AttributeError):
             pass
 
         self.service_tx_audio()
         self._draw_smeter()
         self.after(50, self._poll)
+
+    def _pan_worker(self, data):
+        try:
+            self.pan.update(data)
+        except Exception:
+            pass
 
     def _handle(self, d):
         for k, v in d.items():
