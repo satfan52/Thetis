@@ -401,9 +401,14 @@ class PanFall(tk.Canvas):
             if 0 < y < PAN_H:
                 self.create_line(0, y, CANVAS_W, y, fill=C["grid"])
             db = hi - (i / 4.0) * span_db
-            self.create_text(4, y + 2, anchor="nw",
-                             text=f"{db:.0f}", fill="#7d8aa0",
-                             font=("Consolas", 7))
+            lbl = self.create_text(4, y + 2, anchor="nw",
+                                   text=f"{db:.0f}", fill="#e8ecef",
+                                   font=("Consolas", 8, "bold"))
+            # darken behind the label for contrast
+            bb = self.bbox(lbl)
+            if bb:
+                self.create_rectangle(bb[0]-1, bb[1], bb[2]+1, bb[3],
+                                      fill="#0a0f16", outline="")
         # vertical grid + freq labels
         for k in range(-4, 5):
             off = k * self.span / 8
@@ -411,9 +416,13 @@ class PanFall(tk.Canvas):
             if 6 <= x <= CANVAS_W - 6 and abs(x - CANVAS_W/2) > 4:
                 self.create_line(x, 0, x, PAN_H, fill=C["grid"])
             if 14 <= x <= CANVAS_W - 14:
-                self.create_text(x, PAN_H + 10,
-                                 text=f"{off / 1000:+.0f}k",
-                                 fill="#9aa4b2", font=("Segoe UI", 7))
+                lbl = self.create_text(x, PAN_H + 10,
+                                       text=f"{off / 1000:+.0f}k",
+                                       fill="#c8d0dc", font=("Segoe UI", 7, "bold"))
+                bb = self.bbox(lbl)
+                if bb:
+                    self.create_rectangle(bb[0]-1, bb[1], bb[2]+1, bb[3],
+                                          fill="#0a0f16", outline="")
         # RX filter passband (relative to VFO) - Thetis-style shaded band whose
         # width follows the mode (USB ~2.8k, CW ~500, AM ~9k, FM ~7k...)
         if self.center_hz and self.vfo_hz:
@@ -1046,27 +1055,86 @@ class MiniTCI(tk.Tk):
         if self.connected and not self.agc_auto_var.get():
             self.send(f"agc_gain:0,{int(float(v))};")
 
+    def _hit_test(self, x):
+        """Classify click position: 'in-filter', 'edge-lo', 'edge-hi', or 'span'."""
+        if not self.pan.center_hz:
+            return "span"
+        fx1 = self.pan.f2x(self.pan.vfo_hz + self.pan.filt[0])
+        fx2 = self.pan.f2x(self.pan.vfo_hz + self.pan.filt[1])
+        tol = 3
+        # avoid edge grabbing when the passband is narrow on screen (< 8px):
+        # then the whole band acts as a grab handle
+        if fx2 - fx1 < 8:
+            return "in-filter" if fx1 - tol <= x <= fx2 + tol else "span"
+        if abs(x - fx1) <= tol:
+            return "edge-lo"
+        if abs(x - fx2) <= tol:
+            return "edge-hi"
+        if fx1 < x < fx2:
+            return "in-filter"
+        return "span"
+
     def _pan_click(self, e):
-        # record gesture start; tuning happens on release (one command per gesture)
+        # record gesture start + what was grabbed; commands sent only on release
         self._drag_x = e.x
         self._drag_center = self.pan.center_hz
+        self._drag_vfo = self.pan.vfo_hz
+        self._drag_filt = self.pan.filt
+        self._hit = self._hit_test(e.x)
 
     def _pan_drag(self, e):
-        # left-drag = slide the displayed span (Thetis-style); local only until release
         if not self.pan.center_hz or not hasattr(self, "_drag_x"):
             return
         dx_hz = (e.x - self._drag_x) / CANVAS_W * self.pan.span
-        self.pan.center_hz = self._drag_center - dx_hz
+        if self._hit == "span":
+            # slide the displayed span
+            self.pan.center_hz = self._drag_center - dx_hz
+        elif self._hit == "in-filter":
+            # grab the filter: slide VFO (tuning) - frequency changes with the window
+            self.pan.vfo_hz = self._drag_vfo + dx_hz
+            self._freq_pending = self.pan.vfo_hz
+        elif self._hit in ("edge-lo", "edge-hi"):
+            # resize the passband (visual only; committed on release)
+            lo, hi = self._drag_filt
+            if self._hit == "edge-lo":
+                self.pan.filt = (lo + dx_hz, hi)
+            else:
+                self.pan.filt = (lo, hi + dx_hz)
+            # sanity: keep lo < hi and a minimum width of 50 Hz
+            if self.pan.filt[1] - self.pan.filt[0] < 50:
+                if self._hit == "edge-lo":
+                    self.pan.filt = (self.pan.filt[1] - 50, self.pan.filt[1])
+                else:
+                    self.pan.filt = (self.pan.filt[0], self.pan.filt[0] + 50)
 
     def _pan_release(self, e):
         moved = abs(e.x - getattr(self, "_drag_x", e.x)) > 3
+        hit = getattr(self, "_hit", "span")
         if not moved and self.pan.center_hz:
             # simple click = tune the clicked frequency
             f = self.pan.x2f(e.x)
-            self.tune_to(int(round(f / 10.0)) * 10)   # 100 Hz grid
-        elif moved:
-            # after a pan gesture, recentre the view on the VFO
+            self.tune_to(int(round(f / 10.0)) * 10)
+            return
+        if hit == "in-filter":
+            # filter slide committed: send the new VFO frequency (one command)
+            if getattr(self, "_freq_pending", None):
+                self.tune_to(int(self._freq_pending))
+        elif hit in ("edge-lo", "edge-hi"):
+            # commit new passband to the radio (one command)
+            lo, hi = self.pan.filt
+            lo = max(-10000, min(10000, lo))
+            hi = max(lo + 50, min(10000, hi))
+            if hi > lo:
+                self.pan.filt = (lo, hi)
+                self.send(f"rx_filter_band:0,{int(lo)},{int(hi)};")
+                self._set_mode_filter_defaults_hint()
+        else:
+            # pan gesture: recentre view on the VFO
             self.tune_to(self.freq_hz)
+
+    def _set_mode_filter_defaults_hint(self):
+        # remember that the user manually resized the filter for this mode
+        self._custom_filter = True
 
     def _pan_wheel(self, e):
         # zoom: wheel up = span in, wheel down = span out, centred on the cursor
