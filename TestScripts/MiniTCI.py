@@ -280,11 +280,14 @@ class PanFall(tk.Canvas):
         # useless as a meter - it pins at the AGC target). Report peak bin level.
         self.peak_dbfs = float(db.max()) if len(db) else -140.0
 
-        col = np.full(CANVAS_W, self.DB_BOT - 20, dtype=np.float32)
-        idx = ((np.arange(len(db)) - len(db) / 2) / len(db) * CANVAS_W
-               + CANVAS_W / 2).astype(np.int32)
-        idx = np.clip(idx, 0, CANVAS_W - 1)
-        np.maximum.at(col, idx, db)
+        # interpolate spectrum to canvas width (smooth, high definition):
+        # linear interp over bin centres, then light gaussian smoothing
+        bin_x = (np.arange(len(db)) - len(db) / 2) / len(db) * CANVAS_W + CANVAS_W / 2
+        col = np.interp(np.arange(CANVAS_W), bin_x, db).astype(np.float32)
+        # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
+        k = np.exp(-0.5 * (np.arange(-3, 4) / 1.2) ** 2)
+        k /= k.sum()
+        col = np.convolve(col, k, mode="same").astype(np.float32)
         self._col = col
 
         # adaptive contrast: track the noise floor and stretch the display
@@ -354,20 +357,25 @@ class PanFall(tk.Canvas):
             0, PAN_H - 1)).astype(np.int32)
         # connected trace: fill the vertical gap between adjacent x positions
         # so the spectrum reads as a continuous line (spectrum-analyser style)
-        trace = np.array([70, 240, 100], dtype=np.uint8)
-        dim = np.array([40, 150, 60], dtype=np.uint8)
+        trace = np.array([80, 255, 110], dtype=np.uint8)
+        dim = np.array([30, 120, 45], dtype=np.uint8)
+        xs_all = np.arange(CANVAS_W)
+        # 2px solid core at every column
+        for dy in (-1, 0):
+            yy = np.clip(ys + dy, 0, PAN_H - 1)
+            pan[yy, xs_all] = trace
+        # connect vertical runs with a gradient fill
         for x in range(1, CANVAS_W):
-            y0, y1 = ys[x - 1], ys[x]
-            if y0 > y1:
-                y0, y1 = y1, y0
-            if y1 - y0 <= 1:
-                yy = np.clip(ys[x] + np.arange(-1, 2), 0, PAN_H - 1)
-                pan[yy, x] = trace
-            else:
-                # vertical run: bright endpoints, dim fill between
-                yy = np.arange(y0, y1 + 1)
-                pan[np.clip(yy, 0, PAN_H - 1), x] = dim
-                pan[np.clip(np.array([y0, y1]), 0, PAN_H - 1), x] = trace
+            y0, y1 = int(ys[x - 1]), int(ys[x])
+            if abs(y1 - y0) > 1:
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                yy = np.arange(y0 + 1, y1)
+                if len(yy):
+                    # gradient from dim to bright toward the lower end (signal peak)
+                    t = (yy - y0) / max(1, y1 - y0)
+                    grad = (dim * (1 - t)[:, None] + trace * t[:, None]).astype(np.uint8)
+                    pan[np.clip(yy, 0, PAN_H - 1), x] = grad
 
         # finished composite (pan + waterfall); UI thread blits it
         self._ready = np.vstack([pan, self._wf_img])
@@ -401,14 +409,13 @@ class PanFall(tk.Canvas):
             if 0 < y < PAN_H:
                 self.create_line(0, y, CANVAS_W, y, fill=C["grid"])
             db = hi - (i / 4.0) * span_db
-            lbl = self.create_text(4, y + 2, anchor="nw",
-                                   text=f"{db:.0f}", fill="#e8ecef",
-                                   font=("Consolas", 8, "bold"))
-            # darken behind the label for contrast
-            bb = self.bbox(lbl)
-            if bb:
-                self.create_rectangle(bb[0]-1, bb[1], bb[2]+1, bb[3],
-                                      fill="#0a0f16", outline="")
+            txt = f"{db:.0f} dB"
+            # backing rect FIRST, text on top (drawing rect after text covers it)
+            self.create_rectangle(2, y + 1, 62, y + 16,
+                                  fill="#0a0f16", outline="")
+            self.create_text(4, y + 2, anchor="nw",
+                             text=txt, fill="#e8ecef",
+                             font=("Consolas", 8, "bold"))
         # vertical grid + freq labels
         for k in range(-4, 5):
             off = k * self.span / 8
@@ -416,28 +423,36 @@ class PanFall(tk.Canvas):
             if 6 <= x <= CANVAS_W - 6 and abs(x - CANVAS_W/2) > 4:
                 self.create_line(x, 0, x, PAN_H, fill=C["grid"])
             if 14 <= x <= CANVAS_W - 14:
-                lbl = self.create_text(x, PAN_H + 10,
-                                       text=f"{off / 1000:+.0f}k",
-                                       fill="#c8d0dc", font=("Segoe UI", 7, "bold"))
-                bb = self.bbox(lbl)
-                if bb:
-                    self.create_rectangle(bb[0]-1, bb[1], bb[2]+1, bb[3],
-                                          fill="#0a0f16", outline="")
+                self.create_rectangle(x - 20, PAN_H + 3, x + 20, PAN_H + 18,
+                                      fill="#0a0f16", outline="")
+                self.create_text(x, PAN_H + 10,
+                                 text=f"{off / 1000:+.0f}k",
+                                 fill="#ffffff", font=("Segoe UI", 8, "bold"))
         # RX filter passband (relative to VFO) - Thetis-style shaded band whose
         # width follows the mode (USB ~2.8k, CW ~500, AM ~9k, FM ~7k...)
         if self.center_hz and self.vfo_hz:
             x1 = self.f2x(self.vfo_hz + self.filt[0])
             x2 = self.f2x(self.vfo_hz + self.filt[1])
             if x2 > x1 and x2 > 0 and x1 < CANVAS_W:
-                x1c, x2c = max(0, x1), min(CANVAS_W, x2)
-                # stipple-free fill using a dim color
+                x1c, x2c = max(0, int(x1)), min(CANVAS_W, int(x2))
+                # clearly visible passband: warm fill + bright edges + edge handles
                 self.create_rectangle(x1c, 0, x2c, PAN_H,
-                                      fill="#ffb02e", stipple="gray25",
-                                      outline=C["tune"])
+                                      fill="#8a6a14", outline=C["tune"], width=1)
+                # edge grab handles (small bright squares, Thetis/SDR style)
+                for hx in (x1c, x2c):
+                    self.create_rectangle(hx - 2, PAN_H // 2 - 8,
+                                          hx + 2, PAN_H // 2 + 8,
+                                          fill=C["tune"], outline="#ffffff")
+                # center marker line inside the passband
+                vfo_x = self.f2x(self.vfo_hz)
+                if x1c < vfo_x < x2c:
+                    self.create_line(vfo_x, 0, vfo_x, PAN_H,
+                                     fill="#ffffff", dash=(2, 2))
                 bw = self.filt[1] - self.filt[0]
-                self.create_text((max(0,x1)+min(CANVAS_W,x2))/2, PAN_H - 8,
-                                 text=f"{bw:.0f} Hz",
-                                 fill=C["tune"], font=("Segoe UI", 7))
+                if x2c - x1c > 40:
+                    self.create_text((x1c + x2c) / 2, 10,
+                                     text=f"{bw:.0f} Hz",
+                                     fill="#ffffff", font=("Segoe UI", 7, "bold"))
         # vfo line
         if self.center_hz:
             x = self.f2x(self.vfo_hz)
@@ -555,6 +570,7 @@ class MiniTCI(tk.Tk):
         self.pan.bind("<MouseWheel>", self._pan_wheel)
         self.pan.bind("<Button-4>", self._pan_wheel)   # linux wheel up
         self.pan.bind("<Button-5>", self._pan_wheel)   # linux wheel down
+        self.pan.bind("<Motion>", self._pan_motion)
 
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
@@ -1135,6 +1151,17 @@ class MiniTCI(tk.Tk):
     def _set_mode_filter_defaults_hint(self):
         # remember that the user manually resized the filter for this mode
         self._custom_filter = True
+
+    def _pan_motion(self, e):
+        if not self.pan.center_hz:
+            return
+        hit = self._hit_test(e.x)
+        if hit in ("edge-lo", "edge-hi"):
+            self.pan.config(cursor="sb_h_double_arrow")
+        elif hit == "in-filter":
+            self.pan.config(cursor="hand2")
+        else:
+            self.pan.config(cursor="crosshair")
 
     def _pan_wheel(self, e):
         # zoom: wheel up = span in, wheel down = span out, centred on the cursor
