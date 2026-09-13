@@ -352,11 +352,22 @@ class PanFall(tk.Canvas):
         ys = (PAN_H - 1 - np.clip(
             (col - lo) / max(1e-6, hi - lo) * (PAN_H - 1),
             0, PAN_H - 1)).astype(np.int32)
-        # 3px bright green trace (Thetis-style)
+        # connected trace: fill the vertical gap between adjacent x positions
+        # so the spectrum reads as a continuous line (spectrum-analyser style)
         trace = np.array([70, 240, 100], dtype=np.uint8)
-        for dy in (-1, 0, 1):
-            yy = np.clip(ys + dy, 0, PAN_H - 1)
-            pan[yy, np.arange(CANVAS_W)] = trace
+        dim = np.array([40, 150, 60], dtype=np.uint8)
+        for x in range(1, CANVAS_W):
+            y0, y1 = ys[x - 1], ys[x]
+            if y0 > y1:
+                y0, y1 = y1, y0
+            if y1 - y0 <= 1:
+                yy = np.clip(ys[x] + np.arange(-1, 2), 0, PAN_H - 1)
+                pan[yy, x] = trace
+            else:
+                # vertical run: bright endpoints, dim fill between
+                yy = np.arange(y0, y1 + 1)
+                pan[np.clip(yy, 0, PAN_H - 1), x] = dim
+                pan[np.clip(np.array([y0, y1]), 0, PAN_H - 1), x] = trace
 
         # finished composite (pan + waterfall); UI thread blits it
         self._ready = np.vstack([pan, self._wf_img])
@@ -381,24 +392,43 @@ class PanFall(tk.Canvas):
         self._draw_overlays()
 
     def _draw_overlays(self):
-        # grid
-        for i in range(1, 4):
+        # horizontal grid + dB axis labels (left) - spectrum-analyser style
+        lo = getattr(self, "_norm_lo", self.DB_BOT)
+        hi = getattr(self, "_norm_hi", self.DB_TOP)
+        span_db = hi - lo
+        for i in range(5):
             y = i * PAN_H / 4
-            self.create_line(0, y, CANVAS_W, y, fill=C["grid"])
-        # labels
+            if 0 < y < PAN_H:
+                self.create_line(0, y, CANVAS_W, y, fill=C["grid"])
+            db = hi - (i / 4.0) * span_db
+            self.create_text(4, y + 2, anchor="nw",
+                             text=f"{db:.0f}", fill="#7d8aa0",
+                             font=("Consolas", 7))
+        # vertical grid + freq labels
         for k in range(-4, 5):
             off = k * self.span / 8
             x = self.f2x(self.center_hz + off)
+            if 6 <= x <= CANVAS_W - 6 and abs(x - CANVAS_W/2) > 4:
+                self.create_line(x, 0, x, PAN_H, fill=C["grid"])
             if 14 <= x <= CANVAS_W - 14:
                 self.create_text(x, PAN_H + 10,
                                  text=f"{off / 1000:+.0f}k",
                                  fill="#9aa4b2", font=("Segoe UI", 7))
-        # filter overlay (relative to VFO)
+        # RX filter passband (relative to VFO) - Thetis-style shaded band whose
+        # width follows the mode (USB ~2.8k, CW ~500, AM ~9k, FM ~7k...)
         if self.center_hz and self.vfo_hz:
             x1 = self.f2x(self.vfo_hz + self.filt[0])
             x2 = self.f2x(self.vfo_hz + self.filt[1])
             if x2 > x1 and x2 > 0 and x1 < CANVAS_W:
-                self.create_rectangle(x1, 0, x2, PAN_H, fill="", outline=C["tune"])
+                x1c, x2c = max(0, x1), min(CANVAS_W, x2)
+                # stipple-free fill using a dim color
+                self.create_rectangle(x1c, 0, x2c, PAN_H,
+                                      fill="#ffb02e", stipple="gray25",
+                                      outline=C["tune"])
+                bw = self.filt[1] - self.filt[0]
+                self.create_text((max(0,x1)+min(CANVAS_W,x2))/2, PAN_H - 8,
+                                 text=f"{bw:.0f} Hz",
+                                 fill=C["tune"], font=("Segoe UI", 7))
         # vfo line
         if self.center_hz:
             x = self.f2x(self.vfo_hz)
@@ -510,7 +540,12 @@ class MiniTCI(tk.Tk):
         # --- panadapter + waterfall
         self.pan = PanFall(self)
         self.pan.pack(fill="both", expand=True, padx=10, pady=4)
+        self.pan.bind("<Button-1>", self._pan_click)
+        self.pan.bind("<B1-Motion>", self._pan_drag)
         self.pan.bind("<ButtonRelease-1>", self._pan_release)
+        self.pan.bind("<MouseWheel>", self._pan_wheel)
+        self.pan.bind("<Button-4>", self._pan_wheel)   # linux wheel up
+        self.pan.bind("<Button-5>", self._pan_wheel)   # linux wheel down
 
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
@@ -1012,14 +1047,38 @@ class MiniTCI(tk.Tk):
             self.send(f"agc_gain:0,{int(float(v))};")
 
     def _pan_click(self, e):
-        # tune only on final click; drags suppressed - flooding vfo commands
-        # per mouse-move pixel can drop the connection
-        pass
+        # record gesture start; tuning happens on release (one command per gesture)
+        self._drag_x = e.x
+        self._drag_center = self.pan.center_hz
+
+    def _pan_drag(self, e):
+        # left-drag = slide the displayed span (Thetis-style); local only until release
+        if not self.pan.center_hz or not hasattr(self, "_drag_x"):
+            return
+        dx_hz = (e.x - self._drag_x) / CANVAS_W * self.pan.span
+        self.pan.center_hz = self._drag_center - dx_hz
 
     def _pan_release(self, e):
-        if self.pan.center_hz:
+        moved = abs(e.x - getattr(self, "_drag_x", e.x)) > 3
+        if not moved and self.pan.center_hz:
+            # simple click = tune the clicked frequency
             f = self.pan.x2f(e.x)
             self.tune_to(int(round(f / 10.0)) * 10)   # 100 Hz grid
+        elif moved:
+            # after a pan gesture, recentre the view on the VFO
+            self.tune_to(self.freq_hz)
+
+    def _pan_wheel(self, e):
+        # zoom: wheel up = span in, wheel down = span out, centred on the cursor
+        if not self.pan.center_hz:
+            return
+        # scroll up (delta>0) = zoom IN = smaller span
+        factor = 0.8 if getattr(e, "delta", 120) > 0 else 1.25
+        new_span = clamp(self.pan.span * factor, 24000, 384000)
+        f_at_cursor = self.pan.x2f(e.x)
+        self.pan.span = new_span
+        rel = (e.x - CANVAS_W / 2) / CANVAS_W
+        self.pan.center_hz = f_at_cursor - rel * new_span
 
     # ---------------- TX ----------------
     def ptt_on(self):
