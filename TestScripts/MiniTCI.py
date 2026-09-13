@@ -328,11 +328,11 @@ class PanFall(tk.Canvas):
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
         bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * self.rate   # Hz/bin
         # Thetis model: display centered on the VFO; spectrum + waterfall share
-        # the same frame and mapping, so they always move together. Each block
-        # carries the DDC center it was captured at (dc_tag): blocks queued
-        # across a tune are placed at their true absolute position in the
-        # shifted bitmap (no seams). The signal you are tuned to stays under
-        # the VFO line (vertical); other stations slide diagonally.
+        # the same frame and mapping. Each block is tagged with the DDC center
+        # it was captured at (dc_tag). In CTUN mode the display center stays
+        # fixed while the DDC follows the VFO, so blocks are placed at their
+        # true absolute position (offset = dc_tag - center); in normal mode the
+        # offset is zero (center == DDC) and rows are purely relative.
         dc_tag = data_center if data_center else self.center_hz
         disp_rel = (np.arange(CANVAS_W) / CANVAS_W - 0.5) * self.span
         col = np.interp(disp_rel, bin_f, db).astype(np.float32)
@@ -608,6 +608,7 @@ class MiniTCI(tk.Tk):
             "y_scale": self.yscale_var.get(),
             "zoom": self.zoom_var.get(),
             "wf_gain": self.wf_gain_var.get(),
+            "ctun": self.ctun_var.get(),
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
             "host": getattr(self, "host_var", None).get() if hasattr(self, "host_var") else None,
@@ -644,6 +645,8 @@ class MiniTCI(tk.Tk):
                 if s.get(key) is not None:
                     var.set(float(s[key]))
             # agc_auto checkbox removed (AGC state = mode dropdown)
+            if s.get("ctun") is not None:
+                self.ctun_var.set(bool(s["ctun"]))
             if s.get("host") and hasattr(self, "host_var"):
                 self.host_var.set(s["host"])
         except (KeyError, ValueError, tk.TclError):
@@ -725,6 +728,9 @@ class MiniTCI(tk.Tk):
             ttk.Button(r2, text=txt, width=5,
                        command=lambda d=hz: self.tune_to(self.freq_hz + d)
                        ).pack(side="left", padx=2)
+        self.ctun_var = tk.BooleanVar(value=False)
+        self.ctun_btn = ttk.Checkbutton(r2, text="CTUN", variable=self.ctun_var)
+        self.ctun_btn.pack(side="left", padx=(12, 4))
         ttk.Label(r2, text="Direct kHz:", padding=(12, 0, 2, 0)).pack(side="left")
         self.tune_entry = ttk.Entry(r2, width=10)
         self.tune_entry.pack(side="left")
@@ -1267,13 +1273,23 @@ class MiniTCI(tk.Tk):
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
-        # Thetis: tuning slides the WHOLE panafall - the past waterfall rows
-        # translate by the pixel delta so history stays aligned with the axis.
-        df = self.freq_hz - self.pan.center_hz
-        if self.pan.center_hz and df:
-            self.pan.shift_waterfall(df)
-        self.pan.vfo_hz = self.freq_hz
-        self.pan.center_hz = self.freq_hz
+        if self.ctun_var.get():
+            # CTUN: display (and waterfall history) stays fixed; only the tune
+            # line moves. If the VFO would leave the window, slide the display
+            # minimally to keep it visible (Thetis does the same).
+            self.pan.vfo_hz = self.freq_hz
+            half = self.pan.span / 2 * 0.95
+            if abs(self.freq_hz - self.pan.center_hz) > half:
+                df = self.freq_hz - self.pan.center_hz
+                self.pan.shift_waterfall(df)
+                self.pan.center_hz = self.freq_hz
+        else:
+            # Normal: tuning slides the WHOLE panafall (past rows included).
+            df = self.freq_hz - self.pan.center_hz
+            if self.pan.center_hz and df:
+                self.pan.shift_waterfall(df)
+            self.pan.center_hz = self.freq_hz
+            self.pan.vfo_hz = self.freq_hz
         self.pan.data_center_hz = self.freq_hz
         self.send(f"vfo:0,0,{self.freq_hz};")
 
