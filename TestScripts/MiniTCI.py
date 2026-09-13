@@ -253,7 +253,8 @@ class PanFall(tk.Canvas):
     def __init__(self, master):
         super().__init__(master, width=CANVAS_W, height=PAN_H + WF_H,
                          bg="#0a0f16", highlightthickness=0)
-        self.span = 96000.0
+        self.rate = 96000.0      # IQ data sample rate (from stream header)
+        self.span = 96000.0      # display span in Hz (zoom) - independent of rate
         self.center_hz = 0.0
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
@@ -287,8 +288,7 @@ class PanFall(tk.Canvas):
 
         # map each canvas column to its frequency within the DISPLAY span,
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
-        rate = 96000.0
-        bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * rate   # Hz of each bin
+        bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * self.rate   # Hz/bin
         disp_f = self.center_hz - self.span / 2 + np.arange(CANVAS_W) / CANVAS_W * self.span
         disp_rel = disp_f - self.center_hz                            # relative to center
         col = np.interp(disp_rel, bin_f, db).astype(np.float32)
@@ -592,7 +592,8 @@ class MiniTCI(tk.Tk):
         self.freq_lbl = tk.Label(r2, text="14.074.000 kHz", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
         self.freq_lbl.pack(side="left", padx=(2, 14))
-        for txt, hz in (("−1k", -1000), ("−100", -100), ("+100", 100), ("+1k", 1000)):
+        for txt, hz in (("−10k", -10000), ("−1k", -1000), ("−100", -100),
+                        ("+100", 100), ("+1k", 1000), ("+10k", 10000)):
             ttk.Button(r2, text=txt, width=4,
                        command=lambda d=hz: self.tune_to(self.freq_hz + d)
                        ).pack(side="left", padx=2)
@@ -944,8 +945,9 @@ class MiniTCI(tk.Tk):
 
         try:
             data, rate = self._iq_q.get_nowait()
-            if rate and int(rate) != int(self.pan.span):
-                self.pan.span = float(rate)
+            if rate and int(rate) != int(self.pan.rate):
+                self.pan.rate = float(rate)
+                self.pan.span = min(max(self.pan.span, 24000), float(rate))
             now2 = time.time()
             if now2 - getattr(self, "_last_draw", 0) > 0.08:   # ~12 fps max
                 self._last_draw = now2
@@ -959,8 +961,8 @@ class MiniTCI(tk.Tk):
                         data2, rate2 = self._iq_q.get_nowait()
                     except queue.Empty:
                         break
-                if int(rate2) != int(self.pan.span):
-                    self.pan.span = float(rate2)
+                if int(rate2) != int(self.pan.rate):
+                    self.pan.rate = float(rate2)
                 self.pan.update(data2)
                 self.pan._blit()
         except (queue.Empty, AttributeError):
@@ -1026,7 +1028,7 @@ class MiniTCI(tk.Tk):
                         pass
             elif k == "iq_samplerate" and v:
                 try:
-                    self.pan.span = float(int(v))
+                    self.pan.rate = float(int(v))
                 except ValueError:
                     pass
 
@@ -1259,7 +1261,7 @@ class MiniTCI(tk.Tk):
         else:
             # 0..100 slider -> 96k..24k logarithmic-ish
             new_span = 96000.0 * (1.0 - 0.75 * z / 100.0)
-        new_span = clamp(new_span, 24000, 384000)
+        new_span = clamp(new_span, 24000, min(384000, self.pan.rate or 96000))
         self.pan.center_hz = self.freq_hz if self.freq_hz else self.pan.center_hz
         self.pan.span = new_span
         self.pan._wf_img[:] = 0   # clear stale rows drawn at the old span
