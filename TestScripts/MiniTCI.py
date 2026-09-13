@@ -553,7 +553,7 @@ class MiniTCI(tk.Tk):
         self.geometry("")
         self._load_settings()
         self._open_output()
-        self.after(50, self._poll)
+        self.after(50, self._poll_safe)
         self._bind_settings_autosave()
 
     # ---------------- settings persistence ----------------
@@ -1033,9 +1033,12 @@ class MiniTCI(tk.Tk):
             self.send(f"modulation:0,{self.mode};")
             lo, hi = FILTERS.get(self.mode, (100, 2900))
             self.send(f"rx_filter_band:0,{lo},{hi};")
-            self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
-            self.send(f"agc_auto_ex:0,{str(self.agc_auto_var.get()).lower()};")
-            self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+            if self.agc_var.get() == "OFF":
+                self.send("agc_auto_ex:0,false;")
+                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+            else:
+                self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
+                self.send("agc_auto_ex:0,true;")
         elif s == "connecting":
             self.conn_btn.config(text="Cancel")
             self.state_lbl.config(text="● connecting…", fg=C["tune"])
@@ -1050,7 +1053,7 @@ class MiniTCI(tk.Tk):
                 self.logprint("disconnected")
 
     # ---------------- poll queue ----------------
-    def _poll(self):
+    def _poll_inner(self):
         try:
             for _ in range(300):
                 item = self.text_q.get_nowait()
@@ -1091,7 +1094,16 @@ class MiniTCI(tk.Tk):
 
         self.service_tx_audio()
         self._draw_smeter()
-        self.after(50, self._poll)
+        self.after(50, self._poll_safe)
+
+    def _poll_safe(self):
+        """Exception-proof: a bug in _poll must never kill the UI loop."""
+        try:
+            self._poll_inner()
+        except Exception:
+            import traceback
+            self.logprint("poll error: " + traceback.format_exc(limit=2))
+            self.after(200, self._poll_safe)
 
     def _pan_thread(self):
         """Single long-lived worker: FFT + waterfall roll, no thread churn."""
