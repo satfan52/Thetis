@@ -1264,10 +1264,15 @@ class MiniTCI(tk.Tk):
     def _draw_smeter(self):
         # IQ-derived peak-bin dBFS displayed on an analog S-scale.
         # dBFS -> S-unit: S9 = -35 dBFS, each S-unit 10 dB below (S1 = -115).
-        db = getattr(self.pan, "peak_dbfs", None)
-        if db is None:
-            db = self.smeter
-        self.smeter_db = db
+        if self.ptt:
+            # TX: the meter shows the MIC/voice level driving the transmitter
+            db = getattr(self, "mic_level_db", -140.0)
+            self.smeter_db = db
+        else:
+            db = getattr(self.pan, "peak_dbfs", None)
+            if db is None:
+                db = self.smeter
+            self.smeter_db = db
         x0, x1 = self._sm_x0, self._sm_x1
         frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
         x = x0 + frac * (x1 - x0)
@@ -1549,6 +1554,7 @@ class MiniTCI(tk.Tk):
         if not self.ptt:
             return
         self.ptt = False
+        self.mic_level_db = -140.0
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
         self.tx_lbl.config(text="RX", fg=C["dim"])
@@ -1589,6 +1595,9 @@ class MiniTCI(tk.Tk):
         if self.ptt and self.connected:
             self.tx_audio_q.append(indata.reshape(-1).copy())
             self.tx_pos = 0
+            # voice level for the S-meter (dBFS, same scale as RX)
+            rms = float(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
+            self.mic_level_db = 20.0 * np.log10(rms + 1e-10)
 
     # ---------------- log ----------------
     def logprint(self, s):
