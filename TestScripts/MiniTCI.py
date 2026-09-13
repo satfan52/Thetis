@@ -114,7 +114,9 @@ class TciClient:
         self.port = port
         self.running = False
         self.loop = None
-        self._oq = None          # asyncio queue, created on the ws thread
+        self._oq = None
+        self.last_frame_ts = 0.0
+        self._streaming = False          # asyncio queue, created on the ws thread
         self.on_text = None
         self.on_audio = None
         self.on_iq = None
@@ -153,11 +155,23 @@ class TciClient:
         try:
             async with websockets.connect(
                     uri, max_size=None,
-                    ping_interval=15, ping_timeout=30,
+                    ping_interval=None,        # lib keepalive disabled: its ping/pong
+                                               # path deadlocks under our 750fps stream
+                                               # (raw-socket client survives 90s+/108MB,
+                                               # lib client dies at 45s - every time)
+                    max_queue=8192,
                     close_timeout=5) as ws:
                 self._oq = asyncio.Queue()
                 self.on_state("connected")
-                await asyncio.gather(self._reader(ws), self._writer(ws))
+                self.last_frame_ts = time.time()
+                tasks = [asyncio.create_task(self._reader(ws)),
+                         asyncio.create_task(self._writer(ws)),
+                         asyncio.create_task(self._watchdog(ws))]
+                done, pending = await asyncio.wait(tasks,
+                    return_when=asyncio.FIRST_COMPLETED)
+                for t in pending:
+                    t.cancel()
+                await asyncio.sleep(0.05)
         except Exception as e:
             self.on_text({"__error__": str(e)})
         finally:
@@ -166,9 +180,25 @@ class TciClient:
     async def _reader(self, ws):
         try:
             async for msg in ws:
+                self.last_frame_ts = time.time()
                 self._dispatch(msg)
         except Exception as e:
             self.on_text({"__error__": f"reader: {type(e).__name__}: {e}"})
+
+    async def _watchdog(self, ws):
+        """Our own liveness check: streaming servers send constantly; if nothing
+        arrives for 10s, the connection is dead - close it so the UI reconnects."""
+        while True:
+            await asyncio.sleep(2)
+            if getattr(self, "last_frame_ts", 0) and \
+               time.time() - self.last_frame_ts > 10.0 and \
+               getattr(self, "_streaming", False):
+                self.on_text({"__error__": "watchdog: no data for 10s - closing"})
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+                return
 
     def _dispatch(self, msg):
         if isinstance(msg, str):
@@ -740,6 +770,8 @@ class MiniTCI(tk.Tk):
         self.tx_pos = 0
         self._iq_acc_bytes = bytearray()
         self._last_draw = 0.0
+        self._pan_job_q = queue.Queue(maxsize=4)
+        self._pan_thread_started = False
         c = TciClient(port)
         self.client = c
         self._set_state("connecting")      # set UI state BEFORE the thread can race us
@@ -797,9 +829,15 @@ class MiniTCI(tk.Tk):
             now2 = time.time()
             if now2 - getattr(self, "_last_draw", 0) > 0.08:   # ~12 fps max
                 self._last_draw = now2
-                # FFT+numpy on a worker thread; Tk blit happens right after
-                threading.Thread(target=self._pan_worker, args=(data,),
-                                 daemon=True).start()
+                try:
+                    self._pan_job_q.put_nowait((data, rate))
+                except queue.Full:
+                    # pan worker behind; drop oldest job, keep newest
+                    try:
+                        self._pan_job_q.get_nowait()
+                        self._pan_job_q.put_nowait((data, rate))
+                    except Exception:
+                        pass
                 self.pan._blit()
         except (queue.Empty, AttributeError):
             pass
@@ -808,11 +846,22 @@ class MiniTCI(tk.Tk):
         self._draw_smeter()
         self.after(50, self._poll)
 
-    def _pan_worker(self, data):
-        try:
-            self.pan.update(data)
-        except Exception:
-            pass
+    def _pan_thread(self):
+        """Single long-lived worker: FFT + waterfall roll, no thread churn."""
+        while True:
+            try:
+                data = self._pan_job_q.get()
+                if data is None:
+                    continue
+                self.pan.update(data)
+            except Exception:
+                pass
+
+    def _start_pan_thread(self):
+        if not getattr(self, "_pan_thread_started", False):
+            self._pan_thread_started = True
+            self._pan_job_q = queue.Queue(maxsize=4)
+            threading.Thread(target=self._pan_thread, daemon=True).start()
 
     def _handle(self, d):
         for k, v in d.items():
@@ -885,6 +934,10 @@ class MiniTCI(tk.Tk):
     def send(self, cmd):
         if self.client and self.client.loop:
             self.client.send(cmd)
+            if "audio_start" in cmd:
+                self.client._streaming = True
+            elif "audio_stop" in cmd:
+                self.client._streaming = False
 
     def nudge(self, hz):
         self.tune_to(self.freq_hz + hz)
