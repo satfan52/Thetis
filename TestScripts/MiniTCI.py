@@ -64,6 +64,28 @@ def clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v
 
 
+def list_output_devices():
+    devs = []
+    try:
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_output_channels"] > 0:
+                devs.append((i, d["name"], int(d["default_samplerate"])))
+    except Exception:
+        pass
+    return devs
+
+
+def list_input_devices():
+    devs = []
+    try:
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_input_channels"] > 0:
+                devs.append((i, d["name"], int(d["max_input_channels"])))
+    except Exception:
+        pass
+    return devs
+
+
 def resample(x, new_len):
     """Linear resample 1-D array to new_len samples."""
     if new_len <= 0 or len(x) == 0:
@@ -88,11 +110,13 @@ class TciClient:
         self.on_text = None
         self.on_audio = None
         self.on_iq = None
+        self.on_chrono = None
         self.on_state = None
 
-    def start(self, on_text, on_audio, on_iq, on_state):
+    def start(self, on_text, on_audio, on_iq, on_state, on_chrono):
         self.on_text, self.on_audio = on_text, on_audio
         self.on_iq, self.on_state = on_iq, on_state
+        self.on_chrono = on_chrono
         self.running = True
         threading.Thread(target=self._thread_main, daemon=True).start()
 
@@ -104,6 +128,10 @@ class TciClient:
     def send(self, cmd):
         if self.loop and self._oq is not None:
             self.loop.call_soon_threadsafe(self._oq.put_nowait, cmd)
+
+    def send_binary(self, data):
+        if self.loop and self._oq is not None:
+            self.loop.call_soon_threadsafe(self._oq.put_nowait, data)
 
     # ---- ws thread ----
     def _thread_main(self):
@@ -150,17 +178,16 @@ class TciClient:
                 elif ftype == 0 and len(data) >= 16:   # IQ
                     n = min(length, len(data)); n -= n % 2
                     self.on_iq(data[:n], rate)
+                elif ftype == 3:                       # TX chrono
+                    self.on_chrono(length, rate)
 
     async def _writer(self, ws):
         while True:
             cmd = await self._oq.get()
-            if cmd == "__close__":
-                try:
-                    await ws.close()
-                except Exception:
-                    pass
-                return
             try:
+                if cmd == "__close__":
+                    await ws.close()
+                    return
                 await ws.send(cmd)
             except Exception:
                 return
@@ -296,6 +323,10 @@ class MiniTCI(tk.Tk):
         self.mic_gain = 0.5
         self.smeter = -140.0
         self.mic_stream = None
+        self.tx_audio_q = collections.deque(maxlen=64)
+        self.chrono_reqs = collections.deque()
+        self.chrono_lock = threading.Lock()
+        self.tx_pos = 0
 
         self.audio_blocks = collections.deque()
         self.audio_pos = 0
@@ -359,13 +390,23 @@ class MiniTCI(tk.Tk):
         self.pan.bind("<Button-1>", self._pan_click)
         self.pan.bind("<B1-Motion>", self._pan_drag)
 
-        # --- row 3: volume + smeter
+        # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
         ttk.Label(r3, text="Volume:").pack(side="left")
         self.vol_var = tk.DoubleVar(value=30)
         ttk.Scale(r3, from_=0, to=100, variable=self.vol_var, length=140,
                   command=self._vol_changed).pack(side="left", padx=4)
         self.volume = 0.30
+
+        self._out_devs = list_output_devices()
+        self._in_devs = list_input_devices()
+        ttk.Label(r3, text="Speaker:", padding=(10, 0, 2, 0)).pack(side="left")
+        self.out_dev_var = tk.StringVar(value="(system default)")
+        out_names = ["(system default)"] + [n for _, n, _ in self._out_devs]
+        ttk.Combobox(r3, textvariable=self.out_dev_var, width=22, state="readonly",
+                     values=out_names).pack(side="left", padx=2)
+        self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
+
         self.sm = tk.Canvas(r3, width=210, height=26, bg=C["panel"], highlightthickness=0)
         self.sm.pack(side="left", padx=20)
         self.sm_bar = self.sm.create_rectangle(2, 6, 2, 22, fill=C["green"], width=0)
@@ -387,6 +428,13 @@ class MiniTCI(tk.Tk):
         self.tx_lbl = tk.Label(r4, text="RX", bg=C["panel"], fg=C["dim"],
                                font=("Segoe UI", 11, "bold"))
         self.tx_lbl.pack(side="left", padx=12)
+        ttk.Label(r4, text="Mic:", padding=(10, 0, 2, 0)).pack(side="left")
+        self._in_devs = list_input_devices()
+        self.in_dev_var = tk.StringVar(value="(system default)")
+        in_names = ["(system default)"] + [n for _, n, _ in self._in_devs]
+        ttk.Combobox(r4, textvariable=self.in_dev_var, width=22, state="readonly",
+                     values=in_names).pack(side="left", padx=2)
+        self.in_dev_var.trace_add("write", lambda *_: self._reopen_input())
         ttk.Label(r4, text="Mic gain:").pack(side="left")
         self.mic_var = tk.DoubleVar(value=50)
         ttk.Scale(r4, from_=0, to=100, variable=self.mic_var, length=120,
@@ -401,13 +449,38 @@ class MiniTCI(tk.Tk):
     # ---------------- audio out ----------------
     def _open_output(self):
         try:
-            self.out_stream = sd.OutputStream(samplerate=OUT_RATE, channels=2,
-                                              dtype="float32", blocksize=1024,
-                                              callback=self._out_cb)
+            dev = self._find_dev(self._out_devs, self.out_dev_var.get()) \
+                if hasattr(self, "out_dev_var") else None
+            kwargs = dict(samplerate=OUT_RATE, channels=2, dtype="float32",
+                          blocksize=1024, callback=self._out_cb)
+            if dev is not None:
+                kwargs = {"device": dev, "samplerate": OUT_RATE, "channels": 2,
+                          "dtype": "float32", "blocksize": 1024,
+                          "callback": self._out_cb}
+            self.out_stream = sd.OutputStream(**kwargs)
             self.out_stream.start()
+            self.logprint(f"output device: {'default' if dev is None else self.out_dev_var.get()}")
         except Exception as e:
             self.out_stream = None
             self.logprint(f"audio out error: {e}")
+
+    @staticmethod
+    def _find_dev(devs, name):
+        if not name or name.startswith("("):
+            return None
+        for i, n, _ in devs:
+            if n == name:
+                return i
+        return None
+
+    def _reopen_output(self):
+        if self.out_stream:
+            try:
+                self.out_stream.stop(); self.out_stream.close()
+            except Exception:
+                pass
+            self.out_stream = None
+        self._open_output()
 
     def _out_cb(self, outdata, frames, t, status):
         filled = 0
@@ -458,6 +531,66 @@ class MiniTCI(tk.Tk):
     def tci_state(self, s):
         self.text_q.put({"__state__": s})
 
+    def tci_chrono(self, length, rate):
+        # Server paces TX audio: each chrono requests `length` interleaved values.
+        with self.chrono_lock:
+            self.chrono_reqs.append((length, rate))
+
+    # ---- TX audio frame builder (WSJT-X style) ----
+    def build_tx_audio_frame(self, mono, rate, chans):
+        """Wrap mono float32 samples into a 64-byte-header TX_AUDIO_STREAM frame."""
+        n = len(mono)
+        if chans == 2:
+            payload_vals = n * 2
+            body = np.empty(n * 2, dtype="<f4")
+            body[0::2] = mono
+            body[1::2] = mono
+        else:
+            payload_vals = n
+            body = mono
+        words = [0] * 16                # 16 x uint32 = 64-byte TCI header
+        words[0] = 0                    # receiver (TRX 0)
+        words[1] = int(rate)
+        words[2] = 3                    # TCISampleType.FLOAT32
+        words[5] = int(payload_vals)    # length (interleaved value count)
+        words[6] = 2                    # TCIStreamType.TX_AUDIO_STREAM
+        words[7] = int(chans)
+        hdr = struct.pack("<16I", *words)
+        return hdr + body.astype("<f4").tobytes()
+
+    def service_tx_audio(self):
+        """Send mic audio blocks in response to chrono requests (called from UI poll)."""
+        if not self.ptt or not self.connected or not self.client:
+            with self.chrono_lock:
+                self.chrono_reqs.clear()
+            return
+        while self.chrono_reqs:
+            with self.chrono_lock:
+                if not self.chrono_reqs:
+                    break
+                length, rate = self.chrono_reqs.popleft()
+            chans = 1
+            vals_needed = max(1, length) if chans == 1 else max(1, length // 2)
+            # gather mic samples
+            mono = bytearray()
+            got = 0
+            while got < vals_needed and self.tx_audio_q:
+                blk = self.tx_audio_q[0]
+                take = min(len(blk) - self.tx_pos, vals_needed - got)
+                mono += blk[self.tx_pos:self.tx_pos + take].tobytes()
+                got += take
+                self.tx_pos += take
+                if self.tx_pos >= len(blk):
+                    self.tx_audio_q.popleft()
+                    self.tx_pos = 0
+            if got == 0:
+                continue
+            vals = np.frombuffer(bytes(mono), dtype=np.float32)[:got]
+            vals = np.clip(vals * self.mic_gain * 2.0, -1.0, 1.0)
+            frame = self.build_tx_audio_frame(vals, rate, chans)
+            if self.client and self.client.loop:
+                self.client.send_binary(frame)
+
     # ---------------- connect ----------------
     def toggle_conn(self):
         if self.client:
@@ -468,8 +601,12 @@ class MiniTCI(tk.Tk):
         port = int(self.rx_var.get().split()[0])
         self.text_q = queue.Queue()
         self._iq_q = queue.Queue(maxsize=8)
+        self.chrono_reqs = collections.deque()
+        self.tx_audio_q = collections.deque(maxlen=64)
+        self.tx_pos = 0
         c = TciClient(port)
-        c.start(self.tci_text, self.tci_audio, self.tci_iq, self.tci_state)
+        c.start(self.tci_text, self.tci_audio, self.tci_iq, self.tci_state,
+                self.tci_chrono)
         self.client = c
         self._set_state("connecting")
 
@@ -518,6 +655,7 @@ class MiniTCI(tk.Tk):
         except (queue.Empty, AttributeError):
             pass
 
+        self.service_tx_audio()
         self._draw_smeter()
         self.after(50, self._poll)
 
@@ -628,6 +766,10 @@ class MiniTCI(tk.Tk):
         if not self.connected or self.ptt:
             return
         self.ptt = True
+        self.send("tx_stream_audio_buffering:100;")
+        self.send("audio_stream_sample_type:float32;")
+        self.send("audio_stream_channels:1;")
+        self.send("audio_stream_samples:1024;")
         self.send("trx:0,true;")
         self.ptt_btn.config(bg=C["red"], relief="sunken")
         self.tx_lbl.config(text="TX ⏺", fg=C["red"])
@@ -657,17 +799,26 @@ class MiniTCI(tk.Tk):
         if self.mic_stream:
             return
         try:
-            self.mic_stream = sd.InputStream(samplerate=MIC_RATE, channels=1,
-                                             dtype="float32", blocksize=1024,
-                                             callback=self._mic_cb)
+            kw = {"samplerate": MIC_RATE, "channels": 1, "dtype": "float32",
+                  "blocksize": 1024, "callback": self._mic_cb}
+            dev = self._find_dev(self._in_devs, self.in_dev_var.get())
+            if dev is not None:
+                kw["device"] = dev
+            self.mic_stream = sd.InputStream(**kw)
             self.mic_stream.start()
+            name = self.in_dev_var.get() if dev is not None else "system default"
+            self.logprint(f"mic open: {name}")
         except Exception as e:
             self.logprint(f"mic error: {e}")
 
+    def _reopen_input(self):
+        if self.ptt:
+            self._mic_open()
+
     def _mic_cb(self, indata, frames, t, status):
-        # Branch G headless server ingests TX audio only from TCI binary frames;
-        # mic streaming to the server is not implemented in MiniTCI yet.
-        pass
+        if self.ptt and self.connected:
+            self.tx_audio_q.append(indata.reshape(-1).copy())
+            self.tx_pos = 0
 
     # ---------------- log ----------------
     def logprint(self, s):
