@@ -1854,7 +1854,13 @@ namespace Thetis
 
             int inputRate = GetInputRate(0, id);
             int outputRate = inputRate > TCI_MAX_IQ_STREAM_RATE ? TCI_MAX_IQ_STREAM_RATE : inputRate;
-            bool iqSwap = tciServer != null && tciServer.IQSwap;
+            // Branch G fix: the headless IQ stream must match the full TCI server's
+            // convention. The full server defaults IQSwap=true (Red Pitaya/WDSP IQ
+            // pair is spectrally inverted vs the plain math convention); previously
+            // the swap was skipped whenever the original TCI server was not running,
+            // leaving the headless IQ mirrored: LSB/USB passbands sat on the wrong
+            // side of the VFO and panadapter features were mirrored.
+            bool iqSwap = tciServer == null || tciServer.IQSwap;
             float[] iq = rentTCIFloatBuffer(nsamples * 2);
             for (int i = 0; i < nsamples; i++)
             {

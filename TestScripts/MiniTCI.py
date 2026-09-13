@@ -257,7 +257,8 @@ class PanFall(tk.Canvas):
                          bg="#0a0f16", highlightthickness=0)
         self.rate = 96000.0      # IQ data sample rate (from stream header)
         self.span = 96000.0      # display span in Hz (zoom) - independent of rate
-        self.center_hz = 0.0
+        self.center_hz = 0.0     # display window center (absolute RF)
+        self.data_center_hz = 0.0  # frequency the IQ data is centered on (=DDC/VFO)
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
         self.y_zero = 0.0        # user offset in dB (Quisk graph_y_zero analogue)
@@ -276,7 +277,7 @@ class PanFall(tk.Canvas):
     def x2f(self, x):
         return (x - CANVAS_W / 2) / CANVAS_W * self.span + self.center_hz
 
-    def update(self, iq):
+    def update(self, iq, data_center=None):
         n = len(iq) // 2
         if n < 32:
             return
@@ -305,8 +306,13 @@ class PanFall(tk.Canvas):
         # map each canvas column to its frequency within the DISPLAY span,
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
         bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * self.rate   # Hz/bin
+        # display columns -> ABSOLUTE RF, sampled against the data's actual center
+        # (= the DDC/VFO at frame time). This keeps the spectrum AND waterfall
+        # anchored to absolute RF while tuning: as the DDC moves, features stay at
+        # the same canvas column.
+        dc = data_center if data_center else (self.data_center_hz or self.center_hz)
         disp_f = self.center_hz - self.span / 2 + np.arange(CANVAS_W) / CANVAS_W * self.span
-        disp_rel = disp_f - self.center_hz                            # relative to center
+        disp_rel = disp_f - dc
         col = np.interp(disp_rel, bin_f, db).astype(np.float32)
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
         k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
@@ -923,7 +929,9 @@ class MiniTCI(tk.Tk):
                 block = np.frombuffer(bytes(self._iq_acc_bytes[:target]), dtype="<f4")
                 del self._iq_acc_bytes[:target]
                 try:
-                    self._iq_q.put_nowait((block, rate))
+                    # tag each block with the DDC center in effect when it arrived,
+                    # so queued stale blocks are labeled correctly (sync fix)
+                    self._iq_q.put_nowait((block, rate, float(self.freq_hz)))
                 except Exception:
                     # UI stalled - drop the OLDEST block so new data keeps flowing
                     try:
@@ -1068,7 +1076,7 @@ class MiniTCI(tk.Tk):
             pass
 
         try:
-            data, rate = self._iq_q.get_nowait()
+            data, rate, dcenter = self._iq_q.get_nowait()
             if rate and int(rate) != int(self.pan.rate):
                 self.pan.rate = float(rate)
                 self.pan.span = min(max(self.pan.span, 24000), float(rate))
@@ -1082,12 +1090,12 @@ class MiniTCI(tk.Tk):
                 data2, rate2 = data, rate
                 while True:
                     try:
-                        data2, rate2 = self._iq_q.get_nowait()
+                        data2, rate2, dc2 = self._iq_q.get_nowait()
                     except queue.Empty:
                         break
                 if int(rate2) != int(self.pan.rate):
                     self.pan.rate = float(rate2)
-                self.pan.update(data2)
+                self.pan.update(data2, dc2)
                 self.pan._blit()
         except (queue.Empty, AttributeError):
             pass
@@ -1131,14 +1139,18 @@ class MiniTCI(tk.Tk):
                         hz = float(p[2])
                         self.freq_hz = int(hz)
                         self._fmt_freq()
-                        self.pan.vfo = hz
+                        self.pan.vfo_hz = hz
+                        self.pan.data_center_hz = hz
                         if not self.pan.center_hz:
                             self.pan.center_hz = hz
                     except ValueError:
                         pass
             elif k == "dds" and v:
                 try:
-                    self.pan.center_hz = float(v.split(",")[-1])
+                    dds_hz = float(v.split(",")[-1])
+                    self.pan.data_center_hz = dds_hz   # actual DDC center of the IQ data
+                    if not self.pan.center_hz:
+                        self.pan.center_hz = dds_hz
                 except (ValueError, IndexError):
                     pass
             elif k == "trx" and v:
@@ -1220,24 +1232,13 @@ class MiniTCI(tk.Tk):
         self.freq_hz = int(hz)
         self._fmt_freq()
         self.pan.vfo_hz = self.freq_hz
+        self.pan.data_center_hz = self.freq_hz
         if not self.pan.center_hz:
             self.pan.center_hz = self.freq_hz
         elif abs(self.freq_hz - self.pan.center_hz) > self.pan.span * 0.48:
             # VFO about to leave the visible window: recenter. The waterfall is
             # anchored to ABSOLUTE RF: shift the stored rows by the pixel delta
             # so real-world signals stay in place (only the axis labels move).
-            df = self.freq_hz - self.pan.center_hz
-            px = int(round(df / max(1.0, self.pan.span) * CANVAS_W))
-            wf = self.pan._wf_img
-            if abs(px) < CANVAS_W:
-                if px > 0:
-                    wf[:, :-px] = wf[:, px:]
-                    wf[:, -px:] = 0
-                else:
-                    wf[:, -px:] = wf[:, :px]
-                    wf[:, :-px] = 0
-            else:
-                wf[:] = 0
             self.pan.center_hz = self.freq_hz
         self.send(f"vfo:0,0,{self.freq_hz};")
 
