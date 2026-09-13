@@ -290,10 +290,12 @@ class PanFall(tk.Canvas):
         # adaptive contrast: track the noise floor and stretch the display
         # range around it (like Thetis does) so weak signals stay visible
         floor = float(np.percentile(col, 30))
-        self._floor = 0.85 * getattr(self, "_floor", floor) + 0.15 * floor
-        top = floor + 55.0   # 55 dB of dynamic range above the floor
+        self._floor = 0.8 * getattr(self, "_floor", floor) + 0.2 * floor
+        top = floor + 45.0   # 45 dB dynamic range above floor -> more contrast
         lo, hi = self._floor, top
         norm = np.clip((col - lo) / (hi - lo), 0, 1)
+        # gamma boost: lift mid-tones so weak signals color up (like Thetis)
+        norm = norm ** 0.7
         self._norm_lo, self._norm_hi = lo, hi
 
         self._wf_img = np.roll(self._wf_img, 1, axis=0)   # newest at top
@@ -829,15 +831,19 @@ class MiniTCI(tk.Tk):
             now2 = time.time()
             if now2 - getattr(self, "_last_draw", 0) > 0.08:   # ~12 fps max
                 self._last_draw = now2
-                try:
-                    self._pan_job_q.put_nowait((data, rate))
-                except queue.Full:
-                    # pan worker behind; drop oldest job, keep newest
+                # drain to the newest block (skip stale ones), then compute + blit
+                # synchronously: pan.update is pure numpy (~5ms at 8192 samples),
+                # and _blit needs the result immediately - a worker thread here
+                # races the blit and paints nothing on first connect.
+                data2, rate2 = data, rate
+                while True:
                     try:
-                        self._pan_job_q.get_nowait()
-                        self._pan_job_q.put_nowait((data, rate))
-                    except Exception:
-                        pass
+                        data2, rate2 = self._iq_q.get_nowait()
+                    except queue.Empty:
+                        break
+                if int(rate2) != int(self.pan.span):
+                    self.pan.span = float(rate2)
+                self.pan.update(data2)
                 self.pan._blit()
         except (queue.Empty, AttributeError):
             pass
@@ -911,19 +917,18 @@ class MiniTCI(tk.Tk):
         self.freq_lbl.config(text=f"{khz:,} kHz".replace(",", "."))
 
     def _draw_smeter(self):
-        # prefer IQ-derived level (peak bin dBFS); rx_sensors (audio RMS) is
-        # AGC-flattened and pins at the AGC target, which is useless.
+        # IQ-derived peak-bin dBFS (rx_sensors audio RMS is AGC-flattened - useless).
+        # Scale -120..0 dBFS: noise floor sits ~-90, S9 ~-35, strong local -15.
         db = getattr(self.pan, "peak_dbfs", None)
         if db is None:
             db = self.smeter
         self.smeter_db = db
-        # scale: -140..0 dBFS with S-points approx: S9 ~ -73 dBFS region
-        frac = clamp((db + 140.0) / 140.0, 0, 1)
+        frac = clamp((db + 120.0) / 120.0, 0, 1)
         w = int(202 * frac)
         self.sm.coords(self.sm_bar, 2, 6, 2 + w, 22)
-        if db > -20:
+        if db > -15:
             color = "#c0392b"
-        elif db > -40:
+        elif db > -35:
             color = "#b45309"
         else:
             color = "#1a7f37"
