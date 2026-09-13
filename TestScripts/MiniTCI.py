@@ -263,6 +263,7 @@ class PanFall(tk.Canvas):
         self.filt = (100, 2900)
         self.y_zero = 0.0        # user offset in dB (Quisk graph_y_zero analogue)
         self.y_scale = 42.0      # dB of graph headroom above the floor
+        self.wf_gamma = 1.0      # waterfall intensity (lower = brighter)
         self._wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
         self._wf_img[:] = (0, 0, 0)  # Quisk: pure black waterfall background
         self._ready = None
@@ -284,12 +285,6 @@ class PanFall(tk.Canvas):
         z = iq[0:2 * n:2].astype(np.float32) + 1j * iq[1:2 * n:2].astype(np.float32)
         w = np.hanning(n).astype(np.float32)
         spec = np.fft.fftshift(np.fft.fft(z * w))
-        # notch the DC spike (Red Pitaya LO leakage paints a full-height line at
-        # center that ruins the auto-range and pins the S-meter)
-        n_dc = max(1, int(round(600.0 / (self.rate / n))))   # bins within +/-600 Hz
-        c = n // 2
-        fill_lo, fill_hi = max(0, c - 3 * n_dc), min(n, c + 3 * n_dc + 1)
-        spec[c - n_dc:c + n_dc + 1] = min(spec[fill_lo], spec[fill_hi])
         db = (20 * np.log10(np.abs(spec) / n + 1e-10)).astype(np.float32)
         # Branch G S-meter: peak level WITHIN the receiver passband (offset around
         # the VFO), so out-of-passband junk doesn't move the needle.
@@ -306,13 +301,9 @@ class PanFall(tk.Canvas):
         # map each canvas column to its frequency within the DISPLAY span,
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
         bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * self.rate   # Hz/bin
-        # display columns -> ABSOLUTE RF, sampled against the data's actual center
-        # (= the DDC/VFO at frame time). This keeps the spectrum AND waterfall
-        # anchored to absolute RF while tuning: as the DDC moves, features stay at
-        # the same canvas column.
-        dc = data_center if data_center else (self.data_center_hz or self.center_hz)
-        disp_f = self.center_hz - self.span / 2 + np.arange(CANVAS_W) / CANVAS_W * self.span
-        disp_rel = disp_f - dc
+        # Thetis model: display centered on the VFO; the IQ data is centered on
+        # the same frequency, so the mapping is purely relative.
+        disp_rel = (np.arange(CANVAS_W) / CANVAS_W - 0.5) * self.span
         col = np.interp(disp_rel, bin_f, db).astype(np.float32)
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
         k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
@@ -348,6 +339,7 @@ class PanFall(tk.Canvas):
         # 0=black, 0.14=blue-purple, 0.29=purple, 0.43=magenta-pink,
         # 0.57=orange, 0.71=light green, 0.86=yellow, 1.0=white
         wnorm = np.clip((col - self._floor) / getattr(self, "_wfrange", 30.0), 0, 1)
+        wnorm = np.power(wnorm, getattr(self, "wf_gamma", 1.0))   # intensity slider
         self._norm_lo, self._norm_hi = lo, hi
 
         self._wf_img = np.roll(self._wf_img, 1, axis=0)   # newest at top
@@ -577,6 +569,7 @@ class MiniTCI(tk.Tk):
             "y_zero": self.yzero_var.get(),
             "y_scale": self.yscale_var.get(),
             "zoom": self.zoom_var.get(),
+            "wf_gain": self.wf_gain_var.get(),
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
             "host": getattr(self, "host_var", None).get() if hasattr(self, "host_var") else None,
@@ -608,7 +601,8 @@ class MiniTCI(tk.Tk):
                     var.set(s[key])
             for key, var in (("volume", self.vol_var), ("mic_gain", self.mic_var),
                              ("agc_gain", self.agc_gain_var), ("y_zero", self.yzero_var),
-                             ("y_scale", self.yscale_var), ("zoom", self.zoom_var)):
+                             ("y_scale", self.yscale_var), ("zoom", self.zoom_var),
+                             ("wf_gain", self.wf_gain_var)):
                 if s.get(key) is not None:
                     var.set(float(s[key]))
             # agc_auto checkbox removed (AGC state = mode dropdown)
@@ -727,6 +721,10 @@ class MiniTCI(tk.Tk):
                   command=self._zoom_changed).pack(side="left", padx=4)
         self.zoom_lbl = ttk.Label(rz, text="96 kHz")
         self.zoom_lbl.pack(side="left", padx=6)
+        ttk.Label(rz, text="WF intensity:").pack(side="left", padx=(14, 0))
+        self.wf_gain_var = tk.DoubleVar(value=50)
+        ttk.Scale(rz, from_=0, to=100, variable=self.wf_gain_var, length=130,
+                  command=self._wf_gain_changed).pack(side="left", padx=4)
 
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
@@ -1232,14 +1230,10 @@ class MiniTCI(tk.Tk):
         self.freq_hz = int(hz)
         self._fmt_freq()
         self.pan.vfo_hz = self.freq_hz
+        # Thetis model: the display is always centered on the VFO. Tuning slides
+        # the whole panafall; the waterfall scrolls under the moving axis.
+        self.pan.center_hz = self.freq_hz
         self.pan.data_center_hz = self.freq_hz
-        if not self.pan.center_hz:
-            self.pan.center_hz = self.freq_hz
-        elif abs(self.freq_hz - self.pan.center_hz) > self.pan.span * 0.48:
-            # VFO about to leave the visible window: recenter. The waterfall is
-            # anchored to ABSOLUTE RF: shift the stored rows by the pixel delta
-            # so real-world signals stay in place (only the axis labels move).
-            self.pan.center_hz = self.freq_hz
         self.send(f"vfo:0,0,{self.freq_hz};")
 
     def _tune_direct(self):
@@ -1410,6 +1404,15 @@ class MiniTCI(tk.Tk):
             self.pan.y_scale = float(v)
         except (ValueError, tk.TclError):
             pass
+
+    def _wf_gain_changed(self, v):
+        # waterfall intensity/contrast: 0..100 -> gamma 1.6..0.4 applied to the
+        # normalized level before the palette (Thetis contrast control analogue)
+        try:
+            g = float(v)
+        except (ValueError, tk.TclError):
+            return
+        self.pan.wf_gamma = 1.6 - 1.2 * (g / 100.0)
 
     def _zoom_changed(self, v):
         # Quisk zoom model: effective span = rate * zoom, centered on the VFO
