@@ -322,8 +322,10 @@ class PanFall(tk.Canvas):
         # map each canvas column to its frequency within the DISPLAY span,
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
         bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * self.rate   # Hz/bin
-        # Thetis model: display centered on the VFO; the IQ data is centered on
-        # the same frequency, so the mapping is purely relative.
+        # Thetis model: display centered on the VFO; every row is drawn
+        # VFO-relative. A signal you are tuned to (constant audio pitch) keeps
+        # the same horizontal position => traces stay VERTICAL while tuning,
+        # exactly like the Thetis panadapter.
         disp_rel = (np.arange(CANVAS_W) / CANVAS_W - 0.5) * self.span
         col = np.interp(disp_rel, bin_f, db).astype(np.float32)
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
@@ -1250,12 +1252,6 @@ class MiniTCI(tk.Tk):
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
-        # Thetis model: the display is always centered on the VFO. Tuning slides
-        # the WHOLE panafall - including the past waterfall rows - by the pixel
-        # delta of the frequency change, exactly like the Thetis display.
-        df = self.freq_hz - self.pan.center_hz
-        if self.pan.center_hz and df:
-            self.pan.shift_waterfall(df)
         self.pan.vfo_hz = self.freq_hz
         self.pan.center_hz = self.freq_hz
         self.pan.data_center_hz = self.freq_hz
