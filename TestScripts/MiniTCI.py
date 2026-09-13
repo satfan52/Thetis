@@ -934,6 +934,17 @@ class MiniTCI(tk.Tk):
                 if self.out_stream is None:
                     time.sleep(0.1)
                     continue
+                if self.ptt:
+                    # TX: mute the RX monitor - no self-hearing in the speakers.
+                    # Discard incoming blocks so nothing backs up for PTT off.
+                    self.audio_blocks.clear()
+                    self.audio_pos = 0
+                    stereo = np.zeros((CHUNK, 2), dtype=np.float32)
+                    try:
+                        self.out_stream.write(stereo)
+                    except Exception:
+                        pass
+                    continue
                 filled = 0
                 while filled < CHUNK:
                     if not self.audio_blocks:
