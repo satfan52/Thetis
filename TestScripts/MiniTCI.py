@@ -285,14 +285,18 @@ class PanFall(tk.Canvas):
         # useless as a meter - it pins at the AGC target). Report peak bin level.
         self.peak_dbfs = float(db.max()) if len(db) else -140.0
 
-        # interpolate spectrum to canvas width (smooth, high definition):
-        # linear interp over bin centres, then light gaussian smoothing
-        bin_x = (np.arange(len(db)) - len(db) / 2) / len(db) * CANVAS_W + CANVAS_W / 2
-        col = np.interp(np.arange(CANVAS_W), bin_x, db).astype(np.float32)
+        # map each canvas column to its frequency within the DISPLAY span,
+        # then sample the full-rate FFT spectrum at that frequency (handles zoom)
+        rate = 96000.0
+        bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * rate   # Hz of each bin
+        disp_f = self.center_hz - self.span / 2 + np.arange(CANVAS_W) / CANVAS_W * self.span
+        disp_rel = disp_f - self.center_hz                            # relative to center
+        col = np.interp(disp_rel, bin_f, db).astype(np.float32)
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
         k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
         k /= k.sum()
-        col = np.convolve(col, k, mode="same").astype(np.float32)
+        # edge-padded convolve (zero padding would inject 0 dB ghosts at the edges)
+        col = np.convolve(np.pad(col, 2, mode="edge"), k, mode="valid").astype(np.float32)
         # 2-frame EMA per bin (video averaging) - kills waterfall speckle while
         # keeping the spectrum trace responsive (Quisk peak_hold analogue)
         prev = getattr(self, "_col_prev", None)
@@ -325,7 +329,7 @@ class PanFall(tk.Canvas):
         self._norm_lo, self._norm_hi = lo, hi
 
         self._wf_img = np.roll(self._wf_img, 1, axis=0)   # newest at top
-        self._wf_img[0] = self._cmap(wnorm)[::-1]          # low freq left
+        self._wf_img[0] = self._cmap(wnorm)               # low freq left (same order as spectrum)
         self._draw()
 
     # Thetis-style high-contrast palette: black -> deep blue -> cyan ->
@@ -1064,9 +1068,14 @@ class MiniTCI(tk.Tk):
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
-        self.pan.vfo = self.freq_hz
+        self.pan.vfo_hz = self.freq_hz
         if not self.pan.center_hz:
             self.pan.center_hz = self.freq_hz
+        elif abs(self.freq_hz - self.pan.center_hz) > self.pan.span * 0.4:
+            # VFO dragged off-screen (e.g. band switch): keep it visible (Quisk
+            # keeps the VFO centered when not zoomed away)
+            self.pan.center_hz = self.freq_hz
+            self.pan._wf_img[:] = 0
         self.send(f"vfo:0,0,{self.freq_hz};")
 
     def _tune_direct(self):
@@ -1253,6 +1262,7 @@ class MiniTCI(tk.Tk):
         new_span = clamp(new_span, 24000, 384000)
         self.pan.center_hz = self.freq_hz if self.freq_hz else self.pan.center_hz
         self.pan.span = new_span
+        self.pan._wf_img[:] = 0   # clear stale rows drawn at the old span
         self.zoom_lbl.config(text=f"{new_span / 1000:.0f} kHz")
 
     def _pan_motion(self, e):
