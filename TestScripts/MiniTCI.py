@@ -258,7 +258,7 @@ class PanFall(tk.Canvas):
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
         self._wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
-        self._wf_img[:] = (0, 0, 40)  # Thetis-style dark blue base
+        self._wf_img[:] = (0, 0, 0)  # Quisk: pure black waterfall background
         self._ready = None
         self._ready_ys = None
         self._photo = None
@@ -291,21 +291,39 @@ class PanFall(tk.Canvas):
         k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
         k /= k.sum()
         col = np.convolve(col, k, mode="same").astype(np.float32)
+        # 2-frame EMA per bin (video averaging) - kills waterfall speckle while
+        # keeping the spectrum trace responsive (Quisk peak_hold analogue)
+        prev = getattr(self, "_col_prev", None)
+        if prev is not None and len(prev) == len(col):
+            col = 0.5 * prev + 0.5 * col
+        self._col_prev = col
         self._col = col
 
         # adaptive contrast: track the noise floor and stretch the display
         # range around it (like Thetis does) so weak signals stay visible
-        floor = float(np.percentile(col, 30))
-        self._floor = 0.8 * getattr(self, "_floor", floor) + 0.2 * floor
-        top = floor + 45.0   # 45 dB dynamic range above floor -> more contrast
-        lo, hi = self._floor, top
+        floor = float(np.percentile(col, 10))
+        if getattr(self, "_floor", None) is None:
+            self._floor = floor   # first frame: no smoothing (avoid garbage init)
+        else:
+            self._floor = 0.8 * self._floor + 0.2 * floor
+        # waterfall range covers the noise envelope (p95-p10) so speckle stays dark
+        p95 = float(np.percentile(col, 95))
+        self._wfrange = max(20.0, (p95 - floor) + 8.0)
+        # Quisk-style y_zero: place the noise floor ~25% up from the bottom so
+        # the trace and waterfall colors have headroom (waterfall_y_zero=40/160)
+        lo = self._floor - 18.0
+        hi = self._floor + 42.0
         norm = np.clip((col - lo) / (hi - lo), 0, 1)
-        # gamma boost: lift mid-tones so weak signals color up (like Thetis)
-        norm = norm ** 0.7
+        # waterfall gets its own softer normalization: noise sits in the dark
+        # blue/purple zone (Quisk waterfall_y_zero/y_scale behavior).
+        # wnorm: 0 at noise floor, 1.0 at ~+48 dB above floor. Quisk palette:
+        # 0=black, 0.14=blue-purple, 0.29=purple, 0.43=magenta-pink,
+        # 0.57=orange, 0.71=light green, 0.86=yellow, 1.0=white
+        wnorm = np.clip((col - self._floor) / getattr(self, "_wfrange", 30.0), 0, 1)
         self._norm_lo, self._norm_hi = lo, hi
 
         self._wf_img = np.roll(self._wf_img, 1, axis=0)   # newest at top
-        self._wf_img[0] = self._cmap(norm)[::-1]           # low freq left
+        self._wf_img[0] = self._cmap(wnorm)[::-1]          # low freq left
         self._draw()
 
     # Thetis-style high-contrast palette: black -> deep blue -> cyan ->
@@ -316,18 +334,16 @@ class PanFall(tk.Canvas):
     def _build_cmap(cls):
         if cls._CMAP_CACHE is not None:
             return cls._CMAP_CACHE
+        # Authentic Quisk default waterfallPalette (8 stops)
         stops = [
-            (0.00, (0, 0, 40)),      # Thetis dark blue base
-            (0.12, (0, 0, 100)),     # dark blue
-            (0.25, (0, 40, 180)),    # blue
-            (0.40, (0, 150, 230)),   # cyan-blue
-            (0.50, (0, 220, 220)),   # cyan
-            (0.60, (0, 220, 100)),   # cyan-green
-            (0.70, (180, 220, 40)),  # green-yellow
-            (0.78, (255, 200, 0)),   # yellow
-            (0.86, (255, 100, 0)),   # orange
-            (0.93, (255, 30, 30)),   # red
-            (1.00, (255, 255, 255)), # white
+            (0.00, (0, 0, 0)),
+            (36/255, (85, 0, 255)),
+            (73/255, (153, 0, 255)),
+            (109/255, (255, 0, 128)),
+            (146/255, (255, 119, 0)),
+            (182/255, (85, 255, 100)),
+            (219/255, (255, 255, 0)),
+            (1.00, (255, 255, 255)),
         ]
         lut = np.zeros((256, 3), dtype=np.uint8)
         for i in range(len(stops) - 1):
@@ -354,23 +370,37 @@ class PanFall(tk.Canvas):
         if col is None:
             return
         pan = np.zeros((PAN_H, CANVAS_W, 3), dtype=np.uint8)
-        # Thetis-style dark teal-blue background
-        pan[:] = (7, 42, 58)
+        # Quisk-style lemonchiffon background
+        pan[:] = (255, 250, 205)
         lo = getattr(self, "_norm_lo", self.DB_BOT)
         hi = getattr(self, "_norm_hi", self.DB_TOP)
         ys = (PAN_H - 1 - np.clip(
             (col - lo) / max(1e-6, hi - lo) * (PAN_H - 1),
             0, PAN_H - 1)).astype(np.int32)
-        # connected trace: fill the vertical gap between adjacent x positions
-        # so the spectrum reads as a continuous line (spectrum-analyser style)
-        trace = np.array([220, 240, 255], dtype=np.uint8)  # white-ish
-        dim = np.array([150, 200, 230], dtype=np.uint8)     # light blue
+        # filter bandwidth rectangle drawn BEHIND the trace (Quisk lemonchiffon3)
+        if self.center_hz and self.vfo_hz:
+            fx1 = self.f2x(self.vfo_hz + self.filt[0])
+            fx2 = self.f2x(self.vfo_hz + self.filt[1])
+            x1c, x2c = max(0, int(fx1)), min(CANVAS_W, int(fx2))
+            if x2c > x1c:
+                pan[:, x1c:x2c] = (205, 201, 165)   # lemonchiffon3
+        # horizontal gray grid lines every 10 dB (Quisk color_gl = grey)
+        # grid computed from current dB scale
+        lo_d, hi_d = lo, hi
+        step = 10.0
+        first = np.ceil(lo_d / step) * step
+        f = first
+        while f < hi_d:
+            gy = int(PAN_H - 1 - (f - lo_d) / max(1e-6, hi_d - lo_d) * (PAN_H - 1))
+            if 0 <= gy < PAN_H:
+                pan[gy, :] = (190, 190, 190)
+            f += step
+        # dark green connected trace (Quisk color_graphline #005500)
+        trace = np.array([0, 85, 0], dtype=np.uint8)
         xs_all = np.arange(CANVAS_W)
-        # 2px solid core at every column
         for dy in (-1, 0):
             yy = np.clip(ys + dy, 0, PAN_H - 1)
             pan[yy, xs_all] = trace
-        # connect vertical runs with a gradient fill
         for x in range(1, CANVAS_W):
             y0, y1 = int(ys[x - 1]), int(ys[x])
             if abs(y1 - y0) > 1:
@@ -378,10 +408,7 @@ class PanFall(tk.Canvas):
                     y0, y1 = y1, y0
                 yy = np.arange(y0 + 1, y1)
                 if len(yy):
-                    # gradient from dim to bright toward the lower end (signal peak)
-                    t = (yy - y0) / max(1, y1 - y0)
-                    grad = (dim * (1 - t)[:, None] + trace * t[:, None]).astype(np.uint8)
-                    pan[np.clip(yy, 0, PAN_H - 1), x] = grad
+                    pan[np.clip(yy, 0, PAN_H - 1), x] = trace
 
         # finished composite (pan + waterfall); UI thread blits it
         self._ready = np.vstack([pan, self._wf_img])
@@ -396,68 +423,75 @@ class PanFall(tk.Canvas):
         if self._pil:
             self._photo = ImageTk.PhotoImage(Image.fromarray(arr))
             self.create_image(0, 0, image=self._photo, anchor="nw")
-        # always draw the vector trace on top: smooth connected polyline,
-        # guaranteed continuous regardless of the raster fill
+        # thin dark-green vector trace on top for crispness (Quisk color_graphline)
         ys = getattr(self, "_ready_ys", None)
         if ys is not None:
             pts = []
             for x in range(0, CANVAS_W):
                 pts += [x, ys[x]]
-            self.create_line(pts, fill="#c8e0f0", width=1,
+            self.create_line(pts, fill="#005500", width=1,
                              smooth=True, splinesteps=8)
         self._draw_overlays()
 
     def _draw_overlays(self):
-        # horizontal grid + dB axis labels (left) - spectrum-analyser style
+        """Quisk-style overlays: black dB labels on cream, shared X axis strip
+        between graph and waterfall, red tuning line through both panes."""
         lo = getattr(self, "_norm_lo", self.DB_BOT)
         hi = getattr(self, "_norm_hi", self.DB_TOP)
-        span_db = hi - lo
-        for i in range(5):
-            y = i * PAN_H / 4
-            if 0 < y < PAN_H:
-                self.create_line(0, y, CANVAS_W, y, fill="#0a6a80")
-            db = hi - (i / 4.0) * span_db
-            txt = f"{db:.0f} dB"
-            # backing rect FIRST, text on top (drawing rect after text covers it)
-            self.create_rectangle(2, y + 1, 62, y + 16,
-                                  fill="#0a0f16", outline="")
-            self.create_text(4, y + 2, anchor="nw",
-                             text=txt, fill="#e8ecef",
-                             font=("Consolas", 8, "bold"))
-        # vertical grid + freq labels
-        for k in range(-4, 5):
-            off = k * self.span / 8
-            x = self.f2x(self.center_hz + off)
-            if 6 <= x <= CANVAS_W - 6 and abs(x - CANVAS_W/2) > 4:
-                self.create_line(x, 0, x, PAN_H, fill="#0a6a80")
-            if 14 <= x <= CANVAS_W - 14:
-                self.create_text(x, 12,
-                                 text=f"{14.074 + off / 1e6:.3f}",
-                                 fill="#ffffff", font=("Segoe UI", 9, "bold"))
-        # RX filter passband (relative to VFO) - Thetis-style shaded band whose
-        # width follows the mode (USB ~2.8k, CW ~500, AM ~9k, FM ~7k...)
-        if self.center_hz and self.vfo_hz:
-            x1 = self.f2x(self.vfo_hz + self.filt[0])
-            x2 = self.f2x(self.vfo_hz + self.filt[1])
-            if x2 > x1 and x2 > 0 and x1 < CANVAS_W:
-                x1c, x2c = max(0, int(x1)), min(CANVAS_W, int(x2))
-                # Thetis-style passband: light blue-gray translucent rectangle
-                self.create_rectangle(x1c, 0, x2c, PAN_H,
-                                      fill="#2a5a7a", outline="")
-                # RED left filter edge, YELLOW right filter edge (Thetis style)
-                self.create_line(x1c, 0, x1c, PAN_H, fill="#ff3030", width=2)
-                self.create_line(x2c, 0, x2c, PAN_H, fill="#ffd050", width=2)
-                # bandwidth label
-                bw = self.filt[1] - self.filt[0]
-                label_x = max(x1c + 25, min(x2c - 25, (x1c + x2c) / 2))
-                self.create_text(label_x, 12,
-                                 text=f"{bw:.0f} Hz",
-                                 fill="#a0c8e8", font=("Segoe UI", 7))
-        # vfo line
+        # dB labels at the 10 dB grid lines, black text (Quisk color_graphticks)
+        step = 10.0
+        f = np.ceil(lo / step) * step
+        while f < hi:
+            gy = int(PAN_H - 1 - (f - lo) / max(1e-6, hi - lo) * (PAN_H - 1))
+            if 14 <= gy <= PAN_H - 6:
+                self.create_text(4, gy - 7, anchor="nw", text=f"{f:.0f}",
+                                 fill="#000000", font=("Segoe UI", 8))
+            f += step
+        # ---- shared X axis strip between graph and waterfall (Quisk layout) ----
+        axis_y = PAN_H
+        self.create_rectangle(0, axis_y, CANVAS_W, axis_y + 18,
+                              fill=("#%02x%02x%02x" % ((255, 250, 205))),
+                              outline="")
+        self.create_line(0, axis_y, CANVAS_W, axis_y, fill="#000000")
+        self.create_line(0, axis_y + 18, CANVAS_W, axis_y + 18, fill="#000000")
+        # ticks: choose a label step so labels are >= 50 px apart (1-2-5 series)
+        px_per_hz = CANVAS_W / max(1.0, self.span)
+        cand = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
+        lstep = next((c for c in cand if c * px_per_hz >= 60), 100000)
+        if self.center_hz:
+            f0 = self.center_hz - self.span / 2
+            f1 = self.center_hz + self.span / 2
+            tick = lstep // 5
+            start = int(np.floor(f0 / tick)) * tick
+            t = start
+            while t <= f1:
+                x = self.f2x(t)
+                if 0 <= x <= CANVAS_W:
+                    major = (t % lstep == 0)
+                    mid = (not major and t % (lstep // 2) == 0)
+                    ln = 8 if major else (5 if mid else 3)
+                    self.create_line(x, axis_y + 18 - ln, x, axis_y + 18,
+                                     fill="#000000")
+                    if major and 12 <= x <= CANVAS_W - 12:
+                        khz = int(round(t / 1000))
+                        self.create_text(x, axis_y + 2, text=str(khz),
+                                         fill="#000000",
+                                         font=("Segoe UI", 8))
+                t += tick
+            # thick center tick marking the exact center frequency
+            cx = self.f2x(self.center_hz)
+            if 0 <= cx <= CANVAS_W:
+                self.create_line(cx, axis_y, cx, axis_y + 12,
+                                 fill="#000000", width=3)
+        # ---- tuning line: Quisk color_txline red, full height both panes ----
         if self.center_hz:
             x = self.f2x(self.vfo_hz)
             if 0 <= x <= CANVAS_W:
-                self.create_line(x, 0, x, PAN_H + WF_H, fill=C["tune"], width=1)
+                self.create_line(x, 0, x, PAN_H + WF_H,
+                                 fill="#ff0000", width=1)
+                # waterfall section drawn brighter for XOR-like visibility
+                self.create_line(x, PAN_H + 18, x, PAN_H + WF_H,
+                                 fill="#ff4040", width=1)
 
 
 # ================================================================ app
