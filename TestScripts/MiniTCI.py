@@ -214,7 +214,8 @@ class TciClient:
 class PanFall(tk.Canvas):
     """Spectrum (top PAN_H px) + scrolling waterfall (below)."""
 
-    DB_TOP, DB_BOT = 5.0, -115.0
+    DB_TOP = 5.0
+    DB_BOT = -115.0
 
     def __init__(self, master):
         super().__init__(master, width=CANVAS_W, height=PAN_H + WF_H,
@@ -223,7 +224,7 @@ class PanFall(tk.Canvas):
         self.center_hz = 0.0
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
-        self.wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
+        self._wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
         self._photo = None
         self._col = None
         self._pil = PIL_OK
@@ -242,6 +243,9 @@ class PanFall(tk.Canvas):
         w = np.hanning(n).astype(np.float32)
         spec = np.fft.fftshift(np.fft.fft(z * w))
         db = (20 * np.log10(np.abs(spec) / n + 1e-10)).astype(np.float32)
+        # Branch G S-meter: signal dBFS from IQ power (AGC-flattened audio RMS is
+        # useless as a meter - it pins at the AGC target). Report peak bin level.
+        self.peak_dbfs = float(db.max()) if len(db) else -140.0
 
         col = np.full(CANVAS_W, self.DB_BOT - 20, dtype=np.float32)
         idx = ((np.arange(len(db)) - len(db) / 2) / len(db) * CANVAS_W
@@ -250,37 +254,77 @@ class PanFall(tk.Canvas):
         np.maximum.at(col, idx, db)
         self._col = col
 
-        norm = np.clip((col - self.DB_BOT) / (self.DB_TOP - self.DB_BOT), 0, 1)
-        row = self._cmap(norm)
-        self.wf_img = np.roll(self.wf_img, 1, axis=0)   # newest at TOP of waterfall
-        self.wf_img[0] = row = self._cmap(norm)[::-1]   # low freq left
+        # adaptive contrast: track the noise floor and stretch the display
+        # range around it (like Thetis does) so weak signals stay visible
+        floor = float(np.percentile(col, 30))
+        self._floor = 0.85 * getattr(self, "_floor", floor) + 0.15 * floor
+        top = floor + 55.0   # 55 dB of dynamic range above the floor
+        lo, hi = self._floor, top
+        norm = np.clip((col - lo) / (hi - lo), 0, 1)
+        self._norm_lo, self._norm_hi = lo, hi
+
+        self._wf_img = np.roll(self._wf_img, 1, axis=0)   # newest at top
+        self._wf_img[0] = self._cmap(norm)[::-1]           # low freq left
         self._draw()
 
-    @staticmethod
-    def _cmap(v):
-        r = np.clip(v * 2.6 - 0.55, 0, 1)
-        g = np.clip(v * 1.9 - 0.05, 0, 1)
-        b = np.clip(v * 0.9 + 0.18, 0, 1)
-        return (np.stack([r, g, b], axis=-1) * 255).astype(np.uint8)
+    # Thetis-style high-contrast palette: black -> deep blue -> cyan ->
+    # green -> yellow -> red -> white (like the Thetis waterfall)
+    _CMAP_CACHE = None
+
+    @classmethod
+    def _build_cmap(cls):
+        if cls._CMAP_CACHE is not None:
+            return cls._CMAP_CACHE
+        stops = [
+            (0.00, (0, 0, 0)),
+            (0.10, (0, 0, 64)),
+            (0.25, (0, 40, 160)),
+            (0.40, (0, 160, 220)),
+            (0.55, (0, 210, 120)),
+            (0.70, (230, 230, 60)),
+            (0.75, (255, 160, 30)),
+            (0.85, (255, 70, 30)),
+            (1.00, (255, 255, 255)),
+        ]
+        lut = np.zeros((256, 3), dtype=np.uint8)
+        for i in range(len(stops) - 1):
+            p0, c0 = stops[i]
+            p1, c1 = stops[i + 1]
+            n0, n1 = int(p0 * 255), int(p1 * 255)
+            if n1 <= n0:
+                continue
+            t = np.linspace(0, 1, max(1, n1 - n0 + 1))[:, None]
+            lut[n0:n1 + 1] = (np.array(c0) * (1 - t) + np.array(c1) * t)
+        lut = np.clip(lut, 0, 255).astype(np.uint8)
+        cls._CMAP_CACHE = lut
+        return lut
+
+    @classmethod
+    def _cmap(cls, v):
+        lut = cls._build_cmap()
+        idx = np.clip((v * 255).astype(np.int32), 0, 255)
+        return lut[idx]
 
     def _draw(self):
         col = getattr(self, "_col", None)
         if col is None:
             return
         pan = np.zeros((PAN_H, CANVAS_W, 3), dtype=np.uint8)
-        pan[:] = (6, 9, 14)
+        pan[:] = (10, 12, 18)
+        lo = getattr(self, "_norm_lo", self.DB_BOT)
+        hi = getattr(self, "_norm_hi", self.DB_TOP)
         ys = (PAN_H - 1 - np.clip(
-            (col - self.DB_BOT) / (self.DB_TOP - self.DB_BOT) * (PAN_H - 1),
+            (col - lo) / max(1e-6, hi - lo) * (PAN_H - 1),
             0, PAN_H - 1)).astype(np.int32)
-        # 3px thick bright trace
-        trace = np.array([57, 211, 83], dtype=np.uint8)
+        # 3px bright green trace (Thetis-style)
+        trace = np.array([70, 240, 100], dtype=np.uint8)
         for dy in (-1, 0, 1):
             yy = np.clip(ys + dy, 0, PAN_H - 1)
             pan[yy, np.arange(CANVAS_W)] = trace
 
         if self._pil:
             self._photo = ImageTk.PhotoImage(Image.fromarray(
-                np.vstack([pan, self.wf_img])))
+                np.vstack([pan, self._wf_img])))
             self.delete("all")
             self.create_image(0, 0, image=self._photo, anchor="nw")
         else:
@@ -422,8 +466,7 @@ class MiniTCI(tk.Tk):
         # --- panadapter + waterfall
         self.pan = PanFall(self)
         self.pan.pack(fill="both", expand=True, padx=10, pady=4)
-        self.pan.bind("<Button-1>", self._pan_click)
-        self.pan.bind("<B1-Motion>", self._pan_drag)
+        self.pan.bind("<ButtonRelease-1>", self._pan_release)
 
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
@@ -763,12 +806,24 @@ class MiniTCI(tk.Tk):
         self.freq_lbl.config(text=f"{khz:,} kHz".replace(",", "."))
 
     def _draw_smeter(self):
-        frac = clamp((self.smeter + 140.0) / 140.0, 0, 1)
+        # prefer IQ-derived level (peak bin dBFS); rx_sensors (audio RMS) is
+        # AGC-flattened and pins at the AGC target, which is useless.
+        db = getattr(self.pan, "peak_dbfs", None)
+        if db is None:
+            db = self.smeter
+        self.smeter_db = db
+        # scale: -140..0 dBFS with S-points approx: S9 ~ -73 dBFS region
+        frac = clamp((db + 140.0) / 140.0, 0, 1)
         w = int(202 * frac)
         self.sm.coords(self.sm_bar, 2, 6, 2 + w, 22)
-        self.sm.itemconfig(self.sm_bar,
-                           fill=C["red"] if self.smeter > -15 else C["green"])
-        self.sm.itemconfig(self.sm_txt, text=f"{self.smeter:.0f} dBFS")
+        if db > -20:
+            color = "#c0392b"
+        elif db > -40:
+            color = "#b45309"
+        else:
+            color = "#1a7f37"
+        self.sm.itemconfig(self.sm_bar, fill=color)
+        self.sm.itemconfig(self.sm_txt, text=f"{db:.0f} dBFS")
 
     # ---------------- controls ----------------
     def send(self, cmd):
@@ -843,12 +898,14 @@ class MiniTCI(tk.Tk):
             self.send(f"agc_gain:0,{int(float(v))};")
 
     def _pan_click(self, e):
+        # tune only on final click; drags suppressed - flooding vfo commands
+        # per mouse-move pixel can drop the connection
+        pass
+
+    def _pan_release(self, e):
         if self.pan.center_hz:
             f = self.pan.x2f(e.x)
             self.tune_to(int(round(f / 10.0)) * 10)   # 100 Hz grid
-
-    def _pan_drag(self, e):
-        self._pan_click(e)
 
     # ---------------- TX ----------------
     def ptt_on(self):
