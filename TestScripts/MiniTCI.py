@@ -23,6 +23,12 @@ import numpy as np
 import sounddevice as sd
 import websockets
 
+try:
+    from PIL import Image, ImageTk
+    PIL_OK = True
+except ImportError:
+    PIL_OK = False
+
 # ---------------------------------------------------------------- config
 
 HOST = "127.0.0.1"
@@ -144,7 +150,10 @@ class TciClient:
         import websockets
         uri = f"ws://{HOST}:{self.port}/"
         try:
-            async with websockets.connect(uri, max_size=None) as ws:
+            async with websockets.connect(
+                    uri, max_size=None,
+                    ping_interval=10, ping_timeout=20,
+                    close_timeout=5) as ws:
                 self._oq = asyncio.Queue()
                 self.on_state("connected")
                 await asyncio.gather(self._reader(ws), self._writer(ws))
@@ -154,33 +163,39 @@ class TciClient:
             self.on_state("disconnected")
 
     async def _reader(self, ws):
-        async for msg in ws:
-            if isinstance(msg, str):
-                for cmd in msg.split(";"):
-                    cmd = cmd.strip()
-                    if not cmd:
-                        continue
-                    if ":" in cmd:
-                        k, v = cmd.split(":", 1)
-                        self.on_text({k.strip().lower(): v.strip()})
-                    else:
-                        self.on_text({cmd.strip().lower(): ""})
-            elif isinstance(msg, bytes) and len(msg) >= 32:
-                ftype = struct.unpack("<I", msg[24:28])[0]
-                rate = struct.unpack("<I", msg[4:8])[0]
-                chans = struct.unpack("<I", msg[28:32])[0]
-                length = struct.unpack("<i", msg[20:24])[0]
-                data = np.frombuffer(msg[64:], dtype="<f4")
-                if ftype == 1:                     # RX audio
-                    n = min(length, len(data))
-                    if chans == 2:
-                        n -= n % 2
-                    self.on_audio(data[:n], rate, chans)
-                elif ftype == 0 and len(data) >= 16:   # IQ
-                    n = min(length, len(data)); n -= n % 2
-                    self.on_iq(data[:n], rate)
-                elif ftype == 3:                       # TX chrono
-                    self.on_chrono(length, rate)
+        try:
+            async for msg in ws:
+                self._dispatch(msg)
+        except Exception as e:
+            self.on_text({"__error__": f"reader: {type(e).__name__}: {e}"})
+
+    def _dispatch(self, msg):
+        if isinstance(msg, str):
+            for cmd in msg.split(";"):
+                cmd = cmd.strip()
+                if not cmd:
+                    continue
+                if ":" in cmd:
+                    k, v = cmd.split(":", 1)
+                    self.on_text({k.strip().lower(): v.strip()})
+                else:
+                    self.on_text({cmd.strip().lower(): ""})
+        elif isinstance(msg, bytes) and len(msg) >= 64:
+            ftype = struct.unpack("<I", msg[24:28])[0]
+            rate = struct.unpack("<I", msg[4:8])[0]
+            chans = struct.unpack("<I", msg[28:32])[0]
+            length = struct.unpack("<i", msg[20:24])[0]
+            data = np.frombuffer(msg[64:], dtype="<f4")
+            if ftype == 1:                     # RX audio
+                n = min(length, len(data))
+                if chans == 2:
+                    n -= n % 2
+                self.on_audio(data[:n], rate, chans)
+            elif ftype == 0 and len(data) >= 16:   # IQ
+                n = min(length, len(data)); n -= n % 2
+                self.on_iq(data[:n], rate)
+            elif ftype == 3:                       # TX chrono
+                self.on_chrono(length, rate)
 
     async def _writer(self, ws):
         while True:
@@ -211,11 +226,7 @@ class PanFall(tk.Canvas):
         self.wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
         self._photo = None
         self._col = None
-        self._pil = True
-        try:
-            from PIL import Image, ImageTk  # noqa
-        except ImportError:
-            self._pil = False
+        self._pil = PIL_OK
 
     def f2x(self, f):
         return (f - self.center_hz) / self.span * CANVAS_W + CANVAS_W / 2
@@ -261,10 +272,13 @@ class PanFall(tk.Canvas):
         ys = (PAN_H - 1 - np.clip(
             (col - self.DB_BOT) / (self.DB_TOP - self.DB_BOT) * (PAN_H - 1),
             0, PAN_H - 1)).astype(np.int32)
-        pan[ys, np.arange(CANVAS_W)] = (57, 211, 83)
+        # 3px thick bright trace
+        trace = np.array([57, 211, 83], dtype=np.uint8)
+        for dy in (-1, 0, 1):
+            yy = np.clip(ys + dy, 0, PAN_H - 1)
+            pan[yy, np.arange(CANVAS_W)] = trace
 
         if self._pil:
-            from PIL import Image, ImageTk
             self._photo = ImageTk.PhotoImage(Image.fromarray(
                 np.vstack([pan, self.wf_img])))
             self.delete("all")
@@ -414,10 +428,10 @@ class MiniTCI(tk.Tk):
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
         ttk.Label(r3, text="Volume:").pack(side="left")
-        self.vol_var = tk.DoubleVar(value=80)
+        self.vol_var = tk.DoubleVar(value=70)
         ttk.Scale(r3, from_=0, to=100, variable=self.vol_var, length=140,
                   command=self._vol_changed).pack(side="left", padx=4)
-        self.volume = 0.85
+        self.volume = 0.7 * 2.4
 
         self._out_devs = list_output_devices()
         self._in_devs = list_input_devices()
@@ -521,8 +535,9 @@ class MiniTCI(tk.Tk):
         outdata[:, 1] = outdata[:, 0]
 
     def _vol_changed(self, v):
-        # makeup gain: server ships -26 dB calibrated audio; allow up to ~+21 dB
-        self.volume = (float(v) / 100.0) * 1.2
+        # makeup gain: server ships -26 dB calibrated audio; +6 dB over previous
+        # mapping (1.2 -> 2.4) so quiet signals are clearly audible
+        self.volume = (float(v) / 100.0) * 2.4
 
     def _mic_changed(self, v):
         self.mic_gain = float(v) / 100.0
@@ -664,10 +679,14 @@ class MiniTCI(tk.Tk):
             self.conn_btn.config(text="Cancel")
             self.state_lbl.config(text="● connecting…", fg=C["tune"])
         else:
+            was = self.connected
             self.connected = False
             self.conn_btn.config(text="Connect")
             self.state_lbl.config(text="● disconnected", fg=C["dim"])
-            self.logprint("disconnected")
+            if was:
+                self.logprint("connection lost - click Connect to reconnect")
+            else:
+                self.logprint("disconnected")
 
     # ---------------- poll queue ----------------
     def _poll(self):
