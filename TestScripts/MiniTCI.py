@@ -934,9 +934,13 @@ class MiniTCI(tk.Tk):
                 if self.out_stream is None:
                     time.sleep(0.1)
                     continue
-                if self.ptt:
+                now_t = time.time()
+                if self.ptt or now_t < getattr(self, "_tx_mute_until", 0.0):
                     # TX: mute the RX monitor - no self-hearing in the speakers.
-                    # Discard incoming blocks so nothing backs up for PTT off.
+                    # Keep muting briefly AFTER PTT release: the RF chain (IC-7100
+                    # unkeying + AGC decay) still carries the tail of the
+                    # transmission for ~1 s, which would play as an annoying
+                    # echo of your own voice.
                     self.audio_blocks.clear()
                     self.audio_pos = 0
                     stereo = np.zeros((CHUNK, 2), dtype=np.float32)
@@ -1565,6 +1569,8 @@ class MiniTCI(tk.Tk):
         if not self.ptt:
             return
         self.ptt = False
+        # keep the monitor muted for the TX tail (IC-7100 unkeying + AGC decay)
+        self._tx_mute_until = time.time() + 1.2
         self.mic_level_db = -140.0
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
