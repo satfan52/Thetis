@@ -22,7 +22,9 @@ namespace Thetis
         private double _activeDigitalFrequency = 0;
         private DSPMode _activeDigitalMode = DSPMode.DIGU;
         private DSPMode _savedVoiceMode = DSPMode.USB;
-        private bool _dspTxEngaged = false;
+        private bool _dspTxEngaged = false;
+        // Branch G: suppress OnMoxChanged preemption while WE assert MOX for digital TX
+        private volatile bool _suppressMoxPreempt = false;
         private readonly object _lock = new object();
 
         /// <summary>
@@ -130,7 +132,9 @@ namespace Thetis
 
         private void OnMoxChanged(int rx, bool oldMox, bool newMox)
         {
-            if (!newMox) return;
+            if (!newMox) return;
+            // Branch G: ignore MOX transitions that WE caused for digital TX
+            if (_suppressMoxPreempt) return;
 
             // Voice MOX / VOX / Mic PTT activated! Immediately preempt any digital slice!
             int preemptedRx = -1;
@@ -251,6 +255,20 @@ namespace Thetis
 
             if (wasActive)
             {
+                // Branch G (user request): release MOX - Thetis/Red Pitaya back to RX.
+                // _suppressMoxPreempt around the transition; voice state (VFOs, mode)
+                // restoration is handled by the CIVController snapshot/restore.
+                try
+                {
+                    if (_console != null && _console.MOX && _activeDigitalRx == -1)
+                    {
+                        _suppressMoxPreempt = true;
+                        _console.MOX = false;
+                        _suppressMoxPreempt = false;
+                    }
+                }
+                catch { }
+
                 try
                 {
                     if (_dspTxEngaged && _console != null)

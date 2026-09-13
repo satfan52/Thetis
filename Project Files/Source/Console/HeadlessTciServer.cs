@@ -25,6 +25,7 @@ namespace Thetis
     public sealed class HeadlessTciManager : ITciTxAudioSource
     {
         public static HeadlessTciManager Instance { get; } = new HeadlessTciManager();
+        public static long _dbgMgrIqCalls = 0;
 
         private readonly List<HeadlessTciServer> _servers = new List<HeadlessTciServer>();
         private bool _isRunning = false;
@@ -156,6 +157,21 @@ namespace Thetis
                 cmaster.HeadlessIQPublisher = PublishIQ;
                 cmaster.HeadlessIQWantsIQ = IsAnyClientStreamingIQ;
                 _isRunning = true;
+
+                var dbg = new System.Threading.Thread(() =>
+                {
+                    long last_mgr = 0, last_srv = 0;
+                    while (true)
+                    {
+                        System.Threading.Thread.Sleep(5000);
+                        long m = System.Threading.Interlocked.Read(ref _dbgMgrIqCalls);
+                        long s = System.Threading.Interlocked.Read(ref HeadlessTciServer._dbgSrvIqCalls);
+                        TciLog.Log($"[DBG] mgrIQ={m} (+{m - last_mgr}) srvIQ={s} (+{s - last_srv})");
+                        last_mgr = m; last_srv = s;
+                    }
+                });
+                dbg.IsBackground = true;
+                dbg.Start();
             }
         }
 
@@ -209,6 +225,7 @@ namespace Thetis
         // server that owns 'rx'. Called from cmaster.OnTCIRxIQOutSamples.
         public void PublishIQ(int rx, int sampleRate, float[] interleavedIQ, int complexSamples)
         {
+            System.Threading.Interlocked.Increment(ref _dbgMgrIqCalls);
             if (!_isRunning || interleavedIQ == null) return;
 
             lock (_lock)
@@ -388,6 +405,7 @@ namespace Thetis
 
     public sealed class HeadlessTciServer
     {
+        public static long _dbgSrvIqCalls = 0;
         public int Port { get; }
         public int BaseRxIndex { get; } // 2 for 50002/50003, 4 for 50004/50005, 6 for 50006/50007
 
@@ -630,7 +648,9 @@ namespace Thetis
 
 // Branch G: publish an IQ block to all clients on this server that requested IQ.
         public void PublishIQ(int trx, int sampleRate, float[] interleavedIQ, int complexSamples)
-        {
+                {
+            System.Threading.Interlocked.Increment(ref _dbgSrvIqCalls);
+            if (trx < 0 || trx > 1 || interleavedIQ == null || complexSamples <= 0) return;
             if (trx < 0 || trx > 1 || interleavedIQ == null || complexSamples <= 0) return;
 
             lock (_clientsLock)
@@ -942,6 +962,8 @@ namespace Thetis
         // Dedicated outbound frame queue and background sender thread.
         // Guarantees network TCP writes NEVER block the real-time DSP audio callback thread.
         private readonly Queue<byte[]> _outboundFrames = new Queue<byte[]>();
+        // Branch G fix: control frames (pong) bypass the data queue entirely
+        private readonly Queue<byte[]> _controlFrames = new Queue<byte[]>();
         private readonly object _outboundLock = new object();
         private readonly AutoResetEvent _outboundEvent = new AutoResetEvent(false);
         private readonly object _sendLock = new object();
@@ -1110,12 +1132,20 @@ namespace Thetis
 
         private void SendLoop()
         {
+            TciLog.Log($"[HeadlessTCI] SendLoop started");
+            long dbg_sent = 0;
+            try
+            {
             while (!_stop && _client.Connected)
             {
                 byte[] frame = null;
                 lock (_outboundLock)
                 {
-                    if (_outboundFrames.Count > 0)
+                    if (_controlFrames.Count > 0)
+                    {
+                        frame = _controlFrames.Dequeue();   // control first, always
+                    }
+                    else if (_outboundFrames.Count > 0)
                     {
                         frame = _outboundFrames.Dequeue();
                     }
@@ -1140,6 +1170,11 @@ namespace Thetis
                 {
                     _outboundEvent.WaitOne(100);
                 }
+            }
+            }
+            finally
+            {
+                TciLog.Log($"[HeadlessTCI] SendLoop EXITED sent={dbg_sent}");
             }
         }
 
@@ -1269,6 +1304,18 @@ namespace Thetis
             _outboundEvent.Set();
         }
 
+        // Branch G fix: control frames (pong) must never be queued behind or dropped
+        // by the audio/IQ flood. They use a separate queue drained first by SendLoop.
+        private void SendControlFrameDirect(byte[] bytes)
+        {
+            if (_stop || bytes == null || bytes.Length == 0) return;
+            lock (_outboundLock)
+            {
+                _controlFrames.Enqueue(bytes);
+            }
+            _outboundEvent.Set();
+        }
+
         public void SendTextFrame(string message)
         {
             if (_stop || !_handshakeDone || string.IsNullOrEmpty(message)) return;
@@ -1286,7 +1333,7 @@ namespace Thetis
                 while (!_stop && _client.Connected)
                 {
                     int bytesRead = _stream.Read(buffer, 0, buffer.Length);
-                    if (bytesRead <= 0) break;
+                    if (bytesRead <= 0) { TciLog.Log($"[HeadlessTCI] Read returned {bytesRead} - closing"); break; }
 
                     if (!_handshakeDone)
                     {
@@ -1316,9 +1363,13 @@ namespace Thetis
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                TciLog.Log($"[HeadlessTCI] ClientLoop EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            }
             finally
             {
+                TciLog.Log($"[HeadlessTCI] ClientLoop EXITED");
                 // Release any active TX if this client was transmitting
                 int rx = _server.BaseRxIndex;
                 if (TxArbiter.Instance.ActiveDigitalRx == rx)
@@ -1466,8 +1517,11 @@ namespace Thetis
                 }
                 else if (opcode == 0x09) // Ping
                 {
+                    // Branch G fix: pong must bypass the data queue (see note below)
+                    System.Diagnostics.Debug.WriteLine("[HeadlessTCI] PING from client");
+                    TciLog.Log("[HeadlessTCI] PING from client");
                     byte[] pong = new byte[] { 0x8A, 0x00 };
-                    SendRawBytes(pong);
+                    SendControlFrameDirect(pong);
                 }
             }
         }

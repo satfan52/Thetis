@@ -285,7 +285,7 @@ class PanFall(tk.Canvas):
         bin_x = (np.arange(len(db)) - len(db) / 2) / len(db) * CANVAS_W + CANVAS_W / 2
         col = np.interp(np.arange(CANVAS_W), bin_x, db).astype(np.float32)
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
-        k = np.exp(-0.5 * (np.arange(-3, 4) / 1.2) ** 2)
+        k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
         k /= k.sum()
         col = np.convolve(col, k, mode="same").astype(np.float32)
         self._col = col
@@ -390,13 +390,15 @@ class PanFall(tk.Canvas):
         if self._pil:
             self._photo = ImageTk.PhotoImage(Image.fromarray(arr))
             self.create_image(0, 0, image=self._photo, anchor="nw")
-        else:
-            ys = getattr(self, "_ready_ys", None)
-            if ys is not None:
-                pts = []
-                for x in range(0, CANVAS_W, 3):
-                    pts += [x, ys[x]]
-                self.create_line(pts, fill=C["green"], width=1)
+        # always draw the vector trace on top: smooth connected polyline,
+        # guaranteed continuous regardless of the raster fill
+        ys = getattr(self, "_ready_ys", None)
+        if ys is not None:
+            pts = []
+            for x in range(0, CANVAS_W):
+                pts += [x, ys[x]]
+            self.create_line(pts, fill=C["green"], width=2,
+                             smooth=True, splinesteps=8)
         self._draw_overlays()
 
     def _draw_overlays(self):
