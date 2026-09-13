@@ -740,39 +740,39 @@ class MiniTCI(tk.Tk):
         self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
 
         # analog-style S-meter: S0..S9 scale + dB over S9, peak-hold needle
-        self.sm = tk.Canvas(r3, width=230, height=54, bg=C["panel"], highlightthickness=0)
-        self.sm.pack(side="left", padx=16)
-        smL = 8; smR = 222; smY = 22
+        self.sm = tk.Canvas(r3, width=310, height=68, bg=C["panel"], highlightthickness=0)
+        self.sm.pack(side="left", padx=12)
+        smL = 8; smR = 302; smY = 26
         self._sm_x0, self._sm_x1, self._sm_y = smL, smR, smY
         # colored zone bar: S0-S9 green, +0..+20 amber, >+20 red
-        self.sm.create_rectangle(smL, smY - 8, smR, smY, fill="#dddddd", outline="#999999")
+        self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="#dddddd", outline="#999999")
         # scale mapping: -127..-15 dBFS across the bar; S9 at -35
         def smx(db): return smL + (db + 127.0) / 112.0 * (smR - smL)
         x_s9 = smx(-35)
-        self.sm.create_rectangle(smL, smY - 8, x_s9, smY, fill="#3fa34d", outline="")
-        self.sm.create_rectangle(x_s9, smY - 8, smx(-25), smY, fill="#e0a63a", outline="")
-        self.sm.create_rectangle(smx(-25), smY - 8, smR, smY, fill="#c0392b", outline="")
+        self.sm.create_rectangle(smL, smY - 11, x_s9, smY, fill="#3fa34d", outline="")
+        self.sm.create_rectangle(x_s9, smY - 11, smx(-25), smY, fill="#e0a63a", outline="")
+        self.sm.create_rectangle(smx(-25), smY - 11, smR, smY, fill="#c0392b", outline="")
         # ticks + labels S1..S9, +10, +20
         for n in range(1, 10):
             db = -124.0 + n * 10.0   # S1=-114 ... S9=-34 approx per IARU-ish
             x = smx(db)
-            self.sm.create_line(x, smY - 8, x, smY - 12, fill="#444444")
-            self.sm.create_text(x, smY - 18, text=str(n), fill="#444444",
-                                font=("Segoe UI", 6))
+            self.sm.create_line(x, smY - 11, x, smY - 16, fill="#444444")
+            self.sm.create_text(x, smY - 23, text=str(n), fill="#333333",
+                                font=("Segoe UI", 8, "bold"))
         for db, lab in ((-25, "+10"), (-17, "+20")):
             x = smx(db)
-            self.sm.create_line(x, smY - 8, x, smY - 12, fill="#444444")
-            self.sm.create_text(x, smY - 18, text=lab, fill="#8a4a10",
-                                font=("Segoe UI", 6))
+            self.sm.create_line(x, smY - 11, x, smY - 16, fill="#444444")
+            self.sm.create_text(x, smY - 23, text=lab, fill="#8a4a10",
+                                font=("Segoe UI", 8, "bold"))
         self.sm.create_text(smL - 2, smY - 18, text="S", fill="#444444",
                             font=("Segoe UI", 7, "bold"))
         # needle (current) + peak-hold tick
-        self.sm_bar = self.sm.create_line(smL, smY + 2, smL, smY + 9,
-                                          fill="#1a1f29", width=2)
-        self.sm_peak = self.sm.create_line(smL, smY - 8, smL, smY - 2,
-                                           fill="#c0392b", width=2)
-        self.sm_txt = self.sm.create_text(smR, 50, text="−140 dBFS", anchor="e",
-                                          fill=C["fg"], font=("Consolas", 9, "bold"))
+        self.sm_bar = self.sm.create_line(smL, smY + 3, smL, smY + 12,
+                                          fill="#1a1f29", width=3)
+        self.sm_peak = self.sm.create_line(smL, smY - 11, smL, smY - 4,
+                                           fill="#c0392b", width=3)
+        self.sm_txt = self.sm.create_text(smR, 60, text="−140 dBFS", anchor="e",
+                                          fill=C["fg"], font=("Consolas", 11, "bold"))
         self._sm_peak_db = -140.0
         self.state_lbl = tk.Label(r3, text="● disconnected", bg=C["panel"], fg=C["dim"],
                                   font=("Segoe UI", 9))
@@ -1188,13 +1188,13 @@ class MiniTCI(tk.Tk):
         x0, x1 = self._sm_x0, self._sm_x1
         frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
         x = x0 + frac * (x1 - x0)
-        self.sm.coords(self.sm_bar, x, self._sm_y + 2, x, self._sm_y + 9)
+        self.sm.coords(self.sm_bar, x, self._sm_y + 3, x, self._sm_y + 12)
         # peak hold: rises instantly, decays slowly
         pk = max(db, self._sm_peak_db - 0.4)
         self._sm_peak_db = clamp(pk, -140.0, 0.0)
         pf = clamp((self._sm_peak_db + 127.0) / 112.0, 0.0, 1.0)
         px = x0 + pf * (x1 - x0)
-        self.sm.coords(self.sm_peak, px, self._sm_y - 8, px, self._sm_y - 2)
+        self.sm.coords(self.sm_peak, px, self._sm_y - 11, px, self._sm_y - 4)
         # S-unit readout
         s_units = max(0.0, min(9.0, (db + 115.0) / 10.0))
         over = db - (-35.0)
@@ -1223,11 +1223,22 @@ class MiniTCI(tk.Tk):
         if not self.pan.center_hz:
             self.pan.center_hz = self.freq_hz
         elif abs(self.freq_hz - self.pan.center_hz) > self.pan.span * 0.48:
-            # VFO about to leave the visible window: recenter. Tuning WITHIN the
-            # window never moves the display - the waterfall stays anchored to
-            # absolute RF so you can tune around signals (Thetis model).
+            # VFO about to leave the visible window: recenter. The waterfall is
+            # anchored to ABSOLUTE RF: shift the stored rows by the pixel delta
+            # so real-world signals stay in place (only the axis labels move).
+            df = self.freq_hz - self.pan.center_hz
+            px = int(round(df / max(1.0, self.pan.span) * CANVAS_W))
+            wf = self.pan._wf_img
+            if abs(px) < CANVAS_W:
+                if px > 0:
+                    wf[:, :-px] = wf[:, px:]
+                    wf[:, -px:] = 0
+                else:
+                    wf[:, -px:] = wf[:, :px]
+                    wf[:, :-px] = 0
+            else:
+                wf[:] = 0
             self.pan.center_hz = self.freq_hz
-            self.pan._wf_img[:] = 0
         self.send(f"vfo:0,0,{self.freq_hz};")
 
     def _tune_direct(self):
