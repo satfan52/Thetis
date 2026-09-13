@@ -569,6 +569,7 @@ class MiniTCI(tk.Tk):
         self.volume = 0.25
         self.mic_gain = 0.5
         self.smeter = -140.0
+        self.tx_tail_s = 0.8
         self.mic_stream = None
         self.tx_audio_q = collections.deque(maxlen=64)
         self.chrono_reqs = collections.deque()
@@ -610,6 +611,7 @@ class MiniTCI(tk.Tk):
             "zoom": self.zoom_var.get(),
             "wf_gain": self.wf_gain_var.get(),
             "ctun": self.ctun_var.get(),
+            "tx_tail": self.tx_tail_s,
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
             "host": getattr(self, "host_var", None).get() if hasattr(self, "host_var") else None,
@@ -648,6 +650,9 @@ class MiniTCI(tk.Tk):
             # agc_auto checkbox removed (AGC state = mode dropdown)
             if s.get("ctun") is not None:
                 self.ctun_var.set(bool(s["ctun"]))
+            if s.get("tx_tail") is not None:
+                self.tx_tail_s = float(s["tx_tail"])
+                self.txtail_var.set(self.tx_tail_s)
             if s.get("host") and hasattr(self, "host_var"):
                 self.host_var.set(s["host"])
         except (KeyError, ValueError, tk.TclError):
@@ -672,7 +677,8 @@ class MiniTCI(tk.Tk):
                 (self.yzero_scale if hasattr(self, "yzero_scale") else None, self.yzero_var, -40, 40),
                 (self.yscale_scale if hasattr(self, "yscale_scale") else None, self.yscale_var, 20, 90),
                 (self.zoom_scale if hasattr(self, "zoom_scale") else None, self.zoom_var, 0, 100),
-                (self.wf_scale if hasattr(self, "wf_scale") else None, self.wf_gain_var, 0, 100)):
+                (self.wf_scale if hasattr(self, "wf_scale") else None, self.wf_gain_var, 0, 100),
+                (self.txtail_scale if hasattr(self, "txtail_scale") else None, self.txtail_var, 0.0, 3.0)):
             if scale is not None:
                 wheel(scale, var, lo, hi)
 
@@ -861,6 +867,13 @@ class MiniTCI(tk.Tk):
                                  font=("Segoe UI", 10, "bold"))
         self.ptt_btn.bind("<ButtonPress-1>", lambda e: self.ptt_on())
         self.ptt_btn.bind("<ButtonRelease-1>", lambda e: self.ptt_off())
+        ttk.Label(r4, text="TX tail:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.txtail_var = tk.DoubleVar(value=0.8)
+        self.txtail_scale = ttk.Scale(r4, from_=0.0, to=3.0, variable=self.txtail_var,
+                                      length=110, command=self._txtail_changed)
+        self.txtail_scale.pack(side="left", padx=4)
+        self.txtail_lbl = ttk.Label(r4, text="0.8 s")
+        self.txtail_lbl.pack(side="left")
         self.ptt_btn.pack(side="left")
         self.bind("<KeyPress-space>", self._space_dn)
         self.bind("<KeyRelease-space>", self._space_up)
@@ -980,6 +993,13 @@ class MiniTCI(tk.Tk):
         # The server-side slice AF gain is now Thetis-like (0.5), so the slider
         # is a plain output attenuator: 0..100 -> 0..1.2 (+1.6 dB max headroom)
         self.volume = (float(v) / 100.0) * 1.2
+
+    def _txtail_changed(self, v):
+        try:
+            self.tx_tail_s = float(v)
+        except (ValueError, tk.TclError):
+            return
+        self.txtail_lbl.config(text=f"{self.tx_tail_s:.1f} s")
 
     def _mic_changed(self, v):
         self.mic_gain = float(v) / 100.0
@@ -1570,7 +1590,7 @@ class MiniTCI(tk.Tk):
             return
         self.ptt = False
         # keep the monitor muted for the TX tail (IC-7100 unkeying + AGC decay)
-        self._tx_mute_until = time.time() + 0.8
+        self._tx_mute_until = time.time() + self.tx_tail_s
         self.mic_level_db = -140.0
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
