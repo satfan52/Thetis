@@ -278,6 +278,27 @@ class PanFall(tk.Canvas):
     def x2f(self, x):
         return (x - CANVAS_W / 2) / CANVAS_W * self.span + self.center_hz
 
+    def shift_waterfall(self, df_hz):
+        """Slide the ENTIRE stored waterfall (past rows included) by the pixel
+        delta of a frequency change, like Thetis: when the VFO moves +df, every
+        row's content moves -df*px, so past data stays coherent with the axis.
+        The exposed edge is filled by repeating the last column (smear) until
+        real data replaces it."""
+        px = int(round(-df_hz / max(1.0, self.span) * CANVAS_W))
+        if px == 0 or abs(px) >= CANVAS_W:
+            if abs(px) >= CANVAS_W:
+                self._wf_img[:] = 0
+            return
+        wf = self._wf_img
+        if px > 0:
+            edge = wf[:, :1]          # leftmost column repeats into the void
+            wf[:, px:] = wf[:, :-px]
+            wf[:, :px] = edge
+        else:
+            edge = wf[:, -1:]
+            wf[:, :px] = wf[:, -px:]
+            wf[:, px:] = edge
+
     def update(self, iq, data_center=None):
         n = len(iq) // 2
         if n < 32:
@@ -1229,9 +1250,13 @@ class MiniTCI(tk.Tk):
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
-        self.pan.vfo_hz = self.freq_hz
         # Thetis model: the display is always centered on the VFO. Tuning slides
-        # the whole panafall; the waterfall scrolls under the moving axis.
+        # the WHOLE panafall - including the past waterfall rows - by the pixel
+        # delta of the frequency change, exactly like the Thetis display.
+        df = self.freq_hz - self.pan.center_hz
+        if self.pan.center_hz and df:
+            self.pan.shift_waterfall(df)
+        self.pan.vfo_hz = self.freq_hz
         self.pan.center_hz = self.freq_hz
         self.pan.data_center_hz = self.freq_hz
         self.send(f"vfo:0,0,{self.freq_hz};")
