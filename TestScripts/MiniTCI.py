@@ -584,6 +584,7 @@ class MiniTCI(tk.Tk):
         self.iq_q = queue.Queue(maxsize=4)
 
         self._build_ui()
+        self._bind_slider_wheel()
         # size the window exactly to the widgets (no dead space)
         self.update_idletasks()
         self.geometry("")
@@ -651,6 +652,29 @@ class MiniTCI(tk.Tk):
                 self.host_var.set(s["host"])
         except (KeyError, ValueError, tk.TclError):
             pass
+
+    def _bind_slider_wheel(self):
+        """Bind mouse wheel to every ttk.Scale: wheel up = increase, down =
+        decrease by 2% of range (hold Shift for fine 0.5%)."""
+        def wheel(scale, var, lo, hi):
+            def handler(e):
+                step = (hi - lo) * (0.005 if (e.state & 0x0001) else 0.02)
+                d = step if getattr(e, "delta", 120) > 0 else -step
+                var.set(min(hi, max(lo, var.get() + d)))
+                return "break"
+            scale.bind("<MouseWheel>", handler)
+            scale.bind("<Button-4>", handler)
+            scale.bind("<Button-5>", handler)
+        for scale, var, lo, hi in (
+                (self.vol_scale if hasattr(self, "vol_scale") else None, self.vol_var, 0, 100),
+                (self.mic_scale if hasattr(self, "mic_scale") else None, self.mic_var, 0, 100),
+                (self.agc_gain_scale, self.agc_gain_var, -20, 120),
+                (self.yzero_scale if hasattr(self, "yzero_scale") else None, self.yzero_var, -40, 40),
+                (self.yscale_scale if hasattr(self, "yscale_scale") else None, self.yscale_var, 20, 90),
+                (self.zoom_scale if hasattr(self, "zoom_scale") else None, self.zoom_var, 0, 100),
+                (self.wf_scale if hasattr(self, "wf_scale") else None, self.wf_gain_var, 0, 100)):
+            if scale is not None:
+                wheel(scale, var, lo, hi)
 
     def _bind_settings_autosave(self):
         # save on every user-visible change (traces already registered for vars;
@@ -753,30 +777,35 @@ class MiniTCI(tk.Tk):
         rz = ttk.Frame(self); rz.pack(fill="x", padx=10, pady=(0, 2))
         ttk.Label(rz, text="Y zero:").pack(side="left")
         self.yzero_var = tk.DoubleVar(value=0)
-        ttk.Scale(rz, from_=-40, to=40, variable=self.yzero_var, length=130,
-                  command=self._yzero_changed).pack(side="left", padx=4)
+        self.yzero_scale = ttk.Scale(rz, from_=-40, to=40, variable=self.yzero_var, length=130,
+                  command=self._yzero_changed)
+        self.yzero_scale.pack(side="left", padx=4)
         ttk.Label(rz, text="Y scale:").pack(side="left", padx=(14, 0))
         self.yscale_var = tk.DoubleVar(value=42)
-        ttk.Scale(rz, from_=20, to=90, variable=self.yscale_var, length=130,
-                  command=self._yscale_changed).pack(side="left", padx=4)
+        self.yscale_scale = ttk.Scale(rz, from_=20, to=90, variable=self.yscale_var, length=130,
+                  command=self._yscale_changed)
+        self.yscale_scale.pack(side="left", padx=4)
         ttk.Label(rz, text="Zoom:").pack(side="left", padx=(14, 0))
         self.zoom_var = tk.DoubleVar(value=0)
-        ttk.Scale(rz, from_=0, to=100, variable=self.zoom_var, length=130,
-                  command=self._zoom_changed).pack(side="left", padx=4)
+        self.zoom_scale = ttk.Scale(rz, from_=0, to=100, variable=self.zoom_var, length=130,
+                  command=self._zoom_changed)
+        self.zoom_scale.pack(side="left", padx=4)
         self.zoom_lbl = ttk.Label(rz, text="96 kHz")
         self.zoom_lbl.pack(side="left", padx=6)
         ttk.Label(rz, text="WF intensity:").pack(side="left", padx=(14, 0))
         self.wf_gain_var = tk.DoubleVar(value=50)
-        ttk.Scale(rz, from_=0, to=100, variable=self.wf_gain_var, length=130,
-                  command=self._wf_gain_changed).pack(side="left", padx=4)
+        self.wf_scale = ttk.Scale(rz, from_=0, to=100, variable=self.wf_gain_var, length=130,
+                  command=self._wf_gain_changed)
+        self.wf_scale.pack(side="left", padx=4)
 
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
         ttk.Label(r3, text="Volume:").pack(side="left")
         self.vol_var = tk.DoubleVar(value=70)
-        ttk.Scale(r3, from_=0, to=100, variable=self.vol_var, length=140,
-                  command=self._vol_changed).pack(side="left", padx=4)
-        self.volume = 0.7 * 2.4
+        self.vol_scale = ttk.Scale(r3, from_=0, to=100, variable=self.vol_var, length=140,
+                  command=self._vol_changed)
+        self.vol_scale.pack(side="left", padx=4)
+        self.volume = 0.7 * 1.2
 
         self._out_devs = list_output_devices()
         self._in_devs = list_input_devices()
@@ -847,7 +876,7 @@ class MiniTCI(tk.Tk):
         self.in_dev_var.trace_add("write", lambda *_: self._reopen_input())
         ttk.Label(r4, text="Mic gain:").pack(side="left")
         self.mic_var = tk.DoubleVar(value=50)
-        ttk.Scale(r4, from_=0, to=100, variable=self.mic_var, length=120,
+        self.mic_scale = ttk.Scale(r4, from_=0, to=100, variable=self.mic_var, length=120,
                   command=self._mic_changed).pack(side="left", padx=4)
         self.mic_gain = 0.5
 
@@ -933,9 +962,9 @@ class MiniTCI(tk.Tk):
                 time.sleep(0.1)
 
     def _vol_changed(self, v):
-        # makeup gain: server ships -26 dB calibrated audio; +6 dB over previous
-        # mapping (1.2 -> 2.4) so quiet signals are clearly audible
-        self.volume = (float(v) / 100.0) * 4.8
+        # The server-side slice AF gain is now Thetis-like (0.5), so the slider
+        # is a plain output attenuator: 0..100 -> 0..1.2 (+1.6 dB max headroom)
+        self.volume = (float(v) / 100.0) * 1.2
 
     def _mic_changed(self, v):
         self.mic_gain = float(v) / 100.0
