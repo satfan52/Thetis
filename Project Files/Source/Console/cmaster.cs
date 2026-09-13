@@ -572,18 +572,24 @@ namespace Thetis
             TciLog.Log($"CMLoadRouterAll: NumReceivers={NetworkIO.NumReceivers}, model={model}, protocol={NetworkIO.CurrentRadioProtocol}");
             if (NetworkIO.NumReceivers == 8)
             {
+                // DDC-to-stream mapping must match Thetis's NCO (tuning) assignments:
+                //   DDC0: NCO = VFO A (RX1)          -> pebuff[0] = RX1 display
+                //   DDC3: NCO = VFO B (RX2, via VFOfreq(3,...) in UpdateRX2DDSFreq)
+                //                               -> pebuff[1] = RX2 display
+                //   DDC1, DDC2, DDC4-7: headless RX3-RX8 (NCO set by HeadlessSliceMgr)
+                // The previous callid=s mapping put DDC1 (NCO=VFO A) into pebuff[1],
+                // so the RX2 panafall showed VFO A's spectrum labelled as VFO B.
+                int[] ddc_to_stream = new int[8] { 0, 2, 3, 1, 4, 5, 6, 7 };
+                //          DDC:  0  1  2  3  4  5  6  7
+                // stream:       0  2  3  1  4  5  6  7
                 int[] EIGHT_DDC_Function = new int[64];
                 int[] EIGHT_DDC_Callid = new int[64];
-                // callid = stream id within ChannelMaster (inid(0, s) = receiver s's
-                // spec/panadapter stream). DDC s -> stream s: RX1 display reads
-                // stream 0, RX2 display reads stream 1, etc. (callid = 2*s crashes -
-                // pebuff[] only has cmSTREAMS=11 entries; stream ids are 0..10.)
                 for (int s = 0; s < 8; s++)
                 {
                     for (int v = 0; v < 8; v++)
                     {
                         EIGHT_DDC_Function[s * 8 + v] = 1;
-                        EIGHT_DDC_Callid[s * 8 + v] = s;
+                        EIGHT_DDC_Callid[s * 8 + v] = ddc_to_stream[s];
                     }
                 }
                 int[] EIGHT_DDC_nstreams = new int[8] { 1, 1, 1, 1, 1, 1, 1, 1 };

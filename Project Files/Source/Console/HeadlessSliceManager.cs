@@ -74,6 +74,24 @@ namespace Thetis
             }
         }
 
+        // Branch G fix: DDC-to-RX mapping must match Thetis's NCO assignment and
+        // the router table (see cmaster.CMLoadRouterAll). Thetis uses:
+        //   DDC0 = RX1 (VFO A), DDC3 = RX2 (VFO B).
+        // Headless slices use the remaining DDCs:
+        //   headless rx 1 (RX2)  -> DDC3 (matches Thetis's RX2)
+        //   headless rx 2 (RX3)  -> DDC1
+        //   headless rx 3 (RX4)  -> DDC2
+        //   headless rx 4 (RX5)  -> DDC4
+        //   headless rx 5 (RX6)  -> DDC5
+        //   headless rx 6 (RX7)  -> DDC6
+        //   headless rx 7 (RX8)  -> DDC7
+        private static readonly int[] RxToDdc = new int[8] { -1, 3, 1, 2, 4, 5, 6, 7 };
+
+        public static int GetDdcForRx(int rx)
+        {
+            return (rx >= 0 && rx < 8) ? RxToDdc[rx] : -1;
+        }
+
         [HandleProcessCorruptedStateExceptions]
         [SecurityCritical]
         public void SetFrequency(int rx, double freqMHz)
@@ -89,7 +107,9 @@ namespace Thetis
             {
                 try
                 {
-                    NetworkIO.VFOfreq(rx, freqMHz, 0);
+                    int ddc = GetDdcForRx(rx);
+                    if (ddc >= 0)
+                        NetworkIO.VFOfreq(ddc, freqMHz, 0);
                 }
                 catch { }
             }
@@ -181,7 +201,8 @@ namespace Thetis
                             // Dynamically query hardware sample rate
                             int inRate = cmaster.GetInputRate(0, 0);
                             if (inRate <= 0) inRate = 48000;
-                            NetworkIO.SetDDCRate(rx, inRate);
+                            int ddc = GetDdcForRx(rx);
+                            if (ddc >= 0) NetworkIO.SetDDCRate(ddc, inRate);
                             cmaster.SetXcmInrate(rx, inRate);
 
                             // Configure DSP parameters for slice channel
@@ -207,7 +228,8 @@ namespace Thetis
                 {
                     try
                     {
-                        NetworkIO.VFOfreq(rx, slice.FrequencyMHz, 0);
+                        int ddcVF = GetDdcForRx(rx);
+                        if (ddcVF >= 0) NetworkIO.VFOfreq(ddcVF, slice.FrequencyMHz, 0);
                     }
                     catch { }
 
