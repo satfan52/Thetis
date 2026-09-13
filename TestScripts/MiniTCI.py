@@ -13,6 +13,8 @@ Run:  python3 MiniTCI.py
 
 import asyncio
 import collections
+import json
+import os
 import time
 import queue
 import struct
@@ -507,8 +509,7 @@ class MiniTCI(tk.Tk):
         super().__init__()
         self.title("MiniTCI — simplified Thetis radio")
         self.configure(bg="#cfd4dd")
-        self.geometry("950x660")
-        self.minsize(920, 620)
+        self.resizable(False, False)   # fixed-size transceiver panel
 
         self.client = None
         self.connected = False
@@ -533,8 +534,84 @@ class MiniTCI(tk.Tk):
         self.iq_q = queue.Queue(maxsize=4)
 
         self._build_ui()
+        # size the window exactly to the widgets (no dead space)
+        self.update_idletasks()
+        self.geometry("")
+        self._load_settings()
         self._open_output()
         self.after(50, self._poll)
+        self._bind_settings_autosave()
+
+    # ---------------- settings persistence ----------------
+    SETTINGS_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                                 "MiniTCI", "settings.json")
+
+    def _settings_snapshot(self):
+        return {
+            "freq": self.freq_hz,
+            "mode": self.mode_var.get(),
+            "volume": self.vol_var.get(),
+            "mic_gain": self.mic_var.get(),
+            "agc_mode": self.agc_var.get(),
+            "agc_gain": self.agc_gain_var.get(),
+            "agc_auto": self.agc_auto_var.get(),
+            "y_zero": self.yzero_var.get(),
+            "y_scale": self.yscale_var.get(),
+            "zoom": self.zoom_var.get(),
+            "out_dev": self.out_dev_var.get(),
+            "in_dev": self.in_dev_var.get(),
+            "host": getattr(self, "host_var", None).get() if hasattr(self, "host_var") else None,
+        }
+
+    def _save_settings(self, *_):
+        try:
+            os.makedirs(os.path.dirname(self.SETTINGS_PATH), exist_ok=True)
+            with open(self.SETTINGS_PATH, "w") as f:
+                json.dump(self._settings_snapshot(), f, indent=1)
+        except OSError:
+            pass
+
+    def _load_settings(self):
+        try:
+            with open(self.SETTINGS_PATH) as f:
+                s = json.load(f)
+        except (OSError, ValueError):
+            return
+        try:
+            if s.get("freq"):
+                self.freq_hz = int(s["freq"])
+                self._fmt_freq()
+                self.pan.vfo_hz = self.freq_hz
+                self.pan.center_hz = self.freq_hz
+            for key, var in (("mode", self.mode_var), ("agc_mode", self.agc_var),
+                             ("out_dev", self.out_dev_var), ("in_dev", self.in_dev_var)):
+                if s.get(key):
+                    var.set(s[key])
+            for key, var in (("volume", self.vol_var), ("mic_gain", self.mic_var),
+                             ("agc_gain", self.agc_gain_var), ("y_zero", self.yzero_var),
+                             ("y_scale", self.yscale_var), ("zoom", self.zoom_var)):
+                if s.get(key) is not None:
+                    var.set(float(s[key]))
+            if s.get("agc_auto") is not None:
+                self.agc_auto_var.set(bool(s["agc_auto"]))
+            if s.get("host") and hasattr(self, "host_var"):
+                self.host_var.set(s["host"])
+        except (KeyError, ValueError, tk.TclError):
+            pass
+
+    def _bind_settings_autosave(self):
+        # save on every user-visible change (traces already registered for vars;
+        # add a global save on mouse release / focus out via periodic snapshot)
+        def poll_save():
+            try:
+                snap = self._settings_snapshot()
+            except Exception:
+                snap = None
+            if snap != getattr(self, "_last_snap", None):
+                self._last_snap = snap
+                self._save_settings()
+            self.after(1500, poll_save)
+        self.after(1500, poll_save)
 
     # ---------------- build UI ----------------
     def _build_ui(self):
@@ -589,7 +666,7 @@ class MiniTCI(tk.Tk):
 
         # --- row 2: frequency
         r2 = ttk.Frame(self); r2.pack(fill="x", padx=10, pady=2)
-        self.freq_lbl = tk.Label(r2, text="14.074.000 kHz", bg=C["panel"], fg=C["tune"],
+        self.freq_lbl = tk.Label(r2, text="14.074.000", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
         self.freq_lbl.pack(side="left", padx=(2, 14))
         self.freq_lbl.bind("<MouseWheel>", self._freq_wheel)
