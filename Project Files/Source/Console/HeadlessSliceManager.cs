@@ -23,6 +23,8 @@ namespace Thetis
         public int FilterHigh { get; set; } = 3000;
         public bool IsActive { get; set; } = false;
         public bool IsStreamingAudio { get; set; } = false;
+        // Branch G: IQ streaming is requested independently of audio
+        public bool IsStreamingIQ { get; set; } = false;
         public double AudioGain { get; set; } = 0.05;
 
         public HeadlessSlice(int rxIndex)
@@ -221,6 +223,45 @@ namespace Thetis
             SliceStreamingChanged?.Invoke(rx, true);
         }
 
+        // Branch G: activate a slice for IQ streaming only (no audio client).
+        // CW Skimmer requests IQ without audio; the WDSP channel and DDC must be
+        // running for IQ to flow, so this shares the same activation core.
+        [HandleProcessCorruptedStateExceptions]
+        [SecurityCritical]
+        public void ActivateIQ(int rx)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.IsStreamingIQ = true;
+                if (slice.IsActive) return;
+            }
+            // reuse the audio activation path (idempotent - it just flags streaming audio
+            // true as well, which is harmless; the client simply never consumes it)
+            ActivateAudio(rx);
+            lock (_lock)
+            {
+                if (_slices.TryGetValue(rx, out HeadlessSlice s2))
+                {
+                    s2.IsStreamingAudio = false;
+                    s2.IsStreamingIQ = true;
+                }
+            }
+        }
+
+        // Branch G: called when the last IQ client disconnects/stops.
+        // Deactivates the slice only if audio is not streaming either.
+        public void DeactivateIQ(int rx)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.IsStreamingIQ = false;
+                if (slice.IsStreamingAudio) return;
+            }
+            DeactivateAudio(rx);
+        }
+
         public bool IsAnyStreaming
         {
             get
@@ -263,6 +304,8 @@ namespace Thetis
                 if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
 
                 slice.IsStreamingAudio = false;
+                // Branch G: keep the WDSP channel alive while IQ streaming continues
+                if (slice.IsStreamingIQ) return;
 
                 if (slice.IsActive)
                 {

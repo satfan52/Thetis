@@ -222,6 +222,29 @@ def test_iq_streaming(port=50003, duration=6.0):
                f"{stats2[0]['count']} frames in 2s window after stop")
 
 
+def test_iq_only_no_audio(port=50003, duration=5.0):
+    """
+    Branch G regression test: IQ must flow on a slice that has NEVER had
+    audio_start (CW Skimmer scenario). Fails if slice activation still
+    depends on the audio path.
+    """
+    name = f"IQ-only (no audio_start) on port {port}"
+    with connect(f"ws://127.0.0.1:{port}/") as ws:
+        drain_banner(ws)
+        ws.send("iq_samplerate:96000;")
+        time.sleep(0.2)
+        ws.send("iq_start:0;")
+        time.sleep(0.3)
+        stats, _ = collect(ws, duration, {0, 1})
+        iq_n = stats[0]["count"]
+        au_n = stats[1]["count"]
+        ok = iq_n > 10 and au_n == 0
+        record("IQ-only slice activation (no audio client)", ok,
+               f"IQ={iq_n} frames, audio={au_n} frames (must be 0) in {duration:.0f}s")
+        ws.send("iq_stop:0;")
+        time.sleep(0.5)
+
+
 def test_dds(port=50003):
     name = "DDS set + query"
     with connect(f"ws://127.0.0.1:{port}/") as ws:
@@ -355,6 +378,7 @@ def main():
 
     test_banner_and_iq_negotiation(port)
     test_iq_streaming(port)
+    test_iq_only_no_audio(port)
     test_dds(port)
     test_smeter = test_smeter_with_retry(port)
     test_agc(port)

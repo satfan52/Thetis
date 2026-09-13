@@ -1327,7 +1327,11 @@ namespace Thetis
                 }
 
                 _server.RemoveClient(this);
-                Close();
+                // Branch G fix: release IQ-only slice activation if no IQ clients remain
+                if (!_server.IsTrxStreamingIQ(0))
+                {
+                    HeadlessSliceManager.Instance.DeactivateIQ(_server.BaseRxIndex);
+                }
             }
         }
 
@@ -1957,7 +1961,13 @@ namespace Thetis
                     case "iq_start":
                         if (args.Length > 0 && int.TryParse(args[0], out int iqTrxStart))
                         {
-                            if (iqTrxStart >= 0 && iqTrxStart <= 1) _wantsIQ[iqTrxStart] = true;
+                            if (iqTrxStart >= 0 && iqTrxStart <= 1)
+                            {
+                                _wantsIQ[iqTrxStart] = true;
+                                // Branch G fix: ensure the slice/DDC is running even when
+                                // no audio client is connected (CW Skimmer case)
+                                HeadlessSliceManager.Instance.ActivateIQ(_server.BaseRxIndex);
+                            }
                             SendTextFrame($"iq_start:{iqTrxStart};");
                         }
                         break;
@@ -1967,6 +1977,10 @@ namespace Thetis
                         {
                             if (iqTrxStop >= 0 && iqTrxStop <= 1) _wantsIQ[iqTrxStop] = false;
                             SendTextFrame($"iq_stop:{iqTrxStop};");
+                            if (!_server.IsTrxStreamingIQ(0))
+                            {
+                                HeadlessSliceManager.Instance.DeactivateIQ(_server.BaseRxIndex);
+                            }
                         }
                         break;
 
