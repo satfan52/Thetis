@@ -437,24 +437,27 @@ class PanFall(tk.Canvas):
             x2 = self.f2x(self.vfo_hz + self.filt[1])
             if x2 > x1 and x2 > 0 and x1 < CANVAS_W:
                 x1c, x2c = max(0, int(x1)), min(CANVAS_W, int(x2))
-                # clearly visible passband: warm fill + bright edges + edge handles
+                # unmissable passband: bright amber semi-transparent + thick edges
                 self.create_rectangle(x1c, 0, x2c, PAN_H,
-                                      fill="#8a6a14", outline=C["tune"], width=1)
-                # edge grab handles (small bright squares, Thetis/SDR style)
+                                      fill="#a07018", outline="",
+                                      stipple="gray50")
+                self.create_rectangle(x1c, 0, x2c, PAN_H,
+                                      fill="", outline="#ffd050", width=2)
+                # edge grab handles - BIG bright tabs
                 for hx in (x1c, x2c):
-                    self.create_rectangle(hx - 2, PAN_H // 2 - 8,
-                                          hx + 2, PAN_H // 2 + 8,
-                                          fill=C["tune"], outline="#ffffff")
-                # center marker line inside the passband
+                    self.create_rectangle(hx - 3, PAN_H // 2 - 12,
+                                          hx + 3, PAN_H // 2 + 12,
+                                          fill="#ffd050", outline="#ffffff", width=1)
+                # center marker
                 vfo_x = self.f2x(self.vfo_hz)
                 if x1c < vfo_x < x2c:
                     self.create_line(vfo_x, 0, vfo_x, PAN_H,
-                                     fill="#ffffff", dash=(2, 2))
+                                     fill="#ffffff", dash=(3, 3))
                 bw = self.filt[1] - self.filt[0]
-                if x2c - x1c > 40:
-                    self.create_text((x1c + x2c) / 2, 10,
-                                     text=f"{bw:.0f} Hz",
-                                     fill="#ffffff", font=("Segoe UI", 7, "bold"))
+                label_x = max(x1c + 30, min(x2c - 30, (x1c + x2c) / 2))
+                self.create_text(label_x, 12,
+                                 text=f"{bw:.0f} Hz",
+                                 fill="#ffd050", font=("Segoe UI", 8, "bold"))
         # vfo line
         if self.center_hz:
             x = self.f2x(self.vfo_hz)
@@ -709,7 +712,7 @@ class MiniTCI(tk.Tk):
     def _vol_changed(self, v):
         # makeup gain: server ships -26 dB calibrated audio; +6 dB over previous
         # mapping (1.2 -> 2.4) so quiet signals are clearly audible
-        self.volume = (float(v) / 100.0) * 2.4
+        self.volume = (float(v) / 100.0) * 4.8
 
     def _mic_changed(self, v):
         self.mic_gain = float(v) / 100.0
@@ -740,7 +743,7 @@ class MiniTCI(tk.Tk):
         # raw bytes instead (O(1) append) and convert once per block.
         try:
             self._iq_acc_bytes.extend(data.tobytes())
-            target = 8192 * 4  # 8192 interleaved float32 values
+            target = 16384 * 4  # 16384 interleaved values = 8192 complex = 11.7 Hz/bin @ 96k
             while len(self._iq_acc_bytes) >= target:
                 block = np.frombuffer(bytes(self._iq_acc_bytes[:target]), dtype="<f4")
                 del self._iq_acc_bytes[:target]

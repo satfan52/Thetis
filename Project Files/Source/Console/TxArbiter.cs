@@ -229,20 +229,6 @@ namespace Thetis
                 }
             }
             catch { }
-            // Branch G (user request): assert MOX so Thetis/Red Pitaya actually
-            // TRANSMITS on the target frequency (previously RX-only full duplex -
-            // RF only came from the IC-7100). Also makes the Thetis MOX indicator
-            // reflect the transmission and enables the TUN audio path.
-            try
-            {
-                if (_console != null && !_console.MOX)
-                {
-                    _suppressMoxPreempt = true;
-                    _console.MOX = true;
-                    _suppressMoxPreempt = false;
-                }
-            }
-            catch { }
             // Steer IC-7100 to slice frequency and DATA mode, force Simplex, then key CI-V PTT
             try
             {
@@ -272,19 +258,6 @@ namespace Thetis
 
             if (wasActive)
             {
-                // Branch G (user request): release MOX - Thetis/Red Pitaya back to RX.
-                // _suppressMoxPreempt around the transition; voice state (VFOs, mode)
-                // restoration is handled by the CIVController snapshot/restore.
-                try
-                {
-                    if (_console != null && _console.MOX && _activeDigitalRx == -1)
-                    {
-                        _suppressMoxPreempt = true;
-                        _console.MOX = false;
-                        _suppressMoxPreempt = false;
-                    }
-                }
-                catch { }
 
                 try
                 {

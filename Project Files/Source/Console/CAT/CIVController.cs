@@ -2680,7 +2680,10 @@ namespace Thetis
                 SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, civMode, civFilter));
                 SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, dataMode, civFilter));
 
-                // 5. Assert PTT
+                // 5. Assert PTT - with a settling delay so the IC-7100's NCO/freq
+                //    change has completed before we key (otherwise it transmits on
+                //    the old frequency intermittently)
+                System.Threading.Thread.Sleep(80);
                 byte[] pttFrame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, true);
                 SendFrame(pttFrame);
                 _lastSentPtt = true;
