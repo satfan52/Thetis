@@ -592,8 +592,7 @@ class MiniTCI(tk.Tk):
                              ("y_scale", self.yscale_var), ("zoom", self.zoom_var)):
                 if s.get(key) is not None:
                     var.set(float(s[key]))
-            if s.get("agc_auto") is not None:
-                self.agc_auto_var.set(bool(s["agc_auto"]))
+            # agc_auto checkbox removed (AGC state = mode dropdown)
             if s.get("host") and hasattr(self, "host_var"):
                 self.host_var.set(s["host"])
         except (KeyError, ValueError, tk.TclError):
@@ -653,16 +652,16 @@ class MiniTCI(tk.Tk):
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
         self.agc_var = tk.StringVar(value="MED")
         self.agc_box = ttk.Combobox(r1, textvariable=self.agc_var, width=8, state="readonly",
-                                    values=["OFF", "FAST", "MED", "SLOW", "LONG", "CUSTOM"])
+                                    values=["OFF", "FAST", "MED", "SLOW", "LONG"])
         self.agc_box.pack(side="left")
         self.agc_var.trace_add("write", self._agc_changed)
-        self.agc_auto_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(r1, text="Auto", variable=self.agc_auto_var,
-                        command=self._agc_auto_changed).pack(side="left", padx=(6, 2))
-        ttk.Label(r1, text="Gain:", padding=(8, 0, 2, 0)).pack(side="left")
+        # Gain slider: only meaningful when AGC = OFF (fixed-gain / manual mode)
+        ttk.Label(r1, text="Gain (manual):", padding=(8, 0, 2, 0)).pack(side="left")
         self.agc_gain_var = tk.DoubleVar(value=40)
-        ttk.Scale(r1, from_=-20, to=120, variable=self.agc_gain_var, length=90,
-                  command=self._agc_gain_changed).pack(side="left", padx=2)
+        self.agc_gain_scale = ttk.Scale(r1, from_=-20, to=120, variable=self.agc_gain_var,
+                  length=90, command=self._agc_gain_changed)
+        self.agc_gain_scale.pack(side="left", padx=2)
+        self.agc_gain_scale.state(["disabled"])
 
         # --- row 2: frequency
         r2 = ttk.Frame(self); r2.pack(fill="x", padx=10, pady=2)
@@ -678,6 +677,7 @@ class MiniTCI(tk.Tk):
         ttk.Label(r2, text="Direct kHz:", padding=(12, 0, 2, 0)).pack(side="left")
         self.tune_entry = ttk.Entry(r2, width=10)
         self.tune_entry.pack(side="left")
+        self.tune_entry.bind("<Return>", lambda e: self._tune_direct())
         ttk.Button(r2, text="Go", width=4, command=self._tune_direct).pack(side="left", padx=4)
 
         # --- panadapter + waterfall
@@ -726,11 +726,41 @@ class MiniTCI(tk.Tk):
                      values=out_names).pack(side="left", padx=2)
         self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
 
-        self.sm = tk.Canvas(r3, width=210, height=26, bg=C["panel"], highlightthickness=0)
-        self.sm.pack(side="left", padx=20)
-        self.sm_bar = self.sm.create_rectangle(2, 6, 2, 22, fill=C["green"], width=0)
-        self.sm_txt = self.sm.create_text(206, 14, text="−140 dBFS", anchor="e",
-                                          fill=C["fg"], font=("Consolas", 9))
+        # analog-style S-meter: S0..S9 scale + dB over S9, peak-hold needle
+        self.sm = tk.Canvas(r3, width=230, height=40, bg=C["panel"], highlightthickness=0)
+        self.sm.pack(side="left", padx=16)
+        smL = 8; smR = 222; smY = 22
+        self._sm_x0, self._sm_x1, self._sm_y = smL, smR, smY
+        # colored zone bar: S0-S9 green, +0..+20 amber, >+20 red
+        self.sm.create_rectangle(smL, smY - 8, smR, smY, fill="#dddddd", outline="#999999")
+        # scale mapping: -127..-15 dBFS across the bar; S9 at -35
+        def smx(db): return smL + (db + 127.0) / 112.0 * (smR - smL)
+        x_s9 = smx(-35)
+        self.sm.create_rectangle(smL, smY - 8, x_s9, smY, fill="#3fa34d", outline="")
+        self.sm.create_rectangle(x_s9, smY - 8, smx(-25), smY, fill="#e0a63a", outline="")
+        self.sm.create_rectangle(smx(-25), smY - 8, smR, smY, fill="#c0392b", outline="")
+        # ticks + labels S1..S9, +10, +20
+        for n in range(1, 10):
+            db = -124.0 + n * 10.0   # S1=-114 ... S9=-34 approx per IARU-ish
+            x = smx(db)
+            self.sm.create_line(x, smY - 8, x, smY - 12, fill="#444444")
+            self.sm.create_text(x, smY - 18, text=str(n), fill="#444444",
+                                font=("Segoe UI", 6))
+        for db, lab in ((-25, "+10"), (-17, "+20")):
+            x = smx(db)
+            self.sm.create_line(x, smY - 8, x, smY - 12, fill="#444444")
+            self.sm.create_text(x, smY - 18, text=lab, fill="#8a4a10",
+                                font=("Segoe UI", 6))
+        self.sm.create_text(smL - 2, smY - 18, text="S", fill="#444444",
+                            font=("Segoe UI", 7, "bold"))
+        # needle (current) + peak-hold tick
+        self.sm_bar = self.sm.create_line(smL, smY + 2, smL, smY + 9,
+                                          fill="#1a1f29", width=2)
+        self.sm_peak = self.sm.create_line(smL, smY - 8, smL, smY - 2,
+                                           fill="#c0392b", width=2)
+        self.sm_txt = self.sm.create_text(smR, 36, text="−140 dBFS", anchor="e",
+                                          fill=C["fg"], font=("Consolas", 8))
+        self._sm_peak_db = -140.0
         self.state_lbl = tk.Label(r3, text="● disconnected", bg=C["panel"], fg=C["dim"],
                                   font=("Segoe UI", 9))
         self.state_lbl.pack(side="right")
@@ -1124,23 +1154,30 @@ class MiniTCI(tk.Tk):
         self.tune_to(self.freq_hz + d)
 
     def _draw_smeter(self):
-        # IQ-derived peak-bin dBFS (rx_sensors audio RMS is AGC-flattened - useless).
-        # Scale -120..0 dBFS: noise floor sits ~-90, S9 ~-35, strong local -15.
+        # IQ-derived peak-bin dBFS displayed on an analog S-scale.
+        # dBFS -> S-unit: S9 = -35 dBFS, each S-unit 10 dB below (S1 = -115).
         db = getattr(self.pan, "peak_dbfs", None)
         if db is None:
             db = self.smeter
         self.smeter_db = db
-        frac = clamp((db + 120.0) / 120.0, 0, 1)
-        w = int(202 * frac)
-        self.sm.coords(self.sm_bar, 2, 6, 2 + w, 22)
-        if db > -15:
-            color = "#c0392b"
-        elif db > -35:
-            color = "#b45309"
+        x0, x1 = self._sm_x0, self._sm_x1
+        frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
+        x = x0 + frac * (x1 - x0)
+        self.sm.coords(self.sm_bar, x, self._sm_y + 2, x, self._sm_y + 9)
+        # peak hold: rises instantly, decays slowly
+        pk = max(db, self._sm_peak_db - 0.4)
+        self._sm_peak_db = clamp(pk, -140.0, 0.0)
+        pf = clamp((self._sm_peak_db + 127.0) / 112.0, 0.0, 1.0)
+        px = x0 + pf * (x1 - x0)
+        self.sm.coords(self.sm_peak, px, self._sm_y - 8, px, self._sm_y - 2)
+        # S-unit readout
+        s_units = max(0.0, min(9.0, (db + 115.0) / 10.0))
+        over = db - (-35.0)
+        if db >= -35.0:
+            txt = f"S9+{over:.0f} dB  ({db:.0f} dBFS)"
         else:
-            color = "#1a7f37"
-        self.sm.itemconfig(self.sm_bar, fill=color)
-        self.sm.itemconfig(self.sm_txt, text=f"{db:.0f} dBFS")
+            txt = f"S{s_units:.1f}  ({db:.0f} dBFS)"
+        self.sm.itemconfig(self.sm_txt, text=txt)
 
     # ---------------- controls ----------------
     def send(self, cmd):
@@ -1197,31 +1234,30 @@ class MiniTCI(tk.Tk):
                 "CUSTOM": "custom"}.get(name, "normal")
 
     def _agc_changed(self, *_):
+        mode = self.agc_var.get()
+        manual = (mode == "OFF")
+        # enable the Gain slider only in manual mode
+        try:
+            self.agc_gain_scale.state(["!disabled"] if manual else ["disabled"])
+        except tk.TclError:
+            pass
         if not self.connected:
             return
-        mode = self.agc_var.get()
-        self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
-        # OFF -> switch to manual gain (agc_auto false) and push gain
-        if mode == "OFF":
-            self.agc_auto_var.set(False)
+        if manual:
+            # fixed-gain mode: gain slider controls the receiver gain directly
             self.send("agc_auto_ex:0,false;")
             self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
         else:
-            self.agc_auto_var.set(True)
+            # AGC on: FAST/MED/SLOW/LONG = attack/decay speed presets
+            self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
             self.send("agc_auto_ex:0,true;")
 
     def _agc_auto_changed(self):
-        if not self.connected:
-            return
-        auto = self.agc_auto_var.get()
-        self.send(f"agc_auto_ex:0,{str(auto).lower()};")
-        if not auto:
-            self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
-            if self.agc_var.get() != "OFF":
-                self.agc_var.set("OFF")
+        # kept for compatibility (Auto checkbox removed); no-op
+        pass
 
     def _agc_gain_changed(self, v):
-        if self.connected and not self.agc_auto_var.get():
+        if self.connected and self.agc_var.get() == "OFF":
             self.send(f"agc_gain:0,{int(float(v))};")
 
     def _hit_test(self, x):
