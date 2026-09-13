@@ -284,7 +284,12 @@ class PanFall(tk.Canvas):
         row's content moves -df*px, so past data stays coherent with the axis.
         The exposed edge is filled by repeating the last column (smear) until
         real data replaces it."""
-        px = int(round(-df_hz / max(1.0, self.span) * CANVAS_W))
+        # accumulate fractional pixels so slow tuning (50 Hz wheel steps < 1 px
+        # at 96k span) still slides the history smoothly instead of jumping
+        self._wf_shift_acc = getattr(self, "_wf_shift_acc", 0.0) \
+            + (-df_hz / max(1.0, self.span) * CANVAS_W)
+        px = int(self._wf_shift_acc)
+        self._wf_shift_acc -= px
         if px == 0 or abs(px) >= CANVAS_W:
             if abs(px) >= CANVAS_W:
                 self._wf_img[:] = 0
