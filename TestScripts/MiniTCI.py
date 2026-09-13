@@ -52,8 +52,8 @@ FILTERS = {
     "AM": (-4500, 4500), "SAM": (-4500, 4500), "NFM": (-3500, 3500),
 }
 
-C = {"bg": "#0d1117", "panel": "#161b22", "fg": "#dfe7f3", "dim": "#7d8aa0",
-     "green": "#39d353", "tune": "#ffb02e", "red": "#ff5555", "grid": "#262d38"}
+C = {"bg": "#e8eaf0", "panel": "#f5f6f9", "fg": "#1a1f29", "dim": "#5a6474",
+     "green": "#1a7f37", "tune": "#b45309", "red": "#c0392b", "grid": "#d0d5dd"}
 
 CANVAS_W = 900
 PAN_H = 160
@@ -202,7 +202,7 @@ class PanFall(tk.Canvas):
 
     def __init__(self, master):
         super().__init__(master, width=CANVAS_W, height=PAN_H + WF_H,
-                         bg="#05070c", highlightthickness=0)
+                         bg="#0a0f16", highlightthickness=0)
         self.span = 96000.0
         self.center_hz = 0.0
         self.vfo_hz = 0.0
@@ -288,7 +288,7 @@ class PanFall(tk.Canvas):
             if 14 <= x <= CANVAS_W - 14:
                 self.create_text(x, PAN_H + 10,
                                  text=f"{off / 1000:+.0f}k",
-                                 fill="#57606f", font=("Segoe UI", 7))
+                                 fill="#9aa4b2", font=("Segoe UI", 7))
 
         # filter overlay (relative to VFO)
         if self.center_hz and self.vfo_hz:
@@ -310,7 +310,7 @@ class MiniTCI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("MiniTCI — simplified Thetis radio")
-        self.configure(bg=C["bg"])
+        self.configure(bg="#cfd4dd")
         self.geometry("950x660")
         self.minsize(920, 620)
 
@@ -345,10 +345,16 @@ class MiniTCI(tk.Tk):
         s.theme_use("clam")
         s.configure("TFrame", background=C["panel"])
         s.configure("TLabel", background=C["panel"], foreground=C["fg"])
-        s.configure("TButton", background=C["panel"], foreground=C["fg"])
-        s.configure("TCombobox", fieldbackground=C["bg"], background=C["panel"],
-                    foreground=C["fg"], arrowcolor=C["fg"])
-        s.map("TButton", background=[("active", "#232c3a")])
+        s.configure("TButton", background="#dfe3ea", foreground="#111111")
+        s.configure("TCombobox", fieldbackground="#ffffff", background=C["panel"],
+                    foreground="#000000", arrowcolor="#1a1f29")
+        s.configure("TCombobox.Listbox", fieldbackground="#ffffff",
+                    background="#ffffff", foreground="#111111")
+        self.option_add("*TCombobox*Listbox.background", "#ffffff")
+        self.option_add("*TCombobox*Listbox.foreground", "#111111")
+        self.option_add("*TCombobox*Listbox.selectBackground", "#cce4ff")
+        self.option_add("*TCombobox*Listbox.selectForeground", "#000000")
+        s.map("TButton", background=[("active", "#c8cfda")])
 
         # --- row 1: connection + band + mode
         r1 = ttk.Frame(self); r1.pack(fill="x", padx=10, pady=(8, 2))
@@ -418,7 +424,7 @@ class MiniTCI(tk.Tk):
 
         # --- row 4: TX
         r4 = ttk.Frame(self); r4.pack(fill="x", padx=10, pady=4)
-        self.ptt_btn = tk.Button(r4, text="PTT", bg="#37242a", fg=C["fg"], width=8,
+        self.ptt_btn = tk.Button(r4, text="PTT", bg="#f4d7d4", fg=C["fg"], width=8,
                                  font=("Segoe UI", 10, "bold"))
         self.ptt_btn.bind("<ButtonPress-1>", lambda e: self.ptt_on())
         self.ptt_btn.bind("<ButtonRelease-1>", lambda e: self.ptt_off())
@@ -442,7 +448,7 @@ class MiniTCI(tk.Tk):
         self.mic_gain = 0.5
 
         # --- log
-        self.log = tk.Text(self, height=5, bg=C["bg"], fg=C["dim"], borderwidth=0,
+        self.log = tk.Text(self, height=5, bg="#ffffff", fg="#333333", borderwidth=1,
                            font=("Consolas", 8))
         self.log.pack(fill="x", padx=10, pady=(2, 8))
 
@@ -605,10 +611,10 @@ class MiniTCI(tk.Tk):
         self.tx_audio_q = collections.deque(maxlen=64)
         self.tx_pos = 0
         c = TciClient(port)
+        self.client = c
+        self._set_state("connecting")      # set UI state BEFORE the thread can race us
         c.start(self.tci_text, self.tci_audio, self.tci_iq, self.tci_state,
                 self.tci_chrono)
-        self.client = c
-        self._set_state("connecting")
 
     def _set_state(self, s):
         if s == "connected":
@@ -780,7 +786,7 @@ class MiniTCI(tk.Tk):
             return
         self.ptt = False
         self.send("trx:0,false;")
-        self.ptt_btn.config(bg="#37242a", relief="raised")
+        self.ptt_btn.config(bg="#e3b8b3", relief="raised")
         self.tx_lbl.config(text="RX", fg=C["dim"])
         if self.mic_stream:
             try:
