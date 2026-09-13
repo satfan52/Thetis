@@ -257,6 +257,8 @@ class PanFall(tk.Canvas):
         self.center_hz = 0.0
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
+        self.y_zero = 0.0        # user offset in dB (Quisk graph_y_zero analogue)
+        self.y_scale = 42.0      # dB of graph headroom above the floor
         self._wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
         self._wf_img[:] = (0, 0, 0)  # Quisk: pure black waterfall background
         self._ready = None
@@ -309,10 +311,10 @@ class PanFall(tk.Canvas):
         # waterfall range covers the noise envelope (p95-p10) so speckle stays dark
         p95 = float(np.percentile(col, 95))
         self._wfrange = max(20.0, (p95 - floor) + 8.0)
-        # Quisk-style y_zero: place the noise floor ~25% up from the bottom so
-        # the trace and waterfall colors have headroom (waterfall_y_zero=40/160)
-        lo = self._floor - 18.0
-        hi = self._floor + 42.0
+        # Quisk-style y_zero/y_scale: user slider shifts the zero point (dB)
+        # relative to the auto noise floor; y_scale sets the dB span shown
+        lo = self._floor - 18.0 + self.y_zero
+        hi = self._floor + self.y_scale + self.y_zero
         norm = np.clip((col - lo) / (hi - lo), 0, 1)
         # waterfall gets its own softer normalization: noise sits in the dark
         # blue/purple zone (Quisk waterfall_y_zero/y_scale behavior).
@@ -601,10 +603,28 @@ class MiniTCI(tk.Tk):
         self.pan.bind("<Button-1>", self._pan_click)
         self.pan.bind("<B1-Motion>", self._pan_drag)
         self.pan.bind("<ButtonRelease-1>", self._pan_release)
+        self.pan.bind("<Button-3>", self._pan_right)
         self.pan.bind("<MouseWheel>", self._pan_wheel)
         self.pan.bind("<Button-4>", self._pan_wheel)   # linux wheel up
         self.pan.bind("<Button-5>", self._pan_wheel)   # linux wheel down
         self.pan.bind("<Motion>", self._pan_motion)
+
+        # --- Quisk-style display adjust row: Y zero + Y scale + span zoom
+        rz = ttk.Frame(self); rz.pack(fill="x", padx=10, pady=(0, 2))
+        ttk.Label(rz, text="Y zero:").pack(side="left")
+        self.yzero_var = tk.DoubleVar(value=0)
+        ttk.Scale(rz, from_=-40, to=40, variable=self.yzero_var, length=130,
+                  command=self._yzero_changed).pack(side="left", padx=4)
+        ttk.Label(rz, text="Y scale:").pack(side="left", padx=(14, 0))
+        self.yscale_var = tk.DoubleVar(value=42)
+        ttk.Scale(rz, from_=20, to=90, variable=self.yscale_var, length=130,
+                  command=self._yscale_changed).pack(side="left", padx=4)
+        ttk.Label(rz, text="Zoom:").pack(side="left", padx=(14, 0))
+        self.zoom_var = tk.DoubleVar(value=0)
+        ttk.Scale(rz, from_=0, to=100, variable=self.zoom_var, length=130,
+                  command=self._zoom_changed).pack(side="left", padx=4)
+        self.zoom_lbl = ttk.Label(rz, text="96 kHz")
+        self.zoom_lbl.pack(side="left", padx=6)
 
         # --- row 3: volume + sound devices + smeter
         r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
@@ -1125,89 +1145,129 @@ class MiniTCI(tk.Tk):
         return "span"
 
     def _pan_click(self, e):
-        # record gesture start + what was grabbed; commands sent only on release
+        # Quisk OnLeftDown: record start; choose tx/rx target (we only have one VFO)
         self._drag_x = e.x
+        self._drag_y = e.y
         self._drag_center = self.pan.center_hz
         self._drag_vfo = self.pan.vfo_hz
         self._drag_filt = self.pan.filt
-        self._hit = self._hit_test(e.x)
+        self._moved = False
 
     def _pan_drag(self, e):
+        # Quisk OnMotion: dragging tunes the frequency; drag speed scales with
+        # height above the X axis (near the axis = fine, top = coarse)
         if not self.pan.center_hz or not hasattr(self, "_drag_x"):
             return
-        dx_hz = (e.x - self._drag_x) / CANVAS_W * self.pan.span
-        if self._hit == "span":
-            # slide the displayed span
-            self.pan.center_hz = self._drag_center - dx_hz
-        elif self._hit == "in-filter":
-            # grab the filter: slide VFO (tuning) - frequency changes with the window
-            self.pan.vfo_hz = self._drag_vfo + dx_hz
-            self._freq_pending = self.pan.vfo_hz
-        elif self._hit in ("edge-lo", "edge-hi"):
-            # resize the passband (visual only; committed on release)
-            lo, hi = self._drag_filt
-            if self._hit == "edge-lo":
-                self.pan.filt = (lo + dx_hz, hi)
-            else:
-                self.pan.filt = (lo, hi + dx_hz)
-            # sanity: keep lo < hi and a minimum width of 50 Hz
-            if self.pan.filt[1] - self.pan.filt[0] < 50:
-                if self._hit == "edge-lo":
-                    self.pan.filt = (self.pan.filt[1] - 50, self.pan.filt[1])
-                else:
-                    self.pan.filt = (self.pan.filt[0], self.pan.filt[0] + 50)
+        if abs(e.x - self._drag_x) > 2 or abs(e.y - getattr(self, "_drag_y", e.y)) > 2:
+            self._moved = True
+        if not self._moved:
+            return
+        # Quisk: speed = max(10, originY - mouse_y) / (originY + 1)
+        speed = max(10.0, PAN_H - e.y) / float(PAN_H + 1)
+        dx_hz = speed * (e.x - self._drag_x) / CANVAS_W * self.pan.span
+        self._drag_x = e.x   # Quisk accumulates per-motion deltas
+        self.pan.vfo_hz = self._drag_vfo = self._drag_vfo + dx_hz
+        self._freq_pending = self.pan.vfo_hz
+        # live-follow the frequency display (command still sent on release)
+        self.freq_hz = int(self.pan.vfo_hz)
+        self._fmt_freq()
 
     def _pan_release(self, e):
-        moved = abs(e.x - getattr(self, "_drag_x", e.x)) > 3
-        hit = getattr(self, "_hit", "span")
-        if not moved and self.pan.center_hz:
-            # simple click = tune the clicked frequency
+        moved = getattr(self, "_moved", False)
+        if self.pan.center_hz and not moved:
             f = self.pan.x2f(e.x)
-            self.tune_to(int(round(f / 10.0)) * 10)
+            if self.mode in ("CWU", "CWL"):
+                f = self._cw_snap(f)
+            # Quisk OnLeftUp: re-round to the frequency grid
+            self.tune_to(self._round_tune(f))
             return
-        if hit == "in-filter":
-            # filter slide committed: send the new VFO frequency (one command)
-            if getattr(self, "_freq_pending", None):
-                self.tune_to(int(self._freq_pending))
-        elif hit in ("edge-lo", "edge-hi"):
-            # commit new passband to the radio (one command)
-            lo, hi = self.pan.filt
-            lo = max(-10000, min(10000, lo))
-            hi = max(lo + 50, min(10000, hi))
-            if hi > lo:
-                self.pan.filt = (lo, hi)
-                self.send(f"rx_filter_band:0,{int(lo)},{int(hi)};")
-                self._set_mode_filter_defaults_hint()
-        else:
-            # pan gesture: recentre view on the VFO
-            self.tune_to(self.freq_hz)
+        if moved and getattr(self, "_freq_pending", None):
+            self.tune_to(self._round_tune(self._freq_pending))
 
-    def _set_mode_filter_defaults_hint(self):
-        # remember that the user manually resized the filter for this mode
-        self._custom_filter = True
+    def _round_tune(self, f):
+        # Quisk OnLeftUp FreqRound: snap tune offset to the wheel step grid
+        wm = 50
+        return int(round(f / wm)) * wm
+
+    def _cw_snap(self, f_click):
+        # Quisk CW peak snap: search +/- filter width for a peak significantly
+        # above the local average, then quadratic-interpolate the peak position
+        col = getattr(self.pan, "_col", None)
+        if col is None or not self.pan.center_hz:
+            return f_click
+        x = int(self.pan.f2x(f_click))
+        cw_hz = max(200.0, (self.pan.filt[1] - self.pan.filt[0]))
+        half = max(2, int(cw_h / self.pan.span * CANVAS_W / 2)) if (cw_h := (self.pan.filt[1] - self.pan.filt[0])) else 4
+        x1, x2 = max(0, x - half), min(CANVAS_W, x + half)
+        if x2 - x1 < 5:
+            return f_click
+        seg = col[x1:x2]
+        xmax = int(np.argmax(seg)) + x1
+        avg = float(np.mean(seg))
+        if xmax <= x1 or xmax >= x2 - 1 or col[xmax] - avg < 5:
+            return f_click
+        yp, y0, ym = col[xmax + 1], col[xmax], col[xmax - 1]
+        denom = (ym - 2 * y0 + yp)
+        corr = 0.5 * (ym - yp) / denom if denom != 0 else 0.0
+        corr = max(-0.5, min(0.5, corr))
+        return self.pan.x2f(xmax + corr)
+
+    def _pan_right(self, e):
+        # Quisk OnRightDown: move the VFO to the clicked frequency, snapped
+        # (10 kHz if span > 40k, 1 kHz if > 5k, else 100 Hz)
+        if not self.pan.center_hz:
+            return
+        f = self.pan.x2f(e.x)
+        if self.pan.span > 40000:
+            step = 10000
+        elif self.pan.span > 5000:
+            step = 1000
+        else:
+            step = 100
+        vfo = int(round(f / step)) * step
+        self.tune_to(vfo)
+
+    def _yzero_changed(self, v):
+        try:
+            self.pan.y_zero = float(v)
+        except (ValueError, tk.TclError):
+            pass
+
+    def _yscale_changed(self, v):
+        try:
+            self.pan.y_scale = float(v)
+        except (ValueError, tk.TclError):
+            pass
+
+    def _zoom_changed(self, v):
+        # Quisk zoom model: effective span = rate * zoom, centered on the VFO
+        try:
+            z = float(v)
+        except (ValueError, tk.TclError):
+            return
+        if z < 1:
+            new_span = 96000.0
+        else:
+            # 0..100 slider -> 96k..24k logarithmic-ish
+            new_span = 96000.0 * (1.0 - 0.75 * z / 100.0)
+        new_span = clamp(new_span, 24000, 384000)
+        self.pan.center_hz = self.freq_hz if self.freq_hz else self.pan.center_hz
+        self.pan.span = new_span
+        self.zoom_lbl.config(text=f"{new_span / 1000:.0f} kHz")
 
     def _pan_motion(self, e):
         if not self.pan.center_hz:
             return
-        hit = self._hit_test(e.x)
-        if hit in ("edge-lo", "edge-hi"):
-            self.pan.config(cursor="sb_h_double_arrow")
-        elif hit == "in-filter":
-            self.pan.config(cursor="hand2")
-        else:
-            self.pan.config(cursor="crosshair")
+        # Quisk has a plain crosshair over the graph; keep edge hints only
+        self.pan.config(cursor="crosshair")
 
     def _pan_wheel(self, e):
-        # zoom: wheel up = span in, wheel down = span out, centred on the cursor
+        # Quisk OnWheel: tune in mouse_wheelmod (50 Hz) steps
         if not self.pan.center_hz:
             return
-        # scroll up (delta>0) = zoom IN = smaller span
-        factor = 0.8 if getattr(e, "delta", 120) > 0 else 1.25
-        new_span = clamp(self.pan.span * factor, 24000, 384000)
-        f_at_cursor = self.pan.x2f(e.x)
-        self.pan.span = new_span
-        rel = (e.x - CANVAS_W / 2) / CANVAS_W
-        self.pan.center_hz = f_at_cursor - rel * new_span
+        delta = getattr(e, "delta", 120)
+        step = 50 if delta > 0 else -50
+        self.tune_to(self.freq_hz + step)
 
     # ---------------- TX ----------------
     def ptt_on(self):
