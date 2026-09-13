@@ -592,9 +592,10 @@ class MiniTCI(tk.Tk):
         self.freq_lbl = tk.Label(r2, text="14.074.000 kHz", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
         self.freq_lbl.pack(side="left", padx=(2, 14))
+        self.freq_lbl.bind("<MouseWheel>", self._freq_wheel)
         for txt, hz in (("−10k", -10000), ("−1k", -1000), ("−100", -100),
                         ("+100", 100), ("+1k", 1000), ("+10k", 10000)):
-            ttk.Button(r2, text=txt, width=4,
+            ttk.Button(r2, text=txt, width=5,
                        command=lambda d=hz: self.tune_to(self.freq_hz + d)
                        ).pack(side="left", padx=2)
         ttk.Label(r2, text="Direct kHz:", padding=(12, 0, 2, 0)).pack(side="left")
@@ -1033,8 +1034,17 @@ class MiniTCI(tk.Tk):
                     pass
 
     def _fmt_freq(self):
-        khz = int(self.freq_hz / 1000)
-        self.freq_lbl.config(text=f"{khz:,} kHz".replace(",", "."))
+        # Thetis-style: MHz.kHz.Hz with dots, e.g. 14.074.000
+        mhz = self.freq_hz // 1_000_000
+        khz = (self.freq_hz % 1_000_000) // 1000
+        hz = self.freq_hz % 1000
+        self.freq_lbl.config(text=f"{mhz}.{khz:03d}.{hz:03d}")
+
+    def _freq_wheel(self, e):
+        # wheel on the frequency display: 100 Hz steps (shift = 10 Hz fine)
+        step = 10 if e.state & 0x0001 else 100
+        d = step if getattr(e, "delta", 120) > 0 else -step
+        self.tune_to(self.freq_hz + d)
 
     def _draw_smeter(self):
         # IQ-derived peak-bin dBFS (rx_sensors audio RMS is AGC-flattened - useless).
@@ -1073,9 +1083,10 @@ class MiniTCI(tk.Tk):
         self.pan.vfo_hz = self.freq_hz
         if not self.pan.center_hz:
             self.pan.center_hz = self.freq_hz
-        elif abs(self.freq_hz - self.pan.center_hz) > self.pan.span * 0.4:
-            # VFO dragged off-screen (e.g. band switch): keep it visible (Quisk
-            # keeps the VFO centered when not zoomed away)
+        elif abs(self.freq_hz - self.pan.center_hz) > self.pan.span * 0.48:
+            # VFO about to leave the visible window: recenter. Tuning WITHIN the
+            # window never moves the display - the waterfall stays anchored to
+            # absolute RF so you can tune around signals (Thetis model).
             self.pan.center_hz = self.freq_hz
             self.pan._wf_img[:] = 0
         self.send(f"vfo:0,0,{self.freq_hz};")
