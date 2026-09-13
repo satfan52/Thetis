@@ -322,12 +322,22 @@ class PanFall(tk.Canvas):
         # map each canvas column to its frequency within the DISPLAY span,
         # then sample the full-rate FFT spectrum at that frequency (handles zoom)
         bin_f = (np.arange(len(db)) - len(db) / 2) / len(db) * self.rate   # Hz/bin
-        # Thetis model: display centered on the VFO; every row is drawn
-        # VFO-relative. A signal you are tuned to (constant audio pitch) keeps
-        # the same horizontal position => traces stay VERTICAL while tuning,
-        # exactly like the Thetis panadapter.
+        # Thetis model: display centered on the VFO; spectrum + waterfall share
+        # the same frame and mapping, so they always move together. Each block
+        # carries the DDC center it was captured at (dc_tag): blocks queued
+        # across a tune are placed at their true absolute position in the
+        # shifted bitmap (no seams). The signal you are tuned to stays under
+        # the VFO line (vertical); other stations slide diagonally.
+        dc_tag = data_center if data_center else self.center_hz
         disp_rel = (np.arange(CANVAS_W) / CANVAS_W - 0.5) * self.span
         col = np.interp(disp_rel, bin_f, db).astype(np.float32)
+        off = int(round((dc_tag - self.center_hz) / max(1.0, self.span) * CANVAS_W))
+        if off:
+            col = np.roll(col, off)
+            if off > 0:
+                col[:off] = col[off]
+            else:
+                col[off:] = col[off - 1]
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
         k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
         k /= k.sum()
@@ -1252,6 +1262,11 @@ class MiniTCI(tk.Tk):
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
+        # Thetis: tuning slides the WHOLE panafall - the past waterfall rows
+        # translate by the pixel delta so history stays aligned with the axis.
+        df = self.freq_hz - self.pan.center_hz
+        if self.pan.center_hz and df:
+            self.pan.shift_waterfall(df)
         self.pan.vfo_hz = self.freq_hz
         self.pan.center_hz = self.freq_hz
         self.pan.data_center_hz = self.freq_hz
