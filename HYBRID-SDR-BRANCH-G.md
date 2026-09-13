@@ -76,7 +76,27 @@ Per the compatibility analysis, the following full-server features are **not** n
 ## 4. Testing Status
 
 - The solution compiles cleanly (`dotnet msbuild`, Release x64, 0 errors).
-- **Hardware verification against the Red Pitaya has NOT yet been performed for Branch G.** The IQ path, DDS, S-meter, AGC and mute handlers should be validated with CW Skimmer / Skimmer Server and WSJT-X against live hardware before release.
+- **Hardware verification against the Red Pitaya has NOT yet been performed for Branch G.**
+
+An automated verification harness is ready in `TestScripts/test_branch_g.py`. It checks, per headless port:
+
+1. Banner + `iq_samplerate` negotiation (default 96000, set/echo round-trip)
+2. IQ streaming — frames flow after `iq_start`, frame header validity (type 0, 2 channels, float32, negotiated rate), frames cease after `iq_stop`
+3. DDS set + query round-trip
+4. S-meter — `rx_sensors_enable` yields periodic `rx_sensors` frames
+5. AGC — `agc_mode` / `agc_gain` command echoes
+6. Mute — audio frames stop while muted, resume after unmute
+7. Concurrent IQ + audio streaming without interference
+
+Run with:
+
+```
+python3 TestScripts\test_branch_g.py [port]
+```
+
+(Requires Thetis Branch G running with the Red Pitaya on the network, and the `websockets` Python package — the same harness family as `test_all_channels_audio.py`.)
+
+Additionally, run **CW Skimmer** against a headless port (e.g. 50003) to verify the full IQ consumption path end-to-end, and **WSJT-X** to confirm the Branch F TX path is unaffected.
 
 ---
 
