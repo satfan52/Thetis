@@ -76,7 +76,8 @@ Per the compatibility analysis, the following full-server features are **not** n
 ## 4. Testing Status
 
 - The solution compiles cleanly (`dotnet msbuild`, Release x64, 0 errors).
-- **Hardware verification against the Red Pitaya has NOT yet been performed for Branch G.**
+- **TX path hardware-VERIFIED (2026-09-13)**: WSJT-X connected to a headless port and transmitted successfully against the live Red Pitaya + IC-7100 station — TX_CHRONO pacing, TX_AUDIO_STREAM ingestion, cmaster pacing thread, WDSP TX engagement, CI-V steering, and IC-7100 keying/audio all confirmed.
+- **Still open**: IQ/DDS/S-meter/AGC/mute end-to-end with a live client (MiniTCI or CW Skimmer), and MiniTCI mic TX. Harness: `TestScripts/test_branch_g.py [port]`.
 
 An automated verification harness is ready in `TestScripts/test_branch_g.py`. It checks, per headless port:
 
