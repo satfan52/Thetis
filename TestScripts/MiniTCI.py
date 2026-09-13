@@ -61,7 +61,9 @@ FILTERS = {
 }
 
 C = {"bg": "#e8eaf0", "panel": "#f5f6f9", "fg": "#1a1f29", "dim": "#5a6474",
-     "green": "#1a7f37", "tune": "#b45309", "red": "#c0392b", "grid": "#d0d5dd"}
+     "green": "#1a7f37", "tune": "#b45309", "red": "#c0392b", "grid": "#d0d5dd",
+     "pan_bg": "#0a3d4a", "pan_grid": "#0a6a80", "pan_trace": "#c8e0f0",
+     "pan_filt_lo": "#ff3030", "pan_filt_hi": "#ffd050"}
 
 CANVAS_W = 900
 PAN_H = 160
@@ -256,6 +258,7 @@ class PanFall(tk.Canvas):
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
         self._wf_img = np.zeros((WF_H, CANVAS_W, 3), dtype=np.uint8)
+        self._wf_img[:] = (0, 0, 40)  # Thetis-style dark blue base
         self._ready = None
         self._ready_ys = None
         self._photo = None
@@ -314,15 +317,17 @@ class PanFall(tk.Canvas):
         if cls._CMAP_CACHE is not None:
             return cls._CMAP_CACHE
         stops = [
-            (0.00, (0, 0, 0)),
-            (0.10, (0, 0, 64)),
-            (0.25, (0, 40, 160)),
-            (0.40, (0, 160, 220)),
-            (0.55, (0, 210, 120)),
-            (0.70, (230, 230, 60)),
-            (0.75, (255, 160, 30)),
-            (0.85, (255, 70, 30)),
-            (1.00, (255, 255, 255)),
+            (0.00, (0, 0, 40)),      # Thetis dark blue base
+            (0.12, (0, 0, 100)),     # dark blue
+            (0.25, (0, 40, 180)),    # blue
+            (0.40, (0, 150, 230)),   # cyan-blue
+            (0.50, (0, 220, 220)),   # cyan
+            (0.60, (0, 220, 100)),   # cyan-green
+            (0.70, (180, 220, 40)),  # green-yellow
+            (0.78, (255, 200, 0)),   # yellow
+            (0.86, (255, 100, 0)),   # orange
+            (0.93, (255, 30, 30)),   # red
+            (1.00, (255, 255, 255)), # white
         ]
         lut = np.zeros((256, 3), dtype=np.uint8)
         for i in range(len(stops) - 1):
@@ -349,7 +354,8 @@ class PanFall(tk.Canvas):
         if col is None:
             return
         pan = np.zeros((PAN_H, CANVAS_W, 3), dtype=np.uint8)
-        pan[:] = (10, 12, 18)
+        # Thetis-style dark teal-blue background
+        pan[:] = (7, 42, 58)
         lo = getattr(self, "_norm_lo", self.DB_BOT)
         hi = getattr(self, "_norm_hi", self.DB_TOP)
         ys = (PAN_H - 1 - np.clip(
@@ -357,8 +363,8 @@ class PanFall(tk.Canvas):
             0, PAN_H - 1)).astype(np.int32)
         # connected trace: fill the vertical gap between adjacent x positions
         # so the spectrum reads as a continuous line (spectrum-analyser style)
-        trace = np.array([80, 255, 110], dtype=np.uint8)
-        dim = np.array([30, 120, 45], dtype=np.uint8)
+        trace = np.array([220, 240, 255], dtype=np.uint8)  # white-ish
+        dim = np.array([150, 200, 230], dtype=np.uint8)     # light blue
         xs_all = np.arange(CANVAS_W)
         # 2px solid core at every column
         for dy in (-1, 0):
@@ -397,7 +403,7 @@ class PanFall(tk.Canvas):
             pts = []
             for x in range(0, CANVAS_W):
                 pts += [x, ys[x]]
-            self.create_line(pts, fill=C["green"], width=2,
+            self.create_line(pts, fill="#c8e0f0", width=1,
                              smooth=True, splinesteps=8)
         self._draw_overlays()
 
@@ -409,7 +415,7 @@ class PanFall(tk.Canvas):
         for i in range(5):
             y = i * PAN_H / 4
             if 0 < y < PAN_H:
-                self.create_line(0, y, CANVAS_W, y, fill=C["grid"])
+                self.create_line(0, y, CANVAS_W, y, fill="#0a6a80")
             db = hi - (i / 4.0) * span_db
             txt = f"{db:.0f} dB"
             # backing rect FIRST, text on top (drawing rect after text covers it)
@@ -423,13 +429,11 @@ class PanFall(tk.Canvas):
             off = k * self.span / 8
             x = self.f2x(self.center_hz + off)
             if 6 <= x <= CANVAS_W - 6 and abs(x - CANVAS_W/2) > 4:
-                self.create_line(x, 0, x, PAN_H, fill=C["grid"])
+                self.create_line(x, 0, x, PAN_H, fill="#0a6a80")
             if 14 <= x <= CANVAS_W - 14:
-                self.create_rectangle(x - 20, PAN_H + 3, x + 20, PAN_H + 18,
-                                      fill="#0a0f16", outline="")
-                self.create_text(x, PAN_H + 10,
-                                 text=f"{off / 1000:+.0f}k",
-                                 fill="#ffffff", font=("Segoe UI", 8, "bold"))
+                self.create_text(x, 12,
+                                 text=f"{14.074 + off / 1e6:.3f}",
+                                 fill="#ffffff", font=("Segoe UI", 9, "bold"))
         # RX filter passband (relative to VFO) - Thetis-style shaded band whose
         # width follows the mode (USB ~2.8k, CW ~500, AM ~9k, FM ~7k...)
         if self.center_hz and self.vfo_hz:
@@ -437,27 +441,18 @@ class PanFall(tk.Canvas):
             x2 = self.f2x(self.vfo_hz + self.filt[1])
             if x2 > x1 and x2 > 0 and x1 < CANVAS_W:
                 x1c, x2c = max(0, int(x1)), min(CANVAS_W, int(x2))
-                # unmissable passband: bright amber semi-transparent + thick edges
+                # Thetis-style passband: light blue-gray translucent rectangle
                 self.create_rectangle(x1c, 0, x2c, PAN_H,
-                                      fill="#a07018", outline="",
-                                      stipple="gray50")
-                self.create_rectangle(x1c, 0, x2c, PAN_H,
-                                      fill="", outline="#ffd050", width=2)
-                # edge grab handles - BIG bright tabs
-                for hx in (x1c, x2c):
-                    self.create_rectangle(hx - 3, PAN_H // 2 - 12,
-                                          hx + 3, PAN_H // 2 + 12,
-                                          fill="#ffd050", outline="#ffffff", width=1)
-                # center marker
-                vfo_x = self.f2x(self.vfo_hz)
-                if x1c < vfo_x < x2c:
-                    self.create_line(vfo_x, 0, vfo_x, PAN_H,
-                                     fill="#ffffff", dash=(3, 3))
+                                      fill="#2a5a7a", outline="")
+                # RED left filter edge, YELLOW right filter edge (Thetis style)
+                self.create_line(x1c, 0, x1c, PAN_H, fill="#ff3030", width=2)
+                self.create_line(x2c, 0, x2c, PAN_H, fill="#ffd050", width=2)
+                # bandwidth label
                 bw = self.filt[1] - self.filt[0]
-                label_x = max(x1c + 30, min(x2c - 30, (x1c + x2c) / 2))
+                label_x = max(x1c + 25, min(x2c - 25, (x1c + x2c) / 2))
                 self.create_text(label_x, 12,
                                  text=f"{bw:.0f} Hz",
-                                 fill="#ffd050", font=("Segoe UI", 8, "bold"))
+                                 fill="#a0c8e8", font=("Segoe UI", 7))
         # vfo line
         if self.center_hz:
             x = self.f2x(self.vfo_hz)
