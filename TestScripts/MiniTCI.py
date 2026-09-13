@@ -1570,7 +1570,7 @@ class MiniTCI(tk.Tk):
             return
         self.ptt = False
         # keep the monitor muted for the TX tail (IC-7100 unkeying + AGC decay)
-        self._tx_mute_until = time.time() + 1.2
+        self._tx_mute_until = time.time() + 0.8
         self.mic_level_db = -140.0
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
