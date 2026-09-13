@@ -152,6 +152,9 @@ namespace Thetis
                 }
 
                 cmaster.HeadlessAudioPublisher = PublishRxAudio;
+                // Branch G: wire IQ streaming for RX3-RX8
+                cmaster.HeadlessIQPublisher = PublishIQ;
+                cmaster.HeadlessIQWantsIQ = IsAnyClientStreamingIQ;
                 _isRunning = true;
             }
         }
@@ -163,6 +166,8 @@ namespace Thetis
                 if (!_isRunning) return;
 
                 cmaster.HeadlessAudioPublisher = null;
+                cmaster.HeadlessIQPublisher = null;
+                cmaster.HeadlessIQWantsIQ = null;
 
                 foreach (var s in _servers)
                 {
@@ -198,6 +203,43 @@ namespace Thetis
                     }
                 }
             }
+        }
+
+        // Branch G: publish an IQ block from the native DSP pipeline to the headless
+        // server that owns 'rx'. Called from cmaster.OnTCIRxIQOutSamples.
+        public void PublishIQ(int rx, int sampleRate, float[] interleavedIQ, int complexSamples)
+        {
+            if (!_isRunning || interleavedIQ == null) return;
+
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                {
+                    var s = _servers[i];
+                    if (rx == s.BaseRxIndex)
+                    {
+                        s.PublishIQ(0, sampleRate, interleavedIQ, complexSamples);
+                    }
+                }
+            }
+        }
+
+        // Branch G: does any client on 'rx' want an IQ stream? Used by cmaster as a
+        // cheap gate before it copies/forwards IQ samples.
+        public bool IsAnyClientStreamingIQ(int rx)
+        {
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                {
+                    var s = _servers[i];
+                    if (rx == s.BaseRxIndex)
+                    {
+                        if (s.IsTrxStreamingIQ(0)) return true;
+                    }
+                }
+            }
+            return false;
         }
 
         public bool IsAnyClientStreaming(int rx)
@@ -322,6 +364,26 @@ namespace Thetis
                 default: return DSPMode.DIGU;
             }
         }
+
+        // Branch G: map TCI agc_mode string to WDSP AGCMode
+        public static AGCMode AGCModeFromTciString(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return AGCMode.MED;
+            switch (s.Trim().ToLowerInvariant())
+            {
+                case "off":
+                case "fixd":
+                case "fixed": return AGCMode.FIXD;
+                case "long": return AGCMode.LONG;
+                case "slow": return AGCMode.SLOW;
+                case "fast": return AGCMode.FAST;
+                case "custom": return AGCMode.CUSTOM;
+                case "normal":
+                case "med":
+                case "medium":
+                default: return AGCMode.MED;
+            }
+        }
     }
 
     public sealed class HeadlessTciServer
@@ -410,6 +472,20 @@ namespace Thetis
                 for (int i = 0; i < _clients.Count; i++)
                 {
                     if (_clients[i].WantsAudio(trx)) return true;
+                }
+            }
+            return false;
+        }
+
+        // Branch G: does any connected client want an IQ stream on this TRX?
+        public bool IsTrxStreamingIQ(int trx)
+        {
+            if (trx < 0 || trx > 1) return false;
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    if (_clients[i].WantsIQ(trx)) return true;
                 }
             }
             return false;
@@ -552,6 +628,25 @@ namespace Thetis
             }
         }
 
+// Branch G: publish an IQ block to all clients on this server that requested IQ.
+        public void PublishIQ(int trx, int sampleRate, float[] interleavedIQ, int complexSamples)
+        {
+            if (trx < 0 || trx > 1 || interleavedIQ == null || complexSamples <= 0) return;
+
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                {
+                    var c = _clients[i];
+                    if (c.WantsIQ(trx))
+                    {
+                        c.PublishIQ(trx, sampleRate, interleavedIQ, complexSamples);
+                    }
+                }
+            }
+        }
+
+        
         internal static byte[] EncodeAudioSamples(float[] samples, TCISampleType sampleType)
         {
             if (samples == null || samples.Length == 0) return Array.Empty<byte>();
@@ -626,6 +721,29 @@ namespace Thetis
             WriteUInt32(packet, 20, (uint)length);
             WriteUInt32(packet, 24, 1); // RX_AUDIO_STREAM = 1
             WriteUInt32(packet, 28, (uint)channels);
+
+            if (payloadLen > 0)
+            {
+                Buffer.BlockCopy(samplePayload, 0, packet, 64, payloadLen);
+            }
+
+            return packet;
+        }
+
+        // Branch G: build a 64-byte-header IQ_STREAM binary payload (frame type 0).
+        public static byte[] BuildIQPayload(int trx, int sampleRate, int complexSamples, byte[] samplePayload)
+        {
+            int payloadLen = samplePayload != null ? samplePayload.Length : 0;
+            byte[] packet = new byte[64 + payloadLen];
+
+            WriteUInt32(packet, 0, (uint)trx);            // receiver
+            WriteUInt32(packet, 4, (uint)sampleRate);      // sample rate
+            WriteUInt32(packet, 8, (uint)TCISampleType.FLOAT32); // sample type
+            WriteUInt32(packet, 12, 0);
+            WriteUInt32(packet, 16, 0);
+            WriteUInt32(packet, 20, (uint)(complexSamples * 2)); // length (interleaved values)
+            WriteUInt32(packet, 24, (uint)TCIStreamType.IQ_STREAM); // frame type 0
+            WriteUInt32(packet, 28, 2);                    // channels (I/Q)
 
             if (payloadLen > 0)
             {
@@ -809,6 +927,17 @@ namespace Thetis
         private volatile bool _stop = false;
         private bool _handshakeDone = false;
         private readonly bool[] _wantsAudio = new bool[2];
+        // Branch G: per-client IQ stream request state
+        private readonly bool[] _wantsIQ = new bool[2];
+        // Branch G: IQ rate cap for headless ports (configurable via iq_samplerate cmd).
+        // 96000 keeps bandwidth at ~0.77 MB/s per streaming receiver.
+        public int IQSampleRate { get; private set; } = 96000;
+        // Branch G: S-meter/sensors state
+        private bool _rxSensorsEnabled = false;
+        private int _rxSensorsIntervalMs = 500;
+        private double _sMeterAccumSquared = 0.0;
+        private int _sMeterSampleCount = 0;
+        private long _lastSensorSendTicks = 0;
 
         // Dedicated outbound frame queue and background sender thread.
         // Guarantees network TCP writes NEVER block the real-time DSP audio callback thread.
@@ -824,6 +953,8 @@ namespace Thetis
         public long AudioPacketsSent { get; private set; } = 0;
 
         private volatile bool _isTransmitting = false;
+        // Branch G: per-client mute
+        private volatile bool _clientMuted = false;
         public bool IsTransmitting => _isTransmitting;
         public int TxStreamAudioBufferingMs { get; private set; } = 100;
         private bool _seenModernTxAudioNegotiation = false;
@@ -855,6 +986,13 @@ namespace Thetis
             return _wantsAudio[trx];
         }
 
+        // Branch G
+        public bool WantsIQ(int trx)
+        {
+            if (trx < 0 || trx > 1) return false;
+            return _wantsIQ[trx];
+        }
+
         public void OnPreempted()
         {
             _isTransmitting = false;
@@ -868,6 +1006,33 @@ namespace Thetis
                 _txAudioQueue.Clear();
                 _txQueuedComplexSamples = 0;
             }
+        }
+
+        // Branch G: send rx_sensors frame computed from accumulated audio RMS.
+        // Level is reported in dBFS relative to full scale (0 dBFS = clipping),
+        // matching the convention where stronger signal = higher (less negative) value.
+        private void SendSMeterFrame()
+        {
+            double rms;
+            int n;
+            lock (_audioLock)
+            {
+                rms = _sMeterAccumSquared;
+                n = _sMeterSampleCount;
+                _sMeterAccumSquared = 0.0;
+                _sMeterSampleCount = 0;
+            }
+
+            if (n <= 0) return;
+            double meanSq = rms / n;
+            double rmsLevel = Math.Sqrt(meanSq);
+            double dbfs = 20.0 * Math.Log10(rmsLevel);
+            if (double.IsNaN(dbfs) || double.IsInfinity(dbfs)) dbfs = -160.0;
+            if (dbfs < -160.0) dbfs = -160.0;
+            if (dbfs > 0.0) dbfs = 0.0;
+
+            SendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture, "rx_sensors:0,{0:F1};", dbfs));
+            SendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture, "rx_channel_sensors:0,0,{0:F1},{1:F1},{1:F1};", dbfs, dbfs));
         }
 
         public void SendTxChrono(int receiver)
@@ -938,6 +1103,9 @@ namespace Thetis
                 _audioBufRead = 0;
                 _audioBufWrite = 0;
             }
+            // Branch G: stop IQ streaming state on disconnect
+            _wantsIQ[0] = false;
+            _wantsIQ[1] = false;
         }
 
         private void SendLoop()
@@ -977,7 +1145,7 @@ namespace Thetis
 
         public void PublishAudio(int trx, int sampleRate, float[] left, float[] right, int nsamples)
         {
-            if (_stop || !_handshakeDone || trx != 0 || !_wantsAudio[0] || left == null || nsamples <= 0) return;
+            if (_stop || !_handshakeDone || trx != 0 || _clientMuted || !_wantsAudio[0] || left == null || nsamples <= 0) return;
 
             int targetRate = AudioSampleRate > 0 ? AudioSampleRate : 48000;
             int packetSamples = AudioStreamSamples > 0 ? AudioStreamSamples : 2048;
@@ -1034,8 +1202,56 @@ namespace Thetis
 
                     SendRawBytes(wsFrame);
                     AudioPacketsSent++;
+
+                    // Branch G: accumulate RMS for S-meter reporting
+                    if (_rxSensorsEnabled)
+                    {
+                        double sumSq = 0;
+                        for (int i = 0; i < packetSamples * 2; i++) { double v = interleaved[i]; sumSq += v * v; }
+                        _sMeterAccumSquared += sumSq;
+                        _sMeterSampleCount += interleavedCount;
+                    }
                 }
             }
+        }
+
+        // Branch G: publish an IQ block to this client if it has requested IQ streaming.
+        // IQ is float32 interleaved I/Q at IQSampleRate. Frames are streamed directly
+        // (no rebuffering) - the native pipeline already produces fixed-size blocks.
+        public void PublishIQ(int trx, int sampleRate, float[] interleavedIQ, int complexSamples)
+        {
+            if (_stop || !_handshakeDone || trx != 0 || !_wantsIQ[0] || interleavedIQ == null || complexSamples <= 0) return;
+
+            // Resample if the native rate differs from the negotiated IQ rate
+            float[] payloadSamples = interleavedIQ;
+            int outRate = sampleRate;
+            if (sampleRate != IQSampleRate && IQSampleRate > 0)
+            {
+                // Simple linear resample of interleaved IQ (pairs)
+                int inComplex = complexSamples;
+                int outComplex = (int)((long)inComplex * IQSampleRate / sampleRate);
+                if (outComplex <= 0) return;
+                float[] rs = new float[outComplex * 2];
+                double step = (double)inComplex / outComplex;
+                for (int i = 0; i < outComplex; i++)
+                {
+                    double pos = i * step;
+                    int idx = (int)pos;
+                    if (idx >= inComplex - 1) idx = inComplex - 2;
+                    if (idx < 0) idx = 0;
+                    double frac = pos - idx;
+                    rs[2 * i] = (float)(interleavedIQ[2 * idx] + (interleavedIQ[2 * (idx + 1)] - interleavedIQ[2 * idx]) * frac);
+                    rs[2 * i + 1] = (float)(interleavedIQ[2 * idx + 1] + (interleavedIQ[2 * idx + 3] - interleavedIQ[2 * idx + 1]) * frac);
+                }
+                payloadSamples = rs;
+                complexSamples = outComplex;
+                outRate = IQSampleRate;
+            }
+
+            byte[] encoded = HeadlessTciServer.EncodeAudioSamples(payloadSamples, TCISampleType.FLOAT32);
+            byte[] payload = HeadlessTciServer.BuildIQPayload(trx, outRate, complexSamples, encoded);
+            byte[] wsFrame = HeadlessTciServer.MakeWebSocketBinaryFrame(payload);
+            SendRawBytes(wsFrame);
         }
 
         public void SendRawBytes(byte[] bytes)
@@ -1087,6 +1303,17 @@ namespace Thetis
                         for (int i = 0; i < bytesRead; i++) streamBuffer.Add(buffer[i]);
                         ProcessWebSocketFrames(streamBuffer);
                     }
+
+                    // Branch G: periodic S-meter reporting
+                    if (_rxSensorsEnabled && _wantsAudio[0])
+                    {
+                        long now = DateTime.UtcNow.Ticks;
+                        if (_lastSensorSendTicks == 0 || (now - _lastSensorSendTicks) >= _rxSensorsIntervalMs * TimeSpan.TicksPerMillisecond)
+                        {
+                            _lastSensorSendTicks = now;
+                            SendSMeterFrame();
+                        }
+                    }
                 }
             }
             catch { }
@@ -1134,7 +1361,7 @@ namespace Thetis
             SendTextFrame("vfo_limits:0,61440000;");
             SendTextFrame("if_limits:-24000,24000;");
             SendTextFrame("modulations_list:AM,SAM,DSB,LSB,USB,CWL,CWU,NFM,DIGL,DIGU;");
-            SendTextFrame("iq_samplerate:48000;");
+            SendTextFrame($"iq_samplerate:{IQSampleRate};");
             SendTextFrame("audio_samplerate:48000;");
             SendTextFrame("audio_stream_sample_type:float32;");
             SendTextFrame("audio_stream_channels:2;");
@@ -1388,6 +1615,25 @@ namespace Thetis
                         }
                         break;
 
+                    // Branch G: DDS (panadapter center) - sets the slice center frequency.
+                    // CW Skimmer uses this to learn what frequency range the IQ stream covers.
+                    case "dds":
+                        if (args.Length >= 2 && double.TryParse(args[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double ddsHz))
+                        {
+                            int rxDDS = _server.BaseRxIndex;
+                            double ddsMHz = ddsHz / 1e6;
+                            HeadlessSliceManager.Instance.SetFrequency(rxDDS, ddsMHz);
+                            _server.BroadcastText($"dds:0,{ddsHz:0};");
+                        }
+                        else if (args.Length >= 1)
+                        {
+                            int rxDDS = _server.BaseRxIndex;
+                            var sliceDDS = HeadlessSliceManager.Instance.GetSlice(rxDDS);
+                            long ddsHzQ = sliceDDS != null ? (long)(sliceDDS.FrequencyMHz * 1e6) : 14074000;
+                            SendTextFrame($"dds:0,{ddsHzQ:0};");
+                        }
+                        break;
+
                     case "modulation":
                         if (args.Length >= 2)
                         {
@@ -1609,8 +1855,72 @@ namespace Thetis
                         }
                         break;
 
+                    // Branch G: functional AGC control (Tier 2)
+                    // agc_mode: off/long/slow/normal(fast alias)/custom -> WDSP AGC mode
+                    case "agc_mode":
+                        if (args.Length >= 2)
+                        {
+                            var sliceAgc = HeadlessSliceManager.Instance.GetSlice(_server.BaseRxIndex);
+                            if (sliceAgc != null && sliceAgc.IsActive)
+                            {
+                                AGCMode agcMode = HeadlessTciManager.AGCModeFromTciString(args[1]);
+                                WDSP.SetRXAAGCMode(sliceAgc.ChannelId, agcMode);
+                            }
+                            _server.BroadcastText($"agc_mode:0,{args[1].Trim().ToLowerInvariant()};");
+                        }
+                        else if (args.Length == 1)
+                        {
+                            SendTextFrame("agc_mode:0,normal;");
+                        }
+                        break;
+
+                    // agc_auto_ex:0,false -> AGC fixed gain mode (manual)
+                    case "agc_auto_ex":
+                        if (args.Length >= 2 && bool.TryParse(args[1], out bool agcAuto))
+                        {
+                            var sliceAuto = HeadlessSliceManager.Instance.GetSlice(_server.BaseRxIndex);
+                            if (sliceAuto != null && sliceAuto.IsActive)
+                            {
+                                // auto=true -> normal AGC; auto=false -> fixed gain (hang not used)
+                                WDSP.SetRXAAGCMode(sliceAuto.ChannelId, agcAuto ? AGCMode.MED : AGCMode.FIXD);
+                            }
+                            _server.BroadcastText($"agc_auto_ex:0,{agcAuto.ToString().ToLowerInvariant()};");
+                        }
+                        else if (args.Length == 1)
+                        {
+                            SendTextFrame("agc_auto_ex:0,true;");
+                        }
+                        break;
+
+                    // agc_gain:0,N -> manual AGC fixed gain when AGC is off (-20..+120 dB)
+                    case "agc_gain":
+                        if (args.Length >= 2 && int.TryParse(args[1], out int agcGainDb))
+                        {
+                            agcGainDb = Math.Max(-20, Math.Min(120, agcGainDb));
+                            var sliceGain = HeadlessSliceManager.Instance.GetSlice(_server.BaseRxIndex);
+                            if (sliceGain != null && sliceGain.IsActive)
+                            {
+                                WDSP.SetRXAAGCFixed(sliceGain.ChannelId, agcGainDb);
+                            }
+                            _server.BroadcastText($"agc_gain:0,{agcGainDb};");
+                        }
+                        else if (args.Length == 1)
+                        {
+                            SendTextFrame("agc_gain:0,0;");
+                        }
+                        break;
+
+                    // Branch G: functional mute (Tier 2) - silences this client's audio stream
                     case "mute":
-                        SendTextFrame("mute:false;");
+                        if (args.Length > 0 && bool.TryParse(args[0], out bool mreq))
+                        {
+                            _clientMuted = mreq;
+                            SendTextFrame($"mute:{_clientMuted.ToString().ToLowerInvariant()};");
+                        }
+                        else
+                        {
+                            SendTextFrame("mute:false;");
+                        }
                         break;
 
                     case "volume":
@@ -1643,15 +1953,43 @@ namespace Thetis
                         SendTextFrame("cw_keyer_speed:30;");
                         break;
 
+                    // Branch G: IQ stream control (CW Skimmer, panadapter clients)
+                    case "iq_start":
+                        if (args.Length > 0 && int.TryParse(args[0], out int iqTrxStart))
+                        {
+                            if (iqTrxStart >= 0 && iqTrxStart <= 1) _wantsIQ[iqTrxStart] = true;
+                            SendTextFrame($"iq_start:{iqTrxStart};");
+                        }
+                        break;
+
+                    case "iq_stop":
+                        if (args.Length > 0 && int.TryParse(args[0], out int iqTrxStop))
+                        {
+                            if (iqTrxStop >= 0 && iqTrxStop <= 1) _wantsIQ[iqTrxStop] = false;
+                            SendTextFrame($"iq_stop:{iqTrxStop};");
+                        }
+                        break;
+
+                    case "iq_samplerate":
+                        // Branch G: functional IQ rate for headless ports.
+                        // Clamped to 48k-384k; default 96k keeps per-receiver bandwidth ~0.77 MB/s.
+                        if (args.Length > 0 && int.TryParse(args[0], out int isrReq))
+                        {
+                            int isr = Math.Max(48000, Math.Min(384000, isrReq));
+                            // snap to supported rates
+                            if (isr <= 48000) IQSampleRate = 48000;
+                            else if (isr <= 96000) IQSampleRate = 96000;
+                            else if (isr <= 192000) IQSampleRate = 192000;
+                            else IQSampleRate = 384000;
+                        }
+                        SendTextFrame($"iq_samplerate:{IQSampleRate};");
+                        break;
+
                     case "audio_samplerate":
                         if (args.Length > 0 && int.TryParse(args[0], out int asr)) AudioSampleRate = asr;
                         SendTextFrame($"audio_samplerate:{AudioSampleRate};");
                         break;
 
-                    case "iq_samplerate":
-                        if (args.Length > 0) SendTextFrame($"iq_samplerate:{args[0]};");
-                        else SendTextFrame("iq_samplerate:48000;");
-                        break;
 
                     case "audio_stream_sample_type":
                         if (args.Length > 0)
@@ -1692,6 +2030,23 @@ namespace Thetis
                             TxStreamAudioBufferingMs = Math.Max(20, Math.Min(500, bufMs));
                         }
                         SendTextFrame($"tx_stream_audio_buffering:{TxStreamAudioBufferingMs};");
+                        break;
+
+                    // Branch G: S-meter enable - reports rx_sensors/rx_channel_sensors
+                    // computed from streaming audio RMS. Interval 100-2000ms, default 500ms.
+                    case "rx_sensors_enable":
+                        if (args.Length > 0 && bool.TryParse(args[0], out bool sen))
+                        {
+                            _rxSensorsEnabled = sen;
+                            if (args.Length > 1 && int.TryParse(args[1], out int senInt))
+                                _rxSensorsIntervalMs = Math.Max(100, Math.Min(2000, senInt));
+                            if (!_rxSensorsEnabled)
+                            {
+                                _sMeterAccumSquared = 0;
+                                _sMeterSampleCount = 0;
+                            }
+                            SendTextFrame($"rx_sensors_enable:{_rxSensorsEnabled.ToString().ToLowerInvariant()},{_rxSensorsIntervalMs};");
+                        }
                         break;
 
                     case "start":

@@ -1205,6 +1205,16 @@ namespace Thetis
 
         public static Action<int, int, float[], float[], int> HeadlessAudioPublisher { get; set; }
 
+        // Branch G: IQ publisher for headless TCI servers (RX3-RX8).
+        // Signature: (receiver, sampleRate, interleavedIQ, complexSamples)
+        // Mirrors HeadlessAudioPublisher; invoked from OnTCIRxIQOutSamples for any
+        // receiver whose IQ stream has been requested by a headless client.
+        public static Action<int, int, float[], int> HeadlessIQPublisher { get; set; }
+
+        // Branch G: gate predicate - returns true if any headless client on the given
+        // receiver currently wants an IQ stream. Prevents copy work when idle.
+        public static Func<int, bool> HeadlessIQWantsIQ { get; set; }
+
         public static void UpdateRXTCIRunState()
         {
             if (TCIServer != null)
@@ -1826,11 +1836,15 @@ namespace Thetis
         private static unsafe void OnTCIRxIQOutSamples(int id, int nsamples, double* data)
         {
             TCPIPtciServer tciServer = TCIServer;
-            if (tciServer == null || data == null || nsamples <= 0) return;
+            // Branch G: allow IQ forwarding to headless servers even when the original
+            // TCI server (port 50001) is not running.
+            if (data == null || nsamples <= 0) return;
+            if (tciServer == null && HeadlessIQPublisher == null) return;
+            if (tciServer == null && (HeadlessIQWantsIQ == null || !HeadlessIQWantsIQ(id))) return;
 
             int inputRate = GetInputRate(0, id);
             int outputRate = inputRate > TCI_MAX_IQ_STREAM_RATE ? TCI_MAX_IQ_STREAM_RATE : inputRate;
-            bool iqSwap = tciServer.IQSwap;
+            bool iqSwap = tciServer != null && tciServer.IQSwap;
             float[] iq = rentTCIFloatBuffer(nsamples * 2);
             for (int i = 0; i < nsamples; i++)
             {
@@ -1853,12 +1867,33 @@ namespace Thetis
                 return;
             }
 
-            TCIIQBlock block = rentTCIIQBlock();
-            block.Receiver = id;
-            block.SampleRate = outputRate;
-            block.ComplexSamples = complexSamples;
-            block.Samples = iq;
-            enqueueTCIIQ(block);
+            // Branch G: forward a copy of the IQ data to the headless TCI servers
+            // (RX3-RX8). The buffer is copied because the full-server path below
+            // enqueues 'iq' into the IQ queue whose blocks are recycled asynchronously.
+            if (HeadlessIQPublisher != null && id >= 1 && HeadlessIQWantsIQ(id))
+            {
+                try
+                {
+                    float[] iqCopy = new float[iq.Length];
+                    Buffer.BlockCopy(iq, 0, iqCopy, 0, iq.Length * sizeof(float));
+                    HeadlessIQPublisher.Invoke(id, outputRate, iqCopy, complexSamples);
+                }
+                catch { }
+            }
+
+            if (tciServer != null)
+            {
+                TCIIQBlock block = rentTCIIQBlock();
+                block.Receiver = id;
+                block.SampleRate = outputRate;
+                block.ComplexSamples = complexSamples;
+                block.Samples = iq;
+                enqueueTCIIQ(block);
+            }
+            else
+            {
+                returnTCIFloatBuffer(iq);
+            }
         }
 
         private static unsafe void OnTCIRxAudioOutSamples(int id, int nsamples, double* data)
