@@ -11,6 +11,7 @@ Requires: numpy, sounddevice, websockets, Pillow
 Run:  python3 MiniTCI.py
 """
 
+import asyncio
 import collections
 import queue
 import struct
