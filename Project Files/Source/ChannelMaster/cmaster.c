@@ -446,6 +446,7 @@ void SetRXTCIRun (int active)
 // use_tci_audio is set. When TCI TX audio is active, pipe.c skips xvacIN
 // entirely, so this thread is the ONLY producer for stream 1 - no conflicts
 // with VAC1 or the (absent) network mic path.
+volatile long long g_lastMicPacketTick = 0;   // GetTickCount64 of last network mic packet
 static HANDLE hTciTxClockThread = NULL;
 static volatile long tci_tx_clock_run = 0;
 
@@ -462,6 +463,16 @@ static void __cdecl tci_tx_clock_thread (void* pargs)
 	QueryPerformanceCounter (&t0);
 	while (_InterlockedAnd (&tci_tx_clock_run, 1))
 	{
+		// Adaptive: with a TRANSMITTER firmware that streams mic packets, the
+		// network path clocks stream 1 natively - stay out of its way. With the
+		// RECEIVER firmware (no TX packets) this thread provides the clock.
+		if (GetTickCount64 () - g_lastMicPacketTick < 100)
+		{
+			Sleep (1);
+			QueryPerformanceCounter (&t1);
+			next = t1.QuadPart - t0.QuadPart;   // resync to the packet clock
+			continue;
+		}
 		EnterCriticalSection (&pcm->update[stream1]);
 		xcmaster (stream1);
 		LeaveCriticalSection (&pcm->update[stream1]);
