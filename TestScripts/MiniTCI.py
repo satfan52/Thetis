@@ -946,7 +946,14 @@ class MiniTCI(tk.Tk):
                 if self.out_stream is None:
                     time.sleep(0.1)
                     continue
-                if self.ptt or time.time() < getattr(self, "_tx_mute_until", 0.0):
+                was_muted = getattr(self, "_muting_now", False)
+                muted = self.ptt or time.time() < getattr(self, "_tx_mute_until", 0.0)
+                if muted and not was_muted:
+                    self.logprint("monitor muted (TX)")
+                elif not muted and was_muted:
+                    self.logprint("monitor resumed")
+                self._muting_now = muted
+                if muted:
                     # TX: mute the RX monitor - no self-hearing in the speakers.
                     # Keep muting briefly AFTER PTT release: the RF chain (IC-7100
                     # unkeying + AGC decay) still carries the tail of the
@@ -1001,6 +1008,14 @@ class MiniTCI(tk.Tk):
         ms = max(0, min(5000, ms))
         self.tx_tail_s = ms / 1000.0
         self.txtail_var.set(ms)
+        # visible acknowledgment: flash the box green + log the accepted value
+        self.txtail_entry.config(highlightthickness=1,
+                                 highlightbackground="#3fa34d",
+                                 highlightcolor="#3fa34d")
+        self.txtail_entry.after(900, lambda: self.txtail_entry.config(
+            highlightthickness=1, highlightbackground="#d0d5dd",
+            highlightcolor="#d0d5dd"))
+        self.logprint(f"TX tail set to {ms} ms")
 
     def _mic_changed(self, v):
         self.mic_gain = float(v) / 100.0
