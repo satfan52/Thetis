@@ -75,31 +75,25 @@ Per the compatibility analysis, the following full-server features are **not** n
 
 ## 4. Testing Status
 
-- The solution compiles cleanly (`dotnet msbuild`, Release x64, 0 errors).
-- **TX path hardware-VERIFIED (2026-09-13)**: WSJT-X connected to a headless port and transmitted successfully against the live Red Pitaya + IC-7100 station — TX_CHRONO pacing, TX_AUDIO_STREAM ingestion, cmaster pacing thread, WDSP TX engagement, CI-V steering, and IC-7100 keying/audio all confirmed.
-- **Still open**: IQ/DDS/S-meter/AGC/mute end-to-end with a live client (MiniTCI or CW Skimmer), and MiniTCI mic TX. Harness: `TestScripts/test_branch_g.py [port]`.
+- The solution compiles cleanly (`dotnet msbuild`, Release x64, 0 errors). **Only the managed code is rebuilt on the development PC** (no MSVC toolchain there): `ChannelMaster.dll` / `wdsp.dll` are the Branch F build (`ea84d7f`). Branch G makes **no native change** (the ChannelMaster sources are identical to Branch F).
+- **TX path hardware-VERIFIED (2026-09-13)**: WSJT-X on a headless port transmitted against the live Red Pitaya + IC-7100 station — TX_CHRONO pacing, TX_AUDIO_STREAM ingestion, WDSP TX engagement, CI-V steering, IC-7100 keying/audio.
+- **MiniTCI TX hardware-VERIFIED (2026-09-14)**: PTT (mic) and TUNE from MiniTCI on RX3 produce clean audio and RF on the IC-7100 **with VAC1 disabled in Thetis** — the intended, VAC-independent operation. Verified by the operator on the IC-7100 monitor and power meter.
+- **Verified live with MiniTCI**: IQ streaming/panafall, DDS, S-meter, AGC modes, mute, VFO-centred display, Quisk mouse model, MOX broadcast (`mox:0,…`) muting the monitor.
+- **Still open**: CW Skimmer against a headless port (IQ consumption by a third-party client). Harness: `TestScripts/test_branch_g.py [port]`.
 
-An automated verification harness is ready in `TestScripts/test_branch_g.py`. It checks, per headless port:
+### 4.1 Station notes learned during verification
 
-1. Banner + `iq_samplerate` negotiation (default 96000, set/echo round-trip)
-2. IQ streaming — frames flow after `iq_start`, frame header validity (type 0, 2 channels, float32, negotiated rate), frames cease after `iq_stop`
-3. DDS set + query round-trip
-4. S-meter — `rx_sensors_enable` yields periodic `rx_sensors` frames
-5. AGC — `agc_mode` / `agc_gain` command echoes
-6. Mute — audio frames stop while muted, resume after unmute
-7. Concurrent IQ + audio streaming without interference
+| Topic | Finding |
+| :--- | :--- |
+| Firmware | The Red Pitaya runs Pavel Demin's *receiver* HPSDR firmware (8 DDCs, no transmitter). It speaks Protocol 1; every frame carries mic-sample slots, so the Thetis TX DSP stream is always clocked (`networkproto1.c:416`). No MOX and no extra clock are needed for TCI TX — a MOX assert tried during development was **removed** (it would put the VAC1 mic on air). |
+| TX Out driver | WASAPI works on **Setup → Audio → TX Output** with a **2048-sample** buffer (512 gives distorted/underrunning audio on this USB codec). MME works at 512. Both are valid; WASAPI/2048 is in use. VAC1 runs WASAPI. |
+| TX-chain probe | While a headless client transmits, Thetis sends it `probe:q=…,calls=…,samps=…,mic=…,alc=…,pwr=…,vac1=…,txout_under=…,txout_over=…,txout_fill=…;` once per second (queued TCI samples, pulls into the TX DSP, WDSP MIC_PK/ALC_PK/PWR meters, VAC1 state, TX-Out IVAC ring diagnostics). MiniTCI prints these lines in its log. Use them to locate a TX-audio fault stage by stage. |
+| Slice AF gain | Headless slice default AF gain is 0.5 (was 0.05) so client audio level matches Thetis. |
+| RX AGC during TX | The slice AGC is snapped to FIXED during a headless TX and restored on release, so RX audio is at full level immediately after PTT (no multi-second AGC recovery). |
 
-Run with:
+### 4.2 MiniTCI client (`TestScripts/MiniTCI.py`, `C:\Thetis\MiniTCI.exe`)
 
-```
-python3 TestScripts\test_branch_g.py [port]
-```
-
-(Requires Thetis Branch G running with the Red Pitaya on the network, and the `websockets` Python package — the same harness family as `test_all_channels_audio.py`.)
-
-Additionally, run **CW Skimmer** against a headless port (e.g. 50003) to verify the full IQ consumption path end-to-end, and **WSJT-X** to confirm the Branch F TX path is unaffected.
-
----
+Stand-alone tkinter/`sounddevice` client with its **own audio devices** — it does not use VAC1 and can run on another PC. Features: Thetis-style VFO-centred panafall with Quisk mouse model and Y-zero / Y-scale / zoom / waterfall-intensity sliders; band/mode/AGC controls; direct-frequency entry; S-meter (RX signal, mic or Tune level while transmitting); PTT with monitor mute and a configurable TX tail (ms, default 350); TUNE (1500 Hz tone, configurable drive, toggles on/off); settings persisted in `settings.json`; timestamped log with the Thetis TX probe.
 
 ## 5. Source Changes
 
@@ -107,6 +101,13 @@ Additionally, run **CW Skimmer** against a headless port (e.g. 50003) to verify 
 | :--- | :--- |
 | `Project Files/Source/Console/cmaster.cs` | `HeadlessIQPublisher`, `HeadlessIQWantsIQ` delegates; IQ forwarding in `OnTCIRxIQOutSamples` |
 | `Project Files/Source/Console/HeadlessTciServer.cs` | IQ publish path (manager → server → client), `BuildIQPayload`, `iq_start`/`iq_stop`/`iq_samplerate`/`dds`/`rx_sensors_enable`/`agc_*`/`mute` handlers, S-meter accumulation |
+| `Project Files/Source/Console/TxArbiter.cs` | Digital TX request/release: engage WDSP TX channel, switch `SetTXTCIAudioRun`, CI-V steer + key, LIFO preemption; voice always has priority; **no MOX assert** |
+| `Project Files/Source/Console/CAT/CIVController.cs` | 80 ms settling between the last CI-V frequency frame and PTT (prevents TX on the previous VFO) |
+| `Project Files/Source/Console/HeadlessSliceManager.cs` | default slice AF gain 0.5 |
+| `Project Files/Source/Console/cmaster.cs` | IQ swap gate `tciServer == null \|\| tciServer.IQSwap` (headless spectrum was mirrored); once-per-second TX probe in `serviceTCITxProtocol` |
+| `Project Files/Source/Console/HeadlessTciServer.cs` | `trx`/`tune` handlers freeze/restore slice AGC; `mox:0,true/false;` broadcast via `Console.MoxChangeHandlers`; `ReportProbe` |
+| `Project Files/Source/Console/console.cs` | `MAX_TONE_MAG` 0.99999 → 0.2 (Thetis TUNE tone at −14 dBFS instead of full scale — the IC-7100 DATA input clipped); 8-DDC rate table; headless port listing |
+| `TestScripts/MiniTCI.py` | the client (see 4.2); built with PyInstaller to `TestScripts/dist/MiniTCI.exe` |
 | `Project Files/Source/Console/Thetis.csproj` | netstandard facade reference (build environment) |
 | `Project Files/Source/Midi2Cat/Midi2Cat.csproj` | reference-assemblies import (build environment) |
 | `Project Files/Source/RawInput/RawInput.csproj` | reference-assemblies import (build environment) |

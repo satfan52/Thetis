@@ -52,6 +52,3 @@ warren@pratt.one
 #include "vox.h"
 #include "znob.h"
 #include "znobII.h"
-
-// Branch G: tick of the last network mic packet (TX stream clock source)
-extern volatile long long g_lastMicPacketTick;

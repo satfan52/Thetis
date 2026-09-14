@@ -769,7 +769,6 @@ ReadThreadMainLoop() {
 						prn->TxReadBufp[2 * i + 1] = 0.0;
 					}
 					//WriteAudio(30.0, 48000, 64, prn->TxReadBufp,3);
-					g_lastMicPacketTick = GetTickCount64();  // firmware streams TX samples
 					Inbound(inid(1, 0), prn->mic.spp, prn->TxReadBufp);
 					break;
 				case 2://1027: // 1024 bytes 16bit raw ADC data, handled in ReadUDPFrame()

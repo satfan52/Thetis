@@ -3,6 +3,7 @@
 This branch contains the **Branch G** implementation: the Branch F multi-port headless TCI server (RX3–RX8 on WebSocket ports 50002–50008, TX flow control, TxArbiter voice/digital preemption, CI-V state snapshot/restore) plus the SDR-software compatibility set — IQ streaming for CW Skimmer/panadapters, DDS panadapter center, S-meter reporting, functional AGC control and mute.
 
 - [Branch G documentation (SDR software compatibility)](HYBRID-SDR-BRANCH-G.md)
+- **MiniTCI** — stand-alone simplified radio client for the headless ports (`TestScripts/MiniTCI.py`, exe in `TestScripts/dist/` and the GitHub release): own audio devices (no VAC), Thetis-style panafall, PTT/TUNE. PTT and TUNE hardware-verified 2026-09-14 on the Red Pitaya (receiver firmware) + IC-7100 station with VAC1 disabled.
 - [Branch F documentation (multi-port TCI server)](HYBRID-SDR-BRANCH-F.md)
 - [Branch E installation and configuration guide](HYBRID-SDR-BRANCH-E.md)
 - [Branch D installation and configuration guide](HYBRID-SDR-BRANCH-D.md)
