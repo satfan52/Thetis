@@ -947,18 +947,18 @@ class MiniTCI(tk.Tk):
                     time.sleep(0.1)
                     continue
                 now_t = time.time()
-                # after the fixed tail window, keep discarding while the incoming
-                # audio still contains the loud TX tail (RMS above threshold):
-                # playback resumes exactly when the voice is actually gone, and
-                # the tail-length entry no longer needs to be exact.
+                # after the fixed tail window, keep discarding only while the
+                # incoming audio still contains VOICE-level energy (> -25 dBFS);
+                # the AGC-flattened noise floor must not extend the mute.
+                # Hard cap: 0.5 s beyond the box value.
                 if self.ptt:
                     self._ptt_off_ts = 0.0
                 tail_active = now_t < getattr(self, "_tx_mute_until", 0.0) or (
                     not self.ptt and getattr(self, "_ptt_off_ts", 0.0)
-                    and now_t - self._ptt_off_ts < 5.0
+                    and now_t - self._ptt_off_ts < self.tx_tail_s + 0.5
                     and self.audio_blocks
                     and float(np.sqrt(np.mean(self.audio_blocks[0].astype(np.float64) ** 2)))
-                        > 10 ** (-35.0 / 20.0))
+                        > 10 ** (-25.0 / 20.0))
                 if self.ptt or tail_active:
                     # TX: mute the RX monitor - no self-hearing in the speakers.
                     # Keep muting briefly AFTER PTT release: the RF chain (IC-7100
