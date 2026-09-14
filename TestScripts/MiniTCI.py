@@ -38,6 +38,7 @@ HOST = "127.0.0.1"
 PORT_MIN, PORT_MAX = 50001, 50008
 OUT_RATE = 48000
 MIC_RATE = 48000
+TX_AUDIO_RATE = 48000   # TX audio stream rate (negotiated with the server)
 
 BANDS = [  # name, default MHz, suggested mode
     ("160m", 1.850, "LSB"),
@@ -570,6 +571,9 @@ class MiniTCI(tk.Tk):
         self.mic_gain = 0.5
         self.smeter = -140.0
         self.tx_tail_s = 0.35
+        self.tuning = False
+        self.tune_phase = 0.0
+        self.tune_sample_pos = 0
         self.mic_stream = None
         self.tx_audio_q = collections.deque(maxlen=64)
         self.chrono_reqs = collections.deque()
@@ -874,6 +878,10 @@ class MiniTCI(tk.Tk):
         self.txtail_entry.bind("<Return>", self._txtail_entry)
         self.txtail_entry.bind("<FocusOut>", self._txtail_entry)
         self.ptt_btn.pack(side="left")
+        self.tune_btn = tk.Button(r4, text="TUNE", bg="#f7e6c8", fg=C["fg"], width=8,
+                                  font=("Segoe UI", 10, "bold"))
+        self.tune_btn.bind("<ButtonPress-1>", lambda e: self.tune_toggle())
+        self.tune_btn.pack(side="left", padx=(8, 0))
         self.bind("<KeyPress-space>", self._space_dn)
         self.bind("<KeyRelease-space>", self._space_up)
         self.tx_lbl = tk.Label(r4, text="RX", bg=C["panel"], fg=C["dim"],
@@ -1110,6 +1118,13 @@ class MiniTCI(tk.Tk):
                 length, rate = self.chrono_reqs.popleft()
             chans = 1
             vals_needed = max(1, length) if chans == 1 else max(1, length // 2)
+            if self.tuning:
+                # TUNE: generated steady tone instead of the mic
+                vals = self._tune_gen()[:vals_needed]
+                frame = self.build_tx_audio_frame(vals, rate, chans)
+                if self.client and self.client.loop:
+                    self.client.send_binary(frame)
+                continue
             # gather mic samples
             mono = bytearray()
             got = 0
@@ -1604,6 +1619,50 @@ class MiniTCI(tk.Tk):
         self.tx_lbl.config(text="TX ⏺", fg=C["red"])
         self._mic_open()
 
+    # ---------------- tune ----------------
+    def tune_toggle(self):
+        """WSJT-X-style Tune: press to start, press again to stop. Transmits a
+        steady single tone at a drive level that produces full RF power without
+        saturating the Thetis TX chain (tone peak ~ -14 dBFS, like WSJT-X)."""
+        if not self.connected:
+            self.logprint("connect first to use Tune")
+            return
+        if self.ptt:
+            return
+        if not self.tuning:
+            self.tuning = True
+            self.tune_phase = 0.0
+            self.ptt = True
+            self.send("tx_stream_audio_buffering:100;")
+            self.send("audio_stream_sample_type:float32;")
+            self.send("audio_stream_channels:1;")
+            self.send("audio_stream_samples:1024;")
+            self.send("trx:0,true;")
+            self.tune_btn.config(bg=C["red"], relief="sunken")
+            self.tx_lbl.config(text="TX ⏺ tune", fg=C["red"])
+            self.logprint("Tune ON: 1500 Hz tone, peak -14 dBFS")
+        else:
+            self.tuning = False
+            self.tune_stop()
+
+    def tune_stop(self):
+        if not self.tuning:
+            return
+        self.tuning = False
+        self.ptt_off()
+
+    def _tune_gen(self):
+        """Generate the next tune tone block (called instead of the mic while
+        tuning). Steady 1500 Hz sine; peak amplitude 0.2 = -14 dBFS - full
+        drive for digital modes without saturating the TX chain."""
+        n = 1024
+        ph = self.tune_phase
+        amp = 0.2
+        t = (np.arange(n) + self.tune_sample_pos) / TX_AUDIO_RATE
+        self.tune_sample_pos += n
+        self.tune_phase = (self.tune_phase + 2 * np.pi * 1500.0 * n / TX_AUDIO_RATE) % (2 * np.pi)
+        return (amp * np.sin(2 * np.pi * 1500.0 * t)).astype(np.float32)
+
     def ptt_off(self):
         if not self.ptt:
             return
@@ -1614,6 +1673,9 @@ class MiniTCI(tk.Tk):
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
         self.tx_lbl.config(text="RX", fg=C["dim"])
+        if getattr(self, "tuning", False):
+            self.tuning = False
+            self.tune_btn.config(bg="#f7e6c8", relief="raised")
         if self.mic_stream:
             try:
                 self.mic_stream.stop(); self.mic_stream.close()
