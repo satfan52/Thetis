@@ -26,6 +26,7 @@ namespace Thetis
         // Branch G: IQ streaming is requested independently of audio
         public bool IsStreamingIQ { get; set; } = false;
         public double AudioGain { get; set; } = 0.5;   // Thetis-like default AF level (-6 dBFS panel gain)
+        public AGCMode AgcMode { get; set; } = AGCMode.MED;   // user-selected AGC preset
 
         public HeadlessSlice(int rxIndex)
         {

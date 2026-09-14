@@ -569,7 +569,7 @@ class MiniTCI(tk.Tk):
         self.volume = 0.25
         self.mic_gain = 0.5
         self.smeter = -140.0
-        self.tx_tail_s = 0.8
+        self.tx_tail_s = 0.35
         self.mic_stream = None
         self.tx_audio_q = collections.deque(maxlen=64)
         self.chrono_reqs = collections.deque()
@@ -867,9 +867,9 @@ class MiniTCI(tk.Tk):
         self.ptt_btn.bind("<ButtonPress-1>", lambda e: self.ptt_on())
         self.ptt_btn.bind("<ButtonRelease-1>", lambda e: self.ptt_off())
         ttk.Label(r4, text="TX tail (ms):", padding=(14, 0, 2, 0)).pack(side="left")
-        self.txtail_var = tk.IntVar(value=200)
+        self.txtail_var = tk.IntVar(value=350)
         self.txtail_entry = ttk.Entry(r4, width=5)
-        self.txtail_entry.insert(0, "200")
+        self.txtail_entry.insert(0, "350")
         self.txtail_entry.pack(side="left")
         self.txtail_entry.bind("<Return>", self._txtail_entry)
         self.txtail_entry.bind("<FocusOut>", self._txtail_entry)

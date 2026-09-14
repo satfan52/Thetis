@@ -1756,6 +1756,31 @@ namespace Thetis
                                 ClearQueuedTxAudio();
                                 TxArbiter.Instance.ReleaseDigitalTx(rx);
                                 _server.BroadcastTrxState(0, false);
+
+                                // TX end: the RX AGC was driven hard by our own
+                                // signal and its gain ramps back slowly, so RX
+                                // audio fades in over ~1-2 s and weak messages
+                                // right after the transmission are missed. Snap
+                                // the AGC to FIXED gain for 1.5 s (instant full
+                                // gain), then restore the user's AGC preset.
+                                var sliceR = HeadlessSliceManager.Instance.GetSlice(rx);
+                                if (sliceR != null && sliceR.IsActive)
+                                {
+                                    int ch = sliceR.ChannelId;
+                                    AGCMode restore = sliceR.AgcMode != AGCMode.FIXD ? sliceR.AgcMode : AGCMode.MED;
+                                    double fixedDb = 20.0;  // ~AGC MED target
+                                    System.Threading.Tasks.Task.Run(() =>
+                                    {
+                                        try
+                                        {
+                                            WDSP.SetRXAAGCMode(ch, AGCMode.FIXD);
+                                            WDSP.SetRXAAGCFixed(ch, fixedDb);
+                                            System.Threading.Thread.Sleep(1500);
+                                            WDSP.SetRXAAGCMode(ch, restore);
+                                        }
+                                        catch { }
+                                    });
+                                }
                             }
                         }
                         else if (args.Length == 1)
@@ -1923,6 +1948,7 @@ namespace Thetis
                             {
                                 AGCMode agcMode = HeadlessTciManager.AGCModeFromTciString(args[1]);
                                 WDSP.SetRXAAGCMode(sliceAgc.ChannelId, agcMode);
+                                sliceAgc.AgcMode = agcMode;   // remember for TX-tail restore
                             }
                             _server.BroadcastText($"agc_mode:0,{args[1].Trim().ToLowerInvariant()};");
                         }
@@ -1941,6 +1967,7 @@ namespace Thetis
                             {
                                 // auto=true -> normal AGC; auto=false -> fixed gain (hang not used)
                                 WDSP.SetRXAAGCMode(sliceAuto.ChannelId, agcAuto ? AGCMode.MED : AGCMode.FIXD);
+                                sliceAuto.AgcMode = agcAuto ? AGCMode.MED : AGCMode.FIXD;
                             }
                             _server.BroadcastText($"agc_auto_ex:0,{agcAuto.ToString().ToLowerInvariant()};");
                         }
