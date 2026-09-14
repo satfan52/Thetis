@@ -226,20 +226,6 @@ namespace Thetis
                     cmaster.SetTXTCIAudioRun(0, 1);
                     cmaster.SignalTciTxStream();
                     _dspTxEngaged = true;
-
-                    // Branch G: assert MOX for the digital TX. The Red Pitaya
-                    // firmware only clocks the TX DSP chain (mic/TX sample
-                    // packets) while MOX is asserted - without it the TCI TX
-                    // audio starves and no RF is produced. Mic bleed is
-                    // structurally prevented: with use_tci_audio set, pipe.c
-                    // skips xvacIN/wave playback entirely and the TXA input
-                    // comes only from the TCI stream. _suppressMoxPreempt
-                    // (set below) stops our own MOX from preempting us.
-                    if (_console != null)
-                    {
-                        _suppressMoxPreempt = true;
-                        _console.MOX = true;
-                    }
                 }
             }
             catch { }
@@ -287,18 +273,6 @@ namespace Thetis
                             dspTx.CurrentDSPMode = _savedVoiceMode;
                         }
                         _dspTxEngaged = false;
-                    }
-                }
-                catch { }
-
-                // Release the MOX asserted at RequestDigitalTx (firmware TX
-                // clock). Suppress the preemption while we clear our own flag.
-                try
-                {
-                    if (_console != null)
-                    {
-                        _suppressMoxPreempt = true;
-                        _console.MOX = false;
                     }
                 }
                 catch { }

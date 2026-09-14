@@ -880,8 +880,7 @@ class MiniTCI(tk.Tk):
         self.txtail_entry.bind("<FocusOut>", self._txtail_entry)
         self.ptt_btn.pack(side="left")
         self.tune_btn = tk.Button(r4, text="TUNE", bg="#f7e6c8", fg=C["fg"], width=8,
-                                  font=("Segoe UI", 10, "bold"))
-        self.tune_btn.bind("<ButtonPress-1>", lambda e: self.tune_toggle())
+                                  font=("Segoe UI", 10, "bold"), command=self.tune_toggle)
         self.tune_btn.pack(side="left", padx=(8, 0))
         ttk.Label(r4, text="Tune drive:", padding=(14, 0, 2, 0)).pack(side="left")
         self.tunedrive_entry = ttk.Entry(r4, width=5)
@@ -1281,6 +1280,13 @@ class MiniTCI(tk.Tk):
 
     def _handle(self, d):
         for k, v in d.items():
+            if k == "probe":
+                # Thetis TX-chain probe (once/s while we transmit):
+                # q=queued TCI samples in Thetis, calls/samps=pulls into the TX DSP,
+                # cyc=TX DSP cycles, tci=1 if TCI is the TX source, in/out=RMS at
+                # the WDSP input/output, outdev/outrms=frames+RMS to the TX Out device
+                self.logprint("probe " + str(v))
+                continue
             if k == "vfo" and v:
                 p = v.split(",")
                 if len(p) >= 3:
@@ -1662,8 +1668,7 @@ class MiniTCI(tk.Tk):
             self.logprint("connect first to use Tune")
             return
         if self.tuning:
-            self.tuning = False
-            self.ptt_off()
+            self.ptt_off()            # ptt_off clears self.tuning + button look
             self.logprint("Tune OFF")
             return
         if self.ptt:

@@ -1369,15 +1369,28 @@ namespace Thetis
                 return;
             }
 
-            // diagnostics: TX input cycle health (queue + cm TX thread)
-            if (System.Threading.Interlocked.Read(ref m_tciTxDbgTick) != 0)
-            { }
+            // Branch G probe: once a second, tell the transmitting headless client
+            // how far its TX audio gets. All values come from exports the shipped
+            // DLLs already have (WDSP TX meters + IVAC ring diagnostics).
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            if (now - System.Threading.Interlocked.Read(ref m_tciTxDbgTick) > 2000)
+            if (now - m_tciTxDbgTick > System.Diagnostics.Stopwatch.Frequency)
             {
-                System.Threading.Interlocked.Exchange(ref m_tciTxDbgTick, now);
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TCITX] queue={m_tciTxQueuedSamples} calls={TciTxInCalls} samps={TciTxInSamples}");
+                m_tciTxDbgTick = now;
+                try
+                {
+                    int q; lock (m_objTCITxStateLock) { q = m_tciTxQueuedSamples; }
+                    double micPk = WDSP.CalculateTXMeter(1, WDSP.MeterType.MIC_PK);   // dB, level into the TX chain
+                    double alcPk = WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK);   // dB, after ALC
+                    double pwr   = WDSP.CalculateTXMeter(1, WDSP.MeterType.PWR);      // modulated output level
+                    int under = -1, over = -1, ring = -1, nring = -1; double var = 0;
+                    int txOutId = CMrcvr;   // dedicated processed-TX IVAC id
+                    unsafe { ivac.getIVACdiags(txOutId, 1, &under, &over, &var, &ring, &nring); }
+                    string line = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "probe:q={0},calls={1},samps={2},mic={3:0.0},alc={4:0.0},pwr={5:0.000},vac1={6},txout_under={7},txout_over={8},txout_fill={9}/{10};",
+                        q, TciTxInCalls, TciTxInSamples, micPk, alcPk, pwr, Audio.VACEnabled ? 1 : 0, under, over, nring, ring);
+                    if (tciSource is HeadlessTciManager hm) hm.ReportProbe(line);
+                }
+                catch { }
             }
 
             if (m_cachedTxInputRate <= 0)

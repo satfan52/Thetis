@@ -80,6 +80,19 @@ namespace Thetis
             return false;
         }
 
+        /// <summary>Branch G probe: forward a TX-chain status line to the transmitting client.</summary>
+        public void ReportProbe(string line)
+        {
+            if (!_isRunning) return;
+            int activeRx = TxArbiter.Instance.ActiveDigitalRx;
+            if (activeRx == -1) return;
+            lock (_lock)
+            {
+                for (int i = 0; i < _servers.Count; i++)
+                    if (_servers[i].BaseRxIndex == activeRx) { _servers[i].ReportProbe(line); return; }
+            }
+        }
+
         public void SendTxChrono(int receiver)
         {
             if (!_isRunning) return;
@@ -618,6 +631,15 @@ namespace Thetis
                 }
             }
             return false;
+        }
+
+        public void ReportProbe(string line)
+        {
+            lock (_clientsLock)
+            {
+                for (int i = 0; i < _clients.Count; i++)
+                    if (_clients[i].IsTransmitting) _clients[i].SendTextFrame(line);
+            }
         }
 
         public void SendTxChrono(int receiver)
