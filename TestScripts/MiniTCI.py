@@ -947,7 +947,19 @@ class MiniTCI(tk.Tk):
                     time.sleep(0.1)
                     continue
                 now_t = time.time()
-                if self.ptt or now_t < getattr(self, "_tx_mute_until", 0.0):
+                # after the fixed tail window, keep discarding while the incoming
+                # audio still contains the loud TX tail (RMS above threshold):
+                # playback resumes exactly when the voice is actually gone, and
+                # the tail-length entry no longer needs to be exact.
+                if self.ptt:
+                    self._ptt_off_ts = 0.0
+                tail_active = now_t < getattr(self, "_tx_mute_until", 0.0) or (
+                    not self.ptt and getattr(self, "_ptt_off_ts", 0.0)
+                    and now_t - self._ptt_off_ts < 5.0
+                    and self.audio_blocks
+                    and float(np.sqrt(np.mean(self.audio_blocks[0].astype(np.float64) ** 2)))
+                        > 10 ** (-35.0 / 20.0))
+                if self.ptt or tail_active:
                     # TX: mute the RX monitor - no self-hearing in the speakers.
                     # Keep muting briefly AFTER PTT release: the RF chain (IC-7100
                     # unkeying + AGC decay) still carries the tail of the
@@ -1591,8 +1603,10 @@ class MiniTCI(tk.Tk):
         if not self.ptt:
             return
         self.ptt = False
-        # keep the monitor muted for the TX tail (IC-7100 unkeying + AGC decay)
+        # fixed minimum tail, then level-based: the pump keeps discarding until
+        # the loud TX tail decays into the noise floor (hard cap 5 s)
         self._tx_mute_until = time.time() + self.tx_tail_s
+        self._ptt_off_ts = time.time()
         self.mic_level_db = -140.0
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
