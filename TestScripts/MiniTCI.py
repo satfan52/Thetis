@@ -651,7 +651,7 @@ class MiniTCI(tk.Tk):
             if s.get("ctun") is not None:
                 self.ctun_var.set(bool(s["ctun"]))
             if s.get("tx_tail_ms") is not None:
-                self.tx_tail_s = max(0.0, min(5.0, float(s["tx_tail_ms"]) / 1000.0))
+                self.tx_tail_s = max(0.0, min(10.0, float(s["tx_tail_ms"]) / 1000.0))
                 self.txtail_var.set(int(self.tx_tail_s * 1000))
             if s.get("host") and hasattr(self, "host_var"):
                 self.host_var.set(s["host"])
@@ -1005,16 +1005,16 @@ class MiniTCI(tk.Tk):
         except (ValueError, tk.TclError):
             self.txtail_var.set(int(self.tx_tail_s * 1000))
             return
-        ms = max(0, min(5000, ms))
+        ms = max(0, min(10000, ms))
         self.tx_tail_s = ms / 1000.0
         self.txtail_var.set(ms)
-        # visible acknowledgment: flash the box green + log the accepted value
-        self.txtail_entry.config(highlightthickness=1,
-                                 highlightbackground="#3fa34d",
-                                 highlightcolor="#3fa34d")
-        self.txtail_entry.after(900, lambda: self.txtail_entry.config(
-            highlightthickness=1, highlightbackground="#d0d5dd",
-            highlightcolor="#d0d5dd"))
+        # visible acknowledgment: flash the entry text green + log the value
+        try:
+            self.txtail_entry.configure(foreground="#1a7f37")
+            self.txtail_entry.after(900, lambda: self.txtail_entry.configure(
+                foreground="#1a1f29"))
+        except tk.TclError:
+            pass
         self.logprint(f"TX tail set to {ms} ms")
 
     def _mic_changed(self, v):
@@ -1655,7 +1655,8 @@ class MiniTCI(tk.Tk):
     # ---------------- log ----------------
     def logprint(self, s):
         try:
-            self.log.insert("end", s + "\n")
+            stamp = time.strftime("%H:%M:%S")
+            self.log.insert("end", f"[{stamp}] {s}\n")
             self.log.see("end")
             if float(self.log.index("end-1c").split(".")[0]) > 60:
                 self.log.delete("1.0", "20.0")
