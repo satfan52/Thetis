@@ -1656,8 +1656,8 @@ class MiniTCI(tk.Tk):
 
     def tune_toggle(self):
         """WSJT-X-style Tune: press to start, press again to stop. Transmits a
-        steady single tone at a drive level that produces full RF power without
-        saturating the Thetis TX chain (tone peak ~ -14 dBFS, like WSJT-X)."""
+        steady single tone at the configured drive level (Tune drive entry),
+        full RF power without saturating the Thetis TX chain."""
         if not self.connected:
             self.logprint("connect first to use Tune")
             return
@@ -1667,21 +1667,20 @@ class MiniTCI(tk.Tk):
             self.logprint("Tune OFF")
             return
         if self.ptt:
+            self.logprint("PTT active - Tune not available")
             return
-            self.tuning = True
-            self.tune_phase = 0.0
-            self.ptt = True
-            self.send("tx_stream_audio_buffering:100;")
-            self.send("audio_stream_sample_type:float32;")
-            self.send("audio_stream_channels:1;")
-            self.send("audio_stream_samples:1024;")
-            self.send("trx:0,true;")
-            self.tune_btn.config(bg=C["red"], relief="sunken")
-            self.tx_lbl.config(text="TX ⏺ tune", fg=C["red"])
-            self.logprint("Tune ON: 1500 Hz tone, peak -14 dBFS")
-        else:
-            self.tuning = False
-            self.tune_stop()
+        self.tuning = True
+        self.tune_phase = 0.0
+        self.tune_sample_pos = 0
+        self.ptt = True
+        self.send("tx_stream_audio_buffering:100;")
+        self.send("audio_stream_sample_type:float32;")
+        self.send("audio_stream_channels:1;")
+        self.send("audio_stream_samples:1024;")
+        self.send("trx:0,true;")
+        self.tune_btn.config(bg=C["red"], relief="sunken")
+        self.tx_lbl.config(text="TX \u23fa tune", fg=C["red"])
+        self.logprint(f"Tune ON: 1500 Hz tone, drive {self.tune_amp:.3f} peak")
 
     def tune_stop(self):
         if not self.tuning:
