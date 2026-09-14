@@ -946,20 +946,7 @@ class MiniTCI(tk.Tk):
                 if self.out_stream is None:
                     time.sleep(0.1)
                     continue
-                now_t = time.time()
-                # after the fixed tail window, keep discarding only while the
-                # incoming audio still contains VOICE-level energy (> -25 dBFS);
-                # the AGC-flattened noise floor must not extend the mute.
-                # Hard cap: 0.5 s beyond the box value.
-                if self.ptt:
-                    self._ptt_off_ts = 0.0
-                tail_active = now_t < getattr(self, "_tx_mute_until", 0.0) or (
-                    not self.ptt and getattr(self, "_ptt_off_ts", 0.0)
-                    and now_t - self._ptt_off_ts < self.tx_tail_s + 0.5
-                    and self.audio_blocks
-                    and float(np.sqrt(np.mean(self.audio_blocks[0].astype(np.float64) ** 2)))
-                        > 10 ** (-25.0 / 20.0))
-                if self.ptt or tail_active:
+                if self.ptt or time.time() < getattr(self, "_tx_mute_until", 0.0):
                     # TX: mute the RX monitor - no self-hearing in the speakers.
                     # Keep muting briefly AFTER PTT release: the RF chain (IC-7100
                     # unkeying + AGC decay) still carries the tail of the
@@ -1603,10 +1590,8 @@ class MiniTCI(tk.Tk):
         if not self.ptt:
             return
         self.ptt = False
-        # fixed minimum tail, then level-based: the pump keeps discarding until
-        # the loud TX tail decays into the noise floor (hard cap 5 s)
+        # fixed minimum tail, then playback resumes (the box controls the tail)
         self._tx_mute_until = time.time() + self.tx_tail_s
-        self._ptt_off_ts = time.time()
         self.mic_level_db = -140.0
         self.send("trx:0,false;")
         self.ptt_btn.config(bg="#e3b8b3", relief="raised")
