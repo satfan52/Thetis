@@ -574,6 +574,7 @@ class MiniTCI(tk.Tk):
         self.tuning = False
         self.tune_phase = 0.0
         self.tune_sample_pos = 0
+        self.tune_amp = 0.075
         self.mic_stream = None
         self.tx_audio_q = collections.deque(maxlen=64)
         self.chrono_reqs = collections.deque()
@@ -882,6 +883,12 @@ class MiniTCI(tk.Tk):
                                   font=("Segoe UI", 10, "bold"))
         self.tune_btn.bind("<ButtonPress-1>", lambda e: self.tune_toggle())
         self.tune_btn.pack(side="left", padx=(8, 0))
+        ttk.Label(r4, text="Tune drive:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.tunedrive_entry = ttk.Entry(r4, width=5)
+        self.tunedrive_entry.insert(0, "80")
+        self.tunedrive_entry.pack(side="left")
+        self.tunedrive_entry.bind("<Return>", self._tunedrive_entry)
+        self.tunedrive_entry.bind("<FocusOut>", self._tunedrive_entry)
         self.bind("<KeyPress-space>", self._space_dn)
         self.bind("<KeyRelease-space>", self._space_up)
         self.tx_lbl = tk.Label(r4, text="RX", bg=C["panel"], fg=C["dim"],
@@ -1620,6 +1627,19 @@ class MiniTCI(tk.Tk):
         self._mic_open()
 
     # ---------------- tune ----------------
+    def _tunedrive_entry(self, *_):
+        try:
+            pct = float(self.tunedrive_entry.get())
+        except ValueError:
+            self.tunedrive_entry.delete(0, "end")
+            self.tunedrive_entry.insert(0, str(int(self.tune_amp / 0.25 * 100)))
+            return
+        pct = max(1, min(100, int(pct)))
+        self.tune_amp = 0.25 * pct / 100.0
+        self.tunedrive_entry.delete(0, "end")
+        self.tunedrive_entry.insert(0, str(pct))
+        self.logprint(f"Tune drive set to {pct}% (peak {20*np.log10(self.tune_amp):.1f} dBFS)")
+
     def tune_toggle(self):
         """WSJT-X-style Tune: press to start, press again to stop. Transmits a
         steady single tone at a drive level that produces full RF power without
@@ -1657,7 +1677,7 @@ class MiniTCI(tk.Tk):
         drive for digital modes without saturating the TX chain."""
         n = 1024
         ph = self.tune_phase
-        amp = 0.2
+        amp = self.tune_amp
         t = (np.arange(n) + self.tune_sample_pos) / TX_AUDIO_RATE
         self.tune_sample_pos += n
         self.tune_phase = (self.tune_phase + 2 * np.pi * 1500.0 * n / TX_AUDIO_RATE) % (2 * np.pi)
