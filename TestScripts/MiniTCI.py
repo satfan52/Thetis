@@ -1078,7 +1078,7 @@ class MiniTCI(tk.Tk):
                     # UI stalled - drop the OLDEST block so new data keeps flowing
                     try:
                         self._iq_q.get_nowait()
-                        self._iq_q.put_nowait((block, rate))
+                        self._iq_q.put_nowait((block, rate, float(self.freq_hz)))
                     except Exception:
                         pass
         except Exception:
