@@ -437,10 +437,60 @@ void SetRXTCIRun (int active)
 	_InterlockedExchange (&pcm->tci_rx_out_run, active);
 }
 
+// Branch G: self-clocking TX DSP for TCI TX audio.
+// The stream-1 (TX) cycle xcmaster(stream1) is normally clocked by network
+// mic packets arriving from the radio. Pavel Demin's RECEIVER firmware never
+// sends those (it has no transmitter), so with TCI TX audio active the TX DSP
+// would starve: no audio, no RF. This thread provides the clock natively:
+// it cycles xcmaster(stream 1) every xcm_insize/stream-rate seconds while
+// use_tci_audio is set. When TCI TX audio is active, pipe.c skips xvacIN
+// entirely, so this thread is the ONLY producer for stream 1 - no conflicts
+// with VAC1 or the (absent) network mic path.
+static HANDLE hTciTxClockThread = NULL;
+static volatile long tci_tx_clock_run = 0;
+
+static void __cdecl tci_tx_clock_thread (void* pargs)
+{
+	timeBeginPeriod (1);
+	int stream1 = inid (1, 0);
+	int rate = pcm->xcm_inrate[stream1];
+	int size = pcm->xcm_insize[stream1];
+	double dt = (double)size / (double)rate;              // seconds per cycle
+	LARGE_INTEGER freq, t0, t1;
+	QueryPerformanceFrequency (&freq);
+	long long next = 0;
+	QueryPerformanceCounter (&t0);
+	while (_InterlockedAnd (&tci_tx_clock_run, 1))
+	{
+		EnterCriticalSection (&pcm->update[stream1]);
+		xcmaster (stream1);
+		LeaveCriticalSection (&pcm->update[stream1]);
+		QueryPerformanceCounter (&t1);
+		next += (long long)(dt * freq.QuadPart);
+		long long sleep_ticks = next - (t1.QuadPart - t0.QuadPart);
+		if (sleep_ticks > 0)
+			Sleep ((DWORD)(sleep_ticks * 1000 / freq.QuadPart));
+		else
+			next = t1.QuadPart - t0.QuadPart;   // fell behind: resync
+	}
+	_endthread();
+}
+
 PORT
 void SetTXTCIAudioRun (int txid, int active)
 {
 	_InterlockedExchange (&pcm->xmtr[txid].use_tci_audio, active);
+	if (active)
+	{
+		if (_InterlockedExchange (&tci_tx_clock_run, 1) == 0)
+		{
+			_beginthread (tci_tx_clock_thread, 0, NULL);
+		}
+	}
+	else
+	{
+		_InterlockedExchange (&tci_tx_clock_run, 0);
+	}
 }
 //end tci
 
