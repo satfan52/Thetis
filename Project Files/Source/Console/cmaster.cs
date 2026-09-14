@@ -1369,6 +1369,17 @@ namespace Thetis
                 return;
             }
 
+            // diagnostics: TX input cycle health (queue + cm TX thread)
+            if (System.Threading.Interlocked.Read(ref m_tciTxDbgTick) != 0)
+            { }
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (now - System.Threading.Interlocked.Read(ref m_tciTxDbgTick) > 2000)
+            {
+                System.Threading.Interlocked.Exchange(ref m_tciTxDbgTick, now);
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TCITX] queue={m_tciTxQueuedSamples} calls={TciTxInCalls} samps={TciTxInSamples}");
+            }
+
             if (m_cachedTxInputRate <= 0)
                 m_cachedTxInputRate = GetInputRate(1, 0);
             int targetRate = m_cachedTxInputRate > 0 ? m_cachedTxInputRate : 48000;
@@ -1955,10 +1966,15 @@ namespace Thetis
             returnTCIFloatBuffer(right);
         }
 
+        public static long TciTxInCalls = 0;      // diagnostics: TX input cycles
+        public static long TciTxInSamples = 0;    // diagnostics: samples pulled from TCI queue
+        private static long m_tciTxDbgTick = 0;
+
         private static unsafe void OnTCITxAudioInSamples(int nsamples, double* data)
         {
             if (data == null || nsamples <= 0)
                 return;
+            System.Threading.Interlocked.Increment(ref TciTxInCalls);
 
             lock (m_objTCITxStateLock)
             {
@@ -1992,6 +2008,7 @@ namespace Thetis
                     data[2 * i] = 0.0;
                     data[2 * i + 1] = 0.0;
                 }
+                System.Threading.Interlocked.Add(ref TciTxInSamples, copied);
             }
             m_tciTxStreamEvent.Set();
         }

@@ -1661,9 +1661,13 @@ class MiniTCI(tk.Tk):
         if not self.connected:
             self.logprint("connect first to use Tune")
             return
+        if self.tuning:
+            self.tuning = False
+            self.ptt_off()
+            self.logprint("Tune OFF")
+            return
         if self.ptt:
             return
-        if not self.tuning:
             self.tuning = True
             self.tune_phase = 0.0
             self.ptt = True
