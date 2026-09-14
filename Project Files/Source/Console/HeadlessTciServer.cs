@@ -1747,6 +1747,20 @@ namespace Thetis
                                 {
                                     ClearQueuedTxAudio();
                                     cmaster.SignalTciTxStream();
+                                    // Freeze the RX AGC for the whole TX: with
+                                    // normal AGC the huge TX signal drives the
+                                    // gain into deep reduction and after TX it
+                                    // ramps back over seconds (slow audio fade-in).
+                                    // FIXED gain during TX keeps the gain state
+                                    // untouched - the level is instantly normal
+                                    // when TX ends. (App mutes RX audio during TX.)
+                                    var sliceF = HeadlessSliceManager.Instance.GetSlice(rx);
+                                    if (sliceF != null && sliceF.IsActive
+                                        && sliceF.AgcMode != AGCMode.FIXD)
+                                    {
+                                        WDSP.SetRXAAGCMode(sliceF.ChannelId, AGCMode.FIXD);
+                                        WDSP.SetRXAAGCFixed(sliceF.ChannelId, 20.0);
+                                    }
                                 }
                                 _server.BroadcastTrxState(0, granted);
                             }
@@ -1757,29 +1771,14 @@ namespace Thetis
                                 TxArbiter.Instance.ReleaseDigitalTx(rx);
                                 _server.BroadcastTrxState(0, false);
 
-                                // TX end: the RX AGC was driven hard by our own
-                                // signal and its gain ramps back slowly, so RX
-                                // audio fades in over ~1-2 s and weak messages
-                                // right after the transmission are missed. Snap
-                                // the AGC to FIXED gain for 1.5 s (instant full
-                                // gain), then restore the user's AGC preset.
+                                // TX end: restore the AGC frozen at TX start
+                                // (see trx-true branch). Nothing was frozen when
+                                // the user runs manual fixed-gain mode.
                                 var sliceR = HeadlessSliceManager.Instance.GetSlice(rx);
-                                if (sliceR != null && sliceR.IsActive)
+                                if (sliceR != null && sliceR.IsActive
+                                    && sliceR.AgcMode != AGCMode.FIXD)
                                 {
-                                    int ch = sliceR.ChannelId;
-                                    AGCMode restore = sliceR.AgcMode != AGCMode.FIXD ? sliceR.AgcMode : AGCMode.MED;
-                                    double fixedDb = 20.0;  // ~AGC MED target
-                                    System.Threading.Tasks.Task.Run(() =>
-                                    {
-                                        try
-                                        {
-                                            WDSP.SetRXAAGCMode(ch, AGCMode.FIXD);
-                                            WDSP.SetRXAAGCFixed(ch, fixedDb);
-                                            System.Threading.Thread.Sleep(1500);
-                                            WDSP.SetRXAAGCMode(ch, restore);
-                                        }
-                                        catch { }
-                                    });
+                                    WDSP.SetRXAAGCMode(sliceR.ChannelId, sliceR.AgcMode);
                                 }
                             }
                         }
