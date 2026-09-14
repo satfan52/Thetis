@@ -120,6 +120,20 @@ namespace Thetis
             return false;
         }
 
+        // Branch G: any MOX (main console MOX/Tune or headless slice) -> tell the
+        // clients so they can mute their monitors (on-site TX overloads the RX).
+        private void OnConsoleMoxChanged(int rx, bool oldMox, bool newMox)
+        {
+            lock (_lock)
+            {
+                foreach (var s in _servers)
+                {
+                    try { s.BroadcastText($"mox:0,{newMox.ToString().ToLowerInvariant()};"); }
+                    catch { }
+                }
+            }
+        }
+
         public void StartAll(IPAddress bindAddress, Console console)
         {
             lock (_lock)
@@ -129,6 +143,12 @@ namespace Thetis
                 Console = console;
                 TxArbiter.Instance.Initialize(console);
                 TxArbiter.Instance.DigitalSlicePreempted += OnSlicePreempted;
+
+                // Branch G: broadcast MOX state to all headless clients so they
+                // can mute their monitor while ANY transmitter (main console
+                // MOX/Tune, or a headless slice) is on - the on-site signal
+                // otherwise plays as distorted self-monitor audio.
+                console.MoxChangeHandlers += OnConsoleMoxChanged;
 
                 HeadlessSliceManager.Instance.SliceFrequencyChanged += OnSliceFreqChanged;
                 HeadlessSliceManager.Instance.SliceModeChanged += OnSliceModeChanged;
@@ -192,6 +212,7 @@ namespace Thetis
                 _servers.Clear();
 
                 TxArbiter.Instance.DigitalSlicePreempted -= OnSlicePreempted;
+                try { Console.MoxChangeHandlers -= OnConsoleMoxChanged; } catch { }
                 HeadlessSliceManager.Instance.SliceFrequencyChanged -= OnSliceFreqChanged;
                 HeadlessSliceManager.Instance.SliceModeChanged -= OnSliceModeChanged;
                 HeadlessSliceManager.Instance.SliceFilterChanged -= OnSliceFilterChanged;
@@ -1758,8 +1779,14 @@ namespace Thetis
                                     if (sliceF != null && sliceF.IsActive
                                         && sliceF.AgcMode != AGCMode.FIXD)
                                     {
+                                        // The IC-7100 transmits from the same site:
+                                        // its signal blasts the Red Pitaya front end
+                                        // and with AGC gain held high the received
+                                        // audio distorts (ADC overload). Drop the
+                                        // gain hard during TX to keep the receiver
+                                        // clean; restored at TX end.
                                         WDSP.SetRXAAGCMode(sliceF.ChannelId, AGCMode.FIXD);
-                                        WDSP.SetRXAAGCFixed(sliceF.ChannelId, 20.0);
+                                        WDSP.SetRXAAGCFixed(sliceF.ChannelId, -20.0);
                                     }
                                 }
                                 _server.BroadcastTrxState(0, granted);

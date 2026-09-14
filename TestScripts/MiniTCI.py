@@ -962,7 +962,9 @@ class MiniTCI(tk.Tk):
                     time.sleep(0.1)
                     continue
                 was_muted = getattr(self, "_muting_now", False)
-                muted = self.ptt or time.time() < getattr(self, "_tx_mute_until", 0.0)
+                muted = (self.ptt
+                         or getattr(self, "mox_active", False)
+                         or time.time() < getattr(self, "_tx_mute_until", 0.0))
                 if muted and not was_muted:
                     self.logprint("monitor muted (TX)")
                 elif not muted and was_muted:
@@ -1300,6 +1302,18 @@ class MiniTCI(tk.Tk):
                         self.pan.center_hz = dds_hz
                 except (ValueError, IndexError):
                     pass
+            elif k == "mox" and v:
+                # Thetis main-GUI MOX/Tune (any transmitter on site): mute the
+                # monitor - the on-site blast overloads the Red Pitaya RX and
+                # plays as distorted self-audio.
+                mox_on = v.split(",")[-1].lower() == "true"
+                if mox_on != getattr(self, "mox_active", False):
+                    self.mox_active = mox_on
+                    if mox_on:
+                        self.logprint("MOX active (Thetis) - monitor muted")
+                    else:
+                        self._tx_mute_until = time.time() + self.tx_tail_s
+                        self.logprint("MOX released - monitor resumes")
             elif k == "trx" and v:
                 tx = v.split(",")[-1].lower() == "true"
                 if tx != self.ptt:

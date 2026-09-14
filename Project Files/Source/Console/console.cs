@@ -30071,7 +30071,11 @@ namespace Thetis
         private int _tune_pulse_count = 10; // 10 per second
         private float _tune_pulse_duty = 0.25f;
         private bool _tune_pulse_enabled = false;
-        private const double MAX_TONE_MAG = 0.99999f; // why not 1?  clipping?
+        // Branch G: the hybrid station feeds TXOut to the IC-7100 DATA input;
+        // a full-scale tone overloads the radio's audio input (hard clipping
+        // in the codec/rig regardless of Data Mod and TXOut gain). Cap the
+        // tune tone at -14 dBFS like WSJT-X drive levels.
+        private const double MAX_TONE_MAG = 0.2f;
         private int _tune_pulse_ramp = 9; // 9ms
         private bool _tune_pulse_on = false;
 
