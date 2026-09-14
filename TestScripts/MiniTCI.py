@@ -1703,7 +1703,11 @@ class MiniTCI(tk.Tk):
         t = (np.arange(n) + self.tune_sample_pos) / TX_AUDIO_RATE
         self.tune_sample_pos += n
         self.tune_phase = (self.tune_phase + 2 * np.pi * 1500.0 * n / TX_AUDIO_RATE) % (2 * np.pi)
-        return (amp * np.sin(2 * np.pi * 1500.0 * t)).astype(np.float32)
+        tone = (amp * np.sin(2 * np.pi * 1500.0 * t)).astype(np.float32)
+        # drive the S-meter with the tone level exactly like the mic path does
+        # (RMS of the block in dBFS); a sine of peak A has RMS A/sqrt(2)
+        self.mic_level_db = 20.0 * np.log10(float(amp) / np.sqrt(2.0) + 1e-10)
+        return tone
 
     def ptt_off(self):
         if not self.ptt:
