@@ -1000,14 +1000,17 @@ class MiniTCI(tk.Tk):
         self.volume = (float(v) / 100.0) * 1.2
 
     def _txtail_entry(self, *_):
+        # read the TEXT the user typed (the IntVar is not linked to the entry)
         try:
-            ms = int(float(self.txtail_var.get()))
+            ms = int(float(self.txtail_entry.get()))
         except (ValueError, tk.TclError):
-            self.txtail_var.set(int(self.tx_tail_s * 1000))
+            self.txtail_entry.delete(0, "end")
+            self.txtail_entry.insert(0, str(int(self.tx_tail_s * 1000)))
             return
         ms = max(0, min(10000, ms))
         self.tx_tail_s = ms / 1000.0
-        self.txtail_var.set(ms)
+        self.txtail_entry.delete(0, "end")
+        self.txtail_entry.insert(0, str(ms))
         # visible acknowledgment: flash the entry text green + log the value
         try:
             self.txtail_entry.configure(foreground="#1a7f37")
