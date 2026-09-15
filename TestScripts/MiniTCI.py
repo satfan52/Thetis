@@ -616,7 +616,7 @@ class MiniTCI(tk.Tk):
         self.freq_hz = 14_074_000
         self.mode = "USB"
         # Branch H1: VFO B / subrx state
-        self.sub_hz = self.freq_hz + 2000  # sensible default: 2 kHz above VFO A
+        self.sub_hz = 0                    # set at connect: A + 2 kHz (band-correct)
         self.sub_mode = "USB"
         self.sub_filt = (150, 2800)
         self.sub_enabled = False
@@ -1310,7 +1310,9 @@ class MiniTCI(tk.Tk):
             self.send(f"modulation:0,{self.mode};")
             lo, hi = FILTERS.get(self.mode, (100, 2900))
             self.send(f"rx_filter_band:0,{lo},{hi};")
-            # Branch H1: restore subrx state on connect
+            # Branch H1: restore subrx state on connect; default B = A + 2 kHz
+            if not self.sub_hz:
+                self.sub_hz = self.freq_hz + 2000
             self.send("subrx_state:0;")
             if self.sub_enabled:
                 self.send("subrx:0,true;")
@@ -1731,6 +1733,7 @@ class MiniTCI(tk.Tk):
 
     def _sub_tune_to(self, hz):
         self.sub_hz = int(hz)
+        self._clamp_sub_to_ddc()
         self._sub_refresh_ui()
         if self._sub_enabled():
             self.send(f"vfo:1,0,{self.sub_hz};")
@@ -1789,9 +1792,23 @@ class MiniTCI(tk.Tk):
                 return seg
         return None
 
+    def _clamp_sub_to_ddc(self):
+        """Branch H1: VFO B must stay inside the DDC passband around VFO A
+        (96 kHz here -> usable offset ~+/-43 kHz) and in the same band."""
+        if self.sub_hz:
+            off = self.sub_hz - self.freq_hz
+            max_off = int(48000 * 0.9)
+            if abs(off) > max_off:
+                self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
+
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
+        # keep VFO B glued to the band/DDC: re-place it relative to the new A
+        if self._sub_enabled():
+            self._clamp_sub_to_ddc()
+            self.send(f"vfo:1,0,{self.sub_hz};")
+            self._sub_refresh_ui()
         seg = self._digital_segment_hint()
         if seg and self.mode_var.get() in ("USB", "LSB"):
             # B7-4: entering an FT8 segment in SSB - suggest the digital mode
@@ -1888,6 +1905,10 @@ class MiniTCI(tk.Tk):
             if b[0] == name:
                 self.tune_to(int(b[1] * 1e6))
                 self.mode_var.set(b[2])
+                # no stored stack for this band: put B near A in the new band
+                if self.sub_enabled and self._band_for_freq(self.sub_hz) != name:
+                    self.sub_hz = self.freq_hz + 2000
+                    self._sub_tune_to(self.sub_hz)
                 return
 
     def _mode_changed(self, *_):
