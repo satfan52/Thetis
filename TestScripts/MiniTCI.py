@@ -949,7 +949,8 @@ class MiniTCI(tk.Tk):
                      values=out_names).pack(side="left", padx=2)
         self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
 
-        # analog-style S-meter: filled bar (colored by zone) + peak marker inside
+        # analog-style S-meter: colored zone scale + translucent "water" fill,
+        # needle and peak marker inside the bar.
         self.sm = tk.Canvas(r3, width=310, height=68, bg=C["panel"], highlightthickness=0)
         self.sm.pack(side="left", padx=12)
         smL = 8; smR = 302; smY = 26
@@ -957,16 +958,16 @@ class MiniTCI(tk.Tk):
         def smx(db): return smL + (db + 127.0) / 112.0 * (smR - smL)
         self._sm_s9 = smx(-35)       # S9 boundary
         self._sm_p20 = smx(-25)      # +20 dB boundary
-        # empty bar background
-        self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="#e9e9e9", outline="#8a8a8a")
-        # fill segments (grow with signal; colored by zone S0-S9 / +0..+20 / >+20)
-        self.sm_fill_g = self.sm.create_rectangle(smL, smY - 11, smL, smY, fill="#3fa34d", outline="")
-        self.sm_fill_a = self.sm.create_rectangle(smL, smY - 11, smL, smY, fill="#e0a63a", outline="")
-        self.sm_fill_r = self.sm.create_rectangle(smL, smY - 11, smL, smY, fill="#c0392b", outline="")
-        # zone divider lines (subtle, on top of fill)
-        self.sm.create_line(self._sm_s9, smY - 11, self._sm_s9, smY, fill="#999999", width=1)
-        self.sm.create_line(self._sm_p20, smY - 11, self._sm_p20, smY, fill="#999999", width=1)
-        # peak-hold marker (inside the bar)
+        # colored zone bar (background): S0-S9 green, +0..+20 amber, >+20 red
+        self.sm.create_rectangle(smL, smY - 11, self._sm_s9, smY, fill="#3fa34d", outline="")
+        self.sm.create_rectangle(self._sm_s9, smY - 11, self._sm_p20, smY, fill="#e0a63a", outline="")
+        self.sm.create_rectangle(self._sm_p20, smY - 11, smR, smY, fill="#c0392b", outline="")
+        self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="", outline="#8a8a8a")
+        # translucent "water" fill (stipple = see-through) that rises with signal
+        self.sm_fill = self.sm.create_rectangle(smL, smY - 11, smL, smY,
+                                                fill="#a8d8ea", outline="", stipple="gray50")
+        # needle (instantaneous level) + peak-hold marker, both inside the bar
+        self.sm_bar = self.sm.create_line(smL, smY - 11, smL, smY, fill="#1a1f29", width=2)
         self.sm_peak = self.sm.create_line(smL, smY - 11, smL, smY, fill="#ffffff", width=3)
         # ticks + labels S1..S9, +10, +20
         for n in range(1, 10):
@@ -1595,8 +1596,8 @@ class MiniTCI(tk.Tk):
         self.tune_to(self.freq_hz + d)
 
     def _draw_smeter(self):
-        # IQ-derived peak-bin dBFS on a filled analog S-bar (colored by zone).
-        # dBFS -> S-unit: S9 = -35 dBFS, each S-unit 10 dB below (S1 = -115).
+        # IQ-derived peak-bin dBFS on the analog S-bar. dBFS -> S-unit:
+        # S9 = -35 dBFS, each S-unit 10 dB below (S1 = -115).
         if self.ptt:
             # TX: the meter shows the MIC/voice level driving the transmitter
             db = getattr(self, "mic_level_db", -140.0)
@@ -1610,18 +1611,10 @@ class MiniTCI(tk.Tk):
         y_top, y_bot = self._sm_y - 11, self._sm_y
         frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
         x = x0 + frac * (x1 - x0)
-        # fill segments: green to S9, amber to +20, red beyond
-        xg = min(x, self._sm_s9)
-        self.sm.coords(self.sm_fill_g, x0, y_top, xg, y_bot)
-        if x > self._sm_s9:
-            xa = min(x, self._sm_p20)
-            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, xa, y_bot)
-        else:
-            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, self._sm_s9, y_bot)
-        if x > self._sm_p20:
-            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, x, y_bot)
-        else:
-            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, self._sm_p20, y_bot)
+        # translucent "water" fill rises with the signal
+        self.sm.coords(self.sm_fill, x0, y_top, x, y_bot)
+        # needle at the current level
+        self.sm.coords(self.sm_bar, x, y_top, x, y_bot)
         # peak hold: rises instantly, decays slowly; marker sits inside the bar
         pk = max(db, self._sm_peak_db - 0.4)
         self._sm_peak_db = clamp(pk, -140.0, 0.0)
@@ -2148,10 +2141,8 @@ class MiniTCI(tk.Tk):
     def _pan_release(self, e):
         moved = getattr(self, "_moved", False)
         if self.pan.center_hz and not moved:
-            # simple LEFT click tunes VFO A only; empty waterfall or VFO B's
-            # part does nothing (right-click handles VFO B)
-            if self._vfo_at_x(e.x) != "A":
-                return
+            # LEFT click tunes VFO A to the clicked frequency, anywhere on the
+            # waterfall (including empty space)
             f = self.pan.x2f(e.x)
             if self.mode in ("CWU", "CWL"):
                 f = self._cw_snap(f)
@@ -2195,11 +2186,9 @@ class MiniTCI(tk.Tk):
         return self.pan.x2f(xmax + corr)
 
     def _pan_right(self, e):
-        # Right-click tunes VFO B to the clicked frequency (mirror of
-        # left-click on VFO A); empty waterfall or VFO A's part does nothing.
+        # RIGHT click tunes VFO B to the clicked frequency, anywhere on the
+        # waterfall (including empty space)
         if not self.pan.center_hz or not self._sub_enabled():
-            return
-        if self._vfo_at_x(e.x) != "B":
             return
         f = self.pan.x2f(e.x)
         if self.sub_mode in ("CWU", "CWL"):
