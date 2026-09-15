@@ -1444,6 +1444,9 @@ class MiniTCI(tk.Tk):
                     except ValueError:
                         pass
                 continue
+            if k == "ctun" and v:
+                self.logprint(f"CTUN state echo: {v}")
+                continue
             if k == "subrx":
                 # server echo: subrx:0,<bool>; (v = "<trx>,<bool>")
                 p = str(v).split(",")

@@ -1814,7 +1814,11 @@ namespace Thetis
                         {
                             // Branch H1: client display model for VFO A
                             if (args.Length >= 2 && bool.TryParse(args[1], out bool ct))
+                            {
                                 HeadlessSliceManager.Instance.SetCtunMode(_server.BaseRxIndex, ct);
+                                TciLog.Log($"[HeadlessTCI] rx{_server.BaseRxIndex} ctun={ct}");
+                                SendTextFrame($"ctun:0,{ct.ToString().ToLowerInvariant()};");
+                            }
                         }
                         break;
 

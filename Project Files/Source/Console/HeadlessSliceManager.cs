@@ -210,6 +210,7 @@ namespace Thetis
             if (!ctun)
             {
                 // classic: DDC centre = A
+                TciLog.Log($"[VFOA] rx{rx} classic retune DDC->{freqMHz:0.000000}");
                 center = freqMHz;
                 _displayCenterMHz[rx] = center;
                 int ddc = GetDdcForRx(rx);
@@ -219,6 +220,7 @@ namespace Thetis
             }
             else
             {
+                TciLog.Log($"[VFOA] rx{rx} ctun A={freqMHz:0.000000} centre={center:0.000000} off={offsetHz:0}");
                 if (Math.Abs(offsetHz) > edge - margin)
                 {
                     // A would leave the passband: scroll the DDC by the minimum
@@ -228,6 +230,7 @@ namespace Thetis
                     int ddc = GetDdcForRx(rx);
                     if (ddc >= 0) NetworkIO.VFOfreq(ddc, center, 0);
                     offsetHz = (freqMHz - center) * 1e6;
+                    TciLog.Log($"[VFOA] rx{rx} ctun SCROLL centre->{center:0.000000}");
                 }
                 WDSP.SetRXAShiftFreq(mainCh, offsetHz);
                 WDSP.RXANBPSetShiftFrequency(mainCh, offsetHz);
