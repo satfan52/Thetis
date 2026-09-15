@@ -761,15 +761,16 @@ class MiniTCI(tk.Tk):
             for idx in range(4):
                 if str(idx) in self._scenes:
                     self.scene_btns[idx].config(text=self._scenes[str(idx)].get("name", f"Scene {idx+1}"))
-            # restore the band selector without firing a band switch (the
-            # direct freq/mode/filter fields above already carry the state)
-            if s.get("band"):
+            # align the band selector with the restored frequency (the freq is
+            # the source of truth; the band dropdown must not lie)
+            band_from_freq = self._band_for_freq(self.freq_hz)
+            if band_from_freq:
                 self._loading = True
                 try:
-                    self.band_var.set(s["band"])
+                    self.band_var.set(band_from_freq)
                 finally:
                     self._loading = False
-                self._band_stack_current = s["band"]
+                self._band_stack_current = band_from_freq
             self._sub_refresh_ui()
         except (KeyError, ValueError, tk.TclError):
             pass
@@ -998,9 +999,18 @@ class MiniTCI(tk.Tk):
         self.sm.create_rectangle(self._sm_s9, smY - 11, self._sm_p20, smY, fill="#e0a63a", outline="")
         self.sm.create_rectangle(self._sm_p20, smY - 11, smR, smY, fill="#c0392b", outline="")
         self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="", outline="#8a8a8a")
-        # translucent "water" fill (stipple = see-through) that rises with signal
-        self.sm_fill = self.sm.create_rectangle(smL, smY - 11, smL, smY,
-                                                fill="#a8d8ea", outline="", stipple="gray50")
+        # translucent "water" fill: a light-blue tint alpha-blended over each
+        # zone colour (smooth, no dither) - the zone shows through tinted.
+        def _blend(rgb, a):
+            w = (0xa8, 0xd8, 0xea)                      # water tint #a8d8ea
+            return "#%02x%02x%02x" % tuple(int(c * (1.0 - a) + w[i] * a)
+                                           for i, c in enumerate(rgb))
+        self.sm_fill_g = self.sm.create_rectangle(smL, smY - 11, smL, smY,
+                fill=_blend((0x3f, 0xa3, 0x4d), 0.5), outline="")
+        self.sm_fill_a = self.sm.create_rectangle(smL, smY - 11, smL, smY,
+                fill=_blend((0xe0, 0xa6, 0x3a), 0.5), outline="")
+        self.sm_fill_r = self.sm.create_rectangle(smL, smY - 11, smL, smY,
+                fill=_blend((0xc0, 0x39, 0x2b), 0.5), outline="")
         # needle (instantaneous level) + peak-hold marker, both inside the bar
         self.sm_bar = self.sm.create_line(smL, smY - 11, smL, smY, fill="#1a1f29", width=2)
         self.sm_peak = self.sm.create_line(smL, smY - 11, smL, smY, fill="#ffffff", width=3)
@@ -1646,8 +1656,18 @@ class MiniTCI(tk.Tk):
         y_top, y_bot = self._sm_y - 11, self._sm_y
         frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
         x = x0 + frac * (x1 - x0)
-        # translucent "water" fill rises with the signal
-        self.sm.coords(self.sm_fill, x0, y_top, x, y_bot)
+        # translucent "water" fill rises with the signal (blended per zone)
+        xg = min(x, self._sm_s9)
+        self.sm.coords(self.sm_fill_g, x0, y_top, xg, y_bot)
+        if x > self._sm_s9:
+            xa = min(x, self._sm_p20)
+            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, xa, y_bot)
+        else:
+            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, self._sm_s9, y_bot)
+        if x > self._sm_p20:
+            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, x, y_bot)
+        else:
+            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, self._sm_p20, y_bot)
         # needle at the current level
         self.sm.coords(self.sm_bar, x, y_top, x, y_bot)
         # peak hold: rises instantly, decays slowly; marker sits inside the bar
@@ -2137,6 +2157,7 @@ class MiniTCI(tk.Tk):
         self._drag_y = e.y
         self._drag_center = self.pan.center_hz
         self._moved = False
+        self._freq_pending = None
         self._drag_target = self._vfo_at_x(e.x)   # "A", "B", or None
         if self._drag_target == "B":
             self._drag_vfo = self.pan.sub_hz
@@ -2153,12 +2174,12 @@ class MiniTCI(tk.Tk):
         # scales with height above the X axis (near the axis = fine, top = coarse)
         if not self.pan.center_hz or not hasattr(self, "_drag_x"):
             return
-        if self._drag_target is None:
-            return                       # dragging empty waterfall has no effect
         if abs(e.x - self._drag_x) > 2 or abs(e.y - getattr(self, "_drag_y", e.y)) > 2:
             self._moved = True
         if not self._moved:
             return
+        if self._drag_target is None:
+            return                       # dragged empty: counts as drag, no slide
         speed = max(10.0, PAN_H - e.y) / float(PAN_H + 1)
         dx_hz = speed * (e.x - self._drag_x) / CANVAS_W * self.pan.span
         self._drag_x = e.x   # Quisk accumulates per-motion deltas
