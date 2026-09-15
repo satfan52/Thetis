@@ -73,6 +73,14 @@ namespace Thetis
                 if (!cmaster.IsRadioCreated) return false;
                 if (on)
                 {
+                    // start the sub with the MAIN slice's current filter so both
+                    // VFOs sound identical until the user changes B explicitly
+                    var mainSlice = HeadlessSliceManager.Instance.GetSlice(rx);
+                    if (mainSlice != null)
+                    {
+                        s.FilterLow = mainSlice.FilterLow;
+                        s.FilterHigh = mainSlice.FilterHigh;
+                    }
                     // full channel init (same pattern as HeadlessSliceManager.ActivateAudio)
                     WDSP.SetRXAMode(Ch(rx, 1), s.Mode);
                     WDSP.SetRXABandpassFreqs(Ch(rx, 1), s.FilterLow, s.FilterHigh);
@@ -141,14 +149,25 @@ namespace Thetis
             WDSP.SetRXASNBAOutputBandwidth(Ch(rx, 1), low, high);
         }
 
-        /// <summary>balance 0..1: sub panned to balance, main panned to 1-balance (0.5 = both centred).</summary>
+        /// <summary>
+        /// Branch H1: main/sub level control via per-channel panel GAIN, not pan.
+        /// The WDSP pan law (sin) attenuates near its extremes and treats the
+        /// mono demod audio asymmetrically (L=I, R=sin*Q), which made VFO B sound
+        /// different from VFO A. Balance now scales the two channels' gains
+        /// around unity (constant loudness), both channels panned centre.
+        /// balance 0 = main only, 0.5 = equal, 1 = sub only.
+        /// </summary>
         public static void ApplyBalance(int rx, double balance)
         {
             var s = Get(rx);
             s.Balance = Math.Max(0.0, Math.Min(1.0, balance));
             if (!cmaster.IsRadioCreated) return;
-            WDSP.SetRXAPanelPan(Ch(rx, 0), 1.0 - s.Balance);
-            WDSP.SetRXAPanelPan(Ch(rx, 1), s.Balance);
+            double gMain = Math.Cos(s.Balance * Math.PI / 2.0);   // 1 .. 0
+            double gSub  = Math.Sin(s.Balance * Math.PI / 2.0);   // 0 .. 1
+            WDSP.SetRXAPanelPan(Ch(rx, 0), 0.5);
+            WDSP.SetRXAPanelPan(Ch(rx, 1), 0.5);
+            WDSP.SetRXAPanelGain1(Ch(rx, 0), 0.5 * 2.0 * gMain);  // slice gain 0.5 baseline
+            WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5 * 2.0 * gSub);
         }
 
         public static void ApplyAgc(int rx, AGCMode mode, double fixedDb)

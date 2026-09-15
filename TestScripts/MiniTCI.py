@@ -878,7 +878,7 @@ class MiniTCI(tk.Tk):
         ttk.Combobox(r2b, textvariable=self.audiosel_var, width=6, state="readonly",
                      values=["Main", "Sub", "Both"]).pack(side="left")
         self.audiosel_var.trace_add("write", self._audiosel_changed)
-        ttk.Label(r2b, text="Balance:").pack(side="left", padx=(8, 2))
+        ttk.Label(r2b, text="A<->B mix:").pack(side="left", padx=(8, 2))
         self.bal_var = tk.DoubleVar(value=1.0)
         ttk.Scale(r2b, from_=0.0, to=1.0, variable=self.bal_var, length=100,
                   command=self._bal_changed).pack(side="left")
@@ -1117,17 +1117,10 @@ class MiniTCI(tk.Tk):
                     if self.audio_pos >= len(blk):
                         self.audio_blocks.popleft()
                         self.audio_pos = 0
-                # Branch H1: audio selection - L = main, R = sub (server pans them)
-                sel = getattr(self, "audio_sel", "main")
-                gL, gR = 1.0, 1.0
-                if sel == "main":
-                    gL, gR = 1.0, 0.0      # pure mono sum would lose main-only when panned
-                    # main lives in L; also add R*? no: main panned hard L by server
-                elif sel == "sub":
-                    gL, gR = 0.0, 1.0
-                # 'both': keep stereo as delivered (balance slider decides placement)
-                stereo_buf[:, 0] *= gL * self.volume
-                stereo_buf[:, 1] *= gR * self.volume
+                # Branch H1: selection is done server-side (per-channel gain);
+                # L and R now carry the same selected mix - play as delivered.
+                stereo_buf[:, 0] *= self.volume
+                stereo_buf[:, 1] *= self.volume
                 try:
                     self.out_stream.write(stereo_buf)
                 except Exception:
@@ -1694,21 +1687,24 @@ class MiniTCI(tk.Tk):
         self._apply_audio_selection()
 
     def _apply_audio_selection(self, force=False):
-        """Branch H1: audio selection. The server pans main and sub to opposite
-        ears (hard L/R) while Main/Sub is selected so the client can isolate one
-        by ear; 'Both' restores the user's balance slider placement."""
+        """Branch H1: audio selection via server-side per-channel gain
+        (balance 0 = main only, 0.5 = equal mix, 1 = sub only). The pan law
+        was removed server-side so both VFOs run at identical gain - selection
+        is by muting, not by ear placement."""
         if not self.connected:
             return
         sel = self.audio_sel
-        if sel in ("main", "sub"):
-            if force or getattr(self, "_last_audio_sel", None) != sel:
-                self.send("sub_balance:0,1.00;")   # hard pan: main L, sub R
-        elif sel == "both":
-            if force or getattr(self, "_last_audio_sel", None) != sel:
-                self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
-        if getattr(self, "_last_audio_sel", None) != sel:
-            self._last_audio_sel = sel
-        self.logprint(f"audio: {sel}")
+        target = {"main": 0.0, "sub": 1.0, "both": None}.get(sel)
+        if sel == "both":
+            val = self.bal_var.get()
+        elif target is not None:
+            val = target
+        else:
+            val = 0.5
+        if force or getattr(self, "_last_audio_sel", None) != sel or sel == "both":
+            self.send(f"sub_balance:0,{val:.2f};")
+        self._last_audio_sel = sel
+        self.logprint(f"audio: {sel} (balance {val:.2f})")
 
     def _bal_changed(self, v):
         # balance only actively drives placement in 'Both' mode; Main/Sub force
