@@ -452,20 +452,7 @@ class PanFall(tk.Canvas):
         ys = (PAN_H - 1 - np.clip(
             (col - lo) / max(1e-6, hi - lo) * (PAN_H - 1),
             0, PAN_H - 1)).astype(np.int32)
-        # filter bandwidth rectangle drawn BEHIND the trace (Quisk lemonchiffon3)
-        if self.center_hz and self.vfo_hz:
-            fx1 = self.f2x(self.vfo_hz + self.filt[0])
-            fx2 = self.f2x(self.vfo_hz + self.filt[1])
-            x1c, x2c = max(0, int(fx1)), min(CANVAS_W, int(fx2))
-            if x2c > x1c:
-                pan[:, x1c:x2c] = (205, 201, 165)   # lemonchiffon3
-        # Branch H1: sub VFO B passband (light blue) BEHIND the main one
-        if self.center_hz and self.sub_hz:
-            sx1 = self.f2x(self.sub_hz + self.sub_filt[0])
-            sx2 = self.f2x(self.sub_hz + self.sub_filt[1])
-            sx1c, sx2c = max(0, int(sx1)), min(CANVAS_W, int(sx2))
-            if sx2c > sx1c:
-                pan[:, sx1c:sx2c] = (172, 206, 240)   # light blue tint (VFO B passband)
+        # (passband tints moved to canvas overlays in _draw_overlays - Branch H1)
         # horizontal gray grid lines every 10 dB (Quisk color_gl = grey)
         # grid computed from current dB scale
         lo_d, hi_d = lo, hi
@@ -565,16 +552,20 @@ class PanFall(tk.Canvas):
             if 0 <= cx <= CANVAS_W:
                 self.create_line(cx, axis_y, cx, axis_y + 12,
                                  fill="#000000", width=3)
-        # ---- Branch H1: VFO B passband TINT as canvas overlay (independent of the
-        # numpy composite so it can never silently disappear) ----
-        if self.center_hz and self.sub_hz and getattr(self, "sub_enabled", True):
+        # ---- Branch H1: passband TINTS as stable canvas overlays (single source of
+        # truth; drawn every frame, no numpy dependency, no flicker-prone stipple) ----
+        if self.center_hz and self.sub_hz:
             sx1 = self.f2x(self.sub_hz + self.sub_filt[0])
             sx2 = self.f2x(self.sub_hz + self.sub_filt[1])
             if sx2 > sx1:
-                # translucent blue via stipple
                 self.create_rectangle(sx1, 0, sx2, PAN_H,
-                                      fill="#3fa0ff", outline="",
-                                      stipple="gray50")
+                                      fill="#aecdf0", outline="")   # VFO B: light blue
+        if self.center_hz and self.vfo_hz:
+            fx1 = self.f2x(self.vfo_hz + self.filt[0])
+            fx2 = self.f2x(self.vfo_hz + self.filt[1])
+            if fx2 > fx1:
+                self.create_rectangle(fx1, 0, fx2, PAN_H,
+                                      fill="#cdc9a5", outline="")   # VFO A: lemonchiffon3
         # ---- Branch H1: Thetis-style passband edges (red left / yellow right) ----
         if self.center_hz and self.vfo_hz:
             ex1 = self.f2x(self.vfo_hz + self.filt[0])
@@ -731,7 +722,9 @@ class MiniTCI(tk.Tk):
                 self.sub_mode = s["sub_mode"]
                 self.submode_var.set(self.sub_mode)
             if s.get("sub_filt"):
-                self.sub_filt = (int(s["sub_filt"][0]), int(s["sub_filt"][1]))
+                fl, fh = int(s["sub_filt"][0]), int(s["sub_filt"][1])
+                if fh - fl >= 200 and fh > 0:      # sanity: ignore stale half-width values
+                    self.sub_filt = (fl, fh)
             if s.get("balance") is not None:
                 self.bal_var.set(float(s["balance"]))
             self._band_stacks = s.get("band_stacks") or {}
