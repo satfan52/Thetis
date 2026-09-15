@@ -117,13 +117,41 @@ namespace Thetis
             SetFreqInternal(rx, hz);
         }
 
+        private static bool UpperSideband(DSPMode m)
+        {
+            switch (m)
+            {
+                case DSPMode.LSB:
+                case DSPMode.DIGL:
+                case DSPMode.CWL:
+                    return false;
+                default:
+                    return true;   // USB/DIGU/CWU/AM/SAM/FM...
+            }
+        }
+
         private static void SetFreqInternal(int rx, long hz)
         {
             if (hz <= 0 || !cmaster.IsRadioCreated) return;
+            var st = Get(rx);
             double offset = hz - MainHz(rx);           // signed offset from DDC centre
-            double span = 48000.0;                     // hard DDC edge (Thetis clamps sub osc to rate/2)
-            if (offset > span) offset = span;
-            if (offset < -span) offset = -span;
+            double edge = 48000.0;                     // hard DDC edge (rate/2)
+            double filtW = Math.Abs(st.FilterHigh - st.FilterLow);
+            // keep B's filter inside the passband: a USB-family filter occupies
+            // [B, B+w] (limits +side to edge-w), LSB-family occupies [B-w, B]
+            double maxOff, minOff;
+            if (UpperSideband(st.Mode))
+            {
+                maxOff = Math.Max(0.0, edge - filtW);
+                minOff = -edge;
+            }
+            else
+            {
+                maxOff = edge;
+                minOff = -Math.Max(0.0, edge - filtW);
+            }
+            if (offset > maxOff) offset = maxOff;
+            if (offset < minOff) offset = minOff;
             // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and
             // RadioDSPRX applies SetRXAShiftFreq(-RXOsc) => effective shift = +(fB - fA).
             // We drive SetRXAShiftFreq directly, so pass the offset itself.
@@ -141,14 +169,19 @@ namespace Thetis
                 TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} SKIPPED - radio not created");
                 return;
             }
-            WDSP.SetRXAMode(Ch(rx, 1), mode);
-            // WDSP: a mode change can reset the receiver filter to mode defaults -
-            // re-apply the stored filter afterwards (same order Thetis uses:
-            // selectModes() then selectFilters()).
-            WDSP.SetRXABandpassFreqs(Ch(rx, 1), st.FilterLow, st.FilterHigh);
-            WDSP.RXANBPSetFreqs(Ch(rx, 1), st.FilterLow, st.FilterHigh);
-            WDSP.SetRXASNBAOutputBandwidth(Ch(rx, 1), st.FilterLow, st.FilterHigh);
-            TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} ch={Ch(rx, 1)} filt={st.FilterLow}-{st.FilterHigh}");
+            int ch = Ch(rx, 1);
+            // Replicate Thetis's SetRX1Mode sequence for a mode change:
+            // DSP channel OFF -> SetRXAMode -> filter re-apply -> channel ON.
+            // (Thetis powers the channels down around every mode change; without
+            // the off/on cycle the demodulator does not reliably switch sideband.)
+            int prevState = WDSP.SetChannelState(ch, 0, 1);
+            WDSP.SetRXAMode(ch, mode);
+            WDSP.SetRXABandpassFreqs(ch, st.FilterLow, st.FilterHigh);
+            WDSP.RXANBPSetFreqs(ch, st.FilterLow, st.FilterHigh);
+            WDSP.SetRXASNBAOutputBandwidth(ch, st.FilterLow, st.FilterHigh);
+            if (st.Enabled || prevState == 1)
+                WDSP.SetChannelState(ch, 1, 0);
+            TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} ch={ch} filt={st.FilterLow}-{st.FilterHigh}");
         }
 
         public static void ApplyFilter(int rx, int low, int high)

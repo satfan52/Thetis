@@ -1795,16 +1795,29 @@ class MiniTCI(tk.Tk):
         return None
 
     def _clamp_sub_to_ddc(self):
-        """Branch H1: both VFOs must fit in the DDC passband. The headless DDC
-        is always centred on VFO A (SetFrequency -> VFOfreq) - CTUN is a display
-        concept only and does not move the DDC. Limit = 48k minus half the B
-        filter width so the passband fits entirely inside the DDC."""
-        if self.sub_hz:
-            off = self.sub_hz - self.freq_hz
-            filt_w = abs(self.sub_filt[1] - self.sub_filt[0])   # total width, mode-independent
-            max_off = max(0, 48000 - filt_w // 2)
-            if abs(off) > max_off:
-                self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
+        """Branch H1: B's filter must fit inside the DDC passband (96 kHz around
+        A). The limit is sideband-asymmetric: a USB filter occupies [B, B+w]
+        (limits B to edge-w on the upper side, but B may sit AT the lower edge);
+        an LSB filter occupies [B-w, B] (mirror image)."""
+        if not self.sub_hz:
+            return
+        off = self.sub_hz - self.freq_hz
+        lo, hi = self.sub_filt
+        filt_w = abs(hi - lo)
+        edge = 48000
+        if off >= 0:
+            # upper side: USB/DIGU/CWU filters extend upward; LSB-family extend downward
+            if self.sub_mode in ("USB", "DIGU", "CWU", "AM", "SAM", "NFM"):
+                max_off = max(0, edge - filt_w)
+            else:
+                max_off = edge
+        else:
+            if self.sub_mode in ("LSB", "DIGL", "CWL"):
+                max_off = max(0, edge - filt_w)
+            else:
+                max_off = edge
+        if abs(off) > max_off:
+            self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
 
     def tune_to(self, hz):
         self.freq_hz = int(hz)
