@@ -693,6 +693,11 @@ class MiniTCI(tk.Tk):
 
     def _save_settings(self, *_):
         try:
+            # keep the current band's stack fresh so returning to it later works
+            self._band_stack_save()
+        except Exception:
+            pass
+        try:
             os.makedirs(os.path.dirname(self.SETTINGS_PATH), exist_ok=True)
             with open(self.SETTINGS_PATH, "w") as f:
                 json.dump(self._settings_snapshot(), f, indent=1)
@@ -1981,12 +1986,18 @@ class MiniTCI(tk.Tk):
         self.mode_var.set(st["mode"])
         if st.get("filt"):
             self.filtwidth_var.set(st["filt"])
-        if st.get("sub_filt"):
-            self.subfilt_var.set(st["sub_filt"])
-        self.tune_to(int(st["a"]))
-        self.sub_hz = int(st.get("b") or 0)
+        # sub mode BEFORE sub filter so _subfilt_changed uses the right sideband
         self.sub_mode = st.get("sub_mode", "USB")
         self.submode_var.set(self.sub_mode)
+        if st.get("sub_filt"):
+            self.subfilt_var.set(st["sub_filt"])
+        # set the centre synchronously so the restore doesn't clamp B against
+        # the previous band's centre
+        a = int(st["a"])
+        self.pan.center_hz = a
+        self.pan.data_center_hz = a
+        self.tune_to(a)
+        self.sub_hz = int(st.get("b") or 0)
         want_sub = bool(st.get("sub_on"))
         if want_sub and self.connected:
             self.send(f"subrx:0,true;")
@@ -2015,12 +2026,20 @@ class MiniTCI(tk.Tk):
             return
         for b in BANDS:
             if b[0] == name:
-                self.tune_to(int(b[1] * 1e6))
+                new_freq = int(b[1] * 1e6)
+                # a band change always re-centres the DDC on A (classic retune,
+                # or a CTUN edge jump), so set the client centre synchronously -
+                # otherwise B's clamp pins it to the previous band
+                self.freq_hz = new_freq
+                self._fmt_freq()
+                self.pan.vfo_hz = new_freq
+                self.pan.center_hz = new_freq
+                self.pan.data_center_hz = new_freq
+                self.send(f"vfo:0,0,{new_freq};")
                 self.mode_var.set(b[2])
-                # no stored stack for this band: put B near A in the new band
-                if self.sub_enabled and self._band_for_freq(self.sub_hz) != name:
-                    self.sub_hz = self.freq_hz + 2000
-                    self._sub_tune_to(self.sub_hz)
+                # B follows into the new band, defaulting to VFO A's frequency
+                if self.sub_enabled:
+                    self._sub_tune_to(new_freq)
                 return
 
     def _a_filter(self):
