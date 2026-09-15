@@ -2017,6 +2017,8 @@ class MiniTCI(tk.Tk):
         self.pan.data_center_hz = a
         self.tune_to(a)
         self.sub_hz = int(st.get("b") or 0)
+        if self.sub_hz <= 0:
+            self.sub_hz = a      # no saved B for this band: default to VFO A
         want_sub = bool(st.get("sub_on"))
         if want_sub and self.connected:
             self.send(f"subrx:0,true;")
