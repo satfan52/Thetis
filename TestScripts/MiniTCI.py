@@ -1197,14 +1197,18 @@ class MiniTCI(tk.Tk):
                 block = np.frombuffer(bytes(self._iq_acc_bytes[:target]), dtype="<f4")
                 del self._iq_acc_bytes[:target]
                 try:
-                    # tag each block with the DDC center in effect when it arrived,
-                    # so queued stale blocks are labeled correctly (sync fix)
-                    self._iq_q.put_nowait((block, rate, float(self.freq_hz)))
+                    # Tag each block with the DDC centre (hardware centre), NOT VFO A.
+                    # Under CTUN A floats inside the DDC (freq_hz != DDC centre), and
+                    # the IQ data is still centred on the DDC - tagging with freq_hz
+                    # shifts the placement by the offset and empties the opposite edge.
+                    ddc = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
+                    self._iq_q.put_nowait((block, rate, float(ddc)))
                 except Exception:
                     # UI stalled - drop the OLDEST block so new data keeps flowing
                     try:
                         self._iq_q.get_nowait()
-                        self._iq_q.put_nowait((block, rate, float(self.freq_hz)))
+                        ddc = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
+                        self._iq_q.put_nowait((block, rate, float(ddc)))
                     except Exception:
                         pass
         except Exception:
