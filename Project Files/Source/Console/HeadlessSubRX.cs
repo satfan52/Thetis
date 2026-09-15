@@ -121,7 +121,7 @@ namespace Thetis
         {
             if (hz <= 0 || !cmaster.IsRadioCreated) return;
             double offset = hz - MainHz(rx);           // signed offset from DDC centre
-            double span = 96000.0 * 0.48;              // both VFOs inside the 96k passband (48k half-span, 4% filter-edge margin)
+            double span = 48000.0;                     // hard DDC edge (Thetis clamps sub osc to rate/2)
             if (offset > span) offset = span;
             if (offset < -span) offset = -span;
             // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and

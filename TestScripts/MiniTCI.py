@@ -1800,7 +1800,7 @@ class MiniTCI(tk.Tk):
         margin; this IS the 'both VFOs fit in the passband' rule."""
         if self.sub_hz:
             off = self.sub_hz - self.freq_hz
-            max_off = int(48000 * 0.96)
+            max_off = 48000                      # hard DDC edge (Thetis uses rate/2)
             if abs(off) > max_off:
                 self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
 
