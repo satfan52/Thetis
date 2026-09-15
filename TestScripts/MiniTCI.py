@@ -1793,11 +1793,14 @@ class MiniTCI(tk.Tk):
         return None
 
     def _clamp_sub_to_ddc(self):
-        """Branch H1: VFO B must stay inside the DDC passband around VFO A
-        (96 kHz here -> usable offset ~+/-43 kHz) and in the same band."""
+        """Branch H1: both VFOs must fit in the DDC passband. The headless DDC
+        is always centred on VFO A (SetFrequency -> VFOfreq) - CTUN is a display
+        concept only and does not move the DDC - so the physical limit is
+        |B - A| <= rate/2 (48 kHz at 96k). We clamp at 96% leaving filter-edge
+        margin; this IS the 'both VFOs fit in the passband' rule."""
         if self.sub_hz:
             off = self.sub_hz - self.freq_hz
-            max_off = int(48000 * 0.9)
+            max_off = int(48000 * 0.96)
             if abs(off) > max_off:
                 self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
 
