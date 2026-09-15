@@ -1806,29 +1806,17 @@ class MiniTCI(tk.Tk):
         return None
 
     def _clamp_sub_to_ddc(self):
-        """Branch H1: B's filter must fit inside the DDC passband (96 kHz around
-        A). The limit is sideband-asymmetric: a USB filter occupies [B, B+w]
-        (limits B to edge-w on the upper side, but B may sit AT the lower edge);
-        an LSB filter occupies [B-w, B] (mirror image)."""
+        """Branch H1: the VFO B tuning LINE may reach the full DDC passband
+        (+/-48 kHz around A) in every mode - the user tunes to the visible
+        waterfall edge. Where the filter geometry would extend past the edge,
+        the passband colour simply clips at the edge (partially demodulated,
+        as in Thetis at rate/2)."""
         if not self.sub_hz:
             return
         off = self.sub_hz - self.freq_hz
-        lo, hi = self.sub_filt
-        filt_w = abs(hi - lo)
         edge = 48000
-        if off >= 0:
-            # upper side: USB/DIGU/CWU filters extend upward; LSB-family extend downward
-            if self.sub_mode in ("USB", "DIGU", "CWU", "AM", "SAM", "NFM"):
-                max_off = max(0, edge - filt_w)
-            else:
-                max_off = edge
-        else:
-            if self.sub_mode in ("LSB", "DIGL", "CWL"):
-                max_off = max(0, edge - filt_w)
-            else:
-                max_off = edge
-        if abs(off) > max_off:
-            self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
+        if abs(off) > edge:
+            self.sub_hz = self.freq_hz + (edge if off > 0 else -edge)
 
     def tune_to(self, hz):
         self.freq_hz = int(hz)
