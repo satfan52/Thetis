@@ -2066,6 +2066,17 @@ class MiniTCI(tk.Tk):
     def _tx_vfo_selected(self):
         return self.tx_vfo
 
+    def _vfo_at_x(self, x):
+        """Return 'B' if the cursor X is over VFO B's passband (sub enabled),
+        else 'A'. Shared by drag-grab and wheel-fine-tune targeting."""
+        if self._sub_enabled() and self.pan.center_hz and self.pan.sub_hz:
+            bx1 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[0])
+            bx2 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[1])
+            lo, hi = sorted((bx1, bx2))
+            if lo - 8 <= x <= hi + 8:    # small grab margin for narrow filters
+                return "B"
+        return "A"
+
     def _pan_click(self, e):
         # Record start and pick which VFO's window was grabbed: VFO B (sub)
         # if its passband contains the cursor, else VFO A (default - grabbing
@@ -2074,17 +2085,13 @@ class MiniTCI(tk.Tk):
         self._drag_y = e.y
         self._drag_center = self.pan.center_hz
         self._moved = False
-        self._drag_target = "A"
-        self._drag_vfo = self.pan.vfo_hz
-        self._drag_filt = self.pan.filt
-        if self._sub_enabled() and self.pan.center_hz and self.pan.sub_hz:
-            bx1 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[0])
-            bx2 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[1])
-            lo, hi = sorted((bx1, bx2))
-            if lo - 8 <= e.x <= hi + 8:    # small grab margin for narrow filters
-                self._drag_target = "B"
-                self._drag_vfo = self.pan.sub_hz
-                self._drag_filt = self.pan.sub_filt
+        self._drag_target = self._vfo_at_x(e.x)
+        if self._drag_target == "B":
+            self._drag_vfo = self.pan.sub_hz
+            self._drag_filt = self.pan.sub_filt
+        else:
+            self._drag_vfo = self.pan.vfo_hz
+            self._drag_filt = self.pan.filt
 
     def _pan_drag(self, e):
         # Quisk OnMotion: dragging slides the grabbed VFO's window; drag speed
@@ -2223,12 +2230,19 @@ class MiniTCI(tk.Tk):
         self.pan.config(cursor="crosshair")
 
     def _pan_wheel(self, e):
-        # Quisk OnWheel: tune in mouse_wheelmod (50 Hz) steps
+        # Quisk OnWheel: fine-tune the VFO under the cursor (VFO B's blue
+        # passband, or VFO A's red passband / anywhere else). Shift = 10 Hz,
+        # normal = 50 Hz.
         if not self.pan.center_hz:
             return
         delta = getattr(e, "delta", 120)
-        step = 50 if delta > 0 else -50
-        self.tune_to(self.freq_hz + step)
+        fine = bool(e.state & 0x0001)      # Shift held = fine steps
+        step = 10 if fine else 50
+        d = step if delta > 0 else -step
+        if self._vfo_at_x(e.x) == "B" and self._sub_enabled():
+            self._sub_tune_to(max(0, self.sub_hz + d))
+        else:
+            self.tune_to(self.freq_hz + d)
 
     # ---------------- TX ----------------
     def ptt_on(self):
