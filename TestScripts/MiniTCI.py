@@ -348,10 +348,18 @@ class PanFall(tk.Canvas):
         off = int(round((dc_tag - self.center_hz) / max(1.0, self.span) * CANVAS_W))
         if off:
             col = np.roll(col, off)
-            if off > 0:
-                col[:off] = col[off]
-            else:
-                col[off:] = col[off - 1]
+            # Branch H1 fix: columns outside the delivered DDC band have no live
+            # data in CTUN (display span == DDC rate). Keep the LAST KNOWN value
+            # per column (frozen spectrum) instead of smearing the edge column
+            # across the uncovered region - that smear looked like a broken
+            # waterfall half.
+            prev_col = getattr(self, "_col_prev_raw", None)
+            if prev_col is not None and len(prev_col) == len(col):
+                if off > 0:
+                    col[:off] = prev_col[:off]
+                else:
+                    col[off:] = prev_col[off:]
+        self._col_prev_raw = col.copy()
         # smooth with a small gaussian kernel (sigma ~1.2 px) to remove stair-steps
         k = np.exp(-0.5 * (np.arange(-2, 3) / 0.9) ** 2)
         k /= k.sum()
@@ -557,6 +565,21 @@ class PanFall(tk.Canvas):
             if 0 <= cx <= CANVAS_W:
                 self.create_line(cx, axis_y, cx, axis_y + 12,
                                  fill="#000000", width=3)
+        # ---- Branch H1: Thetis-style passband edges (red left / yellow right) ----
+        if self.center_hz and self.vfo_hz:
+            ex1 = self.f2x(self.vfo_hz + self.filt[0])
+            ex2 = self.f2x(self.vfo_hz + self.filt[1])
+            if 0 <= ex1 <= CANVAS_W:
+                self.create_line(ex1, 0, ex1, PAN_H, fill="#ff3030", width=2)
+            if 0 <= ex2 <= CANVAS_W:
+                self.create_line(ex2, 0, ex2, PAN_H, fill="#ffd050", width=2)
+        if self.center_hz and self.sub_hz:
+            ex1 = self.f2x(self.sub_hz + self.sub_filt[0])
+            ex2 = self.f2x(self.sub_hz + self.sub_filt[1])
+            if 0 <= ex1 <= CANVAS_W:
+                self.create_line(ex1, 0, ex1, PAN_H, fill="#3366ff", width=2)
+            if 0 <= ex2 <= CANVAS_W:
+                self.create_line(ex2, 0, ex2, PAN_H, fill="#77bbff", width=2)
         # ---- tuning line: Quisk color_txline red, full height both panes ----
         if self.center_hz:
             # Branch H1: sub VFO B tuning line (blue) drawn UNDER the red line
@@ -591,7 +614,7 @@ class MiniTCI(tk.Tk):
         self.freq_hz = 14_074_000
         self.mode = "USB"
         # Branch H1: VFO B / subrx state
-        self.sub_hz = 0                  # 0 = subrx not set yet
+        self.sub_hz = self.freq_hz + 2000  # sensible default: 2 kHz above VFO A
         self.sub_mode = "USB"
         self.sub_filt = (150, 2800)
         self.sub_enabled = False
@@ -784,6 +807,11 @@ class MiniTCI(tk.Tk):
         ttk.Combobox(r1, textvariable=self.mode_var, width=5, state="readonly",
                      values=MODES).pack(side="left")
         self.mode_var.trace_add("write", self._mode_changed)
+        ttk.Label(r1, text="Filter:", padding=(8, 0, 2, 0)).pack(side="left")
+        self.filtwidth_var = tk.StringVar(value="2.9k")
+        ttk.Combobox(r1, textvariable=self.filtwidth_var, width=5, state="readonly",
+                     values=["5k", "3.8k", "2.9k", "2.7k", "2.4k", "1.8k", "1k", "500", "250"]).pack(side="left")
+        self.filtwidth_var.trace_add("write", self._filtwidth_changed)
 
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
         self.agc_var = tk.StringVar(value="MED")
@@ -801,7 +829,8 @@ class MiniTCI(tk.Tk):
 
         # --- row 2: frequency
         r2 = ttk.Frame(self); r2.pack(fill="x", padx=10, pady=2)
-        self.freq_lbl = tk.Label(r2, text="14.074.000", bg=C["panel"], fg=C["tune"],
+        ttk.Label(r2, text="VFO A").pack(side="left", padx=(2, 4))
+        self.freq_lbl = tk.Label(r2, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
         self.freq_lbl.pack(side="left", padx=(2, 14))
         self.freq_lbl.bind("<MouseWheel>", self._freq_wheel)
@@ -1033,7 +1062,7 @@ class MiniTCI(tk.Tk):
         sounddevice blocking write() has its own internal timing; this thread
         only needs to feed chunks slightly faster than real time."""
         CHUNK = 1024
-        mono_buf = np.zeros(CHUNK, dtype=np.float32)
+        stereo_buf = np.zeros((CHUNK, 2), dtype=np.float32)
         while True:
             try:
                 if self.out_stream is None:
@@ -1065,7 +1094,7 @@ class MiniTCI(tk.Tk):
                 filled = 0
                 while filled < CHUNK:
                     if not self.audio_blocks:
-                        mono_buf[filled:] = 0.0
+                        stereo_buf[filled:] = 0.0
                         break
                     blk = self.audio_blocks[0]
                     take = min(len(blk) - self.audio_pos, CHUNK - filled)
@@ -1073,17 +1102,25 @@ class MiniTCI(tk.Tk):
                         self.audio_blocks.popleft()
                         self.audio_pos = 0
                         continue
-                    mono_buf[filled:filled + take] = blk[self.audio_pos:self.audio_pos + take]
+                    stereo_buf[filled:filled + take] = blk[self.audio_pos:self.audio_pos + take]
                     filled += take
                     self.audio_pos += take
                     if self.audio_pos >= len(blk):
                         self.audio_blocks.popleft()
                         self.audio_pos = 0
-                stereo = np.empty((CHUNK, 2), dtype=np.float32)
-                stereo[:, 0] = mono_buf * self.volume
-                stereo[:, 1] = mono_buf * self.volume
+                # Branch H1: audio selection - L = main, R = sub (server pans them)
+                sel = getattr(self, "audio_sel", "main")
+                gL, gR = 1.0, 1.0
+                if sel == "main":
+                    gL, gR = 1.0, 0.0      # pure mono sum would lose main-only when panned
+                    # main lives in L; also add R*? no: main panned hard L by server
+                elif sel == "sub":
+                    gL, gR = 0.0, 1.0
+                # 'both': keep stereo as delivered (balance slider decides placement)
+                stereo_buf[:, 0] *= gL * self.volume
+                stereo_buf[:, 1] *= gR * self.volume
                 try:
-                    self.out_stream.write(stereo)
+                    self.out_stream.write(stereo_buf)
                 except Exception:
                     time.sleep(0.05)
             except Exception:
@@ -1123,17 +1160,20 @@ class MiniTCI(tk.Tk):
         self.text_q.put(d)
 
     def tci_audio(self, data, rate, chans):
-        # mono-ize then resample to OUT_RATE. Server sends 4096-value blocks
-        # (2048 stereo samples = 85ms); the old 40-block queue allowed >3s of
-        # latency. Keep at most ~4 blocks (~340ms) so playback stays near-live
-        # and drop-oldest never yanks the read pointer mid-block.
+        # Branch H1 fix: keep STEREO (L = main, R = sub after server panning).
+        # The old code kept only the left channel, so the subrx (panned right)
+        # was silent. Resample both channels; the output stream is stereo and
+        # the audio selection applies L/R gains at playback.
         if chans == 2:
-            mono = data[0::2].copy()
+            L = data[0::2]
+            R = data[1::2]
         else:
-            mono = data
+            L = R = data
         if rate != OUT_RATE:
-            mono = resample(mono, int(len(mono) * OUT_RATE / rate))
-        self.audio_blocks.append(mono)
+            n = int(len(L) * OUT_RATE / rate)
+            L = resample(L, n)
+            R = resample(R, n)
+        self.audio_blocks.append(np.stack([L, R], axis=1))   # shape (n, 2)
         while len(self.audio_blocks) > 5:       # ~0.34 s hard cap = low latency
             self.audio_blocks.popleft()
             self.audio_pos = 0
@@ -1554,15 +1594,12 @@ class MiniTCI(tk.Tk):
         return self.connected and self.sub_enabled
 
     def _fmt_sub_freq(self):
-        f = self.sub_hz
-        s = f"{f/1e6:.6f}" if f >= 1_000_000 else f"{f:,.0f}"
-        # same dotted style as main display
-        try:
-            mhz = f / 1e6
-            s = f"{int(mhz)}.{int((mhz % 1) * 1e6):06d}"
-        except Exception:
-            pass
-        return s
+        # same dotted format as VFO A (H1: consistent displays, different colors)
+        f = max(0, int(self.sub_hz))
+        mhz = f // 1_000_000
+        khz = (f % 1_000_000) // 1000
+        hz = f % 1000
+        return f"{mhz}.{khz:03d}.{hz:03d}"
 
     def _sub_refresh_ui(self):
         on = self.sub_enabled
@@ -1806,6 +1843,19 @@ class MiniTCI(tk.Tk):
         self.pan.filt = (lo, hi)
         self.send(f"modulation:0,{self.mode};")
         self.send(f"rx_filter_band:0,{lo},{hi};")
+
+    def _filtwidth_changed(self, *_):
+        w = BW_PRESETS.get(self.filtwidth_var.get(), 2900)
+        half = w // 2
+        mode = self.mode_var.get()
+        if mode in ("LSB", "DIGL", "CWL"):
+            lo, hi = -half, -min(100, half // 8)
+        else:
+            lo, hi = min(100, half // 8), half
+        self.pan.filt = (lo, hi)
+        if self.connected:
+            self.send(f"rx_filter_band:0,{lo},{hi};")
+        self.logprint(f"VFO A filter {self.filtwidth_var.get()} ({lo}..{hi} Hz)")
 
     def _agc_mode_to_tci(self, name):
         return {"OFF": "off", "FIXED": "fixed", "FAST": "fast",
