@@ -1728,16 +1728,12 @@ namespace Thetis
                                 // Branch H1: VFO A floats inside the DDC (master-VFO
                                 // model); the DDC is retuned only when A would leave
                                 // the passband. Slices/CI-V see A's real frequency.
-                                double effCenter = HeadlessSliceManager.Instance.SetVFOA(rx, newFreqMHz);
+                                HeadlessSliceManager.Instance.SetVFOA(rx, newFreqMHz);
                                 if (TxArbiter.Instance.ActiveDigitalRx == rx)
                                 {
                                     TxArbiter.Instance.UpdateDigitalTxFrequency(rx, newFreqMHz);
                                 }
                                 _server.BroadcastText($"vfo:0,0,{freqHz:0};");
-                                // tell clients where the DDC actually sits (master
-                                // VFO); under CTUN it may differ from A
-                                long centerHz = (long)(effCenter * 1e6);
-                                _server.BroadcastText($"dds:0,{centerHz:0};");
                             }
                         }
                         else if (args.Length >= 2)
