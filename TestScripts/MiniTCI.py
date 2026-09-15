@@ -2067,44 +2067,73 @@ class MiniTCI(tk.Tk):
         return self.tx_vfo
 
     def _pan_click(self, e):
-        # Quisk OnLeftDown: record start; choose tx/rx target (we only have one VFO)
+        # Record start and pick which VFO's window was grabbed: VFO B (sub)
+        # if its passband contains the cursor, else VFO A (default - grabbing
+        # anywhere outside B's window still tunes A, as before).
         self._drag_x = e.x
         self._drag_y = e.y
         self._drag_center = self.pan.center_hz
+        self._moved = False
+        self._drag_target = "A"
         self._drag_vfo = self.pan.vfo_hz
         self._drag_filt = self.pan.filt
-        self._moved = False
+        if self._sub_enabled() and self.pan.center_hz and self.pan.sub_hz:
+            bx1 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[0])
+            bx2 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[1])
+            lo, hi = sorted((bx1, bx2))
+            if lo - 8 <= e.x <= hi + 8:    # small grab margin for narrow filters
+                self._drag_target = "B"
+                self._drag_vfo = self.pan.sub_hz
+                self._drag_filt = self.pan.sub_filt
 
     def _pan_drag(self, e):
-        # Quisk OnMotion: dragging tunes the frequency; drag speed scales with
-        # height above the X axis (near the axis = fine, top = coarse)
+        # Quisk OnMotion: dragging slides the grabbed VFO's window; drag speed
+        # scales with height above the X axis (near the axis = fine, top = coarse)
         if not self.pan.center_hz or not hasattr(self, "_drag_x"):
             return
         if abs(e.x - self._drag_x) > 2 or abs(e.y - getattr(self, "_drag_y", e.y)) > 2:
             self._moved = True
         if not self._moved:
             return
-        # Quisk: speed = max(10, originY - mouse_y) / (originY + 1)
         speed = max(10.0, PAN_H - e.y) / float(PAN_H + 1)
         dx_hz = speed * (e.x - self._drag_x) / CANVAS_W * self.pan.span
         self._drag_x = e.x   # Quisk accumulates per-motion deltas
-        self.pan.vfo_hz = self._drag_vfo = self._drag_vfo + dx_hz
-        self._freq_pending = self.pan.vfo_hz
-        # live-follow the frequency display (command still sent on release)
-        self.freq_hz = int(self.pan.vfo_hz)
-        self._fmt_freq()
+        new_f = self._drag_vfo + dx_hz
+        self._drag_vfo = new_f
+        self._freq_pending = new_f
+        if self._drag_target == "B":
+            # live-clamp to the filter-aware DDC edges so the blue line never
+            # leaves the passband while dragging (snaps back only at the edge)
+            center = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
+            fl, fh = self.pan.sub_filt
+            upper = center + (48000 - max(0, fh))
+            lower = center + (-48000 + max(0, -fl))
+            new_f = max(lower, min(upper, new_f))
+            self.sub_hz = int(new_f)
+            self._sub_refresh_ui()
+        else:
+            # live-follow the frequency display (command still sent on release)
+            self.pan.vfo_hz = new_f
+            self.freq_hz = int(new_f)
+            self._fmt_freq()
 
     def _pan_release(self, e):
         moved = getattr(self, "_moved", False)
+        target = getattr(self, "_drag_target", "A")
+        cw_mode = (self.sub_mode if target == "B" else self.mode) in ("CWU", "CWL")
         if self.pan.center_hz and not moved:
             f = self.pan.x2f(e.x)
-            if self.mode in ("CWU", "CWL"):
+            if cw_mode:
                 f = self._cw_snap(f)
-            # Quisk OnLeftUp: re-round to the frequency grid
-            self.tune_to(self._round_tune(f))
+            f = self._round_tune(f)          # Quisk OnLeftUp: re-round to grid
+        elif moved and getattr(self, "_freq_pending", None):
+            f = self._round_tune(self._freq_pending)
+        else:
             return
-        if moved and getattr(self, "_freq_pending", None):
-            self.tune_to(self._round_tune(self._freq_pending))
+        if target == "B" and self._sub_enabled():
+            self._sub_tune_to(f)
+        else:
+            self.tune_to(f)
 
     def _round_tune(self, f):
         # Quisk OnLeftUp FreqRound: snap tune offset to the wheel step grid
