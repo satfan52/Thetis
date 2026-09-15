@@ -126,6 +126,20 @@ namespace Thetis
         // Thetis's CentreFrequency + RXOsc model in CTUN); the DDC is retuned
         // only when A would leave the passband (scroll/re-centre).
         private readonly Dictionary<int, double> _displayCenterMHz = new Dictionary<int, double>();
+        // client display model: false = normal (DDC centred on A on every move),
+        // true = CTUN (A floats, DDC scrolls at the edge)
+        private readonly Dictionary<int, bool> _ctunMode = new Dictionary<int, bool>();
+
+        public void SetCtunMode(int rx, bool ctun)
+        {
+            lock (_lock) { _ctunMode[rx] = ctun; }
+            // leaving CTUN: re-centre the DDC onto A (display follows A again)
+            if (!ctun)
+            {
+                var slice = GetSlice(rx);
+                if (slice != null) SetFrequency(rx, slice.FrequencyMHz);
+            }
+        }
 
         public double GetDisplayCenterMHz(int rx)
         {
@@ -150,6 +164,18 @@ namespace Thetis
                 if (!_slices.TryGetValue(rx, out slice)) return freqMHz;
             }
             if (!cmaster.IsRadioCreated) return freqMHz;
+
+            bool ctun;
+            lock (_lock) { _ctunMode.TryGetValue(rx, out ctun); }
+            if (!ctun)
+            {
+                // normal display: the DDC is always centred on A
+                SetFrequency(rx, freqMHz);
+                WDSP.SetRXAShiftFreq(2 * rx, 0.0);
+                WDSP.RXANBPSetShiftFrequency(2 * rx, 0.0);
+                SliceFrequencyChanged?.Invoke(rx, freqMHz);
+                return freqMHz;
+            }
 
             double center = GetDisplayCenterMHz(rx);
             const double rate = 96000.0;

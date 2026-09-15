@@ -1812,6 +1812,14 @@ namespace Thetis
                         }
                         break;
 
+                    case "ctun":
+                        {
+                            // Branch H1: client display model - see SetVFOA
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool ct))
+                                HeadlessSliceManager.Instance.SetCtunMode(_server.BaseRxIndex, ct);
+                        }
+                        break;
+
                     case "subrx":
                         {
                             // Branch H1: enable/disable the sub-receiver (VFO B) on this port's DDC
