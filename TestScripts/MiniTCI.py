@@ -57,7 +57,7 @@ BANDS = [  # name, default MHz, suggested mode
 
 MODES = ["USB", "LSB", "DIGU", "DIGL", "CWU", "CWL", "AM", "SAM", "NFM"]
 # Branch H1: total filter-width presets (Hz, applied symmetric around the VFO)
-BW_PRESETS = {"5k": 5000, "3.8k": 3800, "2.7k": 2700, "2.4k": 2400,
+BW_PRESETS = {"5k": 5000, "3.8k": 3800, "2.9k": 2900, "2.7k": 2700, "2.4k": 2400,
               "1.8k": 1800, "1k": 1000, "500": 500, "250": 250}
 
 FILTERS = {
@@ -870,7 +870,7 @@ class MiniTCI(tk.Tk):
         ttk.Label(r2b, text="Sub filter:").pack(side="left", padx=(10, 2))
         self.subfilt_var = tk.StringVar(value="2.7k")
         ttk.Combobox(r2b, textvariable=self.subfilt_var, width=5, state="readonly",
-                     values=["5k", "3.8k", "2.7k", "2.4k", "1.8k", "1k", "500", "250"]).pack(side="left")
+                     values=["5k", "3.8k", "2.9k", "2.7k", "2.4k", "1.8k", "1k", "500", "250"]).pack(side="left")
         self.subfilt_var.trace_add("write", self._subfilt_changed)
         ttk.Label(r2b, text="Audio:").pack(side="left", padx=(12, 2))
         self.audiosel_var = tk.StringVar(value="Main")
@@ -1482,11 +1482,14 @@ class MiniTCI(tk.Tk):
                         self._submode_busy = False
                 continue
             if k == "sub_filter" and v:
-                p = v.split(",")
-                if len(p) >= 2:
+                # echo format: sub_filter:<trx>,<lo>,<hi>; - skip the trx index
+                p = str(v).split(",")
+                if len(p) >= 3:
                     try:
-                        self.sub_filt = (int(p[0]), int(p[1]))
-                        self._sub_refresh_ui()
+                        fl, fh = int(p[1]), int(p[2])
+                        if fh > fl:
+                            self.sub_filt = (fl, fh)
+                            self._sub_refresh_ui()
                     except ValueError:
                         pass
                 continue
