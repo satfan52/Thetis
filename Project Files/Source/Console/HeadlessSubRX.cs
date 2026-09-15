@@ -142,7 +142,13 @@ namespace Thetis
                 return;
             }
             WDSP.SetRXAMode(Ch(rx, 1), mode);
-            TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} ch={Ch(rx, 1)}");
+            // WDSP: a mode change can reset the receiver filter to mode defaults -
+            // re-apply the stored filter afterwards (same order Thetis uses:
+            // selectModes() then selectFilters()).
+            WDSP.SetRXABandpassFreqs(Ch(rx, 1), st.FilterLow, st.FilterHigh);
+            WDSP.RXANBPSetFreqs(Ch(rx, 1), st.FilterLow, st.FilterHigh);
+            WDSP.SetRXASNBAOutputBandwidth(Ch(rx, 1), st.FilterLow, st.FilterHigh);
+            TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} ch={Ch(rx, 1)} filt={st.FilterLow}-{st.FilterHigh}");
         }
 
         public static void ApplyFilter(int rx, int low, int high)

@@ -1801,8 +1801,8 @@ class MiniTCI(tk.Tk):
         filter width so the passband fits entirely inside the DDC."""
         if self.sub_hz:
             off = self.sub_hz - self.freq_hz
-            filt_half = max(abs(self.sub_filt[0]), abs(self.sub_filt[1]))
-            max_off = max(0, 48000 - filt_half)
+            filt_w = abs(self.sub_filt[1] - self.sub_filt[0])   # total width, mode-independent
+            max_off = max(0, 48000 - filt_w // 2)
             if abs(off) > max_off:
                 self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
 
