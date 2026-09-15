@@ -1193,7 +1193,8 @@ class MiniTCI(tk.Tk):
                 try:
                     # tag each block with the DDC center in effect when it arrived,
                     # so queued stale blocks are labeled correctly (sync fix)
-                    self._iq_q.put_nowait((block, rate, float(self.freq_hz)))
+                    dc = getattr(self, "ddc_center_hz", 0) or self.freq_hz
+                    self._iq_q.put_nowait((block, rate, float(dc)))
                 except Exception:
                     # UI stalled - drop the OLDEST block so new data keeps flowing
                     try:
@@ -1490,6 +1491,21 @@ class MiniTCI(tk.Tk):
                             self._sub_refresh_ui()
                     except ValueError:
                         pass
+                continue
+            if k == "dds" and v:
+                # master VFO (DDC centre) report - the true centre of incoming IQ
+                try:
+                    newdc = int(float(v.split(",")[-1]))
+                    old_dc = getattr(self, "ddc_center_hz", 0)
+                    self.ddc_center_hz = newdc
+                    if (self.ctun_var.get() and old_dc and newdc != old_dc
+                            and self.pan.center_hz):
+                        # the server re-centred the DDC: slide display + history
+                        self.pan.shift_waterfall(newdc - old_dc)
+                        self.pan.center_hz = float(newdc)
+                        self.pan.data_center_hz = float(newdc)
+                except ValueError:
+                    pass
                 continue
             if k == "probe":
                 # Thetis TX-chain probe (once/s while we transmit):
@@ -1831,15 +1847,18 @@ class MiniTCI(tk.Tk):
             # B7-4: entering an FT8 segment in SSB - suggest the digital mode
             self.logprint(f"FT8 segment {seg:.3f} MHz: consider mode DIGU")
         if self.ctun_var.get():
-            # CTUN: display (and waterfall history) stays fixed; only the tune
-            # line moves. If the VFO would leave the window, slide the display
-            # minimally to keep it visible (Thetis does the same).
+            # Branch H1 CTUN (server-backed): the DDC is centred on the master
+            # VFO and A floats inside it - the display must NOT shift when A
+            # moves; only the tune line moves. When the SERVER re-centres the
+            # DDC (A reached the passband edge), the incoming IQ dc_tag changes:
+            # slide the display to follow the DDC (with waterfall history
+            # shifting like a normal re-centre).
             self.pan.vfo_hz = self.freq_hz
-            half = self.pan.span / 2 * 0.95
-            if abs(self.freq_hz - self.pan.center_hz) > half:
-                df = self.freq_hz - self.pan.center_hz
+            dc = getattr(self.pan, "data_center_hz", 0) or 0
+            if dc and self.pan.center_hz and abs(dc - self.pan.center_hz) > 1:
+                df = dc - self.pan.center_hz
                 self.pan.shift_waterfall(df)
-                self.pan.center_hz = self.freq_hz
+                self.pan.center_hz = dc
         else:
             # Normal: tuning slides the WHOLE panafall (past rows included).
             df = self.freq_hz - self.pan.center_hz
