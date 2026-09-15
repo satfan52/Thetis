@@ -664,6 +664,16 @@ class MiniTCI(tk.Tk):
         return {
             "freq": self.freq_hz,
             "mode": self.mode_var.get(),
+            "filtwidth": self.filtwidth_var.get(),
+            "band": self.band_var.get(),
+            "sub_hz": self.sub_hz,
+            "sub_mode": self.sub_mode,
+            "sub_filt": [self.sub_filt[0], self.sub_filt[1]],
+            "subfilt": self.subfilt_var.get(),
+            "balance": self.bal_var.get(),
+            "sub_enabled": self.sub_enabled,
+            "split": self.split,
+            "audio_sel": self.audio_sel,
             "volume": self.vol_var.get(),
             "mic_gain": self.mic_var.get(),
             "agc_mode": self.agc_var.get(),
@@ -677,6 +687,8 @@ class MiniTCI(tk.Tk):
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
             "host": getattr(self, "host_var", None).get() if hasattr(self, "host_var") else None,
+            "band_stacks": getattr(self, "_band_stacks", {}),
+            "scenes": getattr(self, "_scenes", {}),
         }
 
     def _save_settings(self, *_):
@@ -729,12 +741,35 @@ class MiniTCI(tk.Tk):
                     self.sub_filt = (fl, fh)
             if s.get("balance") is not None:
                 self.bal_var.set(float(s["balance"]))
+            if s.get("filtwidth"):
+                self.filtwidth_var.set(s["filtwidth"])
+            if s.get("subfilt"):
+                self.subfilt_var.set(s["subfilt"])
+            if s.get("sub_enabled") is not None:
+                self.sub_enabled = bool(s["sub_enabled"])
+            if s.get("split") is not None:
+                self.split = bool(s["split"])
+            if s.get("audio_sel"):
+                self.audio_sel = s["audio_sel"]
+                try:
+                    self.audiosel_var.set(self.audio_sel)
+                except (tk.TclError, AttributeError):
+                    pass
             self._band_stacks = s.get("band_stacks") or {}
             self._scenes = s.get("scenes") or {}
             self._scenes_loaded = True
             for idx in range(4):
                 if str(idx) in self._scenes:
                     self.scene_btns[idx].config(text=self._scenes[str(idx)].get("name", f"Scene {idx+1}"))
+            # restore the band selector without firing a band switch (the
+            # direct freq/mode/filter fields above already carry the state)
+            if s.get("band"):
+                self._loading = True
+                try:
+                    self.band_var.set(s["band"])
+                finally:
+                    self._loading = False
+                self._band_stack_current = s["band"]
             self._sub_refresh_ui()
         except (KeyError, ValueError, tk.TclError):
             pass
@@ -1320,7 +1355,7 @@ class MiniTCI(tk.Tk):
             self.send("rx_sensors_enable:true,250;")
             self.send(f"vfo:0,0,{self.freq_hz};")
             self.send(f"modulation:0,{self.mode};")
-            lo, hi = FILTERS.get(self.mode, (100, 2900))
+            lo, hi = self.pan.filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
             self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
             # Branch H1: restore subrx state on connect; default B = A + 2 kHz
@@ -1947,6 +1982,8 @@ class MiniTCI(tk.Tk):
         self._sub_refresh_ui()
 
     def _band_changed(self, *_):
+        if getattr(self, "_loading", False):
+            return                      # settings load in progress - no switch
         name = self.band_var.get()
         prev = getattr(self, "_band_stack_current", None)
         if prev and prev != name:
@@ -1964,26 +2001,30 @@ class MiniTCI(tk.Tk):
                     self._sub_tune_to(self.sub_hz)
                 return
 
+    def _a_filter(self):
+        """VFO A passband (FilterLow, FilterHigh) from the current bandwidth
+        preset and the mode's sideband convention."""
+        w = BW_PRESETS.get(self.filtwidth_var.get(), 2900)
+        lo_edge = min(100, w // 8)
+        if self.mode_var.get() in ("LSB", "DIGL", "CWL"):
+            return (-w + lo_edge, -lo_edge)
+        return (lo_edge, w)
+
     def _mode_changed(self, *_):
         self.mode = self.mode_var.get()
-        lo, hi = FILTERS.get(self.mode, (100, 2900))
-        self.pan.filt = (lo, hi)
+        self.pan.filt = self._a_filter()   # keep the selected bandwidth
         self.send(f"modulation:0,{self.mode};")
+        lo, hi = self.pan.filt
         self.send(f"rx_filter_band:0,{lo},{hi};")
 
     def _filtwidth_changed(self, *_):
         # presets are TOTAL filter widths (Hz): e.g. 2.7k -> 100..2800
-        w = BW_PRESETS.get(self.filtwidth_var.get(), 2900)
-        lo_edge = min(100, w // 8)
-        mode = self.mode_var.get()
-        if mode in ("LSB", "DIGL", "CWL"):
-            lo, hi = -w + lo_edge, -lo_edge
-        else:
-            lo, hi = lo_edge, w
-        self.pan.filt = (lo, hi)
+        self.pan.filt = self._a_filter()
         if self.connected:
+            lo, hi = self.pan.filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
-        self.logprint(f"VFO A filter {self.filtwidth_var.get()} ({lo}..{hi} Hz)")
+        self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
+                      f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
 
     def _agc_mode_to_tci(self, name):
         return {"OFF": "off", "FIXED": "fixed", "FAST": "fast",
@@ -2091,27 +2132,29 @@ class MiniTCI(tk.Tk):
 
     def _pan_click(self, e):
         # Record start and pick which VFO's window was grabbed: VFO B (sub)
-        # if its passband contains the cursor, else VFO A (default - grabbing
-        # anywhere outside B's window still tunes A, as before).
+        # if over its passband, VFO A if over its passband, else None (empty).
         self._drag_x = e.x
         self._drag_y = e.y
         self._drag_center = self.pan.center_hz
         self._moved = False
-        # drag-grab: empty still defaults to A (drag anywhere slides A);
-        # a *click* (no drag) re-checks _vfo_at_x and does nothing on empty.
-        self._drag_target = self._vfo_at_x(e.x) or "A"
+        self._drag_target = self._vfo_at_x(e.x)   # "A", "B", or None
         if self._drag_target == "B":
             self._drag_vfo = self.pan.sub_hz
             self._drag_filt = self.pan.sub_filt
-        else:
+        elif self._drag_target == "A":
             self._drag_vfo = self.pan.vfo_hz
             self._drag_filt = self.pan.filt
+        else:
+            self._drag_vfo = None
+            self._drag_filt = None
 
     def _pan_drag(self, e):
         # Quisk OnMotion: dragging slides the grabbed VFO's window; drag speed
         # scales with height above the X axis (near the axis = fine, top = coarse)
         if not self.pan.center_hz or not hasattr(self, "_drag_x"):
             return
+        if self._drag_target is None:
+            return                       # dragging empty waterfall has no effect
         if abs(e.x - self._drag_x) > 2 or abs(e.y - getattr(self, "_drag_y", e.y)) > 2:
             self._moved = True
         if not self._moved:
@@ -2150,8 +2193,11 @@ class MiniTCI(tk.Tk):
             self.tune_to(f)
             return
         if moved and getattr(self, "_freq_pending", None):
+            target = getattr(self, "_drag_target", None)
+            if target is None:
+                return                       # dragged empty waterfall: nothing
             f = self._round_tune(self._freq_pending)
-            if getattr(self, "_drag_target", "A") == "B" and self._sub_enabled():
+            if target == "B" and self._sub_enabled():
                 self._sub_tune_to(f)
             else:
                 self.tune_to(f)
