@@ -2067,15 +2067,21 @@ class MiniTCI(tk.Tk):
         return self.tx_vfo
 
     def _vfo_at_x(self, x):
-        """Return 'B' if the cursor X is over VFO B's passband (sub enabled),
-        else 'A'. Shared by drag-grab and wheel-fine-tune targeting."""
+        """Return 'B' if the cursor X is over VFO B's passband, 'A' if over
+        VFO A's passband, else None (empty waterfall). B wins on overlap."""
         if self._sub_enabled() and self.pan.center_hz and self.pan.sub_hz:
             bx1 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[0])
             bx2 = self.pan.f2x(self.pan.sub_hz + self.pan.sub_filt[1])
             lo, hi = sorted((bx1, bx2))
             if lo - 8 <= x <= hi + 8:    # small grab margin for narrow filters
                 return "B"
-        return "A"
+        if self.pan.center_hz and self.pan.vfo_hz:
+            ax1 = self.pan.f2x(self.pan.vfo_hz + self.pan.filt[0])
+            ax2 = self.pan.f2x(self.pan.vfo_hz + self.pan.filt[1])
+            lo, hi = sorted((ax1, ax2))
+            if lo - 8 <= x <= hi + 8:
+                return "A"
+        return None
 
     def _pan_click(self, e):
         # Record start and pick which VFO's window was grabbed: VFO B (sub)
@@ -2085,7 +2091,9 @@ class MiniTCI(tk.Tk):
         self._drag_y = e.y
         self._drag_center = self.pan.center_hz
         self._moved = False
-        self._drag_target = self._vfo_at_x(e.x)
+        # drag-grab: empty still defaults to A (drag anywhere slides A);
+        # a *click* (no drag) re-checks _vfo_at_x and does nothing on empty.
+        self._drag_target = self._vfo_at_x(e.x) or "A"
         if self._drag_target == "B":
             self._drag_vfo = self.pan.sub_hz
             self._drag_filt = self.pan.sub_filt
@@ -2126,21 +2134,27 @@ class MiniTCI(tk.Tk):
 
     def _pan_release(self, e):
         moved = getattr(self, "_moved", False)
-        target = getattr(self, "_drag_target", "A")
-        cw_mode = (self.sub_mode if target == "B" else self.mode) in ("CWU", "CWL")
         if self.pan.center_hz and not moved:
+            # simple click: only a VFO's own passband is a tune target;
+            # clicking empty waterfall does nothing
+            target = self._vfo_at_x(e.x)
+            if target is None:
+                return
             f = self.pan.x2f(e.x)
-            if cw_mode:
+            if (self.sub_mode if target == "B" else self.mode) in ("CWU", "CWL"):
                 f = self._cw_snap(f)
             f = self._round_tune(f)          # Quisk OnLeftUp: re-round to grid
-        elif moved and getattr(self, "_freq_pending", None):
-            f = self._round_tune(self._freq_pending)
-        else:
+            if target == "B" and self._sub_enabled():
+                self._sub_tune_to(f)
+            else:
+                self.tune_to(f)
             return
-        if target == "B" and self._sub_enabled():
-            self._sub_tune_to(f)
-        else:
-            self.tune_to(f)
+        if moved and getattr(self, "_freq_pending", None):
+            f = self._round_tune(self._freq_pending)
+            if getattr(self, "_drag_target", "A") == "B" and self._sub_enabled():
+                self._sub_tune_to(f)
+            else:
+                self.tune_to(f)
 
     def _round_tune(self, f):
         # Quisk OnLeftUp FreqRound: snap tune offset to the wheel step grid
@@ -2231,15 +2245,18 @@ class MiniTCI(tk.Tk):
 
     def _pan_wheel(self, e):
         # Quisk OnWheel: fine-tune the VFO under the cursor (VFO B's blue
-        # passband, or VFO A's red passband / anywhere else). Shift = 10 Hz,
-        # normal = 50 Hz.
+        # passband, or VFO A's red passband). Empty waterfall = no-op.
+        # Shift = 10 Hz, normal = 50 Hz.
         if not self.pan.center_hz:
+            return
+        target = self._vfo_at_x(e.x)
+        if target is None:
             return
         delta = getattr(e, "delta", 120)
         fine = bool(e.state & 0x0001)      # Shift held = fine steps
         step = 10 if fine else 50
         d = step if delta > 0 else -step
-        if self._vfo_at_x(e.x) == "B" and self._sub_enabled():
+        if target == "B" and self._sub_enabled():
             self._sub_tune_to(max(0, self.sub_hz + d))
         else:
             self.tune_to(self.freq_hz + d)
