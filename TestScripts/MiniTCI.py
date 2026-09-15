@@ -949,19 +949,25 @@ class MiniTCI(tk.Tk):
                      values=out_names).pack(side="left", padx=2)
         self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
 
-        # analog-style S-meter: S0..S9 scale + dB over S9, peak-hold needle
+        # analog-style S-meter: filled bar (colored by zone) + peak marker inside
         self.sm = tk.Canvas(r3, width=310, height=68, bg=C["panel"], highlightthickness=0)
         self.sm.pack(side="left", padx=12)
         smL = 8; smR = 302; smY = 26
         self._sm_x0, self._sm_x1, self._sm_y = smL, smR, smY
-        # colored zone bar: S0-S9 green, +0..+20 amber, >+20 red
-        self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="#dddddd", outline="#999999")
-        # scale mapping: -127..-15 dBFS across the bar; S9 at -35
         def smx(db): return smL + (db + 127.0) / 112.0 * (smR - smL)
-        x_s9 = smx(-35)
-        self.sm.create_rectangle(smL, smY - 11, x_s9, smY, fill="#3fa34d", outline="")
-        self.sm.create_rectangle(x_s9, smY - 11, smx(-25), smY, fill="#e0a63a", outline="")
-        self.sm.create_rectangle(smx(-25), smY - 11, smR, smY, fill="#c0392b", outline="")
+        self._sm_s9 = smx(-35)       # S9 boundary
+        self._sm_p20 = smx(-25)      # +20 dB boundary
+        # empty bar background
+        self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="#e9e9e9", outline="#8a8a8a")
+        # fill segments (grow with signal; colored by zone S0-S9 / +0..+20 / >+20)
+        self.sm_fill_g = self.sm.create_rectangle(smL, smY - 11, smL, smY, fill="#3fa34d", outline="")
+        self.sm_fill_a = self.sm.create_rectangle(smL, smY - 11, smL, smY, fill="#e0a63a", outline="")
+        self.sm_fill_r = self.sm.create_rectangle(smL, smY - 11, smL, smY, fill="#c0392b", outline="")
+        # zone divider lines (subtle, on top of fill)
+        self.sm.create_line(self._sm_s9, smY - 11, self._sm_s9, smY, fill="#999999", width=1)
+        self.sm.create_line(self._sm_p20, smY - 11, self._sm_p20, smY, fill="#999999", width=1)
+        # peak-hold marker (inside the bar)
+        self.sm_peak = self.sm.create_line(smL, smY - 11, smL, smY, fill="#ffffff", width=3)
         # ticks + labels S1..S9, +10, +20
         for n in range(1, 10):
             db = -124.0 + n * 10.0   # S1=-114 ... S9=-34 approx per IARU-ish
@@ -976,11 +982,6 @@ class MiniTCI(tk.Tk):
                                 font=("Segoe UI", 8, "bold"))
         self.sm.create_text(smL - 2, smY - 18, text="S", fill="#444444",
                             font=("Segoe UI", 7, "bold"))
-        # needle (current) + peak-hold tick
-        self.sm_bar = self.sm.create_line(smL, smY + 3, smL, smY + 12,
-                                          fill="#1a1f29", width=3)
-        self.sm_peak = self.sm.create_line(smL, smY - 11, smL, smY - 4,
-                                           fill="#c0392b", width=3)
         self.sm_txt = self.sm.create_text(smR, 60, text="−140 dBFS", anchor="e",
                                           fill=C["fg"], font=("Consolas", 11, "bold"))
         self._sm_peak_db = -140.0
@@ -1594,7 +1595,7 @@ class MiniTCI(tk.Tk):
         self.tune_to(self.freq_hz + d)
 
     def _draw_smeter(self):
-        # IQ-derived peak-bin dBFS displayed on an analog S-scale.
+        # IQ-derived peak-bin dBFS on a filled analog S-bar (colored by zone).
         # dBFS -> S-unit: S9 = -35 dBFS, each S-unit 10 dB below (S1 = -115).
         if self.ptt:
             # TX: the meter shows the MIC/voice level driving the transmitter
@@ -1606,15 +1607,27 @@ class MiniTCI(tk.Tk):
                 db = self.smeter
             self.smeter_db = db
         x0, x1 = self._sm_x0, self._sm_x1
+        y_top, y_bot = self._sm_y - 11, self._sm_y
         frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
         x = x0 + frac * (x1 - x0)
-        self.sm.coords(self.sm_bar, x, self._sm_y + 3, x, self._sm_y + 12)
-        # peak hold: rises instantly, decays slowly
+        # fill segments: green to S9, amber to +20, red beyond
+        xg = min(x, self._sm_s9)
+        self.sm.coords(self.sm_fill_g, x0, y_top, xg, y_bot)
+        if x > self._sm_s9:
+            xa = min(x, self._sm_p20)
+            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, xa, y_bot)
+        else:
+            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, self._sm_s9, y_bot)
+        if x > self._sm_p20:
+            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, x, y_bot)
+        else:
+            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, self._sm_p20, y_bot)
+        # peak hold: rises instantly, decays slowly; marker sits inside the bar
         pk = max(db, self._sm_peak_db - 0.4)
         self._sm_peak_db = clamp(pk, -140.0, 0.0)
         pf = clamp((self._sm_peak_db + 127.0) / 112.0, 0.0, 1.0)
         px = x0 + pf * (x1 - x0)
-        self.sm.coords(self.sm_peak, px, self._sm_y - 11, px, self._sm_y - 4)
+        self.sm.coords(self.sm_peak, px, y_top, px, y_bot)
         # S-unit readout
         s_units = max(0.0, min(9.0, (db + 115.0) / 10.0))
         over = db - (-35.0)
@@ -2135,19 +2148,15 @@ class MiniTCI(tk.Tk):
     def _pan_release(self, e):
         moved = getattr(self, "_moved", False)
         if self.pan.center_hz and not moved:
-            # simple click: only a VFO's own passband is a tune target;
-            # clicking empty waterfall does nothing
-            target = self._vfo_at_x(e.x)
-            if target is None:
+            # simple LEFT click tunes VFO A only; empty waterfall or VFO B's
+            # part does nothing (right-click handles VFO B)
+            if self._vfo_at_x(e.x) != "A":
                 return
             f = self.pan.x2f(e.x)
-            if (self.sub_mode if target == "B" else self.mode) in ("CWU", "CWL"):
+            if self.mode in ("CWU", "CWL"):
                 f = self._cw_snap(f)
             f = self._round_tune(f)          # Quisk OnLeftUp: re-round to grid
-            if target == "B" and self._sub_enabled():
-                self._sub_tune_to(f)
-            else:
-                self.tune_to(f)
+            self.tune_to(f)
             return
         if moved and getattr(self, "_freq_pending", None):
             f = self._round_tune(self._freq_pending)
@@ -2161,15 +2170,16 @@ class MiniTCI(tk.Tk):
         wm = 50
         return int(round(f / wm)) * wm
 
-    def _cw_snap(self, f_click):
+    def _cw_snap(self, f_click, filt=None):
         # Quisk CW peak snap: search +/- filter width for a peak significantly
         # above the local average, then quadratic-interpolate the peak position
         col = getattr(self.pan, "_col", None)
         if col is None or not self.pan.center_hz:
             return f_click
+        fl, fh = filt if filt else self.pan.filt
         x = int(self.pan.f2x(f_click))
-        cw_hz = max(200.0, (self.pan.filt[1] - self.pan.filt[0]))
-        half = max(2, int(cw_h / self.pan.span * CANVAS_W / 2)) if (cw_h := (self.pan.filt[1] - self.pan.filt[0])) else 4
+        cw_hz = max(200.0, (fh - fl))
+        half = max(2, int(cw_hz / self.pan.span * CANVAS_W / 2))
         x1, x2 = max(0, x - half), min(CANVAS_W, x + half)
         if x2 - x1 < 5:
             return f_click
@@ -2185,19 +2195,17 @@ class MiniTCI(tk.Tk):
         return self.pan.x2f(xmax + corr)
 
     def _pan_right(self, e):
-        # Quisk OnRightDown: move the VFO to the clicked frequency, snapped
-        # (10 kHz if span > 40k, 1 kHz if > 5k, else 100 Hz)
-        if not self.pan.center_hz:
+        # Right-click tunes VFO B to the clicked frequency (mirror of
+        # left-click on VFO A); empty waterfall or VFO A's part does nothing.
+        if not self.pan.center_hz or not self._sub_enabled():
+            return
+        if self._vfo_at_x(e.x) != "B":
             return
         f = self.pan.x2f(e.x)
-        if self.pan.span > 40000:
-            step = 10000
-        elif self.pan.span > 5000:
-            step = 1000
-        else:
-            step = 100
-        vfo = int(round(f / step)) * step
-        self.tune_to(vfo)
+        if self.sub_mode in ("CWU", "CWL"):
+            f = self._cw_snap(f, self.pan.sub_filt)
+        f = self._round_tune(f)
+        self._sub_tune_to(f)
 
     def _yzero_changed(self, v):
         try:
