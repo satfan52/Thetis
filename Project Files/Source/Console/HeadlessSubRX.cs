@@ -54,10 +54,9 @@ namespace Thetis
             }
         }
 
-        private static RadioDSPRX ChObj(int rx, int sub)
-        {
-            return (_console != null && _console.radio != null) ? _console.radio.GetDSPRX(rx, sub) : null;
-        }
+        // NOTE: radio.GetDSPRX only covers threads 0..1 (console RX1/RX2).
+        // Headless channels (thread = rx index 1..7) are driven via WDSP calls
+        // directly, exactly like HeadlessSliceManager does for the main channel.
 
         private static double MainHz(int rx)
         {
@@ -69,8 +68,6 @@ namespace Thetis
         public static bool SetEnabled(int rx, bool on)
         {
             var s = Get(rx);
-            var ch = ChObj(rx, 1);
-            if (ch == null || _console == null) return false;
             try
             {
                 if (!cmaster.IsRadioCreated) return false;
@@ -109,13 +106,15 @@ namespace Thetis
 
         private static void SetFreqInternal(int rx, long hz)
         {
-            var ch = ChObj(rx, 1);
-            if (ch == null || hz <= 0) return;
+            if (hz <= 0 || !cmaster.IsRadioCreated) return;
             double offset = hz - MainHz(rx);           // signed offset from DDC centre
             double span = 48000.0 * 0.45;              // stay inside the DDC passband
             if (offset > span) offset = span;
             if (offset < -span) offset = -span;
-            ch.RXOsc = -offset;                        // RadioDSPRX applies SetRXAShiftFreq(-RXOsc)
+            // RadioDSPRX convention: SetRXAShiftFreq(channel, -RXOsc), so passing
+            // -offset as the shift places the sub at +offset from the DDC centre.
+            WDSP.SetRXAShiftFreq(Ch(rx, 1), -offset);
+            WDSP.RXANBPSetShiftFrequency(Ch(rx, 1), -offset);
         }
 
         public static long GetFreq(int rx) { return Get(rx).FreqHz; }
@@ -123,18 +122,17 @@ namespace Thetis
         public static void ApplyMode(int rx, DSPMode mode)
         {
             var s = Get(rx); s.Mode = mode;
-            var ch = ChObj(rx, 1);
-            if (ch == null) return;
-            ch.DSPMode = mode;                         // routes SetRXAMode(id(rx,1))
+            if (!cmaster.IsRadioCreated) return;
+            WDSP.SetRXAMode(Ch(rx, 1), mode);
         }
 
         public static void ApplyFilter(int rx, int low, int high)
         {
             var s = Get(rx); s.FilterLow = low; s.FilterHigh = high;
-            var ch = ChObj(rx, 1);
-            if (ch == null) return;
-            ch.RXFilterLow = low;
-            ch.RXFilterHigh = high;                    // routes RXANBPSetFreqs on id(rx,1)
+            if (!cmaster.IsRadioCreated) return;
+            WDSP.SetRXABandpassFreqs(Ch(rx, 1), low, high);
+            WDSP.RXANBPSetFreqs(Ch(rx, 1), low, high);
+            WDSP.SetRXASNBAOutputBandwidth(Ch(rx, 1), low, high);
         }
 
         /// <summary>balance 0..1: sub panned to balance, main panned to 1-balance (0.5 = both centred).</summary>
@@ -142,10 +140,9 @@ namespace Thetis
         {
             var s = Get(rx);
             s.Balance = Math.Max(0.0, Math.Min(1.0, balance));
-            var main = ChObj(rx, 0); var sub = ChObj(rx, 1);
-            if (main == null || sub == null) return;
-            main.Pan = (float)(1.0 - s.Balance);
-            sub.Pan = (float)s.Balance;
+            if (!cmaster.IsRadioCreated) return;
+            WDSP.SetRXAPanelPan(Ch(rx, 0), 1.0 - s.Balance);
+            WDSP.SetRXAPanelPan(Ch(rx, 1), s.Balance);
         }
 
         public static void ApplyAgc(int rx, AGCMode mode, double fixedDb)

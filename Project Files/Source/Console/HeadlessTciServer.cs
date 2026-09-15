@@ -1648,6 +1648,19 @@ namespace Thetis
 
         private void HandleClientTextCommands(string fullText)
         {
+            try
+            {
+                HandleClientTextCommandsInner(fullText);
+            }
+            catch (Exception ex)
+            {
+                // Branch H1: one bad command must never kill the client loop
+                TciLog.Log($"[HeadlessTCI] command exception: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private void HandleClientTextCommandsInner(string fullText)
+        {
             if (string.IsNullOrWhiteSpace(fullText)) return;
             string[] commands = fullText.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
 

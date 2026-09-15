@@ -1388,8 +1388,9 @@ class MiniTCI(tk.Tk):
                         pass
                 continue
             if k == "subrx":
-                # server echo: subrx:0,<bool>;
-                st = str(v).lower().startswith("true")
+                # server echo: subrx:0,<bool>; (v = "<trx>,<bool>")
+                p = str(v).split(",")
+                st = p[-1].strip().lower() == "true"
                 if st and not self.sub_enabled:
                     self.sub_enabled = True
                     self.logprint("SubRX on (VFO B)")
@@ -1401,7 +1402,7 @@ class MiniTCI(tk.Tk):
                 self._sub_refresh_ui()
                 continue
             if k == "split_enable":
-                st = str(v).lower().startswith("true")
+                st = str(v).split(",")[-1].strip().lower() == "true"
                 self._split_set(st)
                 self.logprint(f"SPLIT {'on - TX on VFO B' if st else 'off'}")
                 continue
@@ -1578,6 +1579,8 @@ class MiniTCI(tk.Tk):
         want = not self.sub_enabled
         if want and self.sub_hz == 0:
             self.sub_hz = self.freq_hz + 2000   # default: 2 kHz above VFO A
+        self.sub_enabled = want                  # optimistic; server echo confirms
+        self._sub_refresh_ui()
         self.send(f"subrx:0,{str(want).lower()};")
         if want:
             self.send(f"vfo:1,0,{self.sub_hz};")
