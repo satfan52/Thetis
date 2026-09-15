@@ -55,6 +55,24 @@ BANDS = [  # name, default MHz, suggested mode
     ("2m", 144.200, "NFM"),
 ]
 
+# Non-overlapping frequency ranges per band (lo MHz, hi MHz). 60m is a narrow,
+# region-dependent allocation (UK 5.2585-5.4065, US 5.332-5.405, EU 5.3515-5.3665);
+# the wide window covers all three without spilling into 80m or 40m.
+BAND_RANGES = {
+    "160m": (1.800, 2.000),
+    "80m":  (3.500, 3.800),
+    "60m":  (5.200, 5.450),
+    "40m":  (7.000, 7.300),
+    "30m":  (10.100, 10.150),
+    "20m":  (14.000, 14.350),
+    "17m":  (18.068, 18.168),
+    "15m":  (21.000, 21.450),
+    "12m":  (24.890, 24.990),
+    "10m":  (28.000, 29.700),
+    "6m":   (50.000, 54.000),
+    "2m":   (144.000, 148.000),
+}
+
 MODES = ["USB", "LSB", "DIGU", "DIGL", "CWU", "CWL", "AM", "SAM", "NFM"]
 # Branch H1: total filter-width presets (Hz, applied symmetric around the VFO)
 BW_PRESETS = {"5k": 5000, "3.8k": 3800, "2.9k": 2900, "2.7k": 2700, "2.4k": 2400,
@@ -1884,9 +1902,10 @@ class MiniTCI(tk.Tk):
         self.logprint(f"scene {idx + 1}: A={sc['a']/1e6:.3f} {sc['mode']}  B={(sc.get('b') or 0)/1e6:.3f} {sc.get('sub_mode','')}  sub={'on' if sc.get('sub_on') else 'off'} split={'on' if sc.get('split') else 'off'}")
 
     def _band_for_freq(self, hz):
-        for b in BANDS:
-            if b[1] <= hz / 1e6 < b[1] + 2.0:
-                return b[0]
+        f = hz / 1e6
+        for name, (lo, hi) in BAND_RANGES.items():
+            if lo <= f < hi:
+                return name
         return None
 
     FT8_SEGMENTS_MHZ = (1.840, 3.573, 7.074, 10.136, 14.074, 18.100, 21.074, 24.915, 28.074)
