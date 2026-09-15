@@ -750,9 +750,9 @@ class MiniTCI(tk.Tk):
             if s.get("split") is not None:
                 self.split = bool(s["split"])
             if s.get("audio_sel"):
-                self.audio_sel = s["audio_sel"]
+                self.audio_sel = s["audio_sel"].lower()
                 try:
-                    self.audiosel_var.set(self.audio_sel)
+                    self.audiosel_var.set(self.audio_sel.capitalize())
                 except (tk.TclError, AttributeError):
                     pass
             self._band_stacks = s.get("band_stacks") or {}
@@ -1377,9 +1377,11 @@ class MiniTCI(tk.Tk):
                 self.send(f"vfo:1,0,{self.sub_hz};")
                 self.send(f"sub_mode:0,{self.sub_mode};")
                 self.send(f"sub_filter:0,{self.sub_filt[0]},{self.sub_filt[1]};")
-                self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
             if self.split:
                 self.send("split_enable:0,true;")
+            # route audio per the saved main/sub/both selection - NOT the raw
+            # balance slider (which only matters in 'both' mode)
+            self._apply_audio_selection(force=True)
             if self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
