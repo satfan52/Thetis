@@ -60,8 +60,9 @@ namespace Thetis
 
         private static double MainHz(int rx)
         {
-            var slice = HeadlessSliceManager.Instance.GetSlice(rx);
-            return slice != null ? slice.FrequencyMHz * 1e6 : 0.0;
+            // B's shift is relative to the DDC centre = the master VFO (display
+            // centre), which under CTUN may differ from VFO A.
+            return HeadlessSliceManager.Instance.GetDisplayCenterMHz(rx) * 1e6;
         }
 
         /// <summary>Enable/disable the subrx DSP channel. Initialises it from stored state.</summary>

@@ -1725,13 +1725,15 @@ namespace Thetis
                             {
                                 int rx = _server.BaseRxIndex;
                                 double newFreqMHz = freqHz / 1e6;
-                                HeadlessSliceManager.Instance.SetFrequency(rx, newFreqMHz);
+                                // Branch H1: VFO A floats inside the DDC (master-VFO
+                                // model); the DDC is retuned only when A would leave
+                                // the passband. Slices/CI-V see A's real frequency.
+                                HeadlessSliceManager.Instance.SetVFOA(rx, newFreqMHz);
                                 if (TxArbiter.Instance.ActiveDigitalRx == rx)
                                 {
                                     TxArbiter.Instance.UpdateDigitalTxFrequency(rx, newFreqMHz);
                                 }
                                 _server.BroadcastText($"vfo:0,0,{freqHz:0};");
-                                _server.BroadcastText($"vfo:0,1,{freqHz:0};");
                             }
                         }
                         else if (args.Length >= 2)
