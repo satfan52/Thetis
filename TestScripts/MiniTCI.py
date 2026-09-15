@@ -1847,7 +1847,11 @@ class MiniTCI(tk.Tk):
         off = self.sub_hz - center
         edge = 48000
         if abs(off) > edge:
-            self.sub_hz = int(center + (edge if off > 0 else -edge))
+            new = int(center + (edge if off > 0 else -edge))
+            self.logprint(f"[clamp] sub={self.sub_hz} center={center:.0f} "
+                          f"(dataC={self.pan.data_center_hz:.0f} freqA={self.freq_hz}) "
+                          f"-> {new}")
+            self.sub_hz = new
 
     def tune_to(self, hz):
         self.freq_hz = int(hz)

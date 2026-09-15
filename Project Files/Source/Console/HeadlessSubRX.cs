@@ -134,13 +134,17 @@ namespace Thetis
         private static void SetFreqInternal(int rx, long hz)
         {
             if (hz <= 0 || !cmaster.IsRadioCreated) return;
-            double offset = hz - MainHz(rx);           // signed offset from DDC centre
+            double main = MainHz(rx);                  // DDC centre (Hz)
+            double offset = hz - main;                 // signed offset from DDC centre
             double edge = 48000.0;                     // hard DDC edge (rate/2)
             // The B tuning line reaches the full passband in every mode; where
             // the filter geometry extends past the edge it clips there (same as
             // Thetis's rate/2 subrx limit).
+            double raw = offset;
             if (offset > edge) offset = edge;
             if (offset < -edge) offset = -edge;
+            if (Math.Abs(raw) > edge - 500 || Math.Abs(raw - offset) > 0.5)
+                TciLog.Log($"[SubFreq] rx{rx} req={hz} main={main:0} off={raw:0} -> {offset:0}");
             // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and
             // RadioDSPRX applies SetRXAShiftFreq(-RXOsc) => effective shift = +(fB - fA).
             // We drive SetRXAShiftFreq directly, so pass the offset itself.
