@@ -1669,9 +1669,20 @@ class MiniTCI(tk.Tk):
         if new_mode == getattr(self, "sub_mode", None):
             return                      # same value - nothing to do
         self.sub_mode = new_mode
+        # the filter must flip to the new sideband convention (negative offsets
+        # for LSB-family) - recompute width edges and push after the mode
+        w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
+        lo_edge = min(100, w // 8)
+        if new_mode in ("LSB", "DIGL", "CWL"):
+            self.sub_filt = (-w + lo_edge, -lo_edge)
+        else:
+            self.sub_filt = (lo_edge, w)
+        self._sub_refresh_ui()
         if self._sub_enabled():
             self.send(f"sub_mode:0,{self.sub_mode};")
-        self.logprint(f"Sub mode {self.sub_mode}")
+            lo, hi = self.sub_filt
+            self.send(f"sub_filter:0,{lo},{hi};")
+        self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
 
     def _subfilt_changed(self, *_a):
         # presets are TOTAL widths, same convention as VFO A

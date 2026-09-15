@@ -175,6 +175,7 @@ namespace Thetis
             // (Thetis powers the channels down around every mode change; without
             // the off/on cycle the demodulator does not reliably switch sideband.)
             int prevState = WDSP.SetChannelState(ch, 0, 1);
+            WDSP.SetDSPSamplerate(ch, 48000);          // Thetis always does this in SetRX1Mode
             WDSP.SetRXAMode(ch, mode);
             WDSP.SetRXABandpassFreqs(ch, st.FilterLow, st.FilterHigh);
             WDSP.RXANBPSetFreqs(ch, st.FilterLow, st.FilterHigh);
