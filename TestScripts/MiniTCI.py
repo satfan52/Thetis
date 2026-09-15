@@ -1836,17 +1836,18 @@ class MiniTCI(tk.Tk):
         self.logprint(f"CTUN {'on' if self.ctun_var.get() else 'off'}")
 
     def _clamp_sub_to_ddc(self):
-        """Branch H1: the VFO B tuning LINE may reach the full DDC passband
-        (+/-48 kHz around A) in every mode - the user tunes to the visible
-        waterfall edge. Where the filter geometry would extend past the edge,
-        the passband colour simply clips at the edge (partially demodulated,
-        as in Thetis at rate/2)."""
+        """Branch H1: VFO B is referenced to the DDC centre, not VFO A. In
+        non-CTUN the DDC centre == VFO A, so B sits within +/-48 kHz of A.
+        In CTUN the DDC centre stays pinned while A floats, so B can sit at
+        the opposite passband edge (up to ~96 kHz from A) - the whole point
+        of the CTUN model."""
         if not self.sub_hz:
             return
-        off = self.sub_hz - self.freq_hz
+        center = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
+        off = self.sub_hz - center
         edge = 48000
         if abs(off) > edge:
-            self.sub_hz = self.freq_hz + (edge if off > 0 else -edge)
+            self.sub_hz = int(center + (edge if off > 0 else -edge))
 
     def tune_to(self, hz):
         self.freq_hz = int(hz)

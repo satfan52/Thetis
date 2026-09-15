@@ -204,8 +204,7 @@ namespace Thetis
             double center = GetDisplayCenterMHz(rx);
             double offsetHz = (freqMHz - center) * 1e6;
             const double rate = 96000.0;
-            double edge = rate / 2.0;
-            double margin = rate * 0.04;           // working margin inside the edge
+            double edge = rate / 2.0;              // hard DDC passband edge (+/-48 kHz)
 
             if (!ctun)
             {
@@ -221,16 +220,18 @@ namespace Thetis
             else
             {
                 TciLog.Log($"[VFOA] rx{rx} ctun A={freqMHz:0.000000} centre={center:0.000000} off={offsetHz:0}");
-                if (Math.Abs(offsetHz) > edge - margin)
+                if (Math.Abs(offsetHz) >= edge)
                 {
-                    // A would leave the passband: scroll the DDC by the minimum
-                    double excess = Math.Abs(offsetHz) - (edge - margin);
-                    center += (offsetHz > 0 ? excess : -excess) / 1e6;
+                    // A reached/crossed the DDC edge: the DDC JUMPS so VFO A
+                    // becomes the new hardware centre (Thetis CTUN behaviour -
+                    // the DDS stays put until the edge, then VFO A's frequency
+                    // becomes the new centre and the waterfall jumps with it).
+                    center = freqMHz;
                     _displayCenterMHz[rx] = center;
                     int ddc = GetDdcForRx(rx);
                     if (ddc >= 0) NetworkIO.VFOfreq(ddc, center, 0);
-                    offsetHz = (freqMHz - center) * 1e6;
-                    TciLog.Log($"[VFOA] rx{rx} ctun SCROLL centre->{center:0.000000}");
+                    offsetHz = 0.0;
+                    TciLog.Log($"[VFOA] rx{rx} ctun JUMP centre->{center:0.000000}");
                 }
                 WDSP.SetRXAShiftFreq(mainCh, offsetHz);
                 WDSP.RXANBPSetShiftFrequency(mainCh, offsetHz);
