@@ -850,10 +850,15 @@ class MiniTCI(tk.Tk):
 
         # --- Branch H1 row 2b: VFO B / subrx / split
         r2b = ttk.Frame(self); r2b.pack(fill="x", padx=10, pady=2)
-        self.vfo_lbl = tk.Label(r2b, text="B  7.074.000", bg=C["panel"], fg="#0055aa",
+        self.vfo_lbl = tk.Label(r2b, text="VFO B  7.074.000", bg=C["panel"], fg="#0055aa",
                                 font=("Consolas", 15, "bold"))
         self.vfo_lbl.pack(side="left", padx=(2, 8))
         self.vfo_lbl.bind("<MouseWheel>", self._sub_wheel)
+        ttk.Label(r2b, text="Direct kHz:").pack(side="left", padx=(6, 2))
+        self.sub_tune_entry = ttk.Entry(r2b, width=10)
+        self.sub_tune_entry.pack(side="left")
+        self.sub_tune_entry.bind("<Return>", lambda e: self._sub_tune_direct())
+        ttk.Button(r2b, text="Go", width=4, command=self._sub_tune_direct).pack(side="left", padx=4)
         ttk.Label(r2b, text="Sub mode:").pack(side="left", padx=(0, 2))
         self.submode_var = tk.StringVar(value="USB")
         ttk.Combobox(r2b, textvariable=self.submode_var, width=5, state="readonly",
@@ -1457,8 +1462,10 @@ class MiniTCI(tk.Tk):
                         pass
                     continue
             if k == "sub_mode" and v:
-                self.sub_mode = v.strip().upper()
-                self.submode_var.set(self.sub_mode)
+                # echo format: sub_mode:<trx>,<MODE>; - take the mode token
+                self.sub_mode = str(v).split(",")[-1].strip().upper()
+                if self.sub_mode in MODES:
+                    self.submode_var.set(self.sub_mode)
                 continue
             if k == "sub_filter" and v:
                 p = v.split(",")
@@ -1603,7 +1610,7 @@ class MiniTCI(tk.Tk):
 
     def _sub_refresh_ui(self):
         on = self.sub_enabled
-        self.vfo_lbl.config(text="B  " + self._fmt_sub_freq())
+        self.vfo_lbl.config(text="VFO B  " + self._fmt_sub_freq())
         self.sub_btn.config(text="SUB on" if on else "SUB off")
         self.split_btn.config(text="SPLIT on" if self.split else "SPLIT off")
         self.pan.sub_hz = self.sub_hz if on else 0.0
@@ -1646,12 +1653,13 @@ class MiniTCI(tk.Tk):
         self.logprint(f"Sub mode {self.sub_mode}")
 
     def _subfilt_changed(self, *_a):
+        # presets are TOTAL widths, same convention as VFO A
         w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
-        half = w // 2
+        lo_edge = min(100, w // 8)
         if self.sub_mode in ("LSB", "DIGL", "CWL"):
-            self.sub_filt = (-half, -min(100, half // 8))
+            self.sub_filt = (-w + lo_edge, -lo_edge)
         else:
-            self.sub_filt = (min(100, half // 8), half)
+            self.sub_filt = (lo_edge, w)
         self._sub_refresh_ui()
         if self._sub_enabled():
             lo, hi = self.sub_filt
@@ -1661,26 +1669,45 @@ class MiniTCI(tk.Tk):
         self.audio_sel = self.audiosel_var.get().lower()
         self._apply_audio_selection()
 
-    def _apply_audio_selection(self):
-        """Route main/sub audio to the speakers by ear selection (server pans
-        main and sub channels; we play L and/or R)."""
-        sel = self.audio_sel
-        # balance: 0 = sub left, 1 = sub right; main sits opposite
-        b = self.bal_var.get()
-        if not hasattr(self, "out_stream") or self.out_stream is None:
+    def _apply_audio_selection(self, force=False):
+        """Branch H1: audio selection. The server pans main and sub to opposite
+        ears (hard L/R) while Main/Sub is selected so the client can isolate one
+        by ear; 'Both' restores the user's balance slider placement."""
+        if not self.connected:
             return
-        self.logprint(f"audio: {sel} (balance {b:.2f})")
+        sel = self.audio_sel
+        if sel in ("main", "sub"):
+            if force or getattr(self, "_last_audio_sel", None) != sel:
+                self.send("sub_balance:0,1.00;")   # hard pan: main L, sub R
+        elif sel == "both":
+            if force or getattr(self, "_last_audio_sel", None) != sel:
+                self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
+        if getattr(self, "_last_audio_sel", None) != sel:
+            self._last_audio_sel = sel
+        self.logprint(f"audio: {sel}")
 
     def _bal_changed(self, v):
-        if self._sub_enabled():
+        # balance only actively drives placement in 'Both' mode; Main/Sub force
+        # hard L/R panning for clean isolation
+        if self._sub_enabled() and self.audio_sel == "both":
             self.send(f"sub_balance:0,{float(v):.2f};")
 
     def _sub_wheel(self, e):
         if not self.sub_enabled:
             return
-        step = 10000 if e.delta > 0 else -10000
-        if e.state & 0x0001: step = step // 20       # shift = fine (500 Hz)
-        self._sub_tune_to(max(0, self.sub_hz + step))
+        # same steps as VFO A: 100 Hz, Shift = 10 Hz fine
+        step = 10 if e.state & 0x0001 else 100
+        d = step if getattr(e, "delta", 120) > 0 else -step
+        self._sub_tune_to(max(0, self.sub_hz + d))
+
+    def _sub_tune_direct(self):
+        t = self.sub_tune_entry.get().strip().replace(",", ".")
+        try:
+            mhz = float(t) if "." in t else float(t) / 1000.0
+            self._sub_tune_to(int(mhz * 1e6))
+            self.logprint(f"B -> {self._fmt_sub_freq()}")
+        except ValueError:
+            self.logprint("invalid B frequency")
 
     def _sub_tune_to(self, hz):
         self.sub_hz = int(hz)
@@ -1789,7 +1816,9 @@ class MiniTCI(tk.Tk):
         if key:
             self._band_stacks[key] = {
                 "a": self.freq_hz, "mode": self.mode,
+                "filt": self.filtwidth_var.get(),
                 "b": self.sub_hz, "sub_mode": self.sub_mode,
+                "sub_filt": self.subfilt_var.get(),
                 "sub_on": self.sub_enabled, "split": self.split,
             }
 
@@ -1803,6 +1832,10 @@ class MiniTCI(tk.Tk):
     def _apply_state(self, st):
         """Restore a full operating state (VFO A + B, modes, sub, split)."""
         self.mode_var.set(st["mode"])
+        if st.get("filt"):
+            self.filtwidth_var.set(st["filt"])
+        if st.get("sub_filt"):
+            self.subfilt_var.set(st["sub_filt"])
         self.tune_to(int(st["a"]))
         self.sub_hz = int(st.get("b") or 0)
         self.sub_mode = st.get("sub_mode", "USB")
@@ -1845,13 +1878,14 @@ class MiniTCI(tk.Tk):
         self.send(f"rx_filter_band:0,{lo},{hi};")
 
     def _filtwidth_changed(self, *_):
+        # presets are TOTAL filter widths (Hz): e.g. 2.7k -> 100..2800
         w = BW_PRESETS.get(self.filtwidth_var.get(), 2900)
-        half = w // 2
+        lo_edge = min(100, w // 8)
         mode = self.mode_var.get()
         if mode in ("LSB", "DIGL", "CWL"):
-            lo, hi = -half, -min(100, half // 8)
+            lo, hi = -w + lo_edge, -lo_edge
         else:
-            lo, hi = min(100, half // 8), half
+            lo, hi = lo_edge, w
         self.pan.filt = (lo, hi)
         if self.connected:
             self.send(f"rx_filter_band:0,{lo},{hi};")
