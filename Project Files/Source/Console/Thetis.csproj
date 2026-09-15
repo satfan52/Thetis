@@ -446,6 +446,7 @@
     <Compile Include="CAT\CIVProtocol.cs" />
     <Compile Include="CAT\CIVController.cs" />
     <Compile Include="HeadlessSliceManager.cs" />
+     <Compile Include="HeadlessSubRX.cs" />
     <Compile Include="TxArbiter.cs" />
     <Compile Include="HeadlessTciServer.cs" />
     <Compile Include="Channel.cs" />

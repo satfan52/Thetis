@@ -56,6 +56,10 @@ BANDS = [  # name, default MHz, suggested mode
 ]
 
 MODES = ["USB", "LSB", "DIGU", "DIGL", "CWU", "CWL", "AM", "SAM", "NFM"]
+# Branch H1: total filter-width presets (Hz, applied symmetric around the VFO)
+BW_PRESETS = {"5k": 5000, "3.8k": 3800, "2.7k": 2700, "2.4k": 2400,
+              "1.8k": 1800, "1k": 1000, "500": 500, "250": 250}
+
 FILTERS = {
     "USB": (100, 2900), "LSB": (-2900, -100),
     "DIGU": (100, 3100), "DIGL": (-3100, -100),
@@ -262,6 +266,9 @@ class PanFall(tk.Canvas):
         self.data_center_hz = 0.0  # frequency the IQ data is centered on (=DDC/VFO)
         self.vfo_hz = 0.0
         self.filt = (100, 2900)
+        # Branch H1: sub VFO B cursor (blue) + its filter passband
+        self.sub_hz = 0.0       # absolute; 0 = hidden
+        self.sub_filt = (150, 2800)
         self.y_zero = 0.0        # user offset in dB (Quisk graph_y_zero analogue)
         self.y_scale = 42.0      # dB of graph headroom above the floor
         self.wf_gamma = 1.0      # waterfall intensity (lower = brighter)
@@ -316,6 +323,7 @@ class PanFall(tk.Canvas):
         # Branch G S-meter: peak level WITHIN the receiver passband (offset around
         # the VFO), so out-of-passband junk doesn't move the needle.
         self.peak_dbfs = -140.0
+        self._last_db = db          # Branch H1/B7: kept for double-click peak search
         if self.center_hz and self.vfo_hz:
             lo_f = self.vfo_hz + self.filt[0] - self.center_hz
             hi_f = self.vfo_hz + self.filt[1] - self.center_hz
@@ -443,6 +451,13 @@ class PanFall(tk.Canvas):
             x1c, x2c = max(0, int(fx1)), min(CANVAS_W, int(fx2))
             if x2c > x1c:
                 pan[:, x1c:x2c] = (205, 201, 165)   # lemonchiffon3
+        # Branch H1: sub VFO B passband (light blue) BEHIND the main one
+        if self.center_hz and self.sub_hz:
+            sx1 = self.f2x(self.sub_hz + self.sub_filt[0])
+            sx2 = self.f2x(self.sub_hz + self.sub_filt[1])
+            sx1c, sx2c = max(0, int(sx1)), min(CANVAS_W, int(sx2))
+            if sx2c > sx1c:
+                pan[:, sx1c:sx2c] = (198, 219, 244)   # light blue tint
         # horizontal gray grid lines every 10 dB (Quisk color_gl = grey)
         # grid computed from current dB scale
         lo_d, hi_d = lo, hi
@@ -544,6 +559,14 @@ class PanFall(tk.Canvas):
                                  fill="#000000", width=3)
         # ---- tuning line: Quisk color_txline red, full height both panes ----
         if self.center_hz:
+            # Branch H1: sub VFO B tuning line (blue) drawn UNDER the red line
+            if self.sub_hz:
+                xs = self.f2x(self.sub_hz)
+                if 0 <= xs <= CANVAS_W:
+                    self.create_line(xs, 0, xs, PAN_H + WF_H,
+                                     fill="#0066ff", width=1)
+                    self.create_line(xs, PAN_H + 18, xs, PAN_H + WF_H,
+                                     fill="#4488ff", width=1)
             x = self.f2x(self.vfo_hz)
             if 0 <= x <= CANVAS_W:
                 self.create_line(x, 0, x, PAN_H + WF_H,
@@ -567,6 +590,14 @@ class MiniTCI(tk.Tk):
         self.ptt = False
         self.freq_hz = 14_074_000
         self.mode = "USB"
+        # Branch H1: VFO B / subrx state
+        self.sub_hz = 0                  # 0 = subrx not set yet
+        self.sub_mode = "USB"
+        self.sub_filt = (150, 2800)
+        self.sub_enabled = False
+        self.split = False
+        self.tx_vfo = "A"                # which VFO the TX checkbox shows
+        self.audio_sel = "main"          # main | sub | both
         self.volume = 0.25
         self.mic_gain = 0.5
         self.smeter = -140.0
@@ -660,6 +691,23 @@ class MiniTCI(tk.Tk):
                 self.txtail_var.set(int(self.tx_tail_s * 1000))
             if s.get("host") and hasattr(self, "host_var"):
                 self.host_var.set(s["host"])
+            # Branch H1 restore
+            if s.get("sub_hz"):
+                self.sub_hz = int(s["sub_hz"])
+            if s.get("sub_mode"):
+                self.sub_mode = s["sub_mode"]
+                self.submode_var.set(self.sub_mode)
+            if s.get("sub_filt"):
+                self.sub_filt = (int(s["sub_filt"][0]), int(s["sub_filt"][1]))
+            if s.get("balance") is not None:
+                self.bal_var.set(float(s["balance"]))
+            self._band_stacks = s.get("band_stacks") or {}
+            self._scenes = s.get("scenes") or {}
+            self._scenes_loaded = True
+            for idx in range(4):
+                if str(idx) in self._scenes:
+                    self.scene_btns[idx].config(text=self._scenes[str(idx)].get("name", f"Scene {idx+1}"))
+            self._sub_refresh_ui()
         except (KeyError, ValueError, tk.TclError):
             pass
 
@@ -771,6 +819,36 @@ class MiniTCI(tk.Tk):
         self.tune_entry.bind("<Return>", lambda e: self._tune_direct())
         ttk.Button(r2, text="Go", width=4, command=self._tune_direct).pack(side="left", padx=4)
 
+        # --- Branch H1 row 2b: VFO B / subrx / split
+        r2b = ttk.Frame(self); r2b.pack(fill="x", padx=10, pady=2)
+        self.vfo_lbl = tk.Label(r2b, text="B  7.074.000", bg=C["panel"], fg="#0055aa",
+                                font=("Consolas", 15, "bold"))
+        self.vfo_lbl.pack(side="left", padx=(2, 8))
+        self.vfo_lbl.bind("<MouseWheel>", self._sub_wheel)
+        ttk.Label(r2b, text="Sub mode:").pack(side="left", padx=(0, 2))
+        self.submode_var = tk.StringVar(value="USB")
+        ttk.Combobox(r2b, textvariable=self.submode_var, width=5, state="readonly",
+                     values=MODES).pack(side="left")
+        self.submode_var.trace_add("write", self._submode_changed)
+        ttk.Label(r2b, text="Sub filter:").pack(side="left", padx=(10, 2))
+        self.subfilt_var = tk.StringVar(value="2.7k")
+        ttk.Combobox(r2b, textvariable=self.subfilt_var, width=5, state="readonly",
+                     values=["5k", "3.8k", "2.7k", "2.4k", "1.8k", "1k", "500", "250"]).pack(side="left")
+        self.subfilt_var.trace_add("write", self._subfilt_changed)
+        ttk.Label(r2b, text="Audio:").pack(side="left", padx=(12, 2))
+        self.audiosel_var = tk.StringVar(value="Main")
+        ttk.Combobox(r2b, textvariable=self.audiosel_var, width=6, state="readonly",
+                     values=["Main", "Sub", "Both"]).pack(side="left")
+        self.audiosel_var.trace_add("write", self._audiosel_changed)
+        ttk.Label(r2b, text="Balance:").pack(side="left", padx=(8, 2))
+        self.bal_var = tk.DoubleVar(value=1.0)
+        ttk.Scale(r2b, from_=0.0, to=1.0, variable=self.bal_var, length=100,
+                  command=self._bal_changed).pack(side="left")
+        self.sub_btn = ttk.Button(r2b, text="SUB off", width=8, command=self._sub_toggle)
+        self.sub_btn.pack(side="left", padx=(10, 0))
+        self.split_btn = ttk.Button(r2b, text="SPLIT off", width=9, command=self._split_toggle)
+        self.split_btn.pack(side="left", padx=(6, 0))
+
         # --- panadapter + waterfall
         self.pan = PanFall(self)
         self.pan.pack(fill="both", expand=True, padx=10, pady=4)
@@ -782,6 +860,7 @@ class MiniTCI(tk.Tk):
         self.pan.bind("<Button-4>", self._pan_wheel)   # linux wheel up
         self.pan.bind("<Button-5>", self._pan_wheel)   # linux wheel down
         self.pan.bind("<Motion>", self._pan_motion)
+        self.pan.bind("<Double-Button-1>", self._pan_double)   # Branch H1/B7 peak-tune
 
         # --- Quisk-style display adjust row: Y zero + Y scale + span zoom
         rz = ttk.Frame(self); rz.pack(fill="x", padx=10, pady=(0, 2))
@@ -1189,6 +1268,16 @@ class MiniTCI(tk.Tk):
             self.send(f"modulation:0,{self.mode};")
             lo, hi = FILTERS.get(self.mode, (100, 2900))
             self.send(f"rx_filter_band:0,{lo},{hi};")
+            # Branch H1: restore subrx state on connect
+            self.send("subrx_state:0;")
+            if self.sub_enabled:
+                self.send("subrx:0,true;")
+                self.send(f"vfo:1,0,{self.sub_hz};")
+                self.send(f"sub_mode:0,{self.sub_mode};")
+                self.send(f"sub_filter:0,{self.sub_filt[0]},{self.sub_filt[1]};")
+                self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
+            if self.split:
+                self.send("split_enable:0,true;")
             if self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
@@ -1280,6 +1369,65 @@ class MiniTCI(tk.Tk):
 
     def _handle(self, d):
         for k, v in d.items():
+            if k == "subrx_state" and v:
+                p = v.split(",")
+                if len(p) >= 7:
+                    try:
+                        st = p[1].lower() == "true"
+                        if not self.sub_enabled and st:
+                            self.sub_enabled = True
+                        self.sub_hz = int(float(p[2]))
+                        self.sub_mode = p[3].strip().upper()
+                        self.sub_filt = (int(p[4]), int(p[5]))
+                        try: self.bal_var.set(float(p[6]))
+                        except Exception: pass
+                        if self.sub_enabled:
+                            self.submode_var.set(self.sub_mode)
+                        self._sub_refresh_ui()
+                    except ValueError:
+                        pass
+                continue
+            if k == "subrx":
+                # server echo: subrx:0,<bool>;
+                st = str(v).lower().startswith("true")
+                if st and not self.sub_enabled:
+                    self.sub_enabled = True
+                    self.logprint("SubRX on (VFO B)")
+                elif not st and self.sub_enabled:
+                    self.sub_enabled = False
+                    if self.split:
+                        self.split = False
+                    self.logprint("SubRX off")
+                self._sub_refresh_ui()
+                continue
+            if k == "split_enable":
+                st = str(v).lower().startswith("true")
+                self._split_set(st)
+                self.logprint(f"SPLIT {'on - TX on VFO B' if st else 'off'}")
+                continue
+            if k == "vfo" and v:
+                p = v.split(",")
+                # Branch H1: vfo:1,0,<hz> = VFO B echo
+                if len(p) >= 3 and p[0] == "1":
+                    try:
+                        self.sub_hz = int(float(p[2]))
+                        self._sub_refresh_ui()
+                    except ValueError:
+                        pass
+                    continue
+            if k == "sub_mode" and v:
+                self.sub_mode = v.strip().upper()
+                self.submode_var.set(self.sub_mode)
+                continue
+            if k == "sub_filter" and v:
+                p = v.split(",")
+                if len(p) >= 2:
+                    try:
+                        self.sub_filt = (int(p[0]), int(p[1]))
+                        self._sub_refresh_ui()
+                    except ValueError:
+                        pass
+                continue
             if k == "probe":
                 # Thetis TX-chain probe (once/s while we transmit):
                 # q=queued TCI samples in Thetis, calls/samps=pulls into the TX DSP,
@@ -1400,9 +1548,167 @@ class MiniTCI(tk.Tk):
     def nudge(self, hz):
         self.tune_to(self.freq_hz + hz)
 
+    # ---------------- Branch H1: VFO B / subrx ----------------
+    def _sub_enabled(self):
+        return self.connected and self.sub_enabled
+
+    def _fmt_sub_freq(self):
+        f = self.sub_hz
+        s = f"{f/1e6:.6f}" if f >= 1_000_000 else f"{f:,.0f}"
+        # same dotted style as main display
+        try:
+            mhz = f / 1e6
+            s = f"{int(mhz)}.{int((mhz % 1) * 1e6):06d}"
+        except Exception:
+            pass
+        return s
+
+    def _sub_refresh_ui(self):
+        on = self.sub_enabled
+        self.vfo_lbl.config(text="B  " + self._fmt_sub_freq())
+        self.sub_btn.config(text="SUB on" if on else "SUB off")
+        self.split_btn.config(text="SPLIT on" if self.split else "SPLIT off")
+        self.pan.sub_hz = self.sub_hz if on else 0.0
+        self.pan.sub_filt = self.sub_filt
+
+    def _sub_toggle(self):
+        if not self.connected:
+            self.logprint("connect first to use SubRX")
+            return
+        want = not self.sub_enabled
+        if want and self.sub_hz == 0:
+            self.sub_hz = self.freq_hz + 2000   # default: 2 kHz above VFO A
+        self.send(f"subrx:0,{str(want).lower()};")
+        if want:
+            self.send(f"vfo:1,0,{self.sub_hz};")
+            self.send(f"sub_mode:0,{self.sub_mode};")
+            lo, hi = self.sub_filt
+            self.send(f"sub_filter:0,{lo},{hi};")
+            self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
+        # state applied on server echo (subrx handler in _handle)
+
+    def _split_toggle(self):
+        if not self.connected:
+            self.logprint("connect first to use Split")
+            return
+        want = not self.split
+        if want and not self.sub_enabled:
+            self._sub_toggle()                  # split needs the subrx
+            if not self.sub_enabled:
+                return
+        self.send(f"split_enable:0,{str(want).lower()};")
+        # state applied on server echo
+
+    def _submode_changed(self, *_a):
+        self.sub_mode = self.submode_var.get()
+        if self._sub_enabled():
+            self.send(f"sub_mode:0,{self.sub_mode};")
+        self.logprint(f"Sub mode {self.sub_mode}")
+
+    def _subfilt_changed(self, *_a):
+        w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
+        half = w // 2
+        if self.sub_mode in ("LSB", "DIGL", "CWL"):
+            self.sub_filt = (-half, -min(100, half // 8))
+        else:
+            self.sub_filt = (min(100, half // 8), half)
+        self._sub_refresh_ui()
+        if self._sub_enabled():
+            lo, hi = self.sub_filt
+            self.send(f"sub_filter:0,{lo},{hi};")
+
+    def _audiosel_changed(self, *_a):
+        self.audio_sel = self.audiosel_var.get().lower()
+        self._apply_audio_selection()
+
+    def _apply_audio_selection(self):
+        """Route main/sub audio to the speakers by ear selection (server pans
+        main and sub channels; we play L and/or R)."""
+        sel = self.audio_sel
+        # balance: 0 = sub left, 1 = sub right; main sits opposite
+        b = self.bal_var.get()
+        if not hasattr(self, "out_stream") or self.out_stream is None:
+            return
+        self.logprint(f"audio: {sel} (balance {b:.2f})")
+
+    def _bal_changed(self, v):
+        if self._sub_enabled():
+            self.send(f"sub_balance:0,{float(v):.2f};")
+
+    def _sub_wheel(self, e):
+        if not self.sub_enabled:
+            return
+        step = 10000 if e.delta > 0 else -10000
+        if e.state & 0x0001: step = step // 20       # shift = fine (500 Hz)
+        self._sub_tune_to(max(0, self.sub_hz + step))
+
+    def _sub_tune_to(self, hz):
+        self.sub_hz = int(hz)
+        self._sub_refresh_ui()
+        if self._sub_enabled():
+            self.send(f"vfo:1,0,{self.sub_hz};")
+
+    def _split_set(self, on):
+        self.split = on
+        if on:
+            self.tx_vfo = "B"
+        else:
+            self.tx_vfo = "A"
+        self._sub_refresh_ui()
+
+    # ---------------- Branch H1/B7: scenario buttons ----------------
+    def _scene_capture(self):
+        return {
+            "a": self.freq_hz, "mode": self.mode_var.get(),
+            "b": self.sub_hz, "sub_mode": self.submode_var.get(),
+            "sub_on": self.sub_enabled, "split": self.split,
+            "agc": self.agc_var.get(),
+        }
+
+    def _scene_store(self):
+        if not hasattr(self, "_scenes"):
+            self._scenes = {}
+        # store into the last-recalled (or first) slot
+        idx = getattr(self, "_scene_last", 0)
+        data = self._scene_capture()
+        data["name"] = data["mode"] + " " + f"{data['a']/1e6:.3f}"
+        self._scenes[str(idx)] = data
+        self.scene_btns[idx].config(text=data["name"][:14])
+        self._save_settings()
+        self.logprint(f"scene {idx + 1} stored: {data['name']}")
+
+    def _scene_recall(self, idx):
+        self._scene_last = idx
+        sc = getattr(self, "_scenes", {}).get(str(idx))
+        if not sc:
+            self.logprint(f"scene {idx + 1} is empty - press Store to capture the current state")
+            return
+        self.band_var.set(self._band_for_freq(sc["a"]) or self.band_var.get())
+        self._apply_state(sc)
+        self.logprint(f"scene {idx + 1}: A={sc['a']/1e6:.3f} {sc['mode']}  B={(sc.get('b') or 0)/1e6:.3f} {sc.get('sub_mode','')}  sub={'on' if sc.get('sub_on') else 'off'} split={'on' if sc.get('split') else 'off'}")
+
+    def _band_for_freq(self, hz):
+        for b in BANDS:
+            if b[1] <= hz / 1e6 < b[1] + 2.0:
+                return b[0]
+        return None
+
+    FT8_SEGMENTS_MHZ = (1.840, 3.573, 7.074, 10.136, 14.074, 18.100, 21.074, 24.915, 28.074)
+
+    def _digital_segment_hint(self):
+        f = self.freq_hz / 1e6
+        for seg in self.FT8_SEGMENTS_MHZ:
+            if abs(f - seg) <= 0.003:
+                return seg
+        return None
+
     def tune_to(self, hz):
         self.freq_hz = int(hz)
         self._fmt_freq()
+        seg = self._digital_segment_hint()
+        if seg and self.mode_var.get() in ("USB", "LSB"):
+            # B7-4: entering an FT8 segment in SSB - suggest the digital mode
+            self.logprint(f"FT8 segment {seg:.3f} MHz: consider mode DIGU")
         if self.ctun_var.get():
             # CTUN: display (and waterfall history) stays fixed; only the tune
             # line moves. If the VFO would leave the window, slide the display
@@ -1431,8 +1737,60 @@ class MiniTCI(tk.Tk):
         except ValueError:
             self.logprint("bad frequency (use MHz like 14.074, or kHz)")
 
+    # Branch H1 / B7: band stack - each band remembers its full state
+    def _band_stack_key(self):
+        return self.band_var.get()
+
+    def _band_stack_save(self):
+        """Store the current state under the CURRENT band before leaving it."""
+        if not hasattr(self, "_band_stacks"):
+            self._band_stacks = {}
+        key = getattr(self, "_band_stack_current", None)
+        if key:
+            self._band_stacks[key] = {
+                "a": self.freq_hz, "mode": self.mode,
+                "b": self.sub_hz, "sub_mode": self.sub_mode,
+                "sub_on": self.sub_enabled, "split": self.split,
+            }
+
+    def _band_stack_load(self, key):
+        st = getattr(self, "_band_stacks", {}).get(key)
+        if not st:
+            return False
+        self._apply_state(st)
+        return True
+
+    def _apply_state(self, st):
+        """Restore a full operating state (VFO A + B, modes, sub, split)."""
+        self.mode_var.set(st["mode"])
+        self.tune_to(int(st["a"]))
+        self.sub_hz = int(st.get("b") or 0)
+        self.sub_mode = st.get("sub_mode", "USB")
+        self.submode_var.set(self.sub_mode)
+        want_sub = bool(st.get("sub_on"))
+        if want_sub and self.connected:
+            self.send(f"subrx:0,true;")
+            self.sub_enabled = True
+            self.send(f"vfo:1,0,{self.sub_hz};")
+            self.send(f"sub_mode:0,{self.sub_mode};")
+            self.send(f"sub_filter:0,{self.sub_filt[0]},{self.sub_filt[1]};")
+        elif self.sub_enabled:
+            self.send("subrx:0,false;")
+            self.sub_enabled = False
+        want_split = bool(st.get("split")) and want_sub
+        if self.connected:
+            self.send(f"split_enable:0,{str(want_split).lower()};")
+        self.split = want_split
+        self._sub_refresh_ui()
+
     def _band_changed(self, *_):
         name = self.band_var.get()
+        prev = getattr(self, "_band_stack_current", None)
+        if prev and prev != name:
+            self._band_stack_save()
+        self._band_stack_current = name
+        if self._band_stack_load(name):
+            return
         for b in BANDS:
             if b[0] == name:
                 self.tune_to(int(b[1] * 1e6))
@@ -1496,6 +1854,42 @@ class MiniTCI(tk.Tk):
         if fx1 < x < fx2:
             return "in-filter"
         return "span"
+
+    def _pan_double(self, e):
+        """Branch H1/B7: double-click = tune the SELECTED VFO to the spectral
+        peak nearest the click (quadratic interpolation around the max bin),
+        WSJT-X-style click-tuning. Left of the X axis strip only."""
+        if e.y > PAN_H or not getattr(self.pan, "_last_db", None) is not None:
+            return
+        if not self.pan.center_hz:
+            return
+        db = self.pan._last_db
+        n = len(db)
+        f_click = self.pan.x2f(e.x)
+        half_win = 1500.0
+        i_lo = int((f_click - half_win) / self.pan.rate * n) + n // 2
+        i_hi = int((f_click + half_win) / self.pan.rate * n) + n // 2
+        i_lo, i_hi = max(0, i_lo), min(n - 1, i_hi)
+        if i_hi <= i_lo + 2:
+            return
+        k = i_lo + int(np.argmax(db[i_lo:i_hi]))
+        if k <= 0 or k >= n - 1:
+            return
+        # quadratic interpolation on the three bins around the peak
+        a, b, c = db[k - 1], db[k], db[k + 1]
+        denom = (a - 2 * b + c)
+        dk = 0.5 * (a - c) / denom if abs(denom) > 1e-9 else 0.0
+        dk = max(-0.5, min(0.5, dk))
+        f_peak = (k + dk - n / 2) / n * self.pan.rate + self.pan.data_center_hz
+        if self._tx_vfo_selected() == "B":
+            self._sub_tune_to(int(round(f_peak)))
+            self.logprint(f"B -> {self._fmt_sub_freq()} (peak)")
+        else:
+            self.tune_to(int(round(f_peak)))
+            self.logprint(f"A -> {f_peak:,.0f} Hz (peak)")
+
+    def _tx_vfo_selected(self):
+        return self.tx_vfo
 
     def _pan_click(self, e):
         # Quisk OnLeftDown: record start; choose tx/rx target (we only have one VFO)

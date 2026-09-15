@@ -154,6 +154,7 @@ namespace Thetis
                 if (_isRunning) StopAll();
 
                 Console = console;
+                HeadlessSubRX.Initialize(console);
                 TxArbiter.Instance.Initialize(console);
                 TxArbiter.Instance.DigitalSlicePreempted += OnSlicePreempted;
 
@@ -1685,6 +1686,21 @@ namespace Thetis
                         break;
 
                     case "vfo":
+                        // Branch H1: vfo:1,0,<hz> = VFO B (subrx) tuning
+                        if (args.Length >= 3 && args[0] == "1")
+                        {
+                            if (double.TryParse(args[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double subFreqHz))
+                            {
+                                int rxS = _server.BaseRxIndex;
+                                if (HeadlessSubRX.IsEnabled(rxS))
+                                {
+                                    HeadlessSubRX.SetFreq(rxS, (long)subFreqHz);
+                                    _server.BroadcastText($"vfo:1,0,{subFreqHz:0};");
+                                }
+                                else SendTextFrame("subrx:0,false;");
+                            }
+                            break;
+                        }
                         if (args.Length >= 3)
                         {
                             if (double.TryParse(args[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double freqHz))
@@ -1769,6 +1785,110 @@ namespace Thetis
                             int low = slice != null ? slice.FilterLow : 300;
                             int high = slice != null ? slice.FilterHigh : 3000;
                             SendTextFrame($"rx_filter_band:0,{low},{high};");
+                        }
+                        break;
+
+                    case "subrx":
+                        {
+                            // Branch H1: enable/disable the sub-receiver (VFO B) on this port's DDC
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool subOn))
+                            {
+                                bool ok = HeadlessSubRX.SetEnabled(_server.BaseRxIndex, subOn);
+                                _server.BroadcastText($"subrx:0,{HeadlessSubRX.IsEnabled(_server.BaseRxIndex).ToString().ToLowerInvariant()};");
+                                if (!ok) SendTextFrame("subrx:0,false;");
+                            }
+                            else
+                            {
+                                SendTextFrame($"subrx:0,{HeadlessSubRX.IsEnabled(_server.BaseRxIndex).ToString().ToLowerInvariant()};");
+                            }
+                        }
+                        break;
+
+                    case "sub_mode":
+                        {
+                            // Branch H1 (improvement over Thetis): independent subrx modulation
+                            if (args.Length >= 2)
+                            {
+                                DSPMode subMode = HeadlessTciManager.ParseDSPMode(args[1]);
+                                HeadlessSubRX.ApplyMode(_server.BaseRxIndex, subMode);
+                                _server.BroadcastText($"sub_mode:0,{args[1].ToUpperInvariant()};");
+                            }
+                        }
+                        break;
+
+                    case "sub_filter":
+                        {
+                            if (args.Length >= 3 && int.TryParse(args[1], out int sLow) && int.TryParse(args[2], out int sHigh))
+                            {
+                                HeadlessSubRX.ApplyFilter(_server.BaseRxIndex, sLow, sHigh);
+                                _server.BroadcastText($"sub_filter:0,{sLow},{sHigh};");
+                            }
+                        }
+                        break;
+
+                    case "sub_balance":
+                        {
+                            // 0.0 = sub left / 0.5 = centred / 1.0 = sub right (main opposite)
+                            if (args.Length >= 2 && double.TryParse(args[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double bal))
+                            {
+                                HeadlessSubRX.ApplyBalance(_server.BaseRxIndex, bal);
+                                _server.BroadcastText("sub_balance:0," + bal.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ";");
+                            }
+                        }
+                        break;
+
+                    case "sub_nr":
+                        {
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool nrOn))
+                            {
+                                HeadlessSubRX.SetNr(_server.BaseRxIndex, nrOn);
+                                _server.BroadcastText($"sub_nr:0,{nrOn.ToString().ToLowerInvariant()};");
+                            }
+                        }
+                        break;
+
+                    case "sub_anf":
+                        {
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool anfOn))
+                            {
+                                HeadlessSubRX.SetAnf(_server.BaseRxIndex, anfOn);
+                                _server.BroadcastText($"sub_anf:0,{anfOn.ToString().ToLowerInvariant()};");
+                            }
+                        }
+                        break;
+
+                    case "sub_snb":
+                        {
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool snbOn))
+                            {
+                                HeadlessSubRX.SetSnb(_server.BaseRxIndex, snbOn);
+                                _server.BroadcastText($"sub_snb:0,{snbOn.ToString().ToLowerInvariant()};");
+                            }
+                        }
+                        break;
+
+                    case "nb":
+                        {
+                            // wideband noise blanker: DDC-wide (serves main + sub)
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool nbOn))
+                            {
+                                HeadlessSubRX.SetNb(_server.BaseRxIndex, nbOn);
+                                _server.BroadcastText($"nb:0,{nbOn.ToString().ToLowerInvariant()};");
+                            }
+                        }
+                        break;
+
+                    case "subrx_state":
+                        {
+                            int rxS = _server.BaseRxIndex;
+                            var st = HeadlessSubRX.Get(rxS);
+                            SendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                "subrx_state:0,{0},{1},{2},{3},{4},{5},{6};",
+                                HeadlessSubRX.IsEnabled(rxS).ToString().ToLowerInvariant(),
+                                st.FreqHz, HeadlessTciManager.ModeToString(st.Mode),
+                                st.FilterLow, st.FilterHigh,
+                                st.Balance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                                st.Nr.ToString().ToLowerInvariant()));
                         }
                         break;
 
@@ -1906,11 +2026,20 @@ namespace Thetis
                         break;
 
                     case "split_enable":
+                        // Branch H1: real split - digital TX steers the IC-7100 to VFO B (subrx)
                         if (args.Length > 0 && int.TryParse(args[0], out int seTrx))
                         {
-                            bool en = false;
-                            if (args.Length >= 2 && bool.TryParse(args[1], out bool b)) en = b;
-                            SendTextFrame($"split_enable:{seTrx},{en.ToString().ToLowerInvariant()};");
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool en))
+                            {
+                                if (en && !HeadlessSubRX.IsEnabled(_server.BaseRxIndex))
+                                {
+                                    // split needs the subrx running; enable it implicitly
+                                    HeadlessSubRX.SetEnabled(_server.BaseRxIndex, true);
+                                    _server.BroadcastText("subrx:0,true;");
+                                }
+                                TxArbiter.SplitEnabled = en;
+                            }
+                            _server.BroadcastText($"split_enable:{seTrx},{TxArbiter.SplitEnabled.ToString().ToLowerInvariant()};");
                         }
                         break;
 

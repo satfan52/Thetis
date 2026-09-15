@@ -29,6 +29,26 @@ namespace Thetis
         private volatile bool _suppressMoxPreempt = false;
         private readonly object _lock = new object();
 
+        // Branch H1: split mode - when on, digital TX steers the IC-7100 to the
+        // sub-receiver (VFO B) frequency instead of the main slice frequency.
+        private static volatile bool _splitEnabled = false;
+        public static bool SplitEnabled
+        {
+            get { return _splitEnabled; }
+            set { _splitEnabled = value; }
+        }
+
+        /// <summary>Branch H1: frequency the transmitter should use for this digital TX.</summary>
+        public static double TxFrequencyFor(int rx, double mainFreqMHz)
+        {
+            if (_splitEnabled)
+            {
+                long subHz = HeadlessSubRX.GetFreq(rx);
+                if (subHz > 0) return subHz / 1e6;
+            }
+            return mainFreqMHz;
+        }
+
         /// <summary>
         /// Fired when an active digital slice is preempted (by voice or another slice).
         /// Parameter is the rx index (2..7) that was preempted.
@@ -196,7 +216,7 @@ namespace Thetis
                 }
 
                 _activeDigitalRx = rx;
-                _activeDigitalFrequency = freqMHz;
+                _activeDigitalFrequency = TxFrequencyFor(rx, freqMHz);
                 _activeDigitalMode = mode;
             }
 
@@ -234,7 +254,7 @@ namespace Thetis
             {
                 if (_console != null && _console.CIVControllerInstance != null && _console.CIVControllerInstance.IsOpen)
                 {
-                    _console.CIVControllerInstance.SteerAndKeyForDigitalTx(freqMHz, mode);
+                    _console.CIVControllerInstance.SteerAndKeyForDigitalTx(TxFrequencyFor(rx, freqMHz), mode);
                 }
             }
             catch { }
@@ -297,17 +317,18 @@ namespace Thetis
 
         public void UpdateDigitalTxFrequency(int rx, double freqMHz)
         {
+            double txFreq = TxFrequencyFor(rx, freqMHz);
             lock (_lock)
             {
                 if (_activeDigitalRx != rx) return;
-                _activeDigitalFrequency = freqMHz;
+                _activeDigitalFrequency = txFreq;
             }
 
             try
             {
                 if (_console != null && _console.CIVControllerInstance != null && _console.CIVControllerInstance.IsOpen)
                 {
-                    _console.CIVControllerInstance.UpdateDigitalTxFrequency(freqMHz);
+                    _console.CIVControllerInstance.UpdateDigitalTxFrequency(txFreq);
                 }
             }
             catch { }
