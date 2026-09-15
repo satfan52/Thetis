@@ -115,7 +115,135 @@ namespace Thetis
                 catch { }
             }
 
+            // Branch H1: DDC centre follows in the classic model
+            _displayCenterMHz[rx] = freqMHz;
+
             SliceFrequencyChanged?.Invoke(rx, freqMHz);
+        }
+
+        // Branch H1: per-rx DDC centre - the 'hardware centre frequency' (the
+        // middle of the DDS passband), Thetis's RX1DDSFreq/CentreFrequency pair.
+        private readonly Dictionary<int, double> _displayCenterMHz = new Dictionary<int, double>();
+        // client display model: false = classic (DDC centred on A on every move),
+        // true = CTUN (A floats inside the DDC via the main channel RXOsc)
+        private readonly Dictionary<int, bool> _ctunMode = new Dictionary<int, bool>();
+
+        public double GetDisplayCenterMHz(int rx)
+        {
+            lock (_lock)
+            {
+                if (_displayCenterMHz.TryGetValue(rx, out double v)) return v;
+                var slice = GetSlice(rx);
+                double f = slice != null ? slice.FrequencyMHz : 14.074;
+                _displayCenterMHz[rx] = f;
+                return f;
+            }
+        }
+
+        public void SetCtunMode(int rx, bool ctun)
+        {
+            bool was;
+            lock (_lock) { _ctunMode.TryGetValue(rx, out was); _ctunMode[rx] = ctun; }
+            // leaving CTUN: re-centre the DDC onto A (classic model restored)
+            if (was && !ctun)
+            {
+                var slice = GetSlice(rx);
+                if (slice != null) SetFrequency(rx, slice.FrequencyMHz);
+            }
+        }
+
+        /// <summary>Branch H1: move the DDC centre (hardware centre frequency)
+        /// while keeping VFO A's absolute frequency (TCIServer 50001 dds semantics).</summary>
+        public void SetDDCCenter(int rx, double centerMHz)
+        {
+            lock (_lock) { _displayCenterMHz[rx] = centerMHz; }
+            if (!cmaster.IsRadioCreated) return;
+            try
+            {
+                int ddc = GetDdcForRx(rx);
+                if (ddc >= 0) NetworkIO.VFOfreq(ddc, centerMHz, 0);
+            }
+            catch { }
+            // re-apply A (RXOsc = A - new centre) and B (absolute)
+            var slice = GetSlice(rx);
+            if (slice != null)
+            {
+                double offHz = (slice.FrequencyMHz - centerMHz) * 1e6;
+                int mainCh = 2 * rx;
+                WDSP.SetRXAShiftFreq(mainCh, offHz);
+                WDSP.RXANBPSetShiftFrequency(mainCh, offHz);
+            }
+            try
+            {
+                long bHz = HeadlessSubRX.GetFreq(rx);
+                if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
+                    HeadlessSubRX.SetFreq(rx, bHz);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Branch H1: set VFO A. Non-CTUN: the DDC is re-centred onto A (classic).
+        /// CTUN: A moves via the main channel RXOsc inside the DDC; the DDC scrolls
+        /// only when A would leave the passband. Returns the DDC centre in effect.
+        /// </summary>
+        public double SetVFOA(int rx, double freqMHz)
+        {
+            HeadlessSlice slice;
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out slice)) return freqMHz;
+                slice.FrequencyMHz = freqMHz;      // A is the radio's tuned frequency (CI-V, TX)
+            }
+            if (!cmaster.IsRadioCreated) return freqMHz;
+
+            bool ctun;
+            lock (_lock) { _ctunMode.TryGetValue(rx, out ctun); }
+
+            int mainCh = 2 * rx;                   // WDSP.id(rx, 0)
+            double center = GetDisplayCenterMHz(rx);
+            double offsetHz = (freqMHz - center) * 1e6;
+            const double rate = 96000.0;
+            double edge = rate / 2.0;
+            double margin = rate * 0.04;           // working margin inside the edge
+
+            if (!ctun)
+            {
+                // classic: DDC centre = A
+                center = freqMHz;
+                _displayCenterMHz[rx] = center;
+                int ddc = GetDdcForRx(rx);
+                if (ddc >= 0) NetworkIO.VFOfreq(ddc, freqMHz, 0);
+                WDSP.SetRXAShiftFreq(mainCh, 0.0);
+                WDSP.RXANBPSetShiftFrequency(mainCh, 0.0);
+            }
+            else
+            {
+                if (Math.Abs(offsetHz) > edge - margin)
+                {
+                    // A would leave the passband: scroll the DDC by the minimum
+                    double excess = Math.Abs(offsetHz) - (edge - margin);
+                    center += (offsetHz > 0 ? excess : -excess) / 1e6;
+                    _displayCenterMHz[rx] = center;
+                    int ddc = GetDdcForRx(rx);
+                    if (ddc >= 0) NetworkIO.VFOfreq(ddc, center, 0);
+                    offsetHz = (freqMHz - center) * 1e6;
+                }
+                WDSP.SetRXAShiftFreq(mainCh, offsetHz);
+                WDSP.RXANBPSetShiftFrequency(mainCh, offsetHz);
+            }
+
+            // VFO B is stored as an absolute frequency: re-apply against the new centre
+            try
+            {
+                long bHz = HeadlessSubRX.GetFreq(rx);
+                if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
+                    HeadlessSubRX.SetFreq(rx, bHz);
+            }
+            catch { }
+
+            SliceFrequencyChanged?.Invoke(rx, freqMHz);
+            return center;
         }
 
         [HandleProcessCorruptedStateExceptions]

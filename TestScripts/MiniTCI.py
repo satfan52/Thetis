@@ -623,6 +623,7 @@ class MiniTCI(tk.Tk):
         self.split = False
         self.tx_vfo = "A"                # which VFO the TX checkbox shows
         self.audio_sel = "main"          # main | sub | both
+        self.ddc_center_hz = self.freq_hz  # hardware centre frequency (DDS)
         self.volume = 0.25
         self.mic_gain = 0.5
         self.smeter = -140.0
@@ -844,8 +845,13 @@ class MiniTCI(tk.Tk):
                        command=lambda d=hz: self.tune_to(self.freq_hz + d)
                        ).pack(side="left", padx=2)
         self.ctun_var = tk.BooleanVar(value=False)
-        self.ctun_btn = ttk.Checkbutton(r2, text="CTUN", variable=self.ctun_var)
+        self.ctun_btn = ttk.Checkbutton(r2, text="CTUN", variable=self.ctun_var,
+                                        command=self._ctun_toggled)
         self.ctun_btn.pack(side="left", padx=(12, 4))
+        # Branch H1: hardware centre frequency (middle of the DDS passband)
+        self.dds_lbl = tk.Label(r2, text="DDS 7.100.000", bg=C["panel"], fg="#7a4a9a",
+                                font=("Consolas", 12, "bold"))
+        self.dds_lbl.pack(side="left", padx=(10, 4))
         ttk.Label(r2, text="Direct kHz:", padding=(12, 0, 2, 0)).pack(side="left")
         self.tune_entry = ttk.Entry(r2, width=10)
         self.tune_entry.pack(side="left")
@@ -1310,6 +1316,7 @@ class MiniTCI(tk.Tk):
             self.send(f"modulation:0,{self.mode};")
             lo, hi = FILTERS.get(self.mode, (100, 2900))
             self.send(f"rx_filter_band:0,{lo},{hi};")
+            self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
             # Branch H1: restore subrx state on connect; default B = A + 2 kHz
             if not self.sub_hz:
                 self.sub_hz = self.freq_hz + 2000
@@ -1514,8 +1521,15 @@ class MiniTCI(tk.Tk):
             elif k == "dds" and v:
                 try:
                     dds_hz = float(v.split(",")[-1])
+                    self.ddc_center_hz = int(dds_hz)
+                    self.dds_lbl.config(text="DDS " + self._fmt_hz(dds_hz))
                     self.pan.data_center_hz = dds_hz   # actual DDC center of the IQ data
-                    if not self.pan.center_hz:
+                    if self.pan.center_hz and abs(dds_hz - self.pan.center_hz) > 1:
+                        # DDC moved (band change, classic follow, or CTUN scroll):
+                        # slide the whole display + waterfall history to stay aligned
+                        self.pan.shift_waterfall(dds_hz - self.pan.center_hz)
+                        self.pan.center_hz = dds_hz
+                    elif not self.pan.center_hz:
                         self.pan.center_hz = dds_hz
                 except (ValueError, IndexError):
                     pass
@@ -1554,6 +1568,10 @@ class MiniTCI(tk.Tk):
                     self.pan.rate = float(int(v))
                 except ValueError:
                     pass
+
+    def _fmt_hz(self, hz):
+        f = max(0, int(hz))
+        return f"{f // 1_000_000}.{(f % 1_000_000) // 1000:03d}.{f % 1000:03d}"
 
     def _fmt_freq(self):
         # Thetis-style: MHz.kHz.Hz with dots, e.g. 14.074.000
@@ -1805,6 +1823,11 @@ class MiniTCI(tk.Tk):
                 return seg
         return None
 
+    def _ctun_toggled(self):
+        # Branch H1: tell the server which display model is in use
+        self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
+        self.logprint(f"CTUN {'on' if self.ctun_var.get() else 'off'}")
+
     def _clamp_sub_to_ddc(self):
         """Branch H1: the VFO B tuning LINE may reach the full DDC passband
         (+/-48 kHz around A) in every mode - the user tunes to the visible
@@ -1830,24 +1853,11 @@ class MiniTCI(tk.Tk):
         if seg and self.mode_var.get() in ("USB", "LSB"):
             # B7-4: entering an FT8 segment in SSB - suggest the digital mode
             self.logprint(f"FT8 segment {seg:.3f} MHz: consider mode DIGU")
-        if self.ctun_var.get():
-            # CTUN: display (and waterfall history) stays fixed; only the tune
-            # line moves. If the VFO would leave the window, slide the display
-            # minimally to keep it visible (Thetis does the same).
-            self.pan.vfo_hz = self.freq_hz
-            half = self.pan.span / 2 * 0.95
-            if abs(self.freq_hz - self.pan.center_hz) > half:
-                df = self.freq_hz - self.pan.center_hz
-                self.pan.shift_waterfall(df)
-                self.pan.center_hz = self.freq_hz
-        else:
-            # Normal: tuning slides the WHOLE panafall (past rows included).
-            df = self.freq_hz - self.pan.center_hz
-            if self.pan.center_hz and df:
-                self.pan.shift_waterfall(df)
-            self.pan.center_hz = self.freq_hz
-            self.pan.vfo_hz = self.freq_hz
-        self.pan.data_center_hz = self.freq_hz
+        # Branch H1: the display centre follows the DDC (dds echo from the server).
+        # Non-CTUN: server re-centres DDC onto A and echoes dds -> display slides.
+        # CTUN: A floats inside the DDC (server-side RXOsc); display stays fixed,
+        # only the tune line moves. The client never self-shifts here.
+        self.pan.vfo_hz = self.freq_hz
         self.send(f"vfo:0,0,{self.freq_hz};")
 
     def _tune_direct(self):

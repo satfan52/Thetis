@@ -1725,13 +1725,14 @@ namespace Thetis
                             {
                                 int rx = _server.BaseRxIndex;
                                 double newFreqMHz = freqHz / 1e6;
-                                HeadlessSliceManager.Instance.SetFrequency(rx, newFreqMHz);
+                                double effCenter = HeadlessSliceManager.Instance.SetVFOA(rx, newFreqMHz);
                                 if (TxArbiter.Instance.ActiveDigitalRx == rx)
                                 {
                                     TxArbiter.Instance.UpdateDigitalTxFrequency(rx, newFreqMHz);
                                 }
                                 _server.BroadcastText($"vfo:0,0,{freqHz:0};");
-                                _server.BroadcastText($"vfo:0,1,{freqHz:0};");
+                                long centerHz = (long)(effCenter * 1e6);
+                                _server.BroadcastText($"dds:0,{centerHz:0};");
                             }
                         }
                         else if (args.Length >= 2)
@@ -1753,11 +1754,14 @@ namespace Thetis
                     // Branch G: DDS (panadapter center) - sets the slice center frequency.
                     // CW Skimmer uses this to learn what frequency range the IQ stream covers.
                     case "dds":
+                        // Branch H1: dds sets the hardware centre; VFO A keeps its
+                        // absolute frequency (TCIServer 50001 semantics).
                         if (args.Length >= 2 && double.TryParse(args[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double ddsHz))
                         {
                             int rxDDS = _server.BaseRxIndex;
                             double ddsMHz = ddsHz / 1e6;
-                            HeadlessSliceManager.Instance.SetFrequency(rxDDS, ddsMHz);
+                            double oldCenter = HeadlessSliceManager.Instance.GetDisplayCenterMHz(rxDDS);
+                            HeadlessSliceManager.Instance.SetDDCCenter(rxDDS, ddsMHz);
                             _server.BroadcastText($"dds:0,{ddsHz:0};");
                         }
                         else if (args.Length >= 1)
@@ -1803,6 +1807,14 @@ namespace Thetis
                             int low = slice != null ? slice.FilterLow : 300;
                             int high = slice != null ? slice.FilterHigh : 3000;
                             SendTextFrame($"rx_filter_band:0,{low},{high};");
+                        }
+                        break;
+
+                    case "ctun":
+                        {
+                            // Branch H1: client display model for VFO A
+                            if (args.Length >= 2 && bool.TryParse(args[1], out bool ct))
+                                HeadlessSliceManager.Instance.SetCtunMode(_server.BaseRxIndex, ct);
                         }
                         break;
 
