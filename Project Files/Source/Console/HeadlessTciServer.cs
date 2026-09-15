@@ -1364,7 +1364,12 @@ namespace Thetis
         {
             if (_stop || !_handshakeDone || string.IsNullOrEmpty(message)) return;
             byte[] frame = HeadlessTciServer.MakeWebSocketTextFrame(message);
-            SendRawBytes(frame);
+            // Branch H1 fix: text (state/echo/probe) must NEVER be dropped by the
+            // audio/IQ flood - route through the priority control queue. The old
+            // path put text in the same 32-frame queue as binary frames, where
+            // streaming traffic pushed it out - clients silently lost state
+            // echoes (e.g. sub_mode), breaking the GUI state machine.
+            SendControlFrameDirect(frame);
         }
 
         private void ClientLoop()
