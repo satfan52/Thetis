@@ -158,32 +158,44 @@ namespace Thetis
             double maxOff = halfSpan - margin;
             double offsetHz = (freqMHz - center) * 1e6;
 
-            if (Math.Abs(offsetHz) > maxOff)
+            if (Math.Abs(offsetHz) > halfSpan)
             {
-                // A would leave the passband: scroll/re-centre the DDC onto A
+                // A left the DDC entirely: nothing else possible, re-centre onto A
                 center = freqMHz;
                 _displayCenterMHz[rx] = center;
-                SetFrequency(rx, freqMHz);                  // retunes DDC, syncs slice
-                // B is stored as an absolute frequency and stays put: its offset
-                // is recomputed against the new centre on its next update; push
-                // it immediately so it does not slide with the DDC.
-                try
-                {
-                    long bHz = HeadlessSubRX.GetFreq(rx);
-                    if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
-                        HeadlessSubRX.SetFreq(rx, bHz);     // re-apply absolute B
-                }
-                catch { }
+                SetFrequency(rx, freqMHz);
             }
-            else
+            else if (Math.Abs(offsetHz) > maxOff)
             {
-                // inside the passband: A floats via RXOsc (shift = +(A - centre)),
-                // DDC untouched - waterfall and panadapter data keep flowing
-                // uninterrupted, exactly like Thetis CTUN.
+                // A reached the passband working edge: SCROLL the DDC by the
+                // minimum amount needed to bring A back inside the margin
+                // (Thetis scrolls gradually, lines 'scroll the spectrum display
+                // smoothly at the edge'), never jumping onto A.
+                double excess = Math.Abs(offsetHz) - maxOff;
+                double scrollHz = offsetHz > 0 ? excess : -excess;
+                center += scrollHz / 1e6;
+                _displayCenterMHz[rx] = center;
+                SetFrequency(rx, center);
+                offsetHz = (freqMHz - center) * 1e6;        // now == maxOff*sign
+            }
+
+            if (Math.Abs(offsetHz) <= maxOff)
+            {
+                // A floats via RXOsc (shift = +(A - centre)); DDC untouched
                 slice.FrequencyMHz = freqMHz;
                 WDSP.SetRXAShiftFreq(2 * rx, offsetHz);
                 WDSP.RXANBPSetShiftFrequency(2 * rx, offsetHz);
             }
+
+            // B is stored as an absolute frequency: re-apply it against the new
+            // centre so it never slides when the DDC moves.
+            try
+            {
+                long bHz = HeadlessSubRX.GetFreq(rx);
+                if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
+                    HeadlessSubRX.SetFreq(rx, bHz);
+            }
+            catch { }
 
             SliceFrequencyChanged?.Invoke(rx, freqMHz);
             return center;
