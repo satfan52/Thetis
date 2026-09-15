@@ -219,10 +219,19 @@ namespace Thetis
             }
             else
             {
-                TciLog.Log($"[VFOA] rx{rx} ctun A={freqMHz:0.000000} centre={center:0.000000} off={offsetHz:0}");
-                if (Math.Abs(offsetHz) >= edge)
+                // Filter-aware passband edges for the MAIN channel (VFO A): A
+                // may sit at the DDC edge only where its passband does not
+                // extend past it (USB sits above, LSB below, AM/SAM/NFM
+                // symmetric). Matches Thetis's rate/2 minus filter extent.
+                var sliceF = GetSlice(rx);
+                double upExt = Math.Max(0.0, (double)(sliceF != null ? sliceF.FilterHigh : 3000));
+                double loExt = Math.Max(0.0, (double)(sliceF != null ? -sliceF.FilterLow : 300));
+                double upper = edge - upExt;
+                double lower = -edge + loExt;
+                TciLog.Log($"[VFOA] rx{rx} ctun A={freqMHz:0.000000} centre={center:0.000000} off={offsetHz:0} up={upper:0} lo={lower:0}");
+                if (offsetHz > upper || offsetHz < lower)
                 {
-                    // A reached/crossed the DDC edge: the DDC JUMPS so VFO A
+                    // A reached/crossed the passband edge: the DDC JUMPS so VFO A
                     // becomes the new hardware centre (Thetis CTUN behaviour -
                     // the DDS stays put until the edge, then VFO A's frequency
                     // becomes the new centre and the waterfall jumps with it).

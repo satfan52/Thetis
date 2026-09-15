@@ -1839,18 +1839,26 @@ class MiniTCI(tk.Tk):
         """Branch H1: VFO B is referenced to the DDC centre, not VFO A. In
         non-CTUN the DDC centre == VFO A, so B sits within +/-48 kHz of A.
         In CTUN the DDC centre stays pinned while A floats, so B can sit at
-        the opposite passband edge (up to ~96 kHz from A) - the whole point
-        of the CTUN model."""
+        the opposite passband edge (up to ~96 kHz from A). The edges are
+        FILTER-AWARE: the carrier may reach the DDC edge only where its
+        passband does not extend past it (USB sits above, LSB below)."""
         if not self.sub_hz:
             return
         center = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
         off = self.sub_hz - center
         edge = 48000
-        if abs(off) > edge:
-            new = int(center + (edge if off > 0 else -edge))
+        fl, fh = self.sub_filt
+        upper = edge - max(0, fh)
+        lower = -edge + max(0, -fl)
+        if off > upper:
+            new = int(center + upper)
             self.logprint(f"[clamp] sub={self.sub_hz} center={center:.0f} "
-                          f"(dataC={self.pan.data_center_hz:.0f} freqA={self.freq_hz}) "
-                          f"-> {new}")
+                          f"filt={fl}/{fh} -> {new}")
+            self.sub_hz = new
+        elif off < lower:
+            new = int(center + lower)
+            self.logprint(f"[clamp] sub={self.sub_hz} center={center:.0f} "
+                          f"filt={fl}/{fh} -> {new}")
             self.sub_hz = new
 
     def tune_to(self, hz):
