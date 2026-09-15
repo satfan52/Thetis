@@ -565,6 +565,16 @@ class PanFall(tk.Canvas):
             if 0 <= cx <= CANVAS_W:
                 self.create_line(cx, axis_y, cx, axis_y + 12,
                                  fill="#000000", width=3)
+        # ---- Branch H1: VFO B passband TINT as canvas overlay (independent of the
+        # numpy composite so it can never silently disappear) ----
+        if self.center_hz and self.sub_hz and getattr(self, "sub_enabled", True):
+            sx1 = self.f2x(self.sub_hz + self.sub_filt[0])
+            sx2 = self.f2x(self.sub_hz + self.sub_filt[1])
+            if sx2 > sx1:
+                # translucent blue via stipple
+                self.create_rectangle(sx1, 0, sx2, PAN_H,
+                                      fill="#3fa0ff", outline="",
+                                      stipple="gray50")
         # ---- Branch H1: Thetis-style passband edges (red left / yellow right) ----
         if self.center_hz and self.vfo_hz:
             ex1 = self.f2x(self.vfo_hz + self.filt[0])
@@ -1449,7 +1459,7 @@ class MiniTCI(tk.Tk):
                     self.sub_enabled = False
                     if self.split:
                         self.split = False
-                    self.logprint("SubRX off")
+                    self.logprint("SubRX off (refused or released)")
                 self._sub_refresh_ui()
                 continue
             if k == "split_enable":

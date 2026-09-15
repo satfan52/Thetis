@@ -90,9 +90,14 @@ namespace Thetis
                 }
                 WDSP.SetChannelState(Ch(rx, 1), on ? 1 : 0, on ? 0 : 1);
                 s.Enabled = on;
+                TciLog.Log($"[SubRX] rx{rx} enabled={on} ok");
                 return true;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                TciLog.Log($"[SubRX] rx{rx} enable FAILED: {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
         }
 
         public static bool IsEnabled(int rx) { return Get(rx).Enabled; }
@@ -108,13 +113,14 @@ namespace Thetis
         {
             if (hz <= 0 || !cmaster.IsRadioCreated) return;
             double offset = hz - MainHz(rx);           // signed offset from DDC centre
-            double span = 48000.0 * 0.45;              // stay inside the DDC passband
+            double span = 96000.0 * 0.45;              // stay inside the 96k DDC passband
             if (offset > span) offset = span;
             if (offset < -span) offset = -span;
-            // RadioDSPRX convention: SetRXAShiftFreq(channel, -RXOsc), so passing
-            // -offset as the shift places the sub at +offset from the DDC centre.
-            WDSP.SetRXAShiftFreq(Ch(rx, 1), -offset);
-            WDSP.RXANBPSetShiftFrequency(Ch(rx, 1), -offset);
+            // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and
+            // RadioDSPRX applies SetRXAShiftFreq(-RXOsc) => effective shift = +(fB - fA).
+            // We drive SetRXAShiftFreq directly, so pass the offset itself.
+            WDSP.SetRXAShiftFreq(Ch(rx, 1), offset);
+            WDSP.RXANBPSetShiftFrequency(Ch(rx, 1), offset);
         }
 
         public static long GetFreq(int rx) { return Get(rx).FreqHz; }
