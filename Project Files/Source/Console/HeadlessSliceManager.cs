@@ -115,78 +115,7 @@ namespace Thetis
                 catch { }
             }
 
-            // Branch H1: the DDC centre is the master VFO; keep it in sync
-            _displayCenterMHz[rx] = freqMHz;
-
             SliceFrequencyChanged?.Invoke(rx, freqMHz);
-        }
-
-        // Branch H1: per-rx DDC centre = the hidden 'master VFO'. VFO A floats
-        // inside the DDC passband via the main channel's RXOsc (exactly like
-        // Thetis's CentreFrequency + RXOsc model in CTUN); the DDC is retuned
-        // only when A would leave the passband (scroll/re-centre).
-        private readonly Dictionary<int, double> _displayCenterMHz = new Dictionary<int, double>();
-
-        public double GetDisplayCenterMHz(int rx)
-        {
-            lock (_lock)
-            {
-                if (_displayCenterMHz.TryGetValue(rx, out double v)) return v;
-                var slice = GetSlice(rx);
-                double f = slice != null ? slice.FrequencyMHz : 14.074;
-                _displayCenterMHz[rx] = f;
-                return f;
-            }
-        }
-
-        /// <summary>Branch H1: move VFO A without retuning the DDC (CTUN-style).
-        /// Re-centres the DDC only when A would leave the passband. Returns the
-        /// display centre actually in effect after the move.</summary>
-        public double SetVFOA(int rx, double freqMHz)
-        {
-            HeadlessSlice slice;
-            lock (_lock)
-            {
-                if (!_slices.TryGetValue(rx, out slice)) return freqMHz;
-            }
-            if (!cmaster.IsRadioCreated) return freqMHz;
-
-            double center = GetDisplayCenterMHz(rx);
-            const double rate = 96000.0;
-            double halfSpan = rate / 2.0;
-            double margin = rate * 0.04;                    // Thetis-style 4% edge margin
-            double maxOff = halfSpan - margin;
-            double offsetHz = (freqMHz - center) * 1e6;
-
-            if (Math.Abs(offsetHz) > maxOff)
-            {
-                // A would leave the passband: scroll/re-centre the DDC onto A
-                center = freqMHz;
-                _displayCenterMHz[rx] = center;
-                SetFrequency(rx, freqMHz);                  // retunes DDC, syncs slice
-                // B is stored as an absolute frequency and stays put: its offset
-                // is recomputed against the new centre on its next update; push
-                // it immediately so it does not slide with the DDC.
-                try
-                {
-                    long bHz = HeadlessSubRX.GetFreq(rx);
-                    if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
-                        HeadlessSubRX.SetFreq(rx, bHz);     // re-apply absolute B
-                }
-                catch { }
-            }
-            else
-            {
-                // inside the passband: A floats via RXOsc (shift = +(A - centre)),
-                // DDC untouched - waterfall and panadapter data keep flowing
-                // uninterrupted, exactly like Thetis CTUN.
-                slice.FrequencyMHz = freqMHz;
-                WDSP.SetRXAShiftFreq(2 * rx, offsetHz);
-                WDSP.RXANBPSetShiftFrequency(2 * rx, offsetHz);
-            }
-
-            SliceFrequencyChanged?.Invoke(rx, freqMHz);
-            return center;
         }
 
         [HandleProcessCorruptedStateExceptions]
