@@ -1472,6 +1472,8 @@ class MiniTCI(tk.Tk):
                 if mode_in in MODES:
                     self._submode_busy = True
                     try:
+                        if mode_in != self.sub_mode:
+                            self.logprint(f"Sub mode echo: {mode_in}")
                         self.sub_mode = mode_in
                         self.submode_var.set(mode_in)
                     finally:
@@ -1795,12 +1797,12 @@ class MiniTCI(tk.Tk):
     def _clamp_sub_to_ddc(self):
         """Branch H1: both VFOs must fit in the DDC passband. The headless DDC
         is always centred on VFO A (SetFrequency -> VFOfreq) - CTUN is a display
-        concept only and does not move the DDC - so the physical limit is
-        |B - A| <= rate/2 (48 kHz at 96k). We clamp at 96% leaving filter-edge
-        margin; this IS the 'both VFOs fit in the passband' rule."""
+        concept only and does not move the DDC. Limit = 48k minus half the B
+        filter width so the passband fits entirely inside the DDC."""
         if self.sub_hz:
             off = self.sub_hz - self.freq_hz
-            max_off = 48000                      # hard DDC edge (Thetis uses rate/2)
+            filt_half = max(abs(self.sub_filt[0]), abs(self.sub_filt[1]))
+            max_off = max(0, 48000 - filt_half)
             if abs(off) > max_off:
                 self.sub_hz = self.freq_hz + (max_off if off > 0 else -max_off)
 

@@ -135,9 +135,14 @@ namespace Thetis
 
         public static void ApplyMode(int rx, DSPMode mode)
         {
-            var s = Get(rx); s.Mode = mode;
-            if (!cmaster.IsRadioCreated) return;
+            var st = Get(rx); st.Mode = mode;
+            if (!cmaster.IsRadioCreated)
+            {
+                TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} SKIPPED - radio not created");
+                return;
+            }
             WDSP.SetRXAMode(Ch(rx, 1), mode);
+            TciLog.Log($"[SubRX] rx{rx} ApplyMode {mode} ch={Ch(rx, 1)}");
         }
 
         public static void ApplyFilter(int rx, int low, int high)
