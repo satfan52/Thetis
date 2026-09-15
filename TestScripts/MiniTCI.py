@@ -1513,9 +1513,9 @@ class MiniTCI(tk.Tk):
                         self.freq_hz = int(hz)
                         self._fmt_freq()
                         self.pan.vfo_hz = hz
-                        self.pan.data_center_hz = hz
-                        if not self.pan.center_hz:
-                            self.pan.center_hz = hz
+                        # Branch H1: data_center_hz belongs to the DDC (dds echo),
+                        # NOT to A - under CTUN A floats inside the DDC and must
+                        # not drag the data placement with it.
                     except ValueError:
                         pass
             elif k == "dds" and v:
