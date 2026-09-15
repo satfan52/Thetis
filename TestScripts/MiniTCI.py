@@ -1193,7 +1193,7 @@ class MiniTCI(tk.Tk):
                 try:
                     # tag each block with the DDC center in effect when it arrived,
                     # so queued stale blocks are labeled correctly (sync fix)
-                    dc = self.pan.data_center_hz or self.freq_hz
+                    dc = getattr(self, "ddc_center_hz", 0) or self.freq_hz
                     self._iq_q.put_nowait((block, rate, float(dc)))
                 except Exception:
                     # UI stalled - drop the OLDEST block so new data keeps flowing
@@ -1311,7 +1311,6 @@ class MiniTCI(tk.Tk):
             self.send(f"modulation:0,{self.mode};")
             lo, hi = FILTERS.get(self.mode, (100, 2900))
             self.send(f"rx_filter_band:0,{lo},{hi};")
-            self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
             # Branch H1: restore subrx state on connect; default B = A + 2 kHz
             if not self.sub_hz:
                 self.sub_hz = self.freq_hz + 2000
@@ -1493,6 +1492,21 @@ class MiniTCI(tk.Tk):
                     except ValueError:
                         pass
                 continue
+            if k == "dds" and v:
+                # master VFO (DDC centre) report - the true centre of incoming IQ
+                try:
+                    newdc = int(float(v.split(",")[-1]))
+                    old_dc = getattr(self, "ddc_center_hz", 0)
+                    self.ddc_center_hz = newdc
+                    if (self.ctun_var.get() and old_dc and newdc != old_dc
+                            and self.pan.center_hz):
+                        # the server re-centred the DDC: slide display + history
+                        self.pan.shift_waterfall(newdc - old_dc)
+                        self.pan.center_hz = float(newdc)
+                        self.pan.data_center_hz = float(newdc)
+                except ValueError:
+                    pass
+                continue
             if k == "probe":
                 # Thetis TX-chain probe (once/s while we transmit):
                 # q=queued TCI samples in Thetis, calls/samps=pulls into the TX DSP,
@@ -1508,20 +1522,16 @@ class MiniTCI(tk.Tk):
                         self.freq_hz = int(hz)
                         self._fmt_freq()
                         self.pan.vfo_hz = hz
-                        # display centre tracks the DDC (dds echo), not A - under
-                        # CTUN the DDC centre differs from A (master-VFO model)
+                        self.pan.data_center_hz = hz
+                        if not self.pan.center_hz:
+                            self.pan.center_hz = hz
                     except ValueError:
                         pass
             elif k == "dds" and v:
                 try:
                     dds_hz = float(v.split(",")[-1])
                     self.pan.data_center_hz = dds_hz   # actual DDC center of the IQ data
-                    if self.pan.center_hz and abs(dds_hz - self.pan.center_hz) > 1:
-                        # DDC moved (band change or CTUN edge scroll): slide the
-                        # whole display + waterfall history to stay aligned
-                        self.pan.shift_waterfall(dds_hz - self.pan.center_hz)
-                        self.pan.center_hz = dds_hz
-                    elif not self.pan.center_hz:
+                    if not self.pan.center_hz:
                         self.pan.center_hz = dds_hz
                 except (ValueError, IndexError):
                     pass
