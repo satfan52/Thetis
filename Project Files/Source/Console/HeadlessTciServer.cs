@@ -1819,12 +1819,21 @@ namespace Thetis
 
                     case "sub_mode":
                         {
-                            // Branch H1 (improvement over Thetis): independent subrx modulation
+                            // Branch H1 (improvement over Thetis): independent subrx modulation.
+                            // Echo only on change - prevents any client echo feedback loop.
                             if (args.Length >= 2)
                             {
                                 DSPMode subMode = HeadlessTciManager.ParseDSPMode(args[1]);
-                                HeadlessSubRX.ApplyMode(_server.BaseRxIndex, subMode);
-                                _server.BroadcastText($"sub_mode:0,{args[1].ToUpperInvariant()};");
+                                var st = HeadlessSubRX.Get(_server.BaseRxIndex);
+                                if (st.Mode != subMode)
+                                {
+                                    HeadlessSubRX.ApplyMode(_server.BaseRxIndex, subMode);
+                                    _server.BroadcastText($"sub_mode:0,{args[1].ToUpperInvariant()};");
+                                }
+                                else
+                                {
+                                    SendTextFrame($"sub_mode:0,{args[1].ToUpperInvariant()};");
+                                }
                             }
                         }
                         break;

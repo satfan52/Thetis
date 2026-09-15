@@ -465,7 +465,7 @@ class PanFall(tk.Canvas):
             sx2 = self.f2x(self.sub_hz + self.sub_filt[1])
             sx1c, sx2c = max(0, int(sx1)), min(CANVAS_W, int(sx2))
             if sx2c > sx1c:
-                pan[:, sx1c:sx2c] = (198, 219, 244)   # light blue tint
+                pan[:, sx1c:sx2c] = (172, 206, 240)   # light blue tint (VFO B passband)
         # horizontal gray grid lines every 10 dB (Quisk color_gl = grey)
         # grid computed from current dB scale
         lo_d, hi_d = lo, hi
@@ -1421,13 +1421,19 @@ class MiniTCI(tk.Tk):
                         st = p[1].lower() == "true"
                         if not self.sub_enabled and st:
                             self.sub_enabled = True
-                        self.sub_hz = int(float(p[2]))
+                        srv_hz = int(float(p[2]))
+                        if srv_hz > 0:
+                            self.sub_hz = srv_hz       # keep local default if server never set one
                         self.sub_mode = p[3].strip().upper()
-                        self.sub_filt = (int(p[4]), int(p[5]))
+                        fl, fh = int(p[4]), int(p[5])
+                        if fh > fl:
+                            self.sub_filt = (fl, fh)
                         try: self.bal_var.set(float(p[6]))
                         except Exception: pass
                         if self.sub_enabled:
-                            self.submode_var.set(self.sub_mode)
+                            self._submode_busy = True
+                            try: self.submode_var.set(self.sub_mode)
+                            finally: self._submode_busy = False
                         self._sub_refresh_ui()
                     except ValueError:
                         pass
@@ -1463,9 +1469,14 @@ class MiniTCI(tk.Tk):
                     continue
             if k == "sub_mode" and v:
                 # echo format: sub_mode:<trx>,<MODE>; - take the mode token
-                self.sub_mode = str(v).split(",")[-1].strip().upper()
-                if self.sub_mode in MODES:
-                    self.submode_var.set(self.sub_mode)
+                mode_in = str(v).split(",")[-1].strip().upper()
+                if mode_in in MODES:
+                    self._submode_busy = True
+                    try:
+                        self.sub_mode = mode_in
+                        self.submode_var.set(mode_in)
+                    finally:
+                        self._submode_busy = False
                 continue
             if k == "sub_filter" and v:
                 p = v.split(",")
@@ -1647,7 +1658,13 @@ class MiniTCI(tk.Tk):
         # state applied on server echo
 
     def _submode_changed(self, *_a):
-        self.sub_mode = self.submode_var.get()
+        # guard: server echoes re-set the var; sending on echo would loop forever
+        if getattr(self, "_submode_busy", False):
+            return
+        new_mode = self.submode_var.get()
+        if new_mode == getattr(self, "sub_mode", None):
+            return                      # same value - nothing to do
+        self.sub_mode = new_mode
         if self._sub_enabled():
             self.send(f"sub_mode:0,{self.sub_mode};")
         self.logprint(f"Sub mode {self.sub_mode}")
