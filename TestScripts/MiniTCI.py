@@ -43,7 +43,7 @@ TX_AUDIO_RATE = 48000   # TX audio stream rate (negotiated with the server)
 BANDS = [  # name, default MHz, suggested mode
     ("160m", 1.850, "LSB"),
     ("80m",  3.600, "LSB"),
-    ("60m",  5.354, "USB"),
+    ("60m",  5.3585, "USB"),
     ("40m",  7.060, "LSB"),
     ("30m", 10.116, "CWU"),
     ("20m", 14.074, "USB"),
@@ -61,7 +61,7 @@ BANDS = [  # name, default MHz, suggested mode
 BAND_RANGES = {
     "160m": (1.800, 2.000),
     "80m":  (3.500, 3.800),
-    "60m":  (5.200, 5.450),
+    "60m":  (5.3515, 5.3665),
     "40m":  (7.000, 7.300),
     "30m":  (10.100, 10.150),
     "20m":  (14.000, 14.350),
