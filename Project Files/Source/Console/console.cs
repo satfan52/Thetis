@@ -31991,10 +31991,10 @@ namespace Thetis
                         if (chkRIT.Checked && !_mox && bRitOk) diff -= (int)udRIT.Value;
                         int rx2_osc = (int)(radio.GetDSPRX(0, 0).RXOsc - diff);
                         if (rx2_osc > -sample_rate_rx1 / 2 && rx2_osc < sample_rate_rx1 / 2)
-                        {
-                            radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
-                        }
-                        else chkEnableMultiRX.Checked = false;
+                                                {
+                                                    radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
+                                                }
+                                                else if (rx2_enabled) VFOASubFreq = VFOAFreq; else VFOBFreq = VFOAFreq;
                     }
 
                 }
@@ -32616,8 +32616,8 @@ namespace Thetis
                 if (rx2_osc > -sample_rate_rx1 / 2 && rx2_osc < sample_rate_rx1 / 2)
                 {
                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
-                }
-                else chkEnableMultiRX.Checked = false; // MW0LGE [2.9.0.7] same as vfoA lost focus
+                                    }
+                                    else VFOBFreq = VFOAFreq; // snap to VFOA instead of disabling SUB
             }
 
             //[2.10.3.7]MW0LGE limits added
