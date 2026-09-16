@@ -53,6 +53,7 @@ BANDS = [  # name, default MHz, suggested mode
     ("10m", 28.400, "USB"),
     ("6m",  50.313, "USB"),
     ("2m", 144.200, "NFM"),
+    ("70cm", 432.200, "NFM"),
 ]
 
 # Non-overlapping frequency ranges per band (lo MHz, hi MHz). 60m is a narrow,
@@ -71,6 +72,7 @@ BAND_RANGES = {
     "10m":  (28.000, 29.700),
     "6m":   (50.000, 54.000),
     "2m":   (144.000, 148.000),
+    "70cm": (430.000, 440.000),
 }
 
 MODES = ["USB", "LSB", "DIGU", "DIGL", "CWU", "CWL", "AM", "SAM", "NFM"]
