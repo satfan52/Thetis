@@ -5085,24 +5085,37 @@ namespace Thetis
             sendTextFrame(s);
         }
         private void handleCTUN(string[] args)
-        {
-            if(args== null || args.Length < 1 || args.Length > 2) return;
-            if (!int.TryParse(args[0], out int rx)) return;
+                {
+                    if(args== null || args.Length < 1 || args.Length > 2) return;
+                    if (!int.TryParse(args[0], out int rx)) return;
 
-            bool enable = false;
-            if(args.Length == 1)
-            {
-                //get
-                enable = consoleThreadSafe.GetCTUN(rx + 1);
-                sendCTUN(rx, enable);
-            }
-            else
-            {
-                //set
-                if (!bool.TryParse(args[1], out enable)) return;
-                consoleThreadSafe.SetCTUN(rx + 1, enable);
-            }
-        }
+                    bool enable = false;
+                    if(args.Length == 1)
+                    {
+                        //get
+                        enable = consoleThreadSafe.GetCTUN(rx + 1);
+                        sendCTUN(rx, enable);
+                    }
+                    else
+                    {
+                        //set
+                        if (!bool.TryParse(args[1], out enable)) return;
+                        consoleThreadSafe.SetCTUN(rx + 1, enable);
+                    }
+                }
+                // H1: TCI command to set VFOA sub-frequency (the smaller readout below VFO A)
+                private void handleVFOASUB(string[] args)
+                {
+                    if (args == null || args.Length < 2) return;
+                    if (!int.TryParse(args[0], out int rx)) return;
+                    if (!long.TryParse(args[1], out long freqHz)) return;
+                    double freqMHz = freqHz / 1e6;
+                    freqMHz = Math.Round(freqMHz, 6);
+                    if (consoleThreadSafe != null)
+                        consoleThreadSafe.VFOASubFreq = freqMHz;
+                    sendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "vfoasub:{0},{1};", rx, freqHz));
+                }
         private void sendTXProfile(string prof)
         {
             string s = "tx_profile_ex:" + prof + ";";
@@ -5561,8 +5574,11 @@ namespace Thetis
                         handleAgcGain(args);
                         break;
                     case "rx_ctun_ex":
-                        handleCTUN(args); // bespoke thetis cmd for ctun
-                        break;
+                                            handleCTUN(args); // bespoke thetis cmd for ctun
+                                            break;
+                                        case "vfoasub":
+                                            handleVFOASUB(args); // H1: set VFOA sub-frequency over TCI
+                                            break;
                     case "tx_profile_ex":
                         handleTXProfile(args); // bespoke thetis cmd to select tx profile
                         break;

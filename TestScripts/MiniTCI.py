@@ -921,7 +921,7 @@ class MiniTCI(tk.Tk):
 
         # --- Branch H1 row 2b: VFO B / subrx / split
         r2b = ttk.Frame(self); r2b.pack(fill="x", padx=10, pady=2)
-        self.vfo_lbl = tk.Label(r2b, text="VFO B  7.074.000", bg=C["panel"], fg="#0055aa",
+        self.vfo_lbl = tk.Label(r2b, text="SubVFOA  7.074.000", bg=C["panel"], fg="#0055aa",
                                 font=("Consolas", 15, "bold"))
         self.vfo_lbl.pack(side="left", padx=(2, 8))
         self.vfo_lbl.bind("<MouseWheel>", self._sub_wheel)
@@ -1399,10 +1399,14 @@ class MiniTCI(tk.Tk):
             else:
                 self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
             # Branch H1: restore subrx state on connect; default B = A + 2 kHz
-            # (skip subrx commands on port 50001 — full TCIServer has no subrx)
-            if not getattr(self, "_is_full_tci", False):
-                if not self.sub_hz:
-                    self.sub_hz = self.freq_hz + 2000
+            if not self.sub_hz:
+                self.sub_hz = self.freq_hz + 2000
+            if getattr(self, "_is_full_tci", False):
+                # 50001: rx_channel_enable for sub-channel, vfoasub for freq
+                if self.sub_enabled:
+                    self.send(f"rx_channel_enable:0,1,true;")
+                    self.send(f"vfoasub:0,{self.sub_hz};")
+            else:
                 self.send("subrx_state:0;")
                 if self.sub_enabled:
                     self.send("subrx:0,true;")
@@ -1539,6 +1543,26 @@ class MiniTCI(tk.Tk):
                     st = p[1].strip().lower() == "true" if len(p) > 1 else False
                     self.ctun_var.set(st)
                 except Exception:
+                    pass
+                continue
+            if k == "rx_channel_enable" and v:
+                # 50001: rx_channel_enable:0,1,<bool> — sub-channel on/off
+                p = str(v).split(",")
+                if len(p) >= 3 and p[1] == "1":
+                    st = p[2].strip().lower() == "true"
+                    if st != self.sub_enabled:
+                        self.sub_enabled = st
+                        self.logprint(f"Sub {'on' if st else 'off'} (50001)")
+                        self._sub_refresh_ui()
+                continue
+            if k == "vfoasub" and v:
+                # 50001: vfoasub:0,<freqHz> — sub-channel frequency echo
+                try:
+                    p = str(v).split(",")
+                    if len(p) >= 2:
+                        self.sub_hz = int(p[1])
+                        self._sub_refresh_ui()
+                except ValueError:
                     pass
                 continue
             if k == "subrx":
@@ -1754,7 +1778,7 @@ class MiniTCI(tk.Tk):
 
     def _sub_refresh_ui(self):
         on = self.sub_enabled
-        self.vfo_lbl.config(text="VFO B  " + self._fmt_sub_freq())
+        self.vfo_lbl.config(text="SubVFOA  " + self._fmt_sub_freq())
         self.sub_btn.config(text="SUB on" if on else "SUB off")
         self.split_btn.config(text="SPLIT on" if self.split else "SPLIT off")
         self.pan.sub_hz = self.sub_hz if on else 0.0
@@ -1764,22 +1788,28 @@ class MiniTCI(tk.Tk):
         if not self.connected:
             self.logprint("connect first to use SubRX")
             return
-        # Phase -1a: full TCI (port 50001) has no headless subrx commands
-        if getattr(self, "_is_full_tci", False):
-            self.logprint("SubRX not available on the full TCI port (use RX2 natively)")
-            return
         want = not self.sub_enabled
         if want and self.sub_hz == 0:
             self.sub_hz = self.freq_hz + 2000   # default: 2 kHz above VFO A
         self.sub_enabled = want                  # optimistic; server echo confirms
         self._sub_refresh_ui()
-        self.send(f"subrx:0,{str(want).lower()};")
-        if want:
-            self.send(f"vfo:1,0,{self.sub_hz};")
-            self.send(f"sub_mode:0,{self.sub_mode};")
-            lo, hi = self.sub_filt
-            self.send(f"sub_filter:0,{lo},{hi};")
-            self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
+        if getattr(self, "_is_full_tci", False):
+            # 50001: rx_channel_enable controls the sub-channel (chkEnableMultiRX)
+            self.send(f"rx_channel_enable:0,1,{str(want).lower()};")
+            if want:
+                # vfoasub sets VFOASubFreq (the smaller readout below VFO A)
+                self.send(f"vfoasub:0,{self.sub_hz};")
+                # sub_mode / sub_filter have no TCIServer equivalents;
+                # the sub-channel inherits VFO A's mode and filter on 50001
+                self.send(f"rx_balance:0,{self.bal_var.get():.2f};")
+        else:
+            self.send(f"subrx:0,{str(want).lower()};")
+            if want:
+                self.send(f"vfo:1,0,{self.sub_hz};")
+                self.send(f"sub_mode:0,{self.sub_mode};")
+                lo, hi = self.sub_filt
+                self.send(f"sub_filter:0,{lo},{hi};")
+                self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
         # state applied on server echo (subrx handler in _handle)
 
     def _split_toggle(self):
@@ -1881,9 +1911,12 @@ class MiniTCI(tk.Tk):
         self.sub_hz = int(hz)
         self._clamp_sub_to_ddc()
         self._sub_refresh_ui()
-        # Phase -1a: full TCI (port 50001) has no vfo:1 for subrx
-        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-            self.send(f"vfo:1,0,{self.sub_hz};")
+        if self._sub_enabled():
+            # Phase -1a: 50001 uses vfoasub instead of vfo:1
+            if getattr(self, "_is_full_tci", False):
+                self.send(f"vfoasub:0,{self.sub_hz};")
+            else:
+                self.send(f"vfo:1,0,{self.sub_hz};")
 
     def _split_set(self, on):
         self.split = on
@@ -1979,9 +2012,12 @@ class MiniTCI(tk.Tk):
         self.freq_hz = int(hz)
         self._fmt_freq()
         # keep VFO B glued to the band/DDC: re-place it relative to the new A
-        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
+        if self._sub_enabled():
             self._clamp_sub_to_ddc()
-            self.send(f"vfo:1,0,{self.sub_hz};")
+            if getattr(self, "_is_full_tci", False):
+                self.send(f"vfoasub:0,{self.sub_hz};")
+            else:
+                self.send(f"vfo:1,0,{self.sub_hz};")
             self._sub_refresh_ui()
         seg = self._digital_segment_hint()
         if seg and self.mode_var.get() in ("USB", "LSB"):
@@ -2048,16 +2084,21 @@ class MiniTCI(tk.Tk):
             self.sub_hz = a      # no saved B for this band: default to VFO A
         want_sub = bool(st.get("sub_on"))
         if want_sub and self.connected:
-            # Phase -1a: full TCI (port 50001) has no headless subrx commands
-            if not getattr(self, "_is_full_tci", False):
-                self.send(f"subrx:0,true;")
+            # Phase -1a: 50001 uses rx_channel_enable + vfoasub; headless uses subrx + vfo:1
             self.sub_enabled = True
-            if not getattr(self, "_is_full_tci", False):
+            if getattr(self, "_is_full_tci", False):
+                self.send("rx_channel_enable:0,1,true;")
+                self.send(f"vfoasub:0,{self.sub_hz};")
+            else:
+                self.send("subrx:0,true;")
                 self.send(f"vfo:1,0,{self.sub_hz};")
                 self.send(f"sub_mode:0,{self.sub_mode};")
                 self.send(f"sub_filter:0,{self.sub_filt[0]},{self.sub_filt[1]};")
         elif self.sub_enabled:
-            self.send("subrx:0,false;")
+            if getattr(self, "_is_full_tci", False):
+                self.send("rx_channel_enable:0,1,false;")
+            else:
+                self.send("subrx:0,false;")
             self.sub_enabled = False
         want_split = bool(st.get("split")) and want_sub
         if self.connected:
