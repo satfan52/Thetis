@@ -31851,11 +31851,11 @@ namespace Thetis
                         {
                             radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                         }
-                        else chkEnableMultiRX.Checked = false;
-                    }
+                        else if (rx2_enabled) VFOASubFreq = VFOAFreq; else VFOBFreq = VFOAFreq;
+                                            }
 
-                }
-            }
+                                        }
+                                    }
             else if (rx1_xvtr_index >= 0)
                 RX1DDSFreq = XVTRForm.TranslateFreq(CentreFrequency);
             else
@@ -32449,7 +32449,7 @@ namespace Thetis
                 {
                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                 }
-                else chkEnableMultiRX.Checked = false; // MW0LGE [2.9.0.7] same as vfoA lost focus
+                else VFOBFreq = VFOAFreq; // MW0LGE [2.9.0.7] snap to VFOA instead of disabling
             }
 
             //[2.10.3.7]MW0LGE limits added
