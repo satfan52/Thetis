@@ -31983,7 +31983,7 @@ namespace Thetis
                         RX1DDSFreq = dTmpFreq;
                     }
 
-                    if (chkEnableMultiRX.Checked && !_mox) //MW0LGE [2.7.0.9] only when RX'ing. Fixes issue where multirx would be outside sample area after a tx
+                    if ((chkEnableMultiRX.Checked || (rx2_enabled && chkVFOSplit.Checked)) && !_mox) //MW0LGE [2.7.0.9] range-check also for SPLIT-only — snap VFOASubFreq on band change
                     {
                         int diff;
                         if (rx2_enabled) diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
