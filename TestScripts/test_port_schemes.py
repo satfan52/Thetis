@@ -89,14 +89,17 @@ def main():
                       {"sub_mode", "sub_filter"}.issubset(set(keys(sent))), True)
 
             # --- balance / audio selection ------------------------------------
+            # ONE command on BOTH schemes: 50001 implements sub_balance with the
+            # same per-channel-gain law as the headless server.
             app.sub_enabled = True
             app.audio_sel = "both"
             sent = capture(app, app._bal_changed, 0.25)
-            want_key = "rx_balance" if full else "sub_balance"
-            check(f"{tag} balance slider token", keys(sent), [want_key])
+            check(f"{tag} balance slider token", keys(sent), ["sub_balance"])
 
             sent = capture(app, app._apply_audio_selection, True)
-            check(f"{tag} audio selection token", keys(sent), [want_key])
+            check(f"{tag} audio selection token", keys(sent), ["sub_balance"])
+            check(f"{tag} audio selection value = balance",
+                  sent[0].startswith("sub_balance:0,"), True)
 
             # --- CTUN ---------------------------------------------------------
             app.ctun_var.set(True)
@@ -114,8 +117,8 @@ def main():
                 app._sub_tune_to(14_080_000)
                 app._bal_changed(0.4)
                 app.send = real
-                for tok in ("subrx", "sub_mode", "sub_filter", "sub_balance"):
-                    check(f"50001 never sends {tok}", any(
+                for tok in ("subrx", "sub_mode", "sub_filter"):
+                    check(f"50001 never sends headless-only {tok}", any(
                         s.startswith(tok + ":") for s in rec), False)
     finally:
         try:

@@ -4933,11 +4933,45 @@ namespace Thetis
                 consoleThreadSafe.SetBal(rx + 1, pan, subrx);
             }
         }
-        private void handleRxStepAttEnabledEx(string[] args)
-        {
-            if (args == null || args.Length < 1 || args.Length > 2) return;
-            if (!int.TryParse(args[0], out int rx)) return;
-            if (rx < 0 || rx > 1) return;
+        // H1: audio selection for the CONSOLE receiver on 50001, using the SAME
+                // law as the headless server (HeadlessSubRX.ApplyBalance): per-channel
+                // panel GAIN around unity, both channels panned centre.
+                // sub_balance:<trx>,<0..1>   0 = main only, 0.5 = equal mix, 1 = sub only
+                // pipe.c sums the receiver's main and sub channels into the TCI audio
+                // buffer, so the selection MUST act on the channel gains - a pan cannot
+                // mute a channel, and Thetis's SPLIT/Quick-Split drives the console pans
+                // to hard left/right (PanMainRX = 0/100), which tilts the mono demod
+                // audio asymmetrically and makes 50001 sound worse than 50002-50008.
+                private void handleSubBalance(string[] args)
+                {
+                    if (args == null || args.Length < 2) return;
+                    if (!double.TryParse(args[1], System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double balance)) return;
+
+                    balance = Math.Max(0.0, Math.Min(1.0, balance));
+
+                    if (cmaster.IsRadioCreated)
+                    {
+                        double gMain = Math.Cos(balance * Math.PI / 2.0);   // 1 .. 0
+                        double gSub = Math.Sin(balance * Math.PI / 2.0);    // 0 .. 1
+
+                        int chMain = WDSP.id(0, 0);     // RX1 main
+                        int chSub = WDSP.id(0, 1);      // RX1 sub (multiRX)
+
+                        WDSP.SetRXAPanelPan(chMain, 0.5);
+                        WDSP.SetRXAPanelPan(chSub, 0.5);
+                        WDSP.SetRXAPanelGain1(chMain, gMain);
+                        WDSP.SetRXAPanelGain1(chSub, gSub);
+                    }
+
+                    sendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "sub_balance:0,{0:0.00};", balance));
+                }
+                private void handleRxStepAttEnabledEx(string[] args)
+                {
+                    if (args == null || args.Length < 1 || args.Length > 2) return;
+                    if (!int.TryParse(args[0], out int rx)) return;
+                    if (rx < 0 || rx > 1) return;
 
             if (args.Length == 1)
             {
@@ -5582,8 +5616,11 @@ namespace Thetis
                                             handleCTUN(args); // bespoke thetis cmd for ctun
                                             break;
                                         case "vfoasub":
-                                            handleVFOASUB(args); // H1: set VFOA sub-frequency over TCI
-                                            break;
+                                                                                    handleVFOASUB(args); // H1: set VFOA sub-frequency over TCI
+                                                                                    break;
+                                                            case "sub_balance":
+                                                                handleSubBalance(args); // H1: main/sub audio selection, same law as the headless server
+                                                                break;
                     case "tx_profile_ex":
                         handleTXProfile(args); // bespoke thetis cmd to select tx profile
                         break;
