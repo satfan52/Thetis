@@ -643,6 +643,8 @@ class MiniTCI(tk.Tk):
         self.split = False
         self.tx_vfo = "A"                # which VFO the TX checkbox shows
         self.audio_sel = "main"          # main | sub | both
+        self._agc_busy = False            # H1: guard against echo loops
+        self._agc_gain_busy = False
         self.ddc_center_hz = self.freq_hz  # hardware centre frequency (DDS)
         self.volume = 0.25
         self.mic_gain = 0.5
@@ -1419,12 +1421,13 @@ class MiniTCI(tk.Tk):
             # balance slider (which only matters in 'both' mode)
             self._apply_audio_selection(force=True)
             if getattr(self, "_is_full_tci", False):
-                # 50001: adopt Thetis's current AGC state instead of overwriting it.
-                # Query the server; the echo handlers (agc_mode, agc_auto_ex,
-                # agc_fixed_gain) will update this client's UI.
-                self.send("agc_mode:0;")
-                self.send("agc_auto_ex:0;")
-                self.send("agc_fixed_gain:0;")
+                # 50001: MiniTCI is the AGC master. Push saved state to Thetis.
+                if self.agc_var.get() == "OFF":
+                    self.send("agc_auto_ex:0,false;")
+                    self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
+                else:
+                    self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
+                    self.send("agc_auto_ex:0,true;")
             elif self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
@@ -1727,7 +1730,11 @@ class MiniTCI(tk.Tk):
                         name = {"fast": "FAST", "normal": "MED", "slow": "SLOW",
                                 "long": "LONG", "custom": "CUSTOM", "fixd": "OFF"}.get(token)
                         if name:
-                            self.agc_var.set(name)
+                            self._agc_busy = True
+                            try:
+                                self.agc_var.set(name)
+                            finally:
+                                self._agc_busy = False
                 except Exception:
                     pass
             elif k == "agc_auto_ex" and v:
@@ -1735,13 +1742,21 @@ class MiniTCI(tk.Tk):
                 try:
                     auto = str(v).split(",")[-1].strip().lower() == "true"
                     if not auto:
-                        self.agc_var.set("OFF")
+                        self._agc_busy = True
+                        try:
+                            self.agc_var.set("OFF")
+                        finally:
+                            self._agc_busy = False
                 except Exception:
                     pass
             elif k == "agc_fixed_gain" and v:
                 try:
                     gain = int(float(str(v).split(",")[-1]))
-                    self.agc_gain_var.set(gain)
+                    self._agc_gain_busy = True
+                    try:
+                        self.agc_gain_var.set(gain)
+                    finally:
+                        self._agc_gain_busy = False
                 except Exception:
                     pass
 
@@ -2261,6 +2276,8 @@ class MiniTCI(tk.Tk):
             pass
         if not self.connected:
             return
+        if getattr(self, "_agc_busy", False):
+            return   # echo handler set the var - do not re-send
         if manual:
             # fixed-gain mode: gain slider controls the receiver gain directly
             self.send("agc_auto_ex:0,false;")
@@ -2279,6 +2296,8 @@ class MiniTCI(tk.Tk):
 
     def _agc_gain_changed(self, v):
         if self.connected and self.agc_var.get() == "OFF":
+            if getattr(self, "_agc_gain_busy", False):
+                return   # echo handler set the slider - do not re-send
             if getattr(self, "_is_full_tci", False):
                 self.send(f"agc_fixed_gain:0,{int(float(v))};")
             else:
