@@ -951,10 +951,18 @@ class MiniTCI(tk.Tk):
                      values=MODES).pack(side="left")
         self.mode_var.trace_add("write", self._mode_changed)
         ttk.Label(r1, text="Filter:", padding=(8, 0, 2, 0)).pack(side="left")
-        self.filtwidth_var = tk.StringVar(value="2.9k")
-        ttk.Combobox(r1, textvariable=self.filtwidth_var, width=6, state="readonly",
-                     values=BW_PRESETS).pack(side="left")
-        self.filtwidth_var.trace_add("write", self._filtwidth_changed)
+        # H1: F1..F10 filter BUTTONS mapped 1:1 to Thetis's filter buttons
+        # (same labels, same per-mode edges). Click = select, like radFilterN.
+        self.filt_btns = []
+        self._filt_idx = 4                      # F5 = 2.9k default (Thetis)
+        for i, lbl in enumerate(BW_PRESETS):
+            b = tk.Button(r1, text=lbl.replace(".0k", "k"), width=5,
+                          font=("Segoe UI", 7),
+                          command=lambda idx=i: self._filter_btn_click(idx))
+            b.pack(side="left", padx=1)
+            self.filt_btns.append(b)
+        self.filtwidth_var = tk.StringVar(value=BW_PRESETS[4])
+        self._filter_btn_refresh()
 
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
         # H1: identical to Thetis's comboAGC (AGCMode enum order/casing)
@@ -1799,16 +1807,17 @@ class MiniTCI(tk.Tk):
                 if len(p) >= 3:
                     try:
                         if int(p[0]) == 0:
+                            if self.mode_var.get() == "DRM":
+                                return   # keep the VFO-centred display rect
                             self.pan.filt = (float(p[1]), float(p[2]))
-                            # best-effort: sync the width dropdown label to the
-                            # F-button whose Thetis edges match this passband
-                            for i, lbl in enumerate(BW_PRESETS):
+                            # sync the F-button selection: find the button whose
+                            # Thetis edges match this passband (F-button <-> button
+                            # mapping, Thetis radFilter parity)
+                            for i in range(len(BW_PRESETS)):
                                 if _thetis_filter(self.mode_var.get(), i) == self.pan.filt:
-                                    self._loading = True
-                                    try:
-                                        self.filtwidth_var.set(lbl)
-                                    finally:
-                                        self._loading = False
+                                    self._filt_idx = i
+                                    self.filtwidth_var.set(BW_PRESETS[i])
+                                    self._filter_btn_refresh()
                                     break
                     except ValueError:
                         pass
@@ -1860,7 +1869,9 @@ class MiniTCI(tk.Tk):
                             self.mode = tok
                             filt = _filter_for_mode_width(
                                 tok, self.filtwidth_var.get())
-                            if filt is None:
+                            if tok == "DRM":
+                                self.pan.filt = (-5000, 5000)  # display: centred on VFO
+                            elif filt is None:
                                 self.pan.filt = (-48000, 48000)  # SPEC: full span
                             else:
                                 self.pan.filt = filt
@@ -1875,6 +1886,7 @@ class MiniTCI(tk.Tk):
                             finally:
                                 self._mode_busy = False
                                 self._submode_busy = False
+                            self._filter_btn_refresh()
                             self._sub_refresh_ui()
                 except Exception:
                     pass
@@ -2332,21 +2344,30 @@ class MiniTCI(tk.Tk):
 
     def _a_filter(self):
         """VFO A passband (FilterLow, FilterHigh): Thetis's per-mode table
-        (console.cs InitFilterPresets) at the selected F-button width.
+        (console.cs InitFilterPresets) at the selected F-button.
         Returns None for SPEC (no filter - full DDC span)."""
-        return _filter_for_mode_width(self.mode_var.get(), self.filtwidth_var.get())
+        return _thetis_filter(self.mode_var.get(), self._filt_idx)
 
     def _mode_changed(self, *_):
         if getattr(self, "_mode_busy", False):
             return   # echo from the server - already in sync
         self.mode = self.mode_var.get()
-        self.pan.filt = self._a_filter()   # Thetis per-mode table (None = SPEC)
+        filt = self._a_filter()   # Thetis per-mode table (None = SPEC)
         self.send(f"modulation:0,{self.mode};")
-        if self.pan.filt is not None:
-            lo, hi = self.pan.filt
+        if filt is not None:
+            lo, hi = filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
+        # DISPLAY rect: in DRM Thetis draws the passband CENTRED ON THE VFO
+        # (VFO-5k..VFO+5k) because the hardware DDS is shifted -12 kHz and the
+        # display axis is re-anchored (Display.FreqDiff = -12000). The DSP
+        # filter (7000..17000 rel. DDS) and the drawn rect differ by exactly
+        # that shift. IQ blocks are tagged at the real DDS (dds_echo-12000).
+        if self.mode == "DRM":
+            self.pan.filt = (-5000, 5000)
+        elif filt is None:
+            self.pan.filt = (-48000, 48000)   # SPEC: full DDC span
         else:
-            self.pan.filt = (-48000, 48000)   # display-only: full DDC span
+            self.pan.filt = filt
         # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
         # mode - there is only one DDC, its DSP pipeline is shared.
         if getattr(self, "_is_full_tci", False):
@@ -2358,6 +2379,19 @@ class MiniTCI(tk.Tk):
                 self._sub_refresh_ui()
             finally:
                 self._submode_busy = False
+
+    def _filter_btn_refresh(self):
+        """Highlight the active filter button, Thetis radFilter-style."""
+        for i, b in enumerate(self.filt_btns):
+            b.config(relief="sunken" if i == self._filt_idx else "raised",
+                     bg="#d8dce4" if i == self._filt_idx else "#e8eaf0")
+
+    def _filter_btn_click(self, idx):
+        """F-button click: same effect as Thetis's radFilterN_CheckedChanged."""
+        self._filt_idx = idx
+        self.filtwidth_var.set(BW_PRESETS[idx])
+        self._filter_btn_refresh()
+        self._filtwidth_changed()
 
     def _filtwidth_changed(self, *_):
         # Thetis per-mode table at the selected F-button width
@@ -2371,14 +2405,10 @@ class MiniTCI(tk.Tk):
         self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
                       f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
         # H1: on 50001 the sub-VFO shares VFO A's DSP pipeline - sync the
-        # display so the two filter dropdowns never disagree.
+        # display so the two filter selections never disagree.
         if getattr(self, "_is_full_tci", False):
             self.sub_filt = self.pan.filt
-            self._submode_busy = True
-            try:
-                self.subfilt_var.set(self.filtwidth_var.get())
-            finally:
-                self._submode_busy = False
+            self.subfilt_var.set(self.filtwidth_var.get())
             self._sub_refresh_ui()
 
     def _agc_mode_to_tci(self, name):
