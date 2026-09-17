@@ -727,6 +727,7 @@ class MiniTCI(tk.Tk):
         self.smeter = -140.0
         self.tx_tail_s = 0.35
         self.tuning = False
+        self.tune_active = False      # Thetis's TUN state (independent of PTT)
         self.tune_phase = 0.0
         self.tune_sample_pos = 0
         self.tune_amp = 0.075
@@ -1903,10 +1904,23 @@ class MiniTCI(tk.Tk):
                 except (ValueError, IndexError):
                     return
                 tx = p[1].lower() == "true" if len(p) > 1 else False
-                if tx != self.ptt or getattr(self, "_tx_visual_state", None) != tx:
-                    self.ptt = tx
-                    self._tx_visual_state = tx
-                    self._tx_visuals(tx)
+                self.ptt = tx
+                self._tx_visuals()
+            elif k == "tune" and v:
+                # tune:<rx>,<bool> - Thetis's TUN state. Keeps the two controls
+                # independent: a tune carrier lights TUNE, never PTT.
+                p = str(v).split(",")
+                try:
+                    if int(p[0]) != 0:
+                        raise ValueError
+                    tune_on = p[1].lower() == "true"
+                except (ValueError, IndexError):
+                    return
+                if tune_on != getattr(self, "tune_active", False):
+                    self.tune_active = tune_on
+                    if tune_on:
+                        self.logprint("Thetis TUN active - tune carrier")
+                    self._tx_visuals()
             elif k == "rx_sensors" and v:
                 try:
                     self.smeter = float(v.split(",")[-1])
@@ -2945,18 +2959,26 @@ class MiniTCI(tk.Tk):
             self.tune_to(self.freq_hz + d)
 
     # ---------------- TX ----------------
-    def _tx_visuals(self, tx_on):
-        """Mirror the TX state on BOTH TX buttons. The user runs MiniTCI next to
-        Thetis: a Tune or MOX started on either side must light the same control
-        on the other, or the two apps look out of sync."""
+    def _tx_visuals(self, keyed=None, tune=None):
+        """TUNE and PTT are INDEPENDENT controls (Thetis has separate TUN and MOX
+        buttons): a tune carrier lights only TUNE, a mic transmission lights only
+        PTT. `keyed` = transmitter state (trx echo/local PTT), `tune` = tune
+        carrier state (tune echo/local Tune). While a tune carrier is up the key
+        belongs to TUNE, so the PTT button stays dark."""
+        if keyed is None:
+            keyed = self.ptt
+        if tune is None:
+            tune = getattr(self, "tune_active", False)
+        ptt_lit = bool(keyed) and not tune
         try:
-            self.ptt_btn.config(bg=C["red"] if tx_on else "#f4d7d4",
-                                relief="sunken" if tx_on else "raised")
-            self.tune_btn.config(bg=C["red"] if tx_on else "#f7e6c8",
-                                 relief="sunken" if tx_on else "raised")
-            if tx_on:
-                self.tx_lbl.config(text="TX \u23fa tune" if getattr(self, "tuning", False)
-                                   else "TX \u23fa", fg=C["red"])
+            self.ptt_btn.config(bg=C["red"] if ptt_lit else "#f4d7d4",
+                                relief="sunken" if ptt_lit else "raised")
+            self.tune_btn.config(bg=C["red"] if tune else "#f7e6c8",
+                                 relief="sunken" if tune else "raised")
+            if tune:
+                self.tx_lbl.config(text="TX \u23fa tune", fg=C["red"])
+            elif keyed:
+                self.tx_lbl.config(text="TX \u23fa", fg=C["red"])
             else:
                 self.tx_lbl.config(text="RX", fg=C["dim"])
         except tk.TclError:
@@ -2976,7 +2998,8 @@ class MiniTCI(tk.Tk):
         self.send("audio_stream_channels:1;")
         self.send("audio_stream_samples:1024;")
         self.send("trx:0,true,tci;")     # 'tci' = server takes TX audio from us
-        self.ptt_btn.config(bg=C["red"], relief="sunken")
+        self.tune_active = False         # PTT is the mic path, not the tuner
+        self._tx_visuals()
         self.tx_lbl.config(text="TX ⏺", fg=C["red"])
         self._mic_open()
 
@@ -3016,15 +3039,21 @@ class MiniTCI(tk.Tk):
         self.send("audio_stream_sample_type:float32;")
         self.send("audio_stream_channels:1;")
         self.send("audio_stream_samples:1024;")
-        self.send("trx:0,true,tci;")     # 'tci' = server takes TX audio from us
-        self.tune_btn.config(bg=C["red"], relief="sunken")
-        self.tx_lbl.config(text="TX \u23fa tune", fg=C["red"])
+        # trx claims the TX audio stream ('tci'); tune:<rx>,true drives Thetis's
+        # own TUN button so both apps show the SAME source (without it Thetis
+        # shows MOX and MiniTCI's PTT appears to fire with the tuner)
+        self.send("trx:0,true,tci;")
+        self.send("tune:0,true;")
+        self.tune_active = True
+        self._tx_visuals()
         self.logprint(f"Tune ON: 1500 Hz tone, drive {self.tune_amp:.3f} peak")
 
     def tune_stop(self):
         if not self.tuning:
             return
         self.tuning = False
+        self.send("tune:0,false;")       # release Thetis's TUN as well
+        self.tune_active = False
         self.ptt_off()
 
     def _tune_gen(self):
@@ -3050,11 +3079,13 @@ class MiniTCI(tk.Tk):
         # fixed minimum tail, then playback resumes (the box controls the tail)
         self._tx_mute_until = time.time() + self.tx_tail_s
         self.mic_level_db = -140.0
-        self.send("trx:0,false,tci;")
         if getattr(self, "tuning", False):
+            # a tune carrier must be dropped on Thetis too, not only the key
             self.tuning = False
-        self._tx_visual_state = False
-        self._tx_visuals(False)
+            self.send("tune:0,false;")
+        self.send("trx:0,false,tci;")
+        self.tune_active = False
+        self._tx_visuals()
         if self.mic_stream:
             try:
                 self.mic_stream.stop(); self.mic_stream.close()

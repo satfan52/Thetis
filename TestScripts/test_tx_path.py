@@ -66,34 +66,70 @@ def main():
         check("PTT release command", [c for c in sent if c.startswith("trx:")],
               ["trx:0,false,tci;"])
 
-        # ---- 3. Tune carries the tci marker ------------------------------
+        # ---- 3. Tune: trx (audio ownership) + Thetis's own TUN -----------
         app.ptt = False
         app.tuning = False
+        app.tune_active = False
         sent.clear()
         app.tune_toggle()
-        check("Tune key command", [c for c in sent if c.startswith("trx:")],
+        check("Tune claims TX audio", [c for c in sent if c.startswith("trx:")],
               ["trx:0,true,tci;"])
+        check("Tune drives Thetis's TUN",
+              [c for c in sent if c.startswith("tune:")], ["tune:0,true;"])
         check("Tune flag set", app.tuning, True)
+        check("Tune button lit", app.tune_btn.cget("bg"), M.C["red"])
+        check("PTT button NOT lit by Tune", app.ptt_btn.cget("bg"), "#f4d7d4")
+        sent.clear()
         app.tune_stop()
         check("Tune flag cleared", app.tuning, False)
+        check("Tune release drives Thetis's TUN off",
+              [c for c in sent if c.startswith("tune:")], ["tune:0,false;"])
+        check("Tune button dark again", app.tune_btn.cget("bg"), "#f7e6c8")
 
-        # ---- 4. server MOX/TUN broadcast drives both buttons --------------
+        # PTT must not light the Tune button (independence both ways)
         app.ptt = False
+        app.tuning = False
+        app.tune_active = False
+        sent.clear()
+        app.ptt_on()
+        check("PTT button lit", app.ptt_btn.cget("bg"), M.C["red"])
+        check("PTT does NOT light Tune", app.tune_btn.cget("bg"), "#f7e6c8")
+        check("PTT sends no tune command",
+              [c for c in sent if c.startswith("tune:")], [])
+        app.ptt_off()
+
+        # ---- 4. server broadcasts drive the two buttons independently ----
+        app.ptt = False
+        app.tune_active = False
         _call_text(app, {"trx": "0,true"})
-        app.update()
         check("trx echo sets PTT flag", app.ptt, True)
         check("trx echo lights PTT button", app.ptt_btn.cget("bg"), M.C["red"])
-        check("trx echo lights TUNE button", app.tune_btn.cget("bg"), M.C["red"])
+        check("trx echo leaves TUNE dark", app.tune_btn.cget("bg"), "#f7e6c8")
         check("trx echo shows TX", app.tx_lbl.cget("text").startswith("TX"), True)
         _call_text(app, {"trx": "0,false"})
-        app.update()
         check("trx release clears the label", app.tx_lbl.cget("text"), "RX")
 
-        # a trx frame addressed to another receiver must not touch us
+        # Thetis's own TUN lights TUNE; the key that comes with it must not
+        # light PTT (that was the reported 'PTT kicks in with Tune')
+        _call_text(app, {"tune": "0,true"})
+        check("tune echo sets the tune flag", app.tune_active, True)
+        check("tune echo lights TUNE", app.tune_btn.cget("bg"), M.C["red"])
+        _call_text(app, {"trx": "0,true"})
+        check("key from a tune carrier keeps PTT dark",
+              app.ptt_btn.cget("bg"), "#f4d7d4")
+        check("tune carrier shows TX tune",
+              app.tx_lbl.cget("text").endswith("tune"), True)
+        _call_text(app, {"tune": "0,false"})
+        _call_text(app, {"trx": "0,false"})
+        check("everything released", app.tx_lbl.cget("text"), "RX")
+
+        # frames addressed to another receiver must not touch us
         app.ptt = False
+        app.tune_active = False
         _call_text(app, {"trx": "1,true"})
-        app.update()
         check("trx for rx 1 ignored", app.ptt, False)
+        _call_text(app, {"tune": "1,true"})
+        check("tune for rx 1 ignored", app.tune_active, False)
 
         # ---- 5. auto-reconnect after a drop -------------------------------
         app.connected = True
@@ -145,7 +181,8 @@ def main():
         check("connect burst raises nothing", raised, None)
         check("connect burst pushed the AGC state",
               [c for c in sent if c.startswith("agc_")][-2:],
-              ["agc_mode:0,normal;", "agc_gain:0,81;"])
+              ["agc_mode:0,normal;",
+               f"agc_gain:0,{int(app.agc_gain_var.get())};"])
         app.connected = False
         # a successful connect resets the counter
         app._reconnect_tries = 5
