@@ -5030,36 +5030,6 @@ namespace Thetis
                 consoleThreadSafe.FMDeviation_Hz = deviationHz;
             }
         }
-        // H1: fixed AGC gain for manual mode on the CONSOLE receiver. 50001 maps this
-        // to the console's RX1 fixed-gain parameter (SetRXAAGCFixed), which is
-        // the correct target when AGC is OFF — unlike agc_gain, which alters
-        // AGC-Top (threshold) and has no effect in manual mode.
-        private void handleAgcFixedGain(string[] args)
-                {
-                    if (args == null || args.Length < 1 || args.Length > 2) return;
-                    if (!int.TryParse(args[0], out int rx)) return;
-                    if (rx < 0 || rx > 1) return;
-                    if (consoleThreadSafe == null) return;
-
-                    if (args.Length == 1)
-                    {
-                        var dsp = consoleThreadSafe.radio.GetDSPRX(0, 0);
-                        sendAgcFixedGain(rx, (int)dsp.RXFixedAGC);
-                    }
-                    else
-                    {
-                        if (!int.TryParse(args[1], out int gain)) return;
-                                                gain = Math.Max(-20, Math.Min(120, gain));
-                                                consoleThreadSafe.radio.GetDSPRX(0, 0).RXFixedAGC = gain;
-                                                // H1: manually setting AGC fixed gain from TCI should
-                                                // disable auto-AGC tracking, same rationale as agc_gain.
-                                                if (rx == 0) consoleThreadSafe.AutoAGCRX1 = false;
-                    }
-                }
-        private void sendAgcFixedGain(int rx, int gain)
-        {
-            sendTextFrame("agc_fixed_gain:" + rx.ToString() + "," + gain.ToString() + ";");
-        }
         private void handleAgcAutoEx(string[] args)
         {
             if (args == null || args.Length < 1 || args.Length > 2) return;
@@ -5104,12 +5074,12 @@ namespace Thetis
             else
             {
                 if (!int.TryParse(args[1], out int gain)) return;
-                                gain = Math.Max(-20, Math.Min(120, gain));
-                                consoleThreadSafe.SetAgcT(rx + 1, gain);
-                                // H1: manually setting AGC-T from TCI should disable the
-                                // auto-AGC tracking timer. Otherwise the noise-floor-based
-                                // recalculation resets the value ~1 s later.
-                                if (rx == 0) consoleThreadSafe.AutoAGCRX1 = false;
+                gain = Math.Max(-20, Math.Min(120, gain));
+                // route through the console AGC-T control (RF/ptbRF) so the GUI
+                // slider follows and the value applies to the correct WDSP
+                // parameter for the current mode (AGCFixedGain in FIXD,
+                // AGCMaxGain in auto modes)
+                consoleThreadSafe.SetAgcT(rx + 1, gain);
             }
         }
         private void sendCTUN(int rx, bool enabled)
@@ -5611,9 +5581,6 @@ namespace Thetis
                         break;
                     case "agc_gain":
                                             handleAgcGain(args);
-                                            break;
-                                        case "agc_fixed_gain":
-                                            handleAgcFixedGain(args); // H1: manual AGC fixed gain (SetRXAAGCFixed)
                                             break;
                     case "rx_ctun_ex":
                                             handleCTUN(args); // bespoke thetis cmd for ctun

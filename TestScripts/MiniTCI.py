@@ -1422,14 +1422,16 @@ class MiniTCI(tk.Tk):
             self._apply_audio_selection(force=True)
             if getattr(self, "_is_full_tci", False):
                 # 50001: MiniTCI is the AGC master. Push saved state to Thetis.
+                # agc_gain is the unified gain path (server routes it through the
+                # console AGC-T control, which applies the right parameter for
+                # the current mode: fixed gain in OFF, max gain in auto modes).
                 if self.agc_var.get() == "OFF":
                     self.send("agc_mode:0,off;")
                     self.send("agc_auto_ex:0,false;")
-                    self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
                 else:
                     self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
                     self.send("agc_auto_ex:0,true;")
-                    self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
             elif self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
@@ -2285,21 +2287,14 @@ class MiniTCI(tk.Tk):
         if getattr(self, "_agc_busy", False):
             return   # echo handler set the var - do not re-send
         if manual:
-            # fixed-gain mode: gain slider controls the receiver gain directly
             self.send("agc_mode:0,off;")
             self.send("agc_auto_ex:0,false;")
-            if on_tci:
-                self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
-            else:
-                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
         else:
             # AGC on: FAST/MED/SLOW/LONG
             self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
             self.send("agc_auto_ex:0,true;")
-            # On 50001, also set AGC-T so the max-gain threshold follows
-            # the slider, matching the Thetis console's behaviour.
-            if on_tci:
-                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+        # unified gain push (both modes on 50001; agc_gain on headless)
+        self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
 
     def _agc_auto_changed(self):
         # kept for compatibility (Auto checkbox removed); no-op
@@ -2310,17 +2305,9 @@ class MiniTCI(tk.Tk):
             return
         if getattr(self, "_agc_gain_busy", False):
             return   # echo handler set the slider - do not re-send
-        on_tci = getattr(self, "_is_full_tci", False)
-        auto = self.agc_var.get() != "OFF"
-        if not auto:
-            # manual AGC: fixed gain
-            if on_tci:
-                self.send(f"agc_fixed_gain:0,{int(float(v))};")
-            else:
-                self.send(f"agc_gain:0,{int(float(v))};")
-        elif on_tci:
-            # auto AGC on 50001: the slider controls AGC-T (max gain threshold)
-            self.send(f"agc_gain:0,{int(float(v))};")
+        # one unified gain command on all ports - the server routes it to the
+        # correct parameter for the current AGC mode
+        self.send(f"agc_gain:0,{int(float(v))};")
 
     def _hit_test(self, x):
         """Classify click position: 'in-filter', 'edge-lo', 'edge-hi', or 'span'."""
