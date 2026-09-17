@@ -970,6 +970,16 @@ class MiniTCI(tk.Tk):
         self.filt_high_entry.pack(side="left", padx=1)
         self.filt_high_entry.bind("<Return>", self._filter_entries_applied)
         self.filt_high_entry.bind("<FocusOut>", self._filter_entries_applied)
+        # H1: Var bandwidth slider (Thetis ptbFilterWidth parity). Adjusts the
+        # total bandwidth around the current filter CENTRE. Disabled in
+        # DRM/SPEC/FM like Thetis.
+        self.filtw_var = tk.DoubleVar(value=2900)
+        self.filtw_scale = ttk.Scale(r1, from_=10, to=20000, variable=self.filtw_var,
+                                     length=110, command=self._filtw_changed)
+        self.filtw_scale.pack(side="left", padx=(6, 2))
+        self.filtw_lbl = tk.Label(r1, text="2.9k", bg=C["panel"], fg=C["fg"],
+                                  font=("Consolas", 9, "bold"), width=6)
+        self.filtw_lbl.pack(side="left")
         self._filt_updating = False   # guard against echo-driven loops
 
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
@@ -1810,6 +1820,7 @@ class MiniTCI(tk.Tk):
                         if int(p[0]) == 0:
                             self.pan.filt = (float(p[1]), float(p[2]))
                             self._filter_entries_set(self.pan.filt)
+                            self._sync_filtw_slider(self.pan.filt)
                     except ValueError:
                         pass
             elif k == "iq_samplerate" and v:
@@ -1865,6 +1876,13 @@ class MiniTCI(tk.Tk):
                             else:
                                 self.pan.filt = filt
                                 self._filter_entries_set(filt)
+                                self._sync_filtw_slider(filt)
+                            try:
+                                self.filtw_scale.state(
+                                    ["disabled"] if tok in ("DRM", "SPEC", "FM")
+                                    else ["!disabled"])
+                            except tk.TclError:
+                                pass
                             self._mode_busy = True
                             self._submode_busy = True
                             try:
@@ -2364,8 +2382,15 @@ class MiniTCI(tk.Tk):
             lo, hi = filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
             self.pan.filt = filt
+            self._sync_filtw_slider(filt)
         else:
             self.pan.filt = (-48000, 48000)   # SPEC: full DDC span
+        # Var slider enabled except in DRM/SPEC/FM (Thetis parity)
+        try:
+            self.filtw_scale.state(
+                ["disabled"] if self.mode in ("DRM", "SPEC", "FM") else ["!disabled"])
+        except tk.TclError:
+            pass
         # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
         # mode - there is only one DDC, its DSP pipeline is shared.
         if getattr(self, "_is_full_tci", False):
@@ -2400,10 +2425,49 @@ class MiniTCI(tk.Tk):
         if filt is None:
             return
         self.pan.filt = filt
+        self._sync_filtw_slider(filt)
         if self.connected:
             lo, hi = filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
         self.logprint(f"VFO A filter {filt[0]}..{filt[1]} Hz")
+
+    def _sync_filtw_slider(self, filt):
+        """Reflect the current edges in the Var slider + width label."""
+        try:
+            lo, hi = filt
+            bw = hi - lo
+            self._filt_updating = True
+            try:
+                self.filtw_var.set(min(20000, max(10, bw)))
+            finally:
+                self._filt_updating = False
+            self.filtw_lbl.config(
+                text=f"{bw/1000:.1f}k" if bw >= 1000 else f"{bw}")
+        except (tk.TclError, TypeError, ValueError):
+            pass
+
+    def _filtw_changed(self, v):
+        """Var bandwidth slider: scale the current filter around its centre
+        (Thetis ptbFilterWidth_Scroll parity). No-op in DRM/SPEC/FM."""
+        if self._filt_updating:
+            return
+        mode = self.mode_var.get()
+        if mode in ("DRM", "SPEC", "FM"):
+            return                      # Thetis disables the slider here
+        filt = self._a_filter()
+        if filt is None:
+            return
+        lo, hi = filt
+        centre = (lo + hi) / 2.0
+        bw = float(v)
+        new_lo = int(round(centre - bw / 2))
+        new_hi = int(round(centre + bw / 2))
+        self.pan.filt = (new_lo, new_hi)
+        self._filter_entries_set(self.pan.filt)
+        self.filtw_lbl.config(
+            text=f"{bw/1000:.1f}k" if bw >= 1000 else f"{int(bw)}")
+        if self.connected:
+            self.send(f"rx_filter_band:0,{new_lo},{new_hi};")
 
     def _apply_mode_filter_default(self):
         """Set the Low/High boxes to the Thetis default for the current mode
