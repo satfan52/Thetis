@@ -737,6 +737,12 @@ class MiniTCI(tk.Tk):
         self.tx_audio_q = collections.deque(maxlen=64)
         self.chrono_reqs = collections.deque()
         self.chrono_lock = threading.Lock()
+        self.mic_lock = threading.Lock()
+        self.mic_blocks = 0            # mic callbacks since PTT
+        self.tx_underruns = 0          # chronos answered without enough mic data
+        self._tx_audio_sent = 0
+        self._tx_prefilled = False     # mic prebuffer reached for this transmission
+        self.mic_rate = None           # rate the mic device really opened at
         self.tx_pos = 0
         self._iq_acc_bytes = bytearray()
 
@@ -1488,6 +1494,15 @@ class MiniTCI(tk.Tk):
         hdr = struct.pack("<16I", *words)
         return hdr + body.astype("<f4").tobytes()
 
+    TX_PREBUFFER_BLOCKS = 2      # silent start until this much mic audio is queued
+    TX_MAX_QUEUE_BLOCKS = 8      # never let mic audio age more than this
+
+    def _tx_queue_samples(self):
+        """Samples of mic audio waiting. Call with mic_lock held."""
+        if not self.tx_audio_q:
+            return 0
+        return sum(len(b) for b in self.tx_audio_q) - self.tx_pos
+
     def service_tx_audio(self):
         """Send mic audio blocks in response to chrono requests (called from UI poll)."""
         if not self.ptt or not self.connected or not self.client:
@@ -1508,25 +1523,65 @@ class MiniTCI(tk.Tk):
                 if self.client and self.client.loop:
                     self.client.send_binary(frame)
                 continue
-            # gather mic samples
+            # The device may open at its own rate (WASAPI mixer rate): then the
+            # requested OUTPUT count needs mic_rate/rate times more INPUT samples.
+            # Sending 44.1k-sourced samples labelled 48k makes the rig warble.
+            mic_rate = getattr(self, "mic_rate", None)
+            need_rs = bool(mic_rate) and abs(mic_rate - float(rate)) > 1.0
+            want = (max(1, int(round(vals_needed * mic_rate / float(rate))))
+                    if need_rs else vals_needed)
+            # start with a short silence until the microphone has buffered a
+            # couple of blocks: answering immediately from a half-empty queue
+            # makes the stream stutter for the first fraction of a second, and a
+            # capture device (especially MME) delivers in bursts.
+            with self.mic_lock:
+                avail = self._tx_queue_samples()
+                while avail > self.TX_MAX_QUEUE_BLOCKS * want and self.tx_audio_q:
+                    # bound the latency instead of letting audio age in the queue
+                    dropped = self.tx_audio_q.popleft()
+                    avail -= len(dropped)
+                    self.tx_pos = 0
+                if not self._tx_prefilled:
+                    if avail >= self.TX_PREBUFFER_BLOCKS * want:
+                        self._tx_prefilled = True
+                    else:
+                        vals = np.zeros(vals_needed, dtype=np.float32)
+                        frame = self.build_tx_audio_frame(vals, rate, chans)
+                        if self.client and self.client.loop:
+                            self.client.send_binary(frame)
+                        continue
+            # gather mic samples (locked: the PortAudio thread appends)
             mono = bytearray()
             got = 0
-            while got < vals_needed and self.tx_audio_q:
-                blk = self.tx_audio_q[0]
-                take = min(len(blk) - self.tx_pos, vals_needed - got)
-                mono += blk[self.tx_pos:self.tx_pos + take].tobytes()
-                got += take
-                self.tx_pos += take
-                if self.tx_pos >= len(blk):
-                    self.tx_audio_q.popleft()
-                    self.tx_pos = 0
-            if got == 0:
-                continue
-            vals = np.frombuffer(bytes(mono), dtype=np.float32)[:got]
+            with self.mic_lock:
+                while got < want and self.tx_audio_q:
+                    blk = self.tx_audio_q[0]
+                    take = min(len(blk) - self.tx_pos, want - got)
+                    mono += blk[self.tx_pos:self.tx_pos + take].tobytes()
+                    got += take
+                    self.tx_pos += take
+                    if self.tx_pos >= len(blk):
+                        self.tx_audio_q.popleft()
+                        self.tx_pos = 0
+            vals = np.frombuffer(bytes(mono), dtype=np.float32)
+            if len(vals) < want:
+                # The microphone has not produced this block yet. NEVER answer a
+                # chrono with a short frame: the server paces one block per
+                # request, so a short frame is an audible gap (the reported
+                # 'accrochages'). Pad instead - repeat the last sample when we
+                # have data (no click), silence during the initial prefill.
+                pad = want - len(vals)
+                self.tx_underruns += 1
+                fill = (np.full(pad, float(vals[-1]), dtype=np.float32)
+                        if len(vals) else np.zeros(pad, dtype=np.float32))
+                vals = np.concatenate([vals, fill])
+            if need_rs:
+                vals = resample(vals, vals_needed)   # exactly the requested count
             vals = np.clip(vals * self.mic_gain * 2.0, -1.0, 1.0)
             frame = self.build_tx_audio_frame(vals, rate, chans)
             if self.client and self.client.loop:
                 self.client.send_binary(frame)
+            self._tx_audio_sent += 1
 
     # ---------------- connect ----------------
     RECONNECT_DELAY_MS = 3000
@@ -1573,6 +1628,9 @@ class MiniTCI(tk.Tk):
         self._iq_q = queue.Queue(maxsize=8)
         self.chrono_reqs = collections.deque()
         self.tx_audio_q = collections.deque(maxlen=64)
+        self.mic_blocks = 0
+        self.tx_underruns = 0
+        self._tx_audio_sent = 0
         self.tx_pos = 0
         self._iq_acc_bytes = bytearray()
         self._last_draw = 0.0
@@ -1662,6 +1720,11 @@ class MiniTCI(tk.Tk):
 
     # ---------------- poll queue ----------------
     def _poll_inner(self):
+        # TX audio FIRST, before the display/FFT work: the server paces one audio
+        # block per chrono request, so answering late starves the TX chain. Tune
+        # tolerated the delay because it synthesises its tone on demand; the mic
+        # path reads a queue and is the one that stutters when serviced late.
+        self.service_tx_audio()
         try:
             for _ in range(300):
                 item = self.text_q.get_nowait()
@@ -1700,7 +1763,6 @@ class MiniTCI(tk.Tk):
         except (queue.Empty, AttributeError):
             pass
 
-        self.service_tx_audio()
         self._check_key_watchdog()
         self._draw_smeter()
         self.after(50, self._poll_safe)
@@ -3021,6 +3083,29 @@ class MiniTCI(tk.Tk):
         else:
             self.ptt_on()
 
+    def _tx_tick(self):
+        """Service TX audio on a fast tick while transmitting.
+
+        The normal poll runs every 50 ms and also does the FFT/display work, so a
+        slow frame can delay the answer to a chrono by more than one 21 ms audio
+        block - the server then starves and the voice stream breaks up. The
+        synthesised Tune tone never showed it because it is generated at answer
+        time instead of being read from a queue.
+        """
+        if not self.ptt:
+            self._tx_tick_on = False
+            return
+        try:
+            self.service_tx_audio()
+        except Exception:
+            pass
+        self.after(10, self._tx_tick)
+
+    def _start_tx_tick(self):
+        if not getattr(self, "_tx_tick_on", False):
+            self._tx_tick_on = True
+            self.after(10, self._tx_tick)
+
     def _check_key_watchdog(self):
         """Safety net against a stuck transmitter: if this client believes it is
         keyed but the server has been reporting the key released, drop the local
@@ -3057,7 +3142,15 @@ class MiniTCI(tk.Tk):
         self.tune_active = False         # PTT is the mic path, not the tuner
         self._key_requested = True
         self._key_false_since = None
+        with self.mic_lock:
+            self.tx_audio_q.clear()
+        self.tx_pos = 0
+        self.mic_blocks = 0
+        self.tx_underruns = 0
+        self._tx_audio_sent = 0
+        self._tx_prefilled = False
         self._tx_visuals()
+        self._start_tx_tick()
         self._mic_open()
 
     # ---------------- tune ----------------
@@ -3104,7 +3197,9 @@ class MiniTCI(tk.Tk):
         self.tune_active = True
         self._key_requested = True
         self._key_false_since = None
+        self._tx_prefilled = True      # the tone needs no microphone prefill
         self._tx_visuals()
+        self._start_tx_tick()
         self.logprint(f"Tune ON: 1500 Hz tone, drive {self.tune_amp:.3f} peak")
 
     def tune_stop(self):
@@ -3147,6 +3242,14 @@ class MiniTCI(tk.Tk):
         self._key_requested = False
         self._key_false_since = None
         self._tx_visuals()
+        if self.tuning:
+            pass
+        elif self._tx_audio_sent:
+            # give the user a number to compare: a healthy transmission answers
+            # every chrono with real samples (underruns stay near zero)
+            self.logprint(f"TX audio: {self._tx_audio_sent} blocks, "
+                          f"{self.mic_blocks} mic blocks, "
+                          f"{self.tx_underruns} underruns")
         if self.mic_stream:
             try:
                 self.mic_stream.stop(); self.mic_stream.close()
@@ -3182,7 +3285,13 @@ class MiniTCI(tk.Tk):
             self.mic_stream = sd.InputStream(**kw)
             self.mic_stream.start()
             name = self.in_dev_var.get() if dev is not None else "system default"
-            self.logprint(f"mic open: {name}")
+            # the device may run at its own rate/size; the TX path must know both
+            self.mic_rate = float(getattr(self.mic_stream, "samplerate", MIC_RATE))
+            blk = getattr(self.mic_stream, "blocksize", 0)
+            self.logprint(f"mic open: {name} {self.mic_rate:.0f} Hz, {blk} frames")
+            if abs(self.mic_rate - TX_AUDIO_RATE) > 1.0:
+                self.logprint(f"note: mic runs at {self.mic_rate:.0f} Hz, "
+                              f"resampling to {TX_AUDIO_RATE} Hz for TX")
         except Exception as e:
             self.logprint(f"mic error: {e}")
 
@@ -3191,9 +3300,17 @@ class MiniTCI(tk.Tk):
             self._mic_open()
 
     def _mic_cb(self, indata, frames, t, status):
+        """PortAudio thread: append only - NEVER touch tx_pos here.
+
+        tx_pos is the read cursor into the head block of tx_audio_q. Resetting it
+        on every callback re-sent the not-yet-consumed tail of a partially read
+        block, so slices of the microphone signal were repeated each callback
+        period - an audible stutter/oscillation that is NOT acoustic feedback.
+        Only the consumer advances (and resets) it."""
         if self.ptt and self.connected:
-            self.tx_audio_q.append(indata.reshape(-1).copy())
-            self.tx_pos = 0
+            with self.mic_lock:
+                self.tx_audio_q.append(indata.reshape(-1).copy())
+                self.mic_blocks += 1
             # voice level for the S-meter (dBFS, same scale as RX)
             rms = float(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
             self.mic_level_db = 20.0 * np.log10(rms + 1e-10)
