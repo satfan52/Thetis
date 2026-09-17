@@ -52,8 +52,8 @@ BANDS = [  # name, default MHz, suggested mode
     ("12m", 24.920, "USB"),
     ("10m", 28.400, "USB"),
     ("6m",  50.313, "USB"),
-    ("2m", 144.200, "NFM"),
-    ("70cm", 432.200, "NFM"),
+    ("2m", 144.200, "FM"),
+    ("70cm", 432.200, "FM"),
 ]
 
 # Non-overlapping frequency ranges per band (lo MHz, hi MHz). 60m is a narrow,
@@ -75,17 +75,71 @@ BAND_RANGES = {
     "70cm": (430.000, 440.000),
 }
 
-MODES = ["USB", "LSB", "DIGU", "DIGL", "CWU", "CWL", "AM", "SAM", "NFM"]
-# Branch H1: total filter-width presets (Hz, applied symmetric around the VFO)
-BW_PRESETS = {"5k": 5000, "3.8k": 3800, "2.9k": 2900, "2.7k": 2700, "2.4k": 2400,
-              "1.8k": 1800, "1k": 1000, "500": 500, "250": 250}
+# Thetis DSPMode order/names (enums.cs), restricted to what the TCI
+# modulation handler accepts on 50001 (lsb usb dsb am sam fm cw cwl cwu digl digu)
+MODES = ["LSB", "USB", "DSB", "CWL", "CWU", "FM", "AM", "DIGU", "DIGL", "SAM"]
+# Branch H1: filter presets aligned with Thetis (console.cs InitFilterPresets).
+# SSB/DIGL-family: Thetis F1..F10 (label, low, high) - low edge 100 Hz from
+# carrier, high = width. DIGU/DIGL centre on the click-tune offset (1500/2210).
+# CW centres on cw_pitch (600). AM/SAM symmetric. Values are Thetis's F-button
+# table verbatim so MiniTCI's width dropdown matches Thetis's F-buttons.
 
-FILTERS = {
-    "USB": (100, 2900), "LSB": (-2900, -100),
-    "DIGU": (100, 3100), "DIGL": (-3100, -100),
-    "CWU": (300, 800), "CWL": (-800, -300),
-    "AM": (-4500, 4500), "SAM": (-4500, 4500), "NFM": (-3500, 3500),
-}
+THETIS_SSB = [("5.0k", 5100), ("4.4k", 4500), ("3.8k", 3900), ("3.3k", 3400),
+              ("2.9k", 3000), ("2.7k", 2800), ("2.4k", 2500), ("2.1k", 2200),
+              ("1.8k", 1900), ("1.0k", 1100)]          # (label, hi-edge), lo=100
+
+THETIS_DIG = [("3.0k", 1500), ("2.5k", 1250), ("2.0k", 1000), ("1.5k", 750),
+              ("1.0k", 500), ("800", 400), ("600", 300), ("300", 150),
+              ("150", 75), ("75", 38)]                  # half-widths around offset
+
+THETIS_CW = [("1.0k", 500), ("800", 400), ("600", 300), ("500", 250),
+             ("400", 200), ("250", 125), ("150", 75), ("100", 50),
+             ("50", 25), ("25", 13)]                    # half-widths around pitch
+
+THETIS_AM = [("20k", 10000), ("18k", 9000), ("16k", 8000), ("12k", 6000),
+             ("10k", 5000), ("9.0k", 4500), ("8.0k", 4000), ("7.0k", 3500),
+             ("6.0k", 3000), ("5.0k", 2500)]            # half-widths, symmetric
+
+DIGU_OFFSET = 1500    # Thetis digu_click_tune_offset default
+DIGL_OFFSET = 2210    # Thetis digl_click_tune_offset default
+CW_PITCH = 600        # Thetis cw_pitch default
+
+def _thetis_filter(mode, idx):
+    """(low, high) for mode's idx-th preset (0-based, idx 4 = F5 default)."""
+    if mode == "USB":
+        return (100, THETIS_SSB[idx][1])
+    if mode == "LSB":
+        return (-THETIS_SSB[idx][1], -100)
+    if mode == "DIGU":
+        d = DIGU_OFFSET
+        return (d - THETIS_DIG[idx][1], d + THETIS_DIG[idx][1])
+    if mode == "DIGL":
+        d = DIGL_OFFSET
+        return (-d - THETIS_DIG[idx][1], -d + THETIS_DIG[idx][1])
+    if mode == "CWU":
+        return (CW_PITCH - THETIS_CW[idx][1], CW_PITCH + THETIS_CW[idx][1])
+    if mode == "CWL":
+        return (-CW_PITCH - THETIS_CW[idx][1], -CW_PITCH + THETIS_CW[idx][1])
+    # AM / SAM symmetric (Thetis AM table); FM follows the deviation
+    if mode == "FM":
+        # 5k deviation -> ~7.5k half-width, 2.5k -> ~3.75k (Thetis FM)
+        half = 7500 if idx < 5 else 3750
+        return (-half, half)
+    if mode in ("AM", "SAM"):
+        half = THETIS_AM[idx][1]
+        return (-half, half)
+    return (100, 3000)
+
+# width dropdown: Thetis F-button labels for the widest table (SSB), shared
+# across modes; index selects the row in each mode's table
+BW_PRESETS = [t[0] for t in THETIS_SSB]
+
+def _filter_for_mode_width(mode, width_label):
+    try:
+        idx = BW_PRESETS.index(width_label)
+    except ValueError:
+        idx = 4
+    return _thetis_filter(mode, idx)
 
 C = {"bg": "#e8eaf0", "panel": "#f5f6f9", "fg": "#1a1f29", "dim": "#5a6474",
      "green": "#1a7f37", "tune": "#b45309", "red": "#c0392b", "grid": "#d0d5dd",
@@ -645,6 +699,7 @@ class MiniTCI(tk.Tk):
         self.audio_sel = "main"          # main | sub | both
         self._agc_busy = False            # H1: guard against echo loops
         self._agc_gain_busy = False
+        self._mode_busy = False           # H1: modulation echo guard
         self.ddc_center_hz = self.freq_hz  # hardware centre frequency (DDS)
         self.volume = 0.25
         self.mic_gain = 0.5
@@ -741,7 +796,20 @@ class MiniTCI(tk.Tk):
             for key, var in (("mode", self.mode_var), ("agc_mode", self.agc_var),
                              ("out_dev", self.out_dev_var), ("in_dev", self.in_dev_var)):
                 if s.get(key):
-                    var.set(s[key])
+                    val = s[key]
+                    if key == "mode":
+                        # migrate legacy names (NFM->FM); drop unknown modes
+                        val = {"NFM": "FM"}.get(val, val)
+                        if val not in MODES:
+                            val = "USB"
+                    elif key == "agc_mode":
+                        # migrate OFF->Fixed (Thetis FIXD); drop unknown
+                        val = {"OFF": "Fixed", "FIXED": "Fixed",
+                               "MED": "Med", "FAST": "Fast",
+                               "SLOW": "Slow", "LONG": "Long"}.get(val, val)
+                        if val not in ("Fixed", "Long", "Slow", "Med", "Fast", "Custom"):
+                            val = "Med"
+                    var.set(val)
             for key, var in (("volume", self.vol_var), ("mic_gain", self.mic_var),
                              ("agc_gain", self.agc_gain_var), ("y_zero", self.yzero_var),
                              ("y_scale", self.yscale_var), ("zoom", self.zoom_var),
@@ -877,8 +945,8 @@ class MiniTCI(tk.Tk):
         self.mode_var.trace_add("write", self._mode_changed)
         ttk.Label(r1, text="Filter:", padding=(8, 0, 2, 0)).pack(side="left")
         self.filtwidth_var = tk.StringVar(value="2.9k")
-        ttk.Combobox(r1, textvariable=self.filtwidth_var, width=5, state="readonly",
-                     values=["5k", "3.8k", "2.9k", "2.7k", "2.4k", "1.8k", "1k", "500", "250"]).pack(side="left")
+        ttk.Combobox(r1, textvariable=self.filtwidth_var, width=6, state="readonly",
+                     values=BW_PRESETS).pack(side="left")
         self.filtwidth_var.trace_add("write", self._filtwidth_changed)
 
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
@@ -943,9 +1011,9 @@ class MiniTCI(tk.Tk):
                      values=MODES).pack(side="left")
         self.submode_var.trace_add("write", self._submode_changed)
         ttk.Label(r2b, text="Sub filter:").pack(side="left", padx=(10, 2))
-        self.subfilt_var = tk.StringVar(value="2.7k")
-        ttk.Combobox(r2b, textvariable=self.subfilt_var, width=5, state="readonly",
-                     values=["5k", "3.8k", "2.9k", "2.7k", "2.4k", "1.8k", "1k", "500", "250"]).pack(side="left")
+        self.subfilt_var = tk.StringVar(value="2.9k")
+        ttk.Combobox(r2b, textvariable=self.subfilt_var, width=6, state="readonly",
+                     values=BW_PRESETS).pack(side="left")
         self.subfilt_var.trace_add("write", self._subfilt_changed)
         ttk.Label(r2b, text="Audio:").pack(side="left", padx=(12, 2))
         self.audiosel_var = tk.StringVar(value="Main")
@@ -1751,6 +1819,21 @@ class MiniTCI(tk.Tk):
                         self._agc_gain_busy = False
                 except Exception:
                     pass
+            elif k == "modulation" and v:
+                # Thetis GUI mode change (or our echo): modulation:<rx>,<TOKEN>.
+                # Only rx 0 is this client's VFO A. Thetis sends FM (not NFM).
+                try:
+                    p = str(v).split(",")
+                    if int(p[0]) == 0:
+                        tok = p[1].strip().upper()
+                        if tok in MODES and tok != self.mode_var.get():
+                            self._mode_busy = True
+                            try:
+                                self.mode_var.set(tok)   # trace does the rest
+                            finally:
+                                self._mode_busy = False
+                except Exception:
+                    pass
 
     def _fmt_hz(self, hz):
         f = max(0, int(hz))
@@ -1887,48 +1970,37 @@ class MiniTCI(tk.Tk):
         # state applied on server echo
 
     def _submode_changed(self, *_a):
-            # guard: server echoes re-set the var; sending on echo would loop forever
-            if getattr(self, "_submode_busy", False):
-                return
-            new_mode = self.submode_var.get()
-            if new_mode == getattr(self, "sub_mode", None):
-                return                      # same value - nothing to do
-            # H1: on 50001 the sub-VFO shares VFO A's mode — redirect to VFO A
-            if getattr(self, "_is_full_tci", False):
-                self.mode_var.set(new_mode)
-                return
-            self.sub_mode = new_mode
-            # the filter must flip to the new sideband convention (negative offsets
-            # for LSB-family) - recompute width edges and push after the mode
-            w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
-            lo_edge = min(100, w // 8)
-            if new_mode in ("LSB", "DIGL", "CWL"):
-                self.sub_filt = (-w + lo_edge, -lo_edge)
-            else:
-                self.sub_filt = (lo_edge, w)
-            self._sub_refresh_ui()
-            if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-                self.send(f"sub_mode:0,{self.sub_mode};")
-                lo, hi = self.sub_filt
-                self.send(f"sub_filter:0,{lo},{hi};")
-            self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
+        # guard: server echoes re-set the var; sending on echo would loop forever
+        if getattr(self, "_submode_busy", False):
+            return
+        new_mode = self.submode_var.get()
+        if new_mode == getattr(self, "sub_mode", None):
+            return                      # same value - nothing to do
+        # H1: on 50001 the sub-VFO shares VFO A's mode — redirect to VFO A
+        if getattr(self, "_is_full_tci", False):
+            self.mode_var.set(new_mode)
+            return
+        self.sub_mode = new_mode
+        # Thetis per-mode table at the selected width (sideband flips with mode)
+        self.sub_filt = _filter_for_mode_width(new_mode, self.subfilt_var.get())
+        self._sub_refresh_ui()
+        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
+            self.send(f"sub_mode:0,{self.sub_mode};")
+            lo, hi = self.sub_filt
+            self.send(f"sub_filter:0,{lo},{hi};")
+        self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
 
     def _subfilt_changed(self, *_a):
-            # H1: on 50001 the filter is shared — redirect to VFO A's dropdown
-            if getattr(self, "_is_full_tci", False):
-                self.filtwidth_var.set(self.subfilt_var.get())
-                return
-            # presets are TOTAL widths, same convention as VFO A
-            w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
-            lo_edge = min(100, w // 8)
-            if self.sub_mode in ("LSB", "DIGL", "CWL"):
-                self.sub_filt = (-w + lo_edge, -lo_edge)
-            else:
-                self.sub_filt = (lo_edge, w)
-            self._sub_refresh_ui()
-            if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-                lo, hi = self.sub_filt
-                self.send(f"sub_filter:0,{lo},{hi};")
+        # H1: on 50001 the filter is shared — redirect to VFO A's dropdown
+        if getattr(self, "_is_full_tci", False):
+            self.filtwidth_var.set(self.subfilt_var.get())
+            return
+        # Thetis per-mode table at the selected width
+        self.sub_filt = _filter_for_mode_width(self.sub_mode, self.subfilt_var.get())
+        self._sub_refresh_ui()
+        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
+            lo, hi = self.sub_filt
+            self.send(f"sub_filter:0,{lo},{hi};")
 
     def _audiosel_changed(self, *_a):
         self.audio_sel = self.audiosel_var.get().lower()
@@ -2213,50 +2285,48 @@ class MiniTCI(tk.Tk):
                 return
 
     def _a_filter(self):
-        """VFO A passband (FilterLow, FilterHigh) from the current bandwidth
-        preset and the mode's sideband convention."""
-        w = BW_PRESETS.get(self.filtwidth_var.get(), 2900)
-        lo_edge = min(100, w // 8)
-        if self.mode_var.get() in ("LSB", "DIGL", "CWL"):
-            return (-w + lo_edge, -lo_edge)
-        return (lo_edge, w)
+        """VFO A passband (FilterLow, FilterHigh): Thetis's per-mode table
+        (console.cs InitFilterPresets) at the selected F-button width."""
+        return _filter_for_mode_width(self.mode_var.get(), self.filtwidth_var.get())
 
     def _mode_changed(self, *_):
-            self.mode = self.mode_var.get()
-            self.pan.filt = self._a_filter()   # keep the selected bandwidth
-            self.send(f"modulation:0,{self.mode};")
-            lo, hi = self.pan.filt
-            self.send(f"rx_filter_band:0,{lo},{hi};")
-            # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
-            # mode — there is only one DDC, its DSP pipeline is shared.
-            if getattr(self, "_is_full_tci", False):
-                self._submode_busy = True
-                try:
-                    self.sub_mode = self.mode
-                    self.submode_var.set(self.mode)
-                    self._sub_refresh_ui()
-                finally:
-                    self._submode_busy = False
+        if getattr(self, "_mode_busy", False):
+            return   # echo from the server - already in sync
+        self.mode = self.mode_var.get()
+        self.pan.filt = self._a_filter()   # Thetis per-mode table
+        self.send(f"modulation:0,{self.mode};")
+        lo, hi = self.pan.filt
+        self.send(f"rx_filter_band:0,{lo},{hi};")
+        # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
+        # mode - there is only one DDC, its DSP pipeline is shared.
+        if getattr(self, "_is_full_tci", False):
+            self._submode_busy = True
+            try:
+                self.sub_mode = self.mode
+                self.submode_var.set(self.mode)
+                self.sub_filt = self.pan.filt
+                self._sub_refresh_ui()
+            finally:
+                self._submode_busy = False
 
     def _filtwidth_changed(self, *_):
-            # presets are TOTAL filter widths (Hz): e.g. 2.7k -> 100..2800
-            self.pan.filt = self._a_filter()
-            if self.connected:
-                lo, hi = self.pan.filt
-                self.send(f"rx_filter_band:0,{lo},{hi};")
-            self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
-                          f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
-            # H1: on 50001 the sub-VFO shares VFO A's DSP pipeline — sync the
-            # display so the two filter dropdowns never disagree.
-            if getattr(self, "_is_full_tci", False):
-                self.sub_filt = self.pan.filt
+        # Thetis per-mode table at the selected F-button width
+        self.pan.filt = self._a_filter()
+        if self.connected:
+            lo, hi = self.pan.filt
+            self.send(f"rx_filter_band:0,{lo},{hi};")
+        self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
+                      f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
+        # H1: on 50001 the sub-VFO shares VFO A's DSP pipeline - sync the
+        # display so the two filter dropdowns never disagree.
+        if getattr(self, "_is_full_tci", False):
+            self.sub_filt = self.pan.filt
+            self._submode_busy = True
+            try:
                 self.subfilt_var.set(self.filtwidth_var.get())
-                self._sub_refresh_ui()
-
-    # Thetis comboAGC names (capitalised enum) <-> TCI tokens
-    AGC_MODES_TCI = {"Fixed": "off", "Long": "long", "Slow": "slow",
-                     "Med": "normal", "Fast": "fast", "Custom": "custom"}
-    AGC_MODES_FROM_TCI = {v: k for k, v in AGC_MODES_TCI.items()}
+            finally:
+                self._submode_busy = False
+            self._sub_refresh_ui()
 
     def _agc_mode_to_tci(self, name):
         return self.AGC_MODES_TCI.get(name, "normal")
