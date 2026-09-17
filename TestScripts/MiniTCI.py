@@ -1429,6 +1429,7 @@ class MiniTCI(tk.Tk):
                 else:
                     self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
                     self.send("agc_auto_ex:0,true;")
+                    self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
             elif self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
@@ -2270,9 +2271,13 @@ class MiniTCI(tk.Tk):
     def _agc_changed(self, *_):
         mode = self.agc_var.get()
         manual = (mode == "OFF")
-        # enable the Gain slider only in manual mode
+        # On 50001 the gain slider controls AGC-T in auto modes (via agc_gain)
+        # or fixed gain when OFF (via agc_fixed_gain). On headless ports
+        # the slider is disabled in auto modes (fixed gain has no meaning
+        # when the AGC is running).
+        on_tci = getattr(self, "_is_full_tci", False)
         try:
-            self.agc_gain_scale.state(["!disabled"] if manual else ["disabled"])
+            self.agc_gain_scale.state(["!disabled"] if manual or on_tci else ["disabled"])
         except tk.TclError:
             pass
         if not self.connected:
@@ -2283,27 +2288,39 @@ class MiniTCI(tk.Tk):
             # fixed-gain mode: gain slider controls the receiver gain directly
             self.send("agc_mode:0,off;")
             self.send("agc_auto_ex:0,false;")
-            if getattr(self, "_is_full_tci", False):
+            if on_tci:
                 self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
             else:
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
         else:
-            # AGC on: FAST/MED/SLOW/LONG = attack/decay speed presets
+            # AGC on: FAST/MED/SLOW/LONG
             self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
             self.send("agc_auto_ex:0,true;")
+            # On 50001, also set AGC-T so the max-gain threshold follows
+            # the slider, matching the Thetis console's behaviour.
+            if on_tci:
+                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
 
     def _agc_auto_changed(self):
         # kept for compatibility (Auto checkbox removed); no-op
         pass
 
     def _agc_gain_changed(self, v):
-        if self.connected and self.agc_var.get() == "OFF":
-            if getattr(self, "_agc_gain_busy", False):
-                return   # echo handler set the slider - do not re-send
-            if getattr(self, "_is_full_tci", False):
+        if not self.connected:
+            return
+        if getattr(self, "_agc_gain_busy", False):
+            return   # echo handler set the slider - do not re-send
+        on_tci = getattr(self, "_is_full_tci", False)
+        auto = self.agc_var.get() != "OFF"
+        if not auto:
+            # manual AGC: fixed gain
+            if on_tci:
                 self.send(f"agc_fixed_gain:0,{int(float(v))};")
             else:
                 self.send(f"agc_gain:0,{int(float(v))};")
+        elif on_tci:
+            # auto AGC on 50001: the slider controls AGC-T (max gain threshold)
+            self.send(f"agc_gain:0,{int(float(v))};")
 
     def _hit_test(self, x):
         """Classify click position: 'in-filter', 'edge-lo', 'edge-hi', or 'span'."""
