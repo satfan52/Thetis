@@ -852,6 +852,19 @@ class MiniTCI(tk.Tk):
                         self._filter_entries_set(self.pan.filt)
                 except (ValueError, TypeError, IndexError):
                     pass
+            # H1: DRM and SPEC have FIXED filters (set by Thetis SetRX1Mode).
+            # A persisted edge pair for them is always stale - it was written by
+            # an older build with different defaults (a file carrying DRM
+            # 7000..10000 restored +10000 and the user saw the wrong DRM window).
+            # Force the mode's definition instead of trusting the file.
+            try:
+                fixed = _thetis_filter(self.mode_var.get(), 4)
+                if self.mode_var.get() == "DRM" or fixed is None:
+                    self.pan.filt = fixed if fixed is not None else (-48000.0, 48000.0)
+                    self._filter_entries_set(self.pan.filt)
+                    self._sync_filtw_slider(self.pan.filt)
+            except (ValueError, TypeError, AttributeError):
+                pass
             if s.get("subfilt"):
                 self.subfilt_var.set(s["subfilt"])
             if s.get("sub_enabled") is not None:
