@@ -20,6 +20,7 @@ import queue
 import struct
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 
 import numpy as np
@@ -129,9 +130,11 @@ def _thetis_filter(mode, idx):
         half = THETIS_AM[idx][1]
         return (-half, half)
     if mode == "DRM":
-        # Thetis SetRX1Mode DRM: fixed 7000..17000 (visible on the spectrum at
-        # VFO+7k..VFO+17k), no shift/width control
-        return (7000, 17000)
+        # DRM occupies +/-5 kHz around the dial, same window as AM. Thetis
+        # internally applies 7000..17000 relative to its -12 kHz-shifted DDS,
+        # which is the same physical passband; the client shows it in the
+        # dial-relative frame.
+        return (-5000, 5000)
     if mode == "SPEC":
         # Thetis SPEC: filters disabled, SpectrumPreFilter = full band.
         # The client draws the full DDC span; the server does not filter.
@@ -1047,12 +1050,16 @@ class MiniTCI(tk.Tk):
         self.freq_lbl = tk.Label(r2, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
         self.freq_lbl.pack(side="left", padx=(2, 14))
+        # Thetis-style per-digit tuning: hover a digit and scroll to change that
+        # place value (1 Hz .. 10 MHz). Replaces the +/-10k/1k/100 step buttons.
+        self._freq_place = 1000          # place under the cursor (default 1 kHz)
+        self._freq_digit_x = []          # [(x_left, x_right, place)] for hit test
+        self._freq_font = tkfont.Font(font=self.freq_lbl.cget("font"))
         self.freq_lbl.bind("<MouseWheel>", self._freq_wheel)
-        for txt, hz in (("−10k", -10000), ("−1k", -1000), ("−100", -100),
-                        ("+100", 100), ("+1k", 1000), ("+10k", 10000)):
-            ttk.Button(r2, text=txt, width=5,
-                       command=lambda d=hz: self.tune_to(self.freq_hz + d)
-                       ).pack(side="left", padx=2)
+        self.freq_lbl.bind("<Button-4>", self._freq_wheel)
+        self.freq_lbl.bind("<Button-5>", self._freq_wheel)
+        self.freq_lbl.bind("<Motion>", self._freq_digit_hover)
+        self.freq_lbl.bind("<Leave>", lambda e: self._freq_digit_x.clear())
         self.ctun_var = tk.BooleanVar(value=False)
         self.ctun_btn = ttk.Checkbutton(r2, text="CTUN", variable=self.ctun_var,
                                         command=self._ctun_toggled)
@@ -1540,7 +1547,7 @@ class MiniTCI(tk.Tk):
             self.send(f"vfo:0,0,{self.freq_hz};")
             self.send(f"modulation:0,{self.mode};")
             lo, hi = self.pan.filt
-            self.send(f"rx_filter_band:0,{lo},{hi};")
+            self._send_filter_band(lo, hi)
             # Phase -1a: full TCI (port 50001) uses rx_ctun_ex instead of ctun
             if getattr(self, "_is_full_tci", False):
                 self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
@@ -1949,10 +1956,42 @@ class MiniTCI(tk.Tk):
         hz = self.freq_hz % 1000
         self.freq_lbl.config(text=f"{mhz}.{khz:03d}.{hz:03d}")
 
+    def _freq_digit_hover(self, e):
+        """Thetis parity: the digit under the pointer selects the place value
+        the wheel will change (1 Hz .. 10 MHz)."""
+        self._freq_place = self._freq_place_at(e.x)
+
+    def _freq_place_at(self, x):
+        txt = self.freq_lbl.cget("text")
+        # digits right to left are 1 Hz, 10 Hz, 100 Hz, 1 kHz, ...
+        place = 1
+        spans = []
+        for i in range(len(txt) - 1, -1, -1):
+            if not txt[i].isdigit():
+                continue
+            try:
+                x0 = self._freq_font.measure(txt[:i])
+                x1 = x0 + self._freq_font.measure(txt[i])
+            except tk.TclError:
+                return 1000
+            spans.append((x0, x1, place))
+            place *= 10
+        for x0, x1, p in spans:
+            if x0 <= x < x1:
+                return p
+        # between digits (on a dot) or outside: use the nearest digit's place
+        if spans:
+            return min(spans, key=lambda sp: abs((sp[0] + sp[1]) / 2 - x))[2]
+        return 1000
+
     def _freq_wheel(self, e):
-        # wheel on the frequency display: 100 Hz steps (shift = 10 Hz fine)
-        step = 10 if e.state & 0x0001 else 100
-        d = step if getattr(e, "delta", 120) > 0 else -step
+        """Wheel over the frequency readout tunes the digit under the pointer."""
+        try:
+            place = self._freq_place_at(e.x)
+        except (tk.TclError, AttributeError):
+            place = 1000
+        self._freq_place = place
+        d = place if getattr(e, "delta", 120) > 0 else -place
         self.tune_to(self.freq_hz + d)
 
     def _draw_smeter(self):
@@ -2420,7 +2459,7 @@ class MiniTCI(tk.Tk):
         self.send(f"modulation:0,{self.mode};")
         if filt is not None:
             lo, hi = filt
-            self.send(f"rx_filter_band:0,{lo},{hi};")
+            self._send_filter_band(lo, hi)
             self.pan.filt = filt
             self._sync_filtw_slider(filt)
         else:
@@ -2457,6 +2496,16 @@ class MiniTCI(tk.Tk):
         finally:
             self._filt_updating = False
 
+    def _send_filter_band(self, lo, hi):
+        """Send rx_filter_band, except in modes whose DSP filter the server owns
+        (DRM/SPEC are set in SetRX1Mode). In DRM the client's window is expressed
+        in the dial frame (-5k..+5k) while the server's filter is DDS-relative,
+        so sending it would move the demodulation window."""
+        if self.mode_var.get() in ("DRM", "SPEC"):
+            return
+        if self.connected:
+            self.send(f"rx_filter_band:0,{int(lo)},{int(hi)};")
+
     def _filter_entries_applied(self, *_a):
         """User pressed Return / left the box: push the new edges to Thetis."""
         if self._filt_updating:
@@ -2468,7 +2517,7 @@ class MiniTCI(tk.Tk):
         self._sync_filtw_slider(filt)
         if self.connected:
             lo, hi = filt
-            self.send(f"rx_filter_band:0,{lo},{hi};")
+            self._send_filter_band(lo, hi)
         self.logprint(f"VFO A filter {filt[0]}..{filt[1]} Hz")
 
     def _sync_filtw_slider(self, filt):
@@ -2539,8 +2588,7 @@ class MiniTCI(tk.Tk):
         shown = new_hi - new_lo
         self.filtw_lbl.config(
             text=f"{shown/1000:.1f}k" if shown >= 1000 else f"{shown}")
-        if self.connected:
-            self.send(f"rx_filter_band:0,{new_lo},{new_hi};")
+        self._send_filter_band(new_lo, new_hi)
 
     def _apply_mode_filter_default(self):
         """Set the Low/High boxes to the Thetis default for the current mode
