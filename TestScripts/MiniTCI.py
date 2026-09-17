@@ -77,7 +77,7 @@ BAND_RANGES = {
 
 # Thetis DSPMode order/names (enums.cs), restricted to what the TCI
 # modulation handler accepts on 50001 (lsb usb dsb am sam fm cw cwl cwu digl digu)
-MODES = ["LSB", "USB", "DSB", "CWL", "CWU", "FM", "AM", "DIGU", "DIGL", "SAM"]
+MODES = ["LSB", "USB", "DSB", "CWL", "CWU", "FM", "AM", "DIGU", "DIGL", "SAM", "DRM", "SPEC"]
 # Branch H1: filter presets aligned with Thetis (console.cs InitFilterPresets).
 # SSB/DIGL-family: Thetis F1..F10 (label, low, high) - low edge 100 Hz from
 # carrier, high = width. DIGU/DIGL centre on the click-tune offset (1500/2210).
@@ -128,6 +128,13 @@ def _thetis_filter(mode, idx):
     if mode in ("AM", "SAM"):
         half = THETIS_AM[idx][1]
         return (-half, half)
+    if mode == "DRM":
+        # Thetis SetRX1Mode DRM: fixed 7000..17000, no shift/width control
+        return (7000, 17000)
+    if mode == "SPEC":
+        # Thetis SPEC: filters disabled, SpectrumPreFilter = full band.
+        # The client draws the full DDC span; the server does not filter.
+        return None
     return (100, 3000)
 
 # width dropdown: Thetis F-button labels for the widest table (SSB), shared
@@ -1348,13 +1355,20 @@ class MiniTCI(tk.Tk):
                     # Under CTUN A floats inside the DDC (freq_hz != DDC centre), and
                     # the IQ data is still centred on the DDC - tagging with freq_hz
                     # shifts the placement by the offset and empties the opposite edge.
+                    # DRM: Thetis offsets the hardware DDS by -12 kHz from the VFO
+                    # (_rx1_vfo_offset) while the TCI dds echo reports the un-offset
+                    # VFO - so the real IQ centre is dds_echo - 12000.
                     ddc = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
+                    if self.mode_var.get() == "DRM":
+                        ddc -= 12000.0
                     self._iq_q.put_nowait((block, rate, float(ddc)))
                 except Exception:
                     # UI stalled - drop the OLDEST block so new data keeps flowing
                     try:
                         self._iq_q.get_nowait()
                         ddc = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
+                        if self.mode_var.get() == "DRM":
+                            ddc -= 12000.0
                         self._iq_q.put_nowait((block, rate, float(ddc)))
                     except Exception:
                         pass
@@ -1982,7 +1996,8 @@ class MiniTCI(tk.Tk):
             return
         self.sub_mode = new_mode
         # Thetis per-mode table at the selected width (sideband flips with mode)
-        self.sub_filt = _filter_for_mode_width(new_mode, self.subfilt_var.get())
+        self.sub_filt = _filter_for_mode_width(new_mode, self.subfilt_var.get()) \
+            or (0, 6000)   # SPEC/DRM fallback (not used on headless)
         self._sub_refresh_ui()
         if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
             self.send(f"sub_mode:0,{self.sub_mode};")
@@ -1996,7 +2011,8 @@ class MiniTCI(tk.Tk):
             self.filtwidth_var.set(self.subfilt_var.get())
             return
         # Thetis per-mode table at the selected width
-        self.sub_filt = _filter_for_mode_width(self.sub_mode, self.subfilt_var.get())
+        self.sub_filt = _filter_for_mode_width(self.sub_mode, self.subfilt_var.get()) \
+            or (0, 6000)
         self._sub_refresh_ui()
         if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
             lo, hi = self.sub_filt
@@ -2286,17 +2302,21 @@ class MiniTCI(tk.Tk):
 
     def _a_filter(self):
         """VFO A passband (FilterLow, FilterHigh): Thetis's per-mode table
-        (console.cs InitFilterPresets) at the selected F-button width."""
+        (console.cs InitFilterPresets) at the selected F-button width.
+        Returns None for SPEC (no filter - full DDC span)."""
         return _filter_for_mode_width(self.mode_var.get(), self.filtwidth_var.get())
 
     def _mode_changed(self, *_):
         if getattr(self, "_mode_busy", False):
             return   # echo from the server - already in sync
         self.mode = self.mode_var.get()
-        self.pan.filt = self._a_filter()   # Thetis per-mode table
+        self.pan.filt = self._a_filter()   # Thetis per-mode table (None = SPEC)
         self.send(f"modulation:0,{self.mode};")
-        lo, hi = self.pan.filt
-        self.send(f"rx_filter_band:0,{lo},{hi};")
+        if self.pan.filt is not None:
+            lo, hi = self.pan.filt
+            self.send(f"rx_filter_band:0,{lo},{hi};")
+        else:
+            self.pan.filt = (-48000, 48000)   # display-only: full DDC span
         # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
         # mode - there is only one DDC, its DSP pipeline is shared.
         if getattr(self, "_is_full_tci", False):
@@ -2312,6 +2332,9 @@ class MiniTCI(tk.Tk):
     def _filtwidth_changed(self, *_):
         # Thetis per-mode table at the selected F-button width
         self.pan.filt = self._a_filter()
+        if self.pan.filt is None:
+            self.pan.filt = (-48000, 48000)   # SPEC: no filter, full span
+            return
         if self.connected:
             lo, hi = self.pan.filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
