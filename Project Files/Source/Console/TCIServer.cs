@@ -5104,18 +5104,23 @@ namespace Thetis
                     }
                 }
                 // H1: TCI command to set VFOA sub-frequency (the smaller readout below VFO A)
-                private void handleVFOASUB(string[] args)
-                {
-                    if (args == null || args.Length < 2) return;
-                    if (!int.TryParse(args[0], out int rx)) return;
-                    if (!long.TryParse(args[1], out long freqHz)) return;
-                    double freqMHz = freqHz / 1e6;
-                    freqMHz = Math.Round(freqMHz, 6);
-                    if (consoleThreadSafe != null)
-                        consoleThreadSafe.VFOASubFreq = freqMHz;
-                    sendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                        "vfoasub:{0},{1};", rx, freqHz));
-                }
+                                private void handleVFOASUB(string[] args)
+                                {
+                                    if (args == null || args.Length < 2) return;
+                                    if (!int.TryParse(args[0], out int rx)) return;
+                                    if (!long.TryParse(args[1], out long freqHz)) return;
+                                    double freqMHz = freqHz / 1e6;
+                                    freqMHz = Math.Round(freqMHz, 6);
+                                    if (consoleThreadSafe != null)
+                                    {
+                                        if (consoleThreadSafe.RX2Enabled)
+                                            consoleThreadSafe.VFOASubFreq = freqMHz;  // sub-channel within RX1
+                                        else
+                                            consoleThreadSafe.VFOBFreq = freqMHz;      // dual-VFO = sub-channel when RX2 off
+                                    }
+                                    sendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                        "vfoasub:{0},{1};", rx, freqHz));
+                                }
         private void sendTXProfile(string prof)
         {
             string s = "tx_profile_ex:" + prof + ";";
