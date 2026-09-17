@@ -55,9 +55,9 @@ def main():
         app._loading = True
         app._load_settings()
         app.update()
-        check("DRM low forced to 7000", app.filt_low_entry.get().strip(), "7000")
-        check("DRM high forced to 17000", app.filt_high_entry.get().strip(), "17000")
-        check("DRM pan.filt forced", tuple(int(x) for x in app.pan.filt), (7000, 17000))
+        check("DRM low forced to -5000", app.filt_low_entry.get().strip(), "-5000")
+        check("DRM high forced to 5000", app.filt_high_entry.get().strip(), "5000")
+        check("DRM pan.filt forced", tuple(int(x) for x in app.pan.filt), (-5000, 5000))
         check("DRM slider label = width 10k", app.filtw_lbl.cget("text"), "10.0k")
 
         # a normal mode keeps the persisted edges (user's own Var setting)
