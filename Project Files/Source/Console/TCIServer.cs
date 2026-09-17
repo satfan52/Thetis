@@ -4069,6 +4069,16 @@ namespace Thetis
 						case "digu":
 							mode = DSPMode.DIGU;
 							break;
+						// H1: DRM and SPEC were missing, so a client selecting
+						// them fell through to FIRST and the console never
+						// changed mode (MiniTCI showed DRM while Thetis stayed
+						// on the previous mode).
+						case "drm":
+							mode = DSPMode.DRM;
+							break;
+						case "spec":
+							mode = DSPMode.SPEC;
+							break;
 						default:
 							mode = DSPMode.FIRST;
 							break;
