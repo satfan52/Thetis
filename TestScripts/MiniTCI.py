@@ -1847,40 +1847,48 @@ class MiniTCI(tk.Tk):
         # state applied on server echo
 
     def _submode_changed(self, *_a):
-        # guard: server echoes re-set the var; sending on echo would loop forever
-        if getattr(self, "_submode_busy", False):
-            return
-        new_mode = self.submode_var.get()
-        if new_mode == getattr(self, "sub_mode", None):
-            return                      # same value - nothing to do
-        self.sub_mode = new_mode
-        # the filter must flip to the new sideband convention (negative offsets
-        # for LSB-family) - recompute width edges and push after the mode
-        w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
-        lo_edge = min(100, w // 8)
-        if new_mode in ("LSB", "DIGL", "CWL"):
-            self.sub_filt = (-w + lo_edge, -lo_edge)
-        else:
-            self.sub_filt = (lo_edge, w)
-        self._sub_refresh_ui()
-        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-            self.send(f"sub_mode:0,{self.sub_mode};")
-            lo, hi = self.sub_filt
-            self.send(f"sub_filter:0,{lo},{hi};")
-        self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
+            # guard: server echoes re-set the var; sending on echo would loop forever
+            if getattr(self, "_submode_busy", False):
+                return
+            new_mode = self.submode_var.get()
+            if new_mode == getattr(self, "sub_mode", None):
+                return                      # same value - nothing to do
+            # H1: on 50001 the sub-VFO shares VFO A's mode — redirect to VFO A
+            if getattr(self, "_is_full_tci", False):
+                self.mode_var.set(new_mode)
+                return
+            self.sub_mode = new_mode
+            # the filter must flip to the new sideband convention (negative offsets
+            # for LSB-family) - recompute width edges and push after the mode
+            w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
+            lo_edge = min(100, w // 8)
+            if new_mode in ("LSB", "DIGL", "CWL"):
+                self.sub_filt = (-w + lo_edge, -lo_edge)
+            else:
+                self.sub_filt = (lo_edge, w)
+            self._sub_refresh_ui()
+            if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
+                self.send(f"sub_mode:0,{self.sub_mode};")
+                lo, hi = self.sub_filt
+                self.send(f"sub_filter:0,{lo},{hi};")
+            self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
 
     def _subfilt_changed(self, *_a):
-        # presets are TOTAL widths, same convention as VFO A
-        w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
-        lo_edge = min(100, w // 8)
-        if self.sub_mode in ("LSB", "DIGL", "CWL"):
-            self.sub_filt = (-w + lo_edge, -lo_edge)
-        else:
-            self.sub_filt = (lo_edge, w)
-        self._sub_refresh_ui()
-        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-            lo, hi = self.sub_filt
-            self.send(f"sub_filter:0,{lo},{hi};")
+            # H1: on 50001 the filter is shared — redirect to VFO A's dropdown
+            if getattr(self, "_is_full_tci", False):
+                self.filtwidth_var.set(self.subfilt_var.get())
+                return
+            # presets are TOTAL widths, same convention as VFO A
+            w = BW_PRESETS.get(self.subfilt_var.get(), 2700)
+            lo_edge = min(100, w // 8)
+            if self.sub_mode in ("LSB", "DIGL", "CWL"):
+                self.sub_filt = (-w + lo_edge, -lo_edge)
+            else:
+                self.sub_filt = (lo_edge, w)
+            self._sub_refresh_ui()
+            if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
+                lo, hi = self.sub_filt
+                self.send(f"sub_filter:0,{lo},{hi};")
 
     def _audiosel_changed(self, *_a):
         self.audio_sel = self.audiosel_var.get().lower()
@@ -2174,20 +2182,36 @@ class MiniTCI(tk.Tk):
         return (lo_edge, w)
 
     def _mode_changed(self, *_):
-        self.mode = self.mode_var.get()
-        self.pan.filt = self._a_filter()   # keep the selected bandwidth
-        self.send(f"modulation:0,{self.mode};")
-        lo, hi = self.pan.filt
-        self.send(f"rx_filter_band:0,{lo},{hi};")
-
-    def _filtwidth_changed(self, *_):
-        # presets are TOTAL filter widths (Hz): e.g. 2.7k -> 100..2800
-        self.pan.filt = self._a_filter()
-        if self.connected:
+            self.mode = self.mode_var.get()
+            self.pan.filt = self._a_filter()   # keep the selected bandwidth
+            self.send(f"modulation:0,{self.mode};")
             lo, hi = self.pan.filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
-        self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
-                      f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
+            # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
+            # mode — there is only one DDC, its DSP pipeline is shared.
+            if getattr(self, "_is_full_tci", False):
+                self._submode_busy = True
+                try:
+                    self.sub_mode = self.mode
+                    self.submode_var.set(self.mode)
+                    self._sub_refresh_ui()
+                finally:
+                    self._submode_busy = False
+
+    def _filtwidth_changed(self, *_):
+            # presets are TOTAL filter widths (Hz): e.g. 2.7k -> 100..2800
+            self.pan.filt = self._a_filter()
+            if self.connected:
+                lo, hi = self.pan.filt
+                self.send(f"rx_filter_band:0,{lo},{hi};")
+            self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
+                          f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
+            # H1: on 50001 the sub-VFO shares VFO A's DSP pipeline — sync the
+            # display so the two filter dropdowns never disagree.
+            if getattr(self, "_is_full_tci", False):
+                self.sub_filt = self.pan.filt
+                self.subfilt_var.set(self.filtwidth_var.get())
+                self._sub_refresh_ui()
 
     def _agc_mode_to_tci(self, name):
         return {"OFF": "off", "FIXED": "fixed", "FAST": "fast",
