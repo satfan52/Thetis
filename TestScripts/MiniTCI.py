@@ -129,7 +129,8 @@ def _thetis_filter(mode, idx):
         half = THETIS_AM[idx][1]
         return (-half, half)
     if mode == "DRM":
-        # Thetis SetRX1Mode DRM: fixed 7000..17000, no shift/width control
+        # Thetis SetRX1Mode DRM: fixed 7000..17000 (visible on the spectrum at
+        # VFO+7k..VFO+17k), no shift/width control
         return (7000, 17000)
     if mode == "SPEC":
         # Thetis SPEC: filters disabled, SpectrumPreFilter = full band.
@@ -748,7 +749,7 @@ class MiniTCI(tk.Tk):
         return {
             "freq": self.freq_hz,
             "mode": self.mode_var.get(),
-            "filtwidth": self.filtwidth_var.get(),
+            "filt": [int(self.pan.filt[0]), int(self.pan.filt[1])] if getattr(self.pan, "filt", None) else None,
             "band": self.band_var.get(),
             "sub_hz": self.sub_hz,
             "sub_mode": self.sub_mode,
@@ -843,8 +844,14 @@ class MiniTCI(tk.Tk):
                     self.sub_filt = (fl, fh)
             if s.get("balance") is not None:
                 self.bal_var.set(float(s["balance"]))
-            if s.get("filtwidth"):
-                self.filtwidth_var.set(s["filtwidth"])
+            if s.get("filt"):
+                try:
+                    fl, fh = int(s["filt"][0]), int(s["filt"][1])
+                    if fh - fl >= 200:
+                        self.pan.filt = (float(fl), float(fh))
+                        self._filter_entries_set(self.pan.filt)
+                except (ValueError, TypeError, IndexError):
+                    pass
             if s.get("subfilt"):
                 self.subfilt_var.set(s["subfilt"])
             if s.get("sub_enabled") is not None:
@@ -951,18 +958,19 @@ class MiniTCI(tk.Tk):
                      values=MODES).pack(side="left")
         self.mode_var.trace_add("write", self._mode_changed)
         ttk.Label(r1, text="Filter:", padding=(8, 0, 2, 0)).pack(side="left")
-        # H1: F1..F10 filter BUTTONS mapped 1:1 to Thetis's filter buttons
-        # (same labels, same per-mode edges). Click = select, like radFilterN.
-        self.filt_btns = []
-        self._filt_idx = 4                      # F5 = 2.9k default (Thetis)
-        for i, lbl in enumerate(BW_PRESETS):
-            b = tk.Button(r1, text=lbl.replace(".0k", "k"), width=5,
-                          font=("Segoe UI", 7),
-                          command=lambda idx=i: self._filter_btn_click(idx))
-            b.pack(side="left", padx=1)
-            self.filt_btns.append(b)
-        self.filtwidth_var = tk.StringVar(value=BW_PRESETS[4])
-        self._filter_btn_refresh()
+        # H1: Thetis-style filter Low/High entry boxes (udFilterLow/udFilterHigh
+        # parity). Values are the passband edges in Hz relative to the VFO.
+        ttk.Label(r1, text="lo", padding=(2, 0, 2, 0)).pack(side="left")
+        self.filt_low_entry = ttk.Entry(r1, width=7)
+        self.filt_low_entry.pack(side="left", padx=1)
+        self.filt_low_entry.bind("<Return>", self._filter_entries_applied)
+        self.filt_low_entry.bind("<FocusOut>", self._filter_entries_applied)
+        ttk.Label(r1, text="hi", padding=(6, 0, 2, 0)).pack(side="left")
+        self.filt_high_entry = ttk.Entry(r1, width=7)
+        self.filt_high_entry.pack(side="left", padx=1)
+        self.filt_high_entry.bind("<Return>", self._filter_entries_applied)
+        self.filt_high_entry.bind("<FocusOut>", self._filter_entries_applied)
+        self._filt_updating = False   # guard against echo-driven loops
 
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
         # H1: identical to Thetis's comboAGC (AGCMode enum order/casing)
@@ -1363,20 +1371,13 @@ class MiniTCI(tk.Tk):
                     # Under CTUN A floats inside the DDC (freq_hz != DDC centre), and
                     # the IQ data is still centred on the DDC - tagging with freq_hz
                     # shifts the placement by the offset and empties the opposite edge.
-                    # DRM: Thetis offsets the hardware DDS by -12 kHz from the VFO
-                    # (_rx1_vfo_offset) while the TCI dds echo reports the un-offset
-                    # VFO - so the real IQ centre is dds_echo - 12000.
                     ddc = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
-                    if self.mode_var.get() == "DRM":
-                        ddc -= 12000.0
                     self._iq_q.put_nowait((block, rate, float(ddc)))
                 except Exception:
                     # UI stalled - drop the OLDEST block so new data keeps flowing
                     try:
                         self._iq_q.get_nowait()
                         ddc = self.pan.data_center_hz if self.pan.data_center_hz else self.freq_hz
-                        if self.mode_var.get() == "DRM":
-                            ddc -= 12000.0
                         self._iq_q.put_nowait((block, rate, float(ddc)))
                     except Exception:
                         pass
@@ -1807,18 +1808,8 @@ class MiniTCI(tk.Tk):
                 if len(p) >= 3:
                     try:
                         if int(p[0]) == 0:
-                            if self.mode_var.get() == "DRM":
-                                return   # keep the VFO-centred display rect
                             self.pan.filt = (float(p[1]), float(p[2]))
-                            # sync the F-button selection: find the button whose
-                            # Thetis edges match this passband (F-button <-> button
-                            # mapping, Thetis radFilter parity)
-                            for i in range(len(BW_PRESETS)):
-                                if _thetis_filter(self.mode_var.get(), i) == self.pan.filt:
-                                    self._filt_idx = i
-                                    self.filtwidth_var.set(BW_PRESETS[i])
-                                    self._filter_btn_refresh()
-                                    break
+                            self._filter_entries_set(self.pan.filt)
                     except ValueError:
                         pass
             elif k == "iq_samplerate" and v:
@@ -1867,14 +1858,13 @@ class MiniTCI(tk.Tk):
                             # filter locally and update the display WITHOUT sending
                             # anything (the server has already applied it).
                             self.mode = tok
-                            filt = _filter_for_mode_width(
-                                tok, self.filtwidth_var.get())
-                            if tok == "DRM":
-                                self.pan.filt = (-5000, 5000)  # display: centred on VFO
-                            elif filt is None:
+                            filt = _thetis_filter(tok, 4)   # mode default
+                            if filt is None:
                                 self.pan.filt = (-48000, 48000)  # SPEC: full span
+                                self._filter_entries_set((-48000, 48000))
                             else:
                                 self.pan.filt = filt
+                                self._filter_entries_set(filt)
                             self._mode_busy = True
                             self._submode_busy = True
                             try:
@@ -1886,7 +1876,6 @@ class MiniTCI(tk.Tk):
                             finally:
                                 self._mode_busy = False
                                 self._submode_busy = False
-                            self._filter_btn_refresh()
                             self._sub_refresh_ui()
                 except Exception:
                     pass
@@ -2048,9 +2037,11 @@ class MiniTCI(tk.Tk):
         self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
 
     def _subfilt_changed(self, *_a):
-        # H1: on 50001 the filter is shared — redirect to VFO A's dropdown
+        # H1: on 50001 the filter is shared — redirect to VFO A's entries
         if getattr(self, "_is_full_tci", False):
-            self.filtwidth_var.set(self.subfilt_var.get())
+            self._filter_entries_set(_filter_for_mode_width(
+                self.mode_var.get(), self.subfilt_var.get()) or (-48000, 48000))
+            self._filter_entries_applied()
             return
         # Thetis per-mode table at the selected width
         self.sub_filt = _filter_for_mode_width(self.sub_mode, self.subfilt_var.get()) \
@@ -2258,7 +2249,7 @@ class MiniTCI(tk.Tk):
         if key:
             self._band_stacks[key] = {
                 "a": self.freq_hz, "mode": self.mode,
-                "filt": self.filtwidth_var.get(),
+                "filt": [int(self.pan.filt[0]), int(self.pan.filt[1])],
                 "b": self.sub_hz, "sub_mode": self.sub_mode,
                 "sub_filt": self.subfilt_var.get(),
                 "sub_on": self.sub_enabled, "split": self.split,
@@ -2275,7 +2266,13 @@ class MiniTCI(tk.Tk):
         """Restore a full operating state (VFO A + B, modes, sub, split)."""
         self.mode_var.set(st["mode"])
         if st.get("filt"):
-            self.filtwidth_var.set(st["filt"])
+            try:
+                fl, fh = int(st["filt"][0]), int(st["filt"][1])
+                if fh - fl >= 200:
+                    self._filter_entries_set((fl, fh))
+                    self.pan.filt = (float(fl), float(fh))
+            except (ValueError, TypeError, IndexError):
+                pass
         # sub mode BEFORE sub filter so _subfilt_changed uses the right sideband
         self.sub_mode = st.get("sub_mode", "USB")
         self.submode_var.set(self.sub_mode)
@@ -2343,31 +2340,32 @@ class MiniTCI(tk.Tk):
                 return
 
     def _a_filter(self):
-        """VFO A passband (FilterLow, FilterHigh): Thetis's per-mode table
-        (console.cs InitFilterPresets) at the selected F-button.
-        Returns None for SPEC (no filter - full DDC span)."""
-        return _thetis_filter(self.mode_var.get(), self._filt_idx)
+        """VFO A passband from the Low/High entry boxes. Returns None for
+        SPEC (no filter - full DDC span)."""
+        if self.mode_var.get() == "SPEC":
+            return None
+        try:
+            lo = int(float(self.filt_low_entry.get()))
+            hi = int(float(self.filt_high_entry.get()))
+        except (ValueError, tk.TclError):
+            return _thetis_filter(self.mode_var.get(), 4)   # mode default
+        if hi <= lo:
+            lo, hi = -3000, 3000
+        return (lo, hi)
 
     def _mode_changed(self, *_):
         if getattr(self, "_mode_busy", False):
             return   # echo from the server - already in sync
         self.mode = self.mode_var.get()
-        filt = self._a_filter()   # Thetis per-mode table (None = SPEC)
+        filt = _thetis_filter(self.mode_var.get(), 4)   # mode default (F5)
+        self._filter_entries_set(filt if filt is not None else (-48000, 48000))
         self.send(f"modulation:0,{self.mode};")
         if filt is not None:
             lo, hi = filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
-        # DISPLAY rect: in DRM Thetis draws the passband CENTRED ON THE VFO
-        # (VFO-5k..VFO+5k) because the hardware DDS is shifted -12 kHz and the
-        # display axis is re-anchored (Display.FreqDiff = -12000). The DSP
-        # filter (7000..17000 rel. DDS) and the drawn rect differ by exactly
-        # that shift. IQ blocks are tagged at the real DDS (dds_echo-12000).
-        if self.mode == "DRM":
-            self.pan.filt = (-5000, 5000)
-        elif filt is None:
-            self.pan.filt = (-48000, 48000)   # SPEC: full DDC span
-        else:
             self.pan.filt = filt
+        else:
+            self.pan.filt = (-48000, 48000)   # SPEC: full DDC span
         # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
         # mode - there is only one DDC, its DSP pipeline is shared.
         if getattr(self, "_is_full_tci", False):
@@ -2380,36 +2378,39 @@ class MiniTCI(tk.Tk):
             finally:
                 self._submode_busy = False
 
-    def _filter_btn_refresh(self):
-        """Highlight the active filter button, Thetis radFilter-style."""
-        for i, b in enumerate(self.filt_btns):
-            b.config(relief="sunken" if i == self._filt_idx else "raised",
-                     bg="#d8dce4" if i == self._filt_idx else "#e8eaf0")
+    def _filter_entries_set(self, filt):
+        """Write a (lo, hi) pair into the entry boxes (no send)."""
+        try:
+            lo, hi = filt
+            self._filt_updating = True
+            self.filt_low_entry.delete(0, "end")
+            self.filt_low_entry.insert(0, str(int(lo)))
+            self.filt_high_entry.delete(0, "end")
+            self.filt_high_entry.insert(0, str(int(hi)))
+        except (tk.TclError, ValueError, TypeError):
+            pass
+        finally:
+            self._filt_updating = False
 
-    def _filter_btn_click(self, idx):
-        """F-button click: same effect as Thetis's radFilterN_CheckedChanged."""
-        self._filt_idx = idx
-        self.filtwidth_var.set(BW_PRESETS[idx])
-        self._filter_btn_refresh()
-        self._filtwidth_changed()
-
-    def _filtwidth_changed(self, *_):
-        # Thetis per-mode table at the selected F-button width
-        self.pan.filt = self._a_filter()
-        if self.pan.filt is None:
-            self.pan.filt = (-48000, 48000)   # SPEC: no filter, full span
+    def _filter_entries_applied(self, *_a):
+        """User pressed Return / left the box: push the new edges to Thetis."""
+        if self._filt_updating:
             return
+        filt = self._a_filter()
+        if filt is None:
+            return
+        self.pan.filt = filt
         if self.connected:
-            lo, hi = self.pan.filt
+            lo, hi = filt
             self.send(f"rx_filter_band:0,{lo},{hi};")
-        self.logprint(f"VFO A filter {self.filtwidth_var.get()} "
-                      f"({self.pan.filt[0]}..{self.pan.filt[1]} Hz)")
-        # H1: on 50001 the sub-VFO shares VFO A's DSP pipeline - sync the
-        # display so the two filter selections never disagree.
-        if getattr(self, "_is_full_tci", False):
-            self.sub_filt = self.pan.filt
-            self.subfilt_var.set(self.filtwidth_var.get())
-            self._sub_refresh_ui()
+        self.logprint(f"VFO A filter {filt[0]}..{filt[1]} Hz")
+
+    def _apply_mode_filter_default(self):
+        """Set the Low/High boxes to the Thetis default for the current mode
+        (F5 equivalent) and update the display rect. No send from here."""
+        filt = _thetis_filter(self.mode_var.get(), 4)
+        self._filter_entries_set(filt)
+        self.pan.filt = filt
 
     def _agc_mode_to_tci(self, name):
         return self.AGC_MODES_TCI.get(name, "normal")
