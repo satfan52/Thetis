@@ -886,26 +886,53 @@ class MiniTCI(tk.Tk):
 
     def _bind_slider_wheel(self):
         """Bind mouse wheel to every ttk.Scale: wheel up = increase, down =
-        decrease by 2% of range (hold Shift for fine 0.5%)."""
-        def wheel(scale, var, lo, hi):
+        decrease. Default step is 2% of range (Shift = fine 0.5%); sliders can
+        pass an explicit step/fine step and an on_change callback.
+
+        IMPORTANT: setting a ttk.Scale's variable does NOT fire its -command,
+        so a wheel move would only move the knob and never reach the radio.
+        The handler therefore invokes on_change explicitly."""
+        def wheel(scale, var, lo, hi, on_change=None, step=None, fine=None):
             def handler(e):
-                step = (hi - lo) * (0.005 if (e.state & 0x0001) else 0.02)
-                d = step if getattr(e, "delta", 120) > 0 else -step
-                var.set(min(hi, max(lo, var.get() + d)))
+                if scale.instate(["disabled"]):
+                    return "break"          # disabled (mode-dependent) = inert
+                rng = hi - lo
+                if (e.state & 0x0001) and fine is not None:
+                    st = fine
+                elif step is not None:
+                    st = step
+                else:
+                    st = rng * (0.005 if (e.state & 0x0001) else 0.02)
+                d = st if getattr(e, "delta", 120) > 0 else -st
+                newv = min(hi, max(lo, var.get() + d))
+                if newv == var.get():
+                    return "break"
+                var.set(newv)
+                if on_change is not None:
+                    on_change(newv)
                 return "break"
             scale.bind("<MouseWheel>", handler)
             scale.bind("<Button-4>", handler)
             scale.bind("<Button-5>", handler)
-        for scale, var, lo, hi in (
-                (self.vol_scale if hasattr(self, "vol_scale") else None, self.vol_var, 0, 100),
-                (self.mic_scale if hasattr(self, "mic_scale") else None, self.mic_var, 0, 100),
-                (self.agc_gain_scale, self.agc_gain_var, -20, 120),
-                (self.yzero_scale if hasattr(self, "yzero_scale") else None, self.yzero_var, -40, 40),
-                (self.yscale_scale if hasattr(self, "yscale_scale") else None, self.yscale_var, 20, 90),
-                (self.zoom_scale if hasattr(self, "zoom_scale") else None, self.zoom_var, 0, 100),
-                (self.wf_scale if hasattr(self, "wf_scale") else None, self.wf_gain_var, 0, 100)):
+        for scale, var, lo, hi, cb, step, fine in (
+                (self.vol_scale if hasattr(self, "vol_scale") else None,
+                 self.vol_var, 0, 100, None, None, None),
+                (self.mic_scale if hasattr(self, "mic_scale") else None,
+                 self.mic_var, 0, 100, None, None, None),
+                (self.agc_gain_scale, self.agc_gain_var, -20, 120,
+                 self._agc_gain_changed, 1.0, 1.0),
+                (getattr(self, "filtw_scale", None), self.filtw_var, 10, 20000,
+                 self._filtw_changed, 100.0, 10.0),      # fine tuning in Hz
+                (self.yzero_scale if hasattr(self, "yzero_scale") else None,
+                 self.yzero_var, -40, 40, None, None, None),
+                (self.yscale_scale if hasattr(self, "yscale_scale") else None,
+                 self.yscale_var, 20, 90, None, None, None),
+                (self.zoom_scale if hasattr(self, "zoom_scale") else None,
+                 self.zoom_var, 0, 100, None, None, None),
+                (self.wf_scale if hasattr(self, "wf_scale") else None,
+                 self.wf_gain_var, 0, 100, None, None, None)):
             if scale is not None:
-                wheel(scale, var, lo, hi)
+                wheel(scale, var, lo, hi, cb, step, fine)
 
     def _bind_settings_autosave(self):
         # save on every user-visible change (traces already registered for vars;
