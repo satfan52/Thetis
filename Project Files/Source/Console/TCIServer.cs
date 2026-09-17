@@ -4617,8 +4617,15 @@ namespace Thetis
 					switch (rx)
 					{
 						case 0:
-                            consoleThreadSafe.UpdateRX1Filters(low, high);
-                            break;
+						                            // H1: applying arbitrary edges from TCI (MiniTCI's
+						                            // Var slider) is exactly what VAR1 is for. Select
+						                            // VAR1 first (same as clicking radFilterVar1) so the
+						                            // console filter buttons show VAR1 selected, then
+						                            // apply the client's edges - otherwise Thetis would
+						                            // apply the numbers while still highlighting F5.
+						                            consoleThreadSafe.SetRX1Filter(Filter.VAR1);
+						                            consoleThreadSafe.UpdateRX1Filters(low, high);
+						                            break;
 						case 1:
                             consoleThreadSafe.UpdateRX2Filters(low, high);
                             break;
