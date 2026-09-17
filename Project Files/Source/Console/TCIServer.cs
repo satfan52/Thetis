@@ -5049,8 +5049,11 @@ namespace Thetis
                     else
                     {
                         if (!int.TryParse(args[1], out int gain)) return;
-                        gain = Math.Max(-20, Math.Min(120, gain));
-                        consoleThreadSafe.radio.GetDSPRX(0, 0).RXFixedAGC = gain;
+                                                gain = Math.Max(-20, Math.Min(120, gain));
+                                                consoleThreadSafe.radio.GetDSPRX(0, 0).RXFixedAGC = gain;
+                                                // H1: manually setting AGC fixed gain from TCI should
+                                                // disable auto-AGC tracking, same rationale as agc_gain.
+                                                if (rx == 0) consoleThreadSafe.AutoAGCRX1 = false;
                     }
                 }
         private void sendAgcFixedGain(int rx, int gain)
@@ -5101,8 +5104,12 @@ namespace Thetis
             else
             {
                 if (!int.TryParse(args[1], out int gain)) return;
-                gain = Math.Max(-20, Math.Min(120, gain));
-                consoleThreadSafe.SetAgcT(rx + 1, gain);
+                                gain = Math.Max(-20, Math.Min(120, gain));
+                                consoleThreadSafe.SetAgcT(rx + 1, gain);
+                                // H1: manually setting AGC-T from TCI should disable the
+                                // auto-AGC tracking timer. Otherwise the noise-floor-based
+                                // recalculation resets the value ~1 s later.
+                                if (rx == 0) consoleThreadSafe.AutoAGCRX1 = false;
             }
         }
         private void sendCTUN(int rx, bool enabled)
