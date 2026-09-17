@@ -1902,10 +1902,12 @@ class MiniTCI(tk.Tk):
         else:
             val = 0.5
         if force or getattr(self, "_last_audio_sel", None) != sel or sel == "both":
-                    if getattr(self, "_is_full_tci", False):
-                        self.send(f"rx_balance:0,{val:.2f};")
-                    else:
-                        self.send(f"sub_balance:0,{val:.2f};")
+            # Phase -1a: full TCI (50001) exposes this as rx_balance; the
+            # headless ports use sub_balance
+            if getattr(self, "_is_full_tci", False):
+                self.send(f"rx_balance:0,{val:.2f};")
+            else:
+                self.send(f"sub_balance:0,{val:.2f};")
         self._last_audio_sel = sel
         self.logprint(f"audio: {sel} (balance {val:.2f})")
 
@@ -1913,7 +1915,10 @@ class MiniTCI(tk.Tk):
         # balance only actively drives placement in 'Both' mode; Main/Sub force
         # hard L/R panning for clean isolation
         if self._sub_enabled() and self.audio_sel == "both":
-            self.send(f"sub_balance:0,{float(v):.2f};")
+            if getattr(self, "_is_full_tci", False):
+                self.send(f"rx_balance:0,{float(v):.2f};")
+            else:
+                self.send(f"sub_balance:0,{float(v):.2f};")
 
     def _sub_wheel(self, e):
         if not self.sub_enabled:
