@@ -1423,6 +1423,7 @@ class MiniTCI(tk.Tk):
             if getattr(self, "_is_full_tci", False):
                 # 50001: MiniTCI is the AGC master. Push saved state to Thetis.
                 if self.agc_var.get() == "OFF":
+                    self.send("agc_mode:0,off;")
                     self.send("agc_auto_ex:0,false;")
                     self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
                 else:
@@ -2280,6 +2281,7 @@ class MiniTCI(tk.Tk):
             return   # echo handler set the var - do not re-send
         if manual:
             # fixed-gain mode: gain slider controls the receiver gain directly
+            self.send("agc_mode:0,off;")
             self.send("agc_auto_ex:0,false;")
             if getattr(self, "_is_full_tci", False):
                 self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")

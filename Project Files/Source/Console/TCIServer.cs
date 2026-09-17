@@ -5035,23 +5035,24 @@ namespace Thetis
         // the correct target when AGC is OFF — unlike agc_gain, which alters
         // AGC-Top (threshold) and has no effect in manual mode.
         private void handleAgcFixedGain(string[] args)
-        {
-            if (args == null || args.Length < 1 || args.Length > 2) return;
-            if (!int.TryParse(args[0], out int rx)) return;
-            if (rx < 0 || rx > 1) return;
+                {
+                    if (args == null || args.Length < 1 || args.Length > 2) return;
+                    if (!int.TryParse(args[0], out int rx)) return;
+                    if (rx < 0 || rx > 1) return;
+                    if (consoleThreadSafe == null) return;
 
-            if (args.Length == 1)
-                        {
-                            var dsp = consoleThreadSafe.radio.GetDSPRX(0, 0);
-                            sendAgcFixedGain(rx, (int)dsp.RXFixedAGC);
-                        }
-                        else
-                        {
-                            if (!int.TryParse(args[1], out int gain)) return;
-                            gain = Math.Max(-20, Math.Min(120, gain));
-                            consoleThreadSafe.radio.GetDSPRX(0, 0).RXFixedAGC = gain;
-                        }
-        }
+                    if (args.Length == 1)
+                    {
+                        var dsp = consoleThreadSafe.radio.GetDSPRX(0, 0);
+                        sendAgcFixedGain(rx, (int)dsp.RXFixedAGC);
+                    }
+                    else
+                    {
+                        if (!int.TryParse(args[1], out int gain)) return;
+                        gain = Math.Max(-20, Math.Min(120, gain));
+                        consoleThreadSafe.radio.GetDSPRX(0, 0).RXFixedAGC = gain;
+                    }
+                }
         private void sendAgcFixedGain(int rx, int gain)
         {
             sendTextFrame("agc_fixed_gain:" + rx.ToString() + "," + gain.ToString() + ";");
