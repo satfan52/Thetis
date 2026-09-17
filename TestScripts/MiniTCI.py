@@ -1647,20 +1647,31 @@ class MiniTCI(tk.Tk):
                         # NOT to A - under CTUN A floats inside the DDC and must
                         # not drag the data placement with it.
             elif k == "dds" and v:
+                # dds:<rx>,<hz> - CHANNEL-ADDRESSED. Only rx 0 is this client's
+                # display centre. With RX2 disabled Thetis still tracks
+                # CentreRX2Frequency, and setting VFOBFreq (the sub-channel when
+                # RX2 is off) drives it: that fires dds:1,<sub>, which a
+                # last-field parse put at the centre of the panadapter.
+                p = str(v).split(",")
                 try:
-                    dds_hz = float(v.split(",")[-1])
-                    self.ddc_center_hz = int(dds_hz)
-                    self.dds_lbl.config(text="DDS " + self._fmt_hz(dds_hz))
-                    self.pan.data_center_hz = dds_hz   # actual DDC center of the IQ data
-                    if self.pan.center_hz and abs(dds_hz - self.pan.center_hz) > 1:
-                        # DDC moved (band change, classic follow, or CTUN scroll):
-                        # slide the whole display + waterfall history to stay aligned
-                        self.pan.shift_waterfall(dds_hz - self.pan.center_hz)
-                        self.pan.center_hz = dds_hz
-                    elif not self.pan.center_hz:
-                        self.pan.center_hz = dds_hz
+                    rx_i = int(p[0])
+                    dds_hz = float(p[-1])
                 except (ValueError, IndexError):
-                    pass
+                    rx_i, dds_hz = -1, 0.0
+                if rx_i == 0:
+                    try:
+                        self.ddc_center_hz = int(dds_hz)
+                        self.dds_lbl.config(text="DDS " + self._fmt_hz(dds_hz))
+                        self.pan.data_center_hz = dds_hz   # actual DDC center of the IQ data
+                        if self.pan.center_hz and abs(dds_hz - self.pan.center_hz) > 1:
+                            # DDC moved (band change, classic follow, or CTUN scroll):
+                            # slide the whole display + waterfall history to stay aligned
+                            self.pan.shift_waterfall(dds_hz - self.pan.center_hz)
+                            self.pan.center_hz = dds_hz
+                        elif not self.pan.center_hz:
+                            self.pan.center_hz = dds_hz
+                    except (ValueError, IndexError):
+                        pass
             elif k == "mox" and v:
                 # Thetis main-GUI MOX/Tune (any transmitter on site): mute the
                 # monitor - the on-site blast overloads the Red Pitaya RX and
@@ -1685,10 +1696,14 @@ class MiniTCI(tk.Tk):
                 except ValueError:
                     pass
             elif k == "rx_filter_band" and v:
+                # rx_filter_band:<rx>,<lo>,<hi> - CHANNEL-ADDRESSED; only rx 0
+                # is this client's VFO A passband (RX2's filter must not
+                # overwrite it).
                 p = v.split(",")
                 if len(p) >= 3:
                     try:
-                        self.pan.filt = (float(p[1]), float(p[2]))
+                        if int(p[0]) == 0:
+                            self.pan.filt = (float(p[1]), float(p[2]))
                     except ValueError:
                         pass
             elif k == "iq_samplerate" and v:
