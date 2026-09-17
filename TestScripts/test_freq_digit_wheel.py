@@ -44,6 +44,7 @@ def main():
 
         # ---- per-digit place mapping -------------------------------------
         app.mode_var.set("USB")
+        app.split = False            # deterministic: no split TX-follow on tune
         app.update()
         app.freq_hz = 14_074_000
         app._fmt_freq()
@@ -81,7 +82,9 @@ def main():
 
         d, cmd = wheel_at(0, 120)          # leftmost digit = 10 MHz
         check("wheel on 10 MHz digit", d, 10_000_000)
-        check("wheel tuned and sent", cmd[:1], [f"vfo:0,0,{app.freq_hz};"])
+        # tune_to also re-places the sub VFO first when SUB is on, so the A
+        # command is the last one it sends
+        check("wheel tuned and sent", cmd[-1:], [f"vfo:0,0,{app.freq_hz};"])
 
         d, _ = wheel_at(5, 120)            # kHz digit = 1 kHz
         check("wheel on 1 kHz digit", d, 1_000)

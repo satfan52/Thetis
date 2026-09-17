@@ -689,6 +689,16 @@ class PanFall(tk.Canvas):
 # ================================================================ app
 
 class MiniTCI(tk.Tk):
+    # H1: MiniTCI's AGC names <-> Thetis TCI agc_mode tokens. These mirror
+    # TCIServer's agcModeToTciMode/tciModeToAgcMode EXACTLY (FIXD = "off",
+    # MED = "normal") - they are the contract for the bi-directional sync.
+    AGC_MODES_TCI = {"Fixed": "off", "Long": "long", "Slow": "slow",
+                     "Med": "normal", "Fast": "fast", "Custom": "custom"}
+    AGC_MODES_FROM_TCI = {"off": "Fixed", "fixd": "Fixed", "fixed": "Fixed",
+                          "long": "Long", "slow": "Slow",
+                          "normal": "Med", "med": "Med", "medium": "Med",
+                          "fast": "Fast", "custom": "Custom"}
+
     def __init__(self):
         super().__init__()
         self.title("MiniTCI — simplified Thetis radio")
@@ -1512,12 +1522,44 @@ class MiniTCI(tk.Tk):
                 self.client.send_binary(frame)
 
     # ---------------- connect ----------------
+    RECONNECT_DELAY_MS = 3000
+    RECONNECT_MAX_TRIES = 10
+
+    def _schedule_reconnect(self):
+        """After an unexpected drop, retry by itself: the session can vanish
+        while the user is not looking, and PTT/Tune then do nothing at all.
+        Bounded so a dead server is not hammered; a manual Disconnect cancels."""
+        if getattr(self, "_manual_disconnect", False):
+            return
+        n = getattr(self, "_reconnect_tries", 0) + 1
+        self._reconnect_tries = n
+        if n > self.RECONNECT_MAX_TRIES:
+            self.logprint("reconnect gave up after "
+                          f"{self.RECONNECT_MAX_TRIES} attempts - click Connect")
+            return
+        self.logprint(f"reconnect attempt {n}/{self.RECONNECT_MAX_TRIES} in "
+                      f"{self.RECONNECT_DELAY_MS // 1000}s")
+        self.after(self.RECONNECT_DELAY_MS, self._do_reconnect)
+
+    def _do_reconnect(self):
+        if self.connected or getattr(self, "_manual_disconnect", False):
+            return
+        if self.client is not None:
+            try:
+                self.client.send("__close__")
+            except Exception:
+                pass
+            self.client = None
+        self.toggle_conn()
+
     def toggle_conn(self):
         if self.client:
+            self._manual_disconnect = True      # a click, not a drop
             self.client.send("__close__")
             self.client = None
             self._set_state("disconnected")
             return
+        self._manual_disconnect = False
         port = int(self.rx_var.get().split()[0])
         self._is_full_tci = (port == 50001)  # Phase -1a: port detect
         self.text_q = queue.Queue()
@@ -1538,6 +1580,7 @@ class MiniTCI(tk.Tk):
     def _set_state(self, s):
         if s == "connected":
             self.connected = True
+            self._reconnect_tries = 0
             self.conn_btn.config(text="Disconnect")
             self.state_lbl.config(text="● connected", fg=C["green"])
             self.send("iq_samplerate:96000;")
@@ -1595,7 +1638,8 @@ class MiniTCI(tk.Tk):
             self.conn_btn.config(text="Connect")
             self.state_lbl.config(text="● disconnected", fg=C["dim"])
             if was:
-                self.logprint("connection lost - click Connect to reconnect")
+                self.logprint("connection lost - reconnecting automatically")
+                self._schedule_reconnect()
             else:
                 self.logprint("disconnected")
 
@@ -1841,17 +1885,28 @@ class MiniTCI(tk.Tk):
                 mox_on = v.split(",")[-1].lower() == "true"
                 if mox_on != getattr(self, "mox_active", False):
                     self.mox_active = mox_on
+                    self._tx_visual_state = mox_on
+                    self._tx_visuals(mox_on)
                     if mox_on:
                         self.logprint("MOX active (Thetis) - monitor muted")
                     else:
                         self._tx_mute_until = time.time() + self.tx_tail_s
                         self.logprint("MOX released - monitor resumes")
             elif k == "trx" and v:
-                tx = v.split(",")[-1].lower() == "true"
-                if tx != self.ptt:
+                # trx:<rx>,<bool>[,tci] - the server's MOX/TUN broadcast. Only
+                # rx 0 matters here. Both TX buttons follow, so a Tune or MOX
+                # started in Thetis lights MiniTCI too (and vice versa).
+                p = str(v).split(",")
+                try:
+                    if int(p[0]) != 0:
+                        raise ValueError
+                except (ValueError, IndexError):
+                    return
+                tx = p[1].lower() == "true" if len(p) > 1 else False
+                if tx != self.ptt or getattr(self, "_tx_visual_state", None) != tx:
                     self.ptt = tx
-                    self.tx_lbl.config(text="TX ⏺" if tx else "RX",
-                                       fg=C["red"] if tx else C["dim"])
+                    self._tx_visual_state = tx
+                    self._tx_visuals(tx)
             elif k == "rx_sensors" and v:
                 try:
                     self.smeter = float(v.split(",")[-1])
@@ -2890,15 +2945,37 @@ class MiniTCI(tk.Tk):
             self.tune_to(self.freq_hz + d)
 
     # ---------------- TX ----------------
+    def _tx_visuals(self, tx_on):
+        """Mirror the TX state on BOTH TX buttons. The user runs MiniTCI next to
+        Thetis: a Tune or MOX started on either side must light the same control
+        on the other, or the two apps look out of sync."""
+        try:
+            self.ptt_btn.config(bg=C["red"] if tx_on else "#f4d7d4",
+                                relief="sunken" if tx_on else "raised")
+            self.tune_btn.config(bg=C["red"] if tx_on else "#f7e6c8",
+                                 relief="sunken" if tx_on else "raised")
+            if tx_on:
+                self.tx_lbl.config(text="TX \u23fa tune" if getattr(self, "tuning", False)
+                                   else "TX \u23fa", fg=C["red"])
+            else:
+                self.tx_lbl.config(text="RX", fg=C["dim"])
+        except tk.TclError:
+            pass
+
     def ptt_on(self):
-        if not self.connected or self.ptt:
+        if not self.connected:
+            # never look like transmitting while the server has no session
+            self.logprint("not connected - PTT ignored (click Connect)")
+            self._set_state("disconnected")
+            return
+        if self.ptt:
             return
         self.ptt = True
         self.send("tx_stream_audio_buffering:100;")
         self.send("audio_stream_sample_type:float32;")
         self.send("audio_stream_channels:1;")
         self.send("audio_stream_samples:1024;")
-        self.send("trx:0,true;")
+        self.send("trx:0,true,tci;")     # 'tci' = server takes TX audio from us
         self.ptt_btn.config(bg=C["red"], relief="sunken")
         self.tx_lbl.config(text="TX ⏺", fg=C["red"])
         self._mic_open()
@@ -2939,7 +3016,7 @@ class MiniTCI(tk.Tk):
         self.send("audio_stream_sample_type:float32;")
         self.send("audio_stream_channels:1;")
         self.send("audio_stream_samples:1024;")
-        self.send("trx:0,true;")
+        self.send("trx:0,true,tci;")     # 'tci' = server takes TX audio from us
         self.tune_btn.config(bg=C["red"], relief="sunken")
         self.tx_lbl.config(text="TX \u23fa tune", fg=C["red"])
         self.logprint(f"Tune ON: 1500 Hz tone, drive {self.tune_amp:.3f} peak")
@@ -2973,12 +3050,11 @@ class MiniTCI(tk.Tk):
         # fixed minimum tail, then playback resumes (the box controls the tail)
         self._tx_mute_until = time.time() + self.tx_tail_s
         self.mic_level_db = -140.0
-        self.send("trx:0,false;")
-        self.ptt_btn.config(bg="#e3b8b3", relief="raised")
-        self.tx_lbl.config(text="RX", fg=C["dim"])
+        self.send("trx:0,false,tci;")
         if getattr(self, "tuning", False):
             self.tuning = False
-            self.tune_btn.config(bg="#f7e6c8", relief="raised")
+        self._tx_visual_state = False
+        self._tx_visuals(False)
         if self.mic_stream:
             try:
                 self.mic_stream.stop(); self.mic_stream.close()
