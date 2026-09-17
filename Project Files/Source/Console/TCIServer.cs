@@ -6513,13 +6513,21 @@ namespace Thetis
                 m_tmVFOtimer = new System.Threading.Timer(VFOcallback, vfod, m_nRateLimit, Timeout.Infinite);
             }
         }
-		public void CentreChange(VFOData vfod)
+        // H1: unambiguous sub-channel frequency (VFO A's sub / VFO B when RX2 is
+        // disabled). Sent alongside the vfo:0,1 echo, which cannot be told apart
+        // from RX2's VFO by a client.
+        public void VFOASubChange(double freqMHz)
         {
-            if (m_tmCentretimer != null)
-            {
-                m_tmCentretimer.Change(Timeout.Infinite, Timeout.Infinite);
-                m_tmCentretimer = null;
-            }
+            if (m_disconnected) return;
+            sendTextFrame("vfoasub:0," + ((long)(freqMHz * 1e6)).ToString() + ";");
+        }
+		public void CentreChange(VFOData vfod)
+		{
+			if (m_tmCentretimer != null)
+			{
+				m_tmCentretimer.Change(Timeout.Infinite, Timeout.Infinite);
+				m_tmCentretimer = null;
+			}
 
 			bool bOK = !m_swCentre.IsRunning || (m_swCentre.IsRunning && m_swCentre.ElapsedMilliseconds > m_nRateLimit);
 
@@ -7395,6 +7403,24 @@ namespace Thetis
 					socketListener.VFOChange(vfod);
 				}
 			}
+
+            // H1: with RX2 disabled, VFO B *is* the sub-channel of VFO A. The
+            // vfo:0,1 echo above is indistinguishable from RX2's VFO, so publish
+            // the sub frequency under its own unambiguous name as well. Clients
+            // that do not know vfoasub ignore it; the vfo:0,1 echo is kept for
+            // compatibility with existing 50001 applications.
+            if (console != null && !console.RX2Enabled)
+            {
+                lock (m_objLocker)
+                {
+                    if (m_server == null || m_socketListenersList == null) return;
+
+                    foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+                    {
+                        socketListener.VFOASubChange(newFreq);
+                    }
+                }
+            }
         }
 		public void OnMoxChangeHandler(int rx, bool oldMox, bool newMox)
 		{

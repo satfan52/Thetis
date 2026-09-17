@@ -1631,15 +1631,21 @@ class MiniTCI(tk.Tk):
                 p = v.split(",")
                 if len(p) >= 3:
                     try:
-                        hz = float(p[2])
+                        rx_i, chan_i, hz = int(p[0]), int(p[1]), float(p[2])
+                    except ValueError:
+                        rx_i = chan_i = -1
+                        hz = 0.0
+                    # ONLY receiver 0 / channel 0 is VFO A. The 50001 server also
+                    # broadcasts vfo:0,1,<hz> for VFOBFreq, and when RX2 is off
+                    # VFO B IS the sub-channel - consuming it here dragged VFO A
+                    # (and its panadapter marker) onto the sub frequency.
+                    if rx_i == 0 and chan_i == 0:
                         self.freq_hz = int(hz)
                         self._fmt_freq()
                         self.pan.vfo_hz = hz
                         # Branch H1: data_center_hz belongs to the DDC (dds echo),
                         # NOT to A - under CTUN A floats inside the DDC and must
                         # not drag the data placement with it.
-                    except ValueError:
-                        pass
             elif k == "dds" and v:
                 try:
                     dds_hz = float(v.split(",")[-1])
