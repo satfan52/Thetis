@@ -1800,6 +1800,16 @@ class MiniTCI(tk.Tk):
                     try:
                         if int(p[0]) == 0:
                             self.pan.filt = (float(p[1]), float(p[2]))
+                            # best-effort: sync the width dropdown label to the
+                            # F-button whose Thetis edges match this passband
+                            for i, lbl in enumerate(BW_PRESETS):
+                                if _thetis_filter(self.mode_var.get(), i) == self.pan.filt:
+                                    self._loading = True
+                                    try:
+                                        self.filtwidth_var.set(lbl)
+                                    finally:
+                                        self._loading = False
+                                    break
                     except ValueError:
                         pass
             elif k == "iq_samplerate" and v:
@@ -1841,11 +1851,31 @@ class MiniTCI(tk.Tk):
                     if int(p[0]) == 0:
                         tok = p[1].strip().upper()
                         if tok in MODES and tok != self.mode_var.get():
+                            # adopt the mode AND the filter Thetis just applied.
+                            # Thetis's DRM/SPEC filters are set in SetRX1Mode and
+                            # NEVER fire a FilterChangedHandlers broadcast, so the
+                            # mode echo is the only sync point - compute the same
+                            # filter locally and update the display WITHOUT sending
+                            # anything (the server has already applied it).
+                            self.mode = tok
+                            filt = _filter_for_mode_width(
+                                tok, self.filtwidth_var.get())
+                            if filt is None:
+                                self.pan.filt = (-48000, 48000)  # SPEC: full span
+                            else:
+                                self.pan.filt = filt
                             self._mode_busy = True
+                            self._submode_busy = True
                             try:
-                                self.mode_var.set(tok)   # trace does the rest
+                                self.mode_var.set(tok)
+                                if self._is_full_tci:
+                                    self.sub_mode = tok
+                                    self.submode_var.set(tok)
+                                    self.sub_filt = self.pan.filt
                             finally:
                                 self._mode_busy = False
+                                self._submode_busy = False
+                            self._sub_refresh_ui()
                 except Exception:
                     pass
 
