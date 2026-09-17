@@ -882,14 +882,19 @@ class MiniTCI(tk.Tk):
         self.filtwidth_var.trace_add("write", self._filtwidth_changed)
 
         ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
-        self.agc_var = tk.StringVar(value="MED")
+        # H1: identical to Thetis's comboAGC (AGCMode enum order/casing)
+        self.agc_var = tk.StringVar(value="Med")
         self.agc_box = ttk.Combobox(r1, textvariable=self.agc_var, width=8, state="readonly",
-                                    values=["OFF", "FAST", "MED", "SLOW", "LONG"])
+                                    values=["Fixed", "Long", "Slow", "Med", "Fast", "Custom"])
         self.agc_box.pack(side="left")
         self.agc_var.trace_add("write", self._agc_changed)
         # Gain slider: only meaningful when AGC = OFF (fixed-gain / manual mode)
-        ttk.Label(r1, text="Gain (manual):", padding=(8, 0, 2, 0)).pack(side="left")
+        ttk.Label(r1, text="Gain:", padding=(8, 0, 2, 0)).pack(side="left")
         self.agc_gain_var = tk.DoubleVar(value=40)
+        # live numeric readout next to the slider (Thetis parity: lblRF)
+        self.agc_gain_lbl = tk.Label(r1, text="40", bg=C["panel"], fg=C["fg"],
+                                     font=("Consolas", 9, "bold"), width=4)
+        self.agc_gain_lbl.pack(side="left", padx=(0, 2))
         self.agc_gain_scale = ttk.Scale(r1, from_=-20, to=120, variable=self.agc_gain_var,
                   length=90, command=self._agc_gain_changed)
         self.agc_gain_scale.pack(side="left", padx=2)
@@ -1424,13 +1429,8 @@ class MiniTCI(tk.Tk):
                 # 50001: MiniTCI is the AGC master. Push saved state to Thetis.
                 # agc_gain is the unified gain path (server routes it through the
                 # console AGC-T control, which applies the right parameter for
-                # the current mode: fixed gain in OFF, max gain in auto modes).
-                if self.agc_var.get() == "OFF":
-                    self.send("agc_mode:0,off;")
-                    self.send("agc_auto_ex:0,false;")
-                else:
-                    self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
-                    self.send("agc_auto_ex:0,true;")
+                # the current mode: fixed gain in Fixed, max gain in auto modes).
+                self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
             elif self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
@@ -1727,38 +1727,26 @@ class MiniTCI(tk.Tk):
                     pass
             # ---- H1: AGC echo handlers update the UI from the server state ----
             elif k == "agc_mode" and v:
-                # server reply: agc_mode:<rx>,<token>
+                # server reply: agc_mode:<rx>,<token> (Thetis GUI or our own echo)
                 try:
                     token = str(v).split(",")[-1].strip().lower()
-                    if token != "off":
-                        name = {"fast": "FAST", "normal": "MED", "slow": "SLOW",
-                                "long": "LONG", "custom": "CUSTOM", "fixd": "OFF"}.get(token)
-                        if name:
-                            self._agc_busy = True
-                            try:
-                                self.agc_var.set(name)
-                            finally:
-                                self._agc_busy = False
-                except Exception:
-                    pass
-            elif k == "agc_auto_ex" and v:
-                # agc_auto_ex:<rx>,<bool> - false = manual/fixed AGC (OFF)
-                try:
-                    auto = str(v).split(",")[-1].strip().lower() == "true"
-                    if not auto:
+                    name = self._agc_mode_from_tci(token)
+                    if name:
                         self._agc_busy = True
                         try:
-                            self.agc_var.set("OFF")
+                            self.agc_var.set(name)
                         finally:
                             self._agc_busy = False
                 except Exception:
                     pass
-            elif k == "agc_fixed_gain" and v:
+            elif k == "agc_gain" and v:
+                # Thetis RF slider moved (or our echo) -> keep slider+label in sync
                 try:
                     gain = int(float(str(v).split(",")[-1]))
                     self._agc_gain_busy = True
                     try:
                         self.agc_gain_var.set(gain)
+                        self._update_agc_gain_label()
                     finally:
                         self._agc_gain_busy = False
                 except Exception:
@@ -2265,35 +2253,34 @@ class MiniTCI(tk.Tk):
                 self.subfilt_var.set(self.filtwidth_var.get())
                 self._sub_refresh_ui()
 
+    # Thetis comboAGC names (capitalised enum) <-> TCI tokens
+    AGC_MODES_TCI = {"Fixed": "off", "Long": "long", "Slow": "slow",
+                     "Med": "normal", "Fast": "fast", "Custom": "custom"}
+    AGC_MODES_FROM_TCI = {v: k for k, v in AGC_MODES_TCI.items()}
+
     def _agc_mode_to_tci(self, name):
-        return {"OFF": "off", "FIXED": "fixed", "FAST": "fast",
-                "MED": "normal", "SLOW": "slow", "LONG": "long",
-                "CUSTOM": "custom"}.get(name, "normal")
+        return self.AGC_MODES_TCI.get(name, "normal")
+
+    def _agc_mode_from_tci(self, token):
+        return self.AGC_MODES_FROM_TCI.get(token, "Med")
 
     def _agc_changed(self, *_):
         mode = self.agc_var.get()
-        manual = (mode == "OFF")
-        # On 50001 the gain slider controls AGC-T in auto modes (via agc_gain)
-        # or fixed gain when OFF (via agc_fixed_gain). On headless ports
-        # the slider is disabled in auto modes (fixed gain has no meaning
-        # when the AGC is running).
-        on_tci = getattr(self, "_is_full_tci", False)
+        manual = (mode == "Fixed")     # Thetis FIXD
         try:
-            self.agc_gain_scale.state(["!disabled"] if manual or on_tci else ["disabled"])
+            self.agc_gain_scale.state(["!disabled"])   # gain applies in ALL modes
         except tk.TclError:
             pass
+        self._update_agc_gain_label()
         if not self.connected:
             return
         if getattr(self, "_agc_busy", False):
             return   # echo handler set the var - do not re-send
-        if manual:
-            self.send("agc_mode:0,off;")
-            self.send("agc_auto_ex:0,false;")
-        else:
-            # AGC on: FAST/MED/SLOW/LONG
-            self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
-            self.send("agc_auto_ex:0,true;")
-        # unified gain push (both modes on 50001; agc_gain on headless)
+        # agc_mode alone carries the full mode (server maps off<->FIXD);
+        # agc_auto_ex is deliberately NOT sent - on headless it force-maps to
+        # MED/FIXD and would clobber e.g. Fast.
+        self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
+        # unified gain push: server routes to fixed gain (FIXD) or AGC-T (auto)
         self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
 
     def _agc_auto_changed(self):
@@ -2301,6 +2288,7 @@ class MiniTCI(tk.Tk):
         pass
 
     def _agc_gain_changed(self, v):
+        self._update_agc_gain_label()
         if not self.connected:
             return
         if getattr(self, "_agc_gain_busy", False):
@@ -2308,6 +2296,12 @@ class MiniTCI(tk.Tk):
         # one unified gain command on all ports - the server routes it to the
         # correct parameter for the current AGC mode
         self.send(f"agc_gain:0,{int(float(v))};")
+
+    def _update_agc_gain_label(self):
+        try:
+            self.agc_gain_lbl.config(text=str(int(float(self.agc_gain_var.get()))))
+        except (ValueError, tk.TclError):
+            pass
 
     def _hit_test(self, x):
         """Classify click position: 'in-filter', 'edge-lo', 'edge-hi', or 'span'."""
