@@ -2446,9 +2446,34 @@ class MiniTCI(tk.Tk):
         except (tk.TclError, TypeError, ValueError):
             pass
 
+    LOW_CUT = 150            # Thetis default_low_cut
+    MAX_FILTER_SHIFT = 10000  # Thetis _max_filter_shift (ConstrainFilter clamp)
+
+    def _constrain_filter(self, lo, hi):
+        """Thetis ConstrainFilter parity: clamp edges to the sideband
+        convention and to +/-MAX_FILTER_SHIFT. Returns (lo, hi)."""
+        mode = self.mode_var.get()
+        if mode in ("LSB", "DIGL", "CWL"):
+            if hi > 0:
+                hi = 0
+            lo = max(lo, -self.MAX_FILTER_SHIFT)
+            hi = min(hi, self.MAX_FILTER_SHIFT)
+        elif mode in ("USB", "DIGU", "CWU"):
+            if lo < 0:
+                lo = 0
+            lo = max(lo, -self.MAX_FILTER_SHIFT)
+            hi = min(hi, self.MAX_FILTER_SHIFT)
+        elif mode in ("AM", "SAM", "DSB", "SPEC"):
+            lo = max(lo, -self.MAX_FILTER_SHIFT)
+            hi = min(hi, self.MAX_FILTER_SHIFT)
+        # FM/DRM: unconstrained (Thetis: no case)
+        return (lo, hi)
+
     def _filtw_changed(self, v):
-        """Var bandwidth slider: scale the current filter around its centre
-        (Thetis ptbFilterWidth_Scroll parity). No-op in DRM/SPEC/FM."""
+        """Var1 bandwidth slider - Thetis ptbFilterWidth_Scroll parity.
+        New edges per mode family: USB/DIGU lo fixed at LOW_CUT; LSB/DIGL hi
+        fixed at -LOW_CUT; CW/DIG centred; AM/SAM/DSB symmetric half-width.
+        Clamped by ConstrainFilter. No-op in DRM/SPEC/FM."""
         if self._filt_updating:
             return
         mode = self.mode_var.get()
@@ -2458,14 +2483,22 @@ class MiniTCI(tk.Tk):
         if filt is None:
             return
         lo, hi = filt
-        centre = (lo + hi) / 2.0
-        bw = float(v)
-        new_lo = int(round(centre - bw / 2))
-        new_hi = int(round(centre + bw / 2))
+        centre = int((lo + hi) / 2)
+        bw = int(float(v))
+        if mode in ("USB", "DIGU"):
+            new_lo, new_hi = self.LOW_CUT, self.LOW_CUT + bw
+        elif mode in ("LSB", "DIGL"):
+            new_hi, new_lo = -self.LOW_CUT, -self.LOW_CUT - bw
+        elif mode in ("CWL", "CWU"):
+            new_lo, new_hi = centre - bw // 2, centre + bw // 2
+        else:   # AM, SAM, DSB: symmetric half-bandwidth like Thetis
+            new_lo, new_hi = centre - bw, centre + bw
+        new_lo, new_hi = self._constrain_filter(new_lo, new_hi)
         self.pan.filt = (new_lo, new_hi)
         self._filter_entries_set(self.pan.filt)
+        shown = new_hi - new_lo
         self.filtw_lbl.config(
-            text=f"{bw/1000:.1f}k" if bw >= 1000 else f"{int(bw)}")
+            text=f"{shown/1000:.1f}k" if shown >= 1000 else f"{shown}")
         if self.connected:
             self.send(f"rx_filter_band:0,{new_lo},{new_hi};")
 
