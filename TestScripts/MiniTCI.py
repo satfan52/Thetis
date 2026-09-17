@@ -1419,8 +1419,11 @@ class MiniTCI(tk.Tk):
             # balance slider (which only matters in 'both' mode)
             self._apply_audio_selection(force=True)
             if self.agc_var.get() == "OFF":
-                self.send("agc_auto_ex:0,false;")
-                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+                            self.send("agc_auto_ex:0,false;")
+                            if getattr(self, "_is_full_tci", False):
+                                self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
+                            else:
+                                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
             else:
                 self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
                 self.send("agc_auto_ex:0,true;")
@@ -2219,31 +2222,37 @@ class MiniTCI(tk.Tk):
                 "CUSTOM": "custom"}.get(name, "normal")
 
     def _agc_changed(self, *_):
-        mode = self.agc_var.get()
-        manual = (mode == "OFF")
-        # enable the Gain slider only in manual mode
-        try:
-            self.agc_gain_scale.state(["!disabled"] if manual else ["disabled"])
-        except tk.TclError:
-            pass
-        if not self.connected:
-            return
-        if manual:
-            # fixed-gain mode: gain slider controls the receiver gain directly
-            self.send("agc_auto_ex:0,false;")
-            self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
-        else:
-            # AGC on: FAST/MED/SLOW/LONG = attack/decay speed presets
-            self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
-            self.send("agc_auto_ex:0,true;")
+            mode = self.agc_var.get()
+            manual = (mode == "OFF")
+            # enable the Gain slider only in manual mode
+            try:
+                self.agc_gain_scale.state(["!disabled"] if manual else ["disabled"])
+            except tk.TclError:
+                pass
+            if not self.connected:
+                return
+            if manual:
+                # fixed-gain mode: gain slider controls the receiver gain directly
+                self.send("agc_auto_ex:0,false;")
+                if getattr(self, "_is_full_tci", False):
+                    self.send(f"agc_fixed_gain:0,{int(self.agc_gain_var.get())};")
+                else:
+                    self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+            else:
+                # AGC on: FAST/MED/SLOW/LONG = attack/decay speed presets
+                self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
+                self.send("agc_auto_ex:0,true;")
 
     def _agc_auto_changed(self):
         # kept for compatibility (Auto checkbox removed); no-op
         pass
 
     def _agc_gain_changed(self, v):
-        if self.connected and self.agc_var.get() == "OFF":
-            self.send(f"agc_gain:0,{int(float(v))};")
+            if self.connected and self.agc_var.get() == "OFF":
+                if getattr(self, "_is_full_tci", False):
+                    self.send(f"agc_fixed_gain:0,{int(float(v))};")
+                else:
+                    self.send(f"agc_gain:0,{int(float(v))};")
 
     def _hit_test(self, x):
         """Classify click position: 'in-filter', 'edge-lo', 'edge-hi', or 'span'."""
