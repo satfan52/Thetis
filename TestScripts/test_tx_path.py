@@ -78,7 +78,8 @@ def main():
               [c for c in sent if c.startswith("tune:")], ["tune:0,true;"])
         check("Tune flag set", app.tuning, True)
         check("Tune button lit", app.tune_btn.cget("bg"), M.C["red"])
-        check("PTT button NOT lit by Tune", app.ptt_btn.cget("bg"), "#f4d7d4")
+        check("Tune also lights PTT (Thetis TUN asserts MOX)",
+              app.ptt_btn.cget("bg"), M.C["red"])
         sent.clear()
         app.tune_stop()
         check("Tune flag cleared", app.tuning, False)
@@ -115,8 +116,8 @@ def main():
         check("tune echo sets the tune flag", app.tune_active, True)
         check("tune echo lights TUNE", app.tune_btn.cget("bg"), M.C["red"])
         _call_text(app, {"trx": "0,true"})
-        check("key from a tune carrier keeps PTT dark",
-              app.ptt_btn.cget("bg"), "#f4d7d4")
+        check("key from a tune carrier shows PTT too",
+              app.ptt_btn.cget("bg"), M.C["red"])
         check("tune carrier shows TX tune",
               app.tx_lbl.cget("text").endswith("tune"), True)
         _call_text(app, {"tune": "0,false"})
@@ -136,8 +137,10 @@ def main():
         app._reconnect_tries = 0
         app._manual_disconnect = False
         scheduled = []
+        real_after = app.after                      # the poll chain uses after()
         app.after = lambda ms, fn=None, *a: scheduled.append((ms, fn))
         app._set_state("disconnected")
+        app.after = real_after                      # restore before later sections
         check("drop schedules a reconnect", len(scheduled), 1)
         check("reconnect delay", scheduled[0][0], app.RECONNECT_DELAY_MS)
 
@@ -154,6 +157,64 @@ def main():
         scheduled.clear()
         app._set_state("disconnected")
         check("reconnect gives up after the cap", scheduled, [])
+
+        # ---- 7. PTT is a TOGGLE (Thetis MOX parity), not hold-to-talk --------
+        app.connected = True
+        binds = [app.ptt_btn.bind("<ButtonPress-1>"), app.ptt_btn.bind("<ButtonRelease-1>")]
+        check("PTT has no press/release bindings", [b for b in binds if b], [])
+        check("PTT button carries a command (one trigger)",
+              bool(app.ptt_btn.cget("command")), True)
+        app.ptt = False
+        app.tuning = False
+        app.tune_active = False
+        sent.clear()
+        app.ptt_toggle()                       # click 1 = key
+        check("toggle keys", (app.ptt, [c for c in sent if c.startswith("trx:")]),
+              (True, ["trx:0,true,tci;"]))
+        sent.clear()
+        app.ptt_toggle()                       # click 2 = release
+        check("toggle releases", (app.ptt, [c for c in sent if c.startswith("trx:")]),
+              (False, ["trx:0,false,tci;"]))
+
+        # ---- 8. stuck-key watchdog -----------------------------------------
+        app.connected = True
+        app.ptt = False
+        app.tuning = False
+        app.tune_active = False
+        app._key_false_since = None
+        app._key_requested = False
+        app.ptt_on()                           # we ask the server to key
+        check("key intent recorded", app._key_requested, True)
+        _call_text(app, {"trx": "0,false"})    # ...but the server reports RX
+        check("watchdog armed", app._key_false_since is not None, True)
+        app._key_false_since = time.time() - 3.0
+        app._check_key_watchdog()
+        check("watchdog clears a stale key", (app.ptt, app._key_requested),
+              (False, False))
+        check("watchdog keeps the mute tail", app._tx_mute_until > time.time(), True)
+
+        # a fresh key echo disarms it
+        app.ptt_on()
+        app._key_false_since = time.time()
+        _call_text(app, {"trx": "0,true"})
+        check("key echo disarms the watchdog", app._key_false_since, None)
+        app.ptt_off()
+        app._tx_visuals()
+
+        # ---- 9. Tune mirrors Thetis: TUN also asserts MOX -------------------
+        app.connected = True
+        app.ptt = False
+        app.tuning = False
+        app.tune_active = False
+        app._tx_visuals()
+        sent.clear()
+        app.tune_toggle()
+        check("Tune lights TUNE", app.tune_btn.cget("bg"), M.C["red"])
+        check("Tune also lights PTT (Thetis asserts MOX with TUN)",
+              app.ptt_btn.cget("bg"), M.C["red"])
+        app.tune_stop()
+        check("both released", (app.tune_btn.cget("bg"), app.ptt_btn.cget("bg")),
+              ("#f7e6c8", "#f4d7d4"))
 
         # ---- 6. AGC token maps exist and match the server contract ---------
         # _agc_mode_to_tci raised AttributeError on connect (AGC_MODES_TCI was

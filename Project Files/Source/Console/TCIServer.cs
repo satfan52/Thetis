@@ -793,6 +793,9 @@ namespace Thetis
         private int m_txStreamAudioBufferingMs = 50;
         private bool m_txUsesTCIAudio = false;
         private bool m_tciPttActive = false;
+        // H1: true while this client holds the console's TCI key (TCIPTT). Used
+        // to release the transmitter if the client vanishes mid-transmission.
+        private bool m_assertedTciPtt = false;
         private int m_txQueuedComplexSamples = 0;
         private bool m_seenModernTxAudioNegotiation = false;
         private readonly clsTCISensorManager m_sensorManager = new clsTCISensorManager();
@@ -3024,6 +3027,19 @@ namespace Thetis
 		public void StopSocketListener()
 		{
 			TCPIPtciServer server = m_server;
+            // H1: a client that disappears while holding the key must not leave
+            // the transmitter keyed (the console latches TCIPTT, so MOX stayed
+            // asserted after MiniTCI exited or lost its socket - a stuck carrier).
+            if (m_assertedTciPtt)
+            {
+                m_assertedTciPtt = false;
+                try
+                {
+                    if (consoleThreadSafe != null)
+                        consoleThreadSafe.TCIPTT = false;
+                }
+                catch { }
+            }
             notifyServerDisconnected(server);
 			lock (m_objStreamLock)
 			{
@@ -3696,6 +3712,7 @@ namespace Thetis
 
 						if (consoleThreadSafe.MOX != bMox)
 							consoleThreadSafe.TCIPTT = bMox;
+                        m_assertedTciPtt = bMox;
 					}
                     else if (effectiveRx == 1 && consoleThreadSafe.RX2Enabled)
                     {
@@ -3704,6 +3721,7 @@ namespace Thetis
 
 						if (consoleThreadSafe.MOX != bMox)
 							consoleThreadSafe.TCIPTT = bMox;
+                        m_assertedTciPtt = bMox;
 					}
 
                     if (!bMox)

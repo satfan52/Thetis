@@ -727,7 +727,9 @@ class MiniTCI(tk.Tk):
         self.smeter = -140.0
         self.tx_tail_s = 0.35
         self.tuning = False
-        self.tune_active = False      # Thetis's TUN state (independent of PTT)
+        self.tune_active = False      # Thetis's TUN state
+        self._key_false_since = None  # when the server last reported RX while keyed
+        self._key_requested = False   # local intent: we asked the server to key
         self.tune_phase = 0.0
         self.tune_sample_pos = 0
         self.tune_amp = 0.075
@@ -1230,8 +1232,11 @@ class MiniTCI(tk.Tk):
         r4 = ttk.Frame(self); r4.pack(fill="x", padx=10, pady=4)
         self.ptt_btn = tk.Button(r4, text="PTT", bg="#f4d7d4", fg=C["fg"], width=8,
                                  font=("Segoe UI", 10, "bold"))
-        self.ptt_btn.bind("<ButtonPress-1>", lambda e: self.ptt_on())
-        self.ptt_btn.bind("<ButtonRelease-1>", lambda e: self.ptt_off())
+        # Thetis parity: MOX is a TOGGLE (click on, click off). A hold-to-talk
+        # button needs a clean release event every time - one missed release
+        # (mouse leaving the widget, a second click, a focus change) left the rig
+        # keyed. One trigger only: command=, never a bind as well.
+        self.ptt_btn.config(command=self.ptt_toggle)
         ttk.Label(r4, text="TX tail (ms):", padding=(14, 0, 2, 0)).pack(side="left")
         self.txtail_var = tk.IntVar(value=350)
         self.txtail_entry = ttk.Entry(r4, width=5)
@@ -1249,8 +1254,9 @@ class MiniTCI(tk.Tk):
         self.tunedrive_entry.pack(side="left")
         self.tunedrive_entry.bind("<Return>", self._tunedrive_entry)
         self.tunedrive_entry.bind("<FocusOut>", self._tunedrive_entry)
-        self.bind("<KeyPress-space>", self._space_dn)
-        self.bind("<KeyRelease-space>", self._space_up)
+        self._space_down = False
+        self.bind("<KeyPress-space>", self._space_press)
+        self.bind("<KeyRelease-space>", self._space_release)
         self.tx_lbl = tk.Label(r4, text="RX", bg=C["panel"], fg=C["dim"],
                                font=("Segoe UI", 11, "bold"))
         self.tx_lbl.pack(side="left", padx=12)
@@ -1636,6 +1642,16 @@ class MiniTCI(tk.Tk):
         else:
             was = self.connected
             self.connected = False
+            if self.ptt or getattr(self, "tuning", False):
+                # the socket is gone: nothing can be sent any more, so drop every
+                # local TX state instead of showing a key that no longer exists
+                self.logprint("session lost while transmitting - clearing TX state")
+                self.ptt = False
+                self.tuning = False
+                self.tune_active = False
+                self._key_requested = False
+                self._key_false_since = None
+                self._tx_visuals()
             self.conn_btn.config(text="Connect")
             self.state_lbl.config(text="● disconnected", fg=C["dim"])
             if was:
@@ -1685,6 +1701,7 @@ class MiniTCI(tk.Tk):
             pass
 
         self.service_tx_audio()
+        self._check_key_watchdog()
         self._draw_smeter()
         self.after(50, self._poll_safe)
 
@@ -1904,6 +1921,14 @@ class MiniTCI(tk.Tk):
                 except (ValueError, IndexError):
                     return
                 tx = p[1].lower() == "true" if len(p) > 1 else False
+                if tx:
+                    self._key_false_since = None
+                elif getattr(self, "_key_requested", False):
+                    # server says RX while we think we are transmitting: give it
+                    # a moment (the echo can trail our own key by a frame), then
+                    # clear the local key so nothing stays stuck
+                    if self._key_false_since is None:
+                        self._key_false_since = time.time()
                 self.ptt = tx
                 self._tx_visuals()
             elif k == "tune" and v:
@@ -2969,7 +2994,9 @@ class MiniTCI(tk.Tk):
             keyed = self.ptt
         if tune is None:
             tune = getattr(self, "tune_active", False)
-        ptt_lit = bool(keyed) and not tune
+        # Thetis parity: clicking TUN also asserts MOX, so during a tune carrier
+        # BOTH controls are active in Thetis - mirror that here.
+        ptt_lit = bool(keyed)
         try:
             self.ptt_btn.config(bg=C["red"] if ptt_lit else "#f4d7d4",
                                 relief="sunken" if ptt_lit else "raised")
@@ -2983,6 +3010,35 @@ class MiniTCI(tk.Tk):
                 self.tx_lbl.config(text="RX", fg=C["dim"])
         except tk.TclError:
             pass
+
+    def ptt_toggle(self):
+        """Click PTT (or press Space) to key, click again to release - Thetis's
+        MOX button behaviour. A key that came from Thetis (MOX or a tune
+        carrier) is released here too, so the two apps always end up in the
+        same state."""
+        if self.ptt:
+            self.ptt_off()
+        else:
+            self.ptt_on()
+
+    def _check_key_watchdog(self):
+        """Safety net against a stuck transmitter: if this client believes it is
+        keyed but the server has been reporting the key released, drop the local
+        state (and the mute) instead of leaving the rig keyed."""
+        if not getattr(self, "_key_requested", False):
+            self._key_false_since = None
+            return
+        if self._key_false_since is None:
+            return
+        if time.time() - self._key_false_since > 2.0:
+            self.logprint("key state stale (server says RX) - clearing local PTT")
+            self.ptt = False
+            self.tuning = False
+            self.tune_active = False
+            self._key_requested = False
+            self._tx_mute_until = time.time() + self.tx_tail_s
+            self._key_false_since = None
+            self._tx_visuals()
 
     def ptt_on(self):
         if not self.connected:
@@ -2999,8 +3055,9 @@ class MiniTCI(tk.Tk):
         self.send("audio_stream_samples:1024;")
         self.send("trx:0,true,tci;")     # 'tci' = server takes TX audio from us
         self.tune_active = False         # PTT is the mic path, not the tuner
+        self._key_requested = True
+        self._key_false_since = None
         self._tx_visuals()
-        self.tx_lbl.config(text="TX ⏺", fg=C["red"])
         self._mic_open()
 
     # ---------------- tune ----------------
@@ -3045,6 +3102,8 @@ class MiniTCI(tk.Tk):
         self.send("trx:0,true,tci;")
         self.send("tune:0,true;")
         self.tune_active = True
+        self._key_requested = True
+        self._key_false_since = None
         self._tx_visuals()
         self.logprint(f"Tune ON: 1500 Hz tone, drive {self.tune_amp:.3f} peak")
 
@@ -3085,6 +3144,8 @@ class MiniTCI(tk.Tk):
             self.send("tune:0,false;")
         self.send("trx:0,false,tci;")
         self.tune_active = False
+        self._key_requested = False
+        self._key_false_since = None
         self._tx_visuals()
         if self.mic_stream:
             try:
@@ -3092,6 +3153,16 @@ class MiniTCI(tk.Tk):
             except Exception:
                 pass
             self.mic_stream = None
+
+    def _space_press(self, e):
+        """Space = TX toggle, same as the button. Key auto-repeat must not flip
+        the state repeatedly, so only the first press counts."""
+        if not getattr(self, "_space_down", False):
+            self._space_down = True
+            self.ptt_toggle()
+
+    def _space_release(self, e):
+        self._space_down = False
 
     def _space_dn(self, e):
         self.ptt_on()
