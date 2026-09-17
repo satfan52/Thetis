@@ -1585,15 +1585,16 @@ class MiniTCI(tk.Tk):
                 self.logprint(f"SPLIT {'on - TX on VFO B' if st else 'off'}")
                 continue
             if k == "vfo" and v:
-                p = v.split(",")
-                # Branch H1: vfo:1,0,<hz> = VFO B echo
-                if len(p) >= 3 and p[0] == "1":
-                    try:
-                        self.sub_hz = int(float(p[2]))
-                        self._sub_refresh_ui()
-                    except ValueError:
-                        pass
-                    continue
+                            p = v.split(",")
+                            # Branch H1: vfo:1,0,<hz> = VFO B echo (headless only —
+                            # on 50001 vfo:1 is VFOBFreq/RX2, not the sub-frequency)
+                            if len(p) >= 3 and p[0] == "1" and not getattr(self, "_is_full_tci", False):
+                                try:
+                                    self.sub_hz = int(float(p[2]))
+                                    self._sub_refresh_ui()
+                                except ValueError:
+                                    pass
+                                continue
             if k == "sub_mode" and v:
                 # echo format: sub_mode:<trx>,<MODE>; - take the mode token
                 mode_in = str(v).split(",")[-1].strip().upper()
@@ -1880,7 +1881,10 @@ class MiniTCI(tk.Tk):
         else:
             val = 0.5
         if force or getattr(self, "_last_audio_sel", None) != sel or sel == "both":
-            self.send(f"sub_balance:0,{val:.2f};")
+                    if getattr(self, "_is_full_tci", False):
+                        self.send(f"rx_balance:0,{val:.2f};")
+                    else:
+                        self.send(f"sub_balance:0,{val:.2f};")
         self._last_audio_sel = sel
         self.logprint(f"audio: {sel} (balance {val:.2f})")
 
