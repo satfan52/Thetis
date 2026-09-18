@@ -242,7 +242,10 @@ def main():
         check("connect burst raises nothing", raised, None)
         check("connect burst pushed the AGC state",
               [c for c in sent if c.startswith("agc_")][-2:],
-              ["agc_mode:0,normal;",
+              # derived from the app's own state: the saved settings file is live
+              # state, so a fixed expectation would fail on whatever AGC the last
+              # real session used
+              [f"agc_mode:0,{app._agc_mode_to_tci(app.agc_var.get())};",
                f"agc_gain:0,{int(app.agc_gain_var.get())};"])
         app.connected = False
         # a successful connect resets the counter

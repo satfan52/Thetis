@@ -148,6 +148,10 @@ def _thetis_filter(mode, idx):
 # across modes; index selects the row in each mode's table
 BW_PRESETS = [t[0] for t in THETIS_SSB]
 
+# Thetis comboAGC order and casing - used by BOTH the VFO A and the SubVFOA
+# AGC dropdowns. Each receiver has its own AGC (WDSP channel per VFO).
+AGC_UI_NAMES = ["Fixed", "Long", "Slow", "Med", "Fast", "Custom"]
+
 def _filter_for_mode_width(mode, width_label):
     try:
         idx = BW_PRESETS.index(width_label)
@@ -724,6 +728,10 @@ class MiniTCI(tk.Tk):
         self._agc_busy = False            # H1: guard against echo loops
         self._agc_gain_busy = False
         self._mode_busy = False           # H1: modulation echo guard
+        self._submode_busy = False        # SubVFOA mode echo guard
+        self._sub_agc_busy = False        # SubVFOA AGC echo guards
+        self._sub_agc_gain_busy = False
+        self._sub_place = 1000            # place under the pointer, sub readout
         self.ddc_center_hz = self.freq_hz  # hardware centre frequency (DDS)
         self.volume = 0.25
         self.mic_gain = 1.0            # client-side unity; Thetis applies the mic gain
@@ -783,7 +791,9 @@ class MiniTCI(tk.Tk):
             "sub_hz": self.sub_hz,
             "sub_mode": self.sub_mode,
             "sub_filt": [self.sub_filt[0], self.sub_filt[1]],
-            "subfilt": self.subfilt_var.get(),
+            "sub_filtw": self.sub_filtw_var.get(),
+            "sub_agc_mode": self.sub_agc_var.get(),
+            "sub_agc_gain": self.sub_agc_gain_var.get(),
             "balance": self.bal_var.get(),
             "sub_enabled": self.sub_enabled,
             "split": self.split,
@@ -907,8 +917,23 @@ class MiniTCI(tk.Tk):
                     self._sync_filtw_slider(self.pan.filt)
             except (ValueError, TypeError, AttributeError):
                 pass
-            if s.get("subfilt"):
-                self.subfilt_var.set(s["subfilt"])
+            if s.get("sub_agc_mode"):
+                val = {"OFF": "Fixed", "FIXED": "Fixed", "MED": "Med", "FAST": "Fast",
+                       "SLOW": "Slow", "LONG": "Long"}.get(str(s["sub_agc_mode"]).upper(),
+                                                           s["sub_agc_mode"])
+                if val in AGC_UI_NAMES:
+                    self._sub_agc_busy = True
+                    try:
+                        self.sub_agc_var.set(val)
+                    finally:
+                        self._sub_agc_busy = False
+            if s.get("sub_agc_gain") is not None:
+                self.sub_agc_gain_var.set(float(s["sub_agc_gain"]))
+                self._update_sub_agc_gain_label()
+            # the sub's passband: edges are the truth, the slider follows
+            self._sub_filter_entries_set(self.sub_filt)
+            self._sub_sync_filtw_slider(self.sub_filt)
+            self.pan.sub_filt = self.sub_filt
             if s.get("sub_enabled") is not None:
                 self.sub_enabled = bool(s["sub_enabled"])
             if s.get("split") is not None:
@@ -977,6 +1002,10 @@ class MiniTCI(tk.Tk):
                  self._agc_gain_changed, 1.0, 1.0),
                 (getattr(self, "filtw_scale", None), self.filtw_var, 10, 20000,
                  self._filtw_changed, 100.0, 10.0),      # fine tuning in Hz
+                (getattr(self, "sub_filtw_scale", None), self.sub_filtw_var, 10, 20000,
+                 self._sub_filtw_changed, 100.0, 10.0),  # SubVFOA, same steps
+                (getattr(self, "sub_agc_gain_scale", None), self.sub_agc_gain_var,
+                 -20, 120, self._sub_agc_gain_changed, 1.0, 1.0),
                 (self.yzero_scale if hasattr(self, "yzero_scale") else None,
                  self.yzero_var, -40, 40, None, None, None),
                 (self.yscale_scale if hasattr(self, "yscale_scale") else None,
@@ -1016,6 +1045,25 @@ class MiniTCI(tk.Tk):
         self.after(1500, poll_save)
 
     # ---------------- build UI ----------------
+    # ---------------- build UI ----------------
+    # Grouping approved by the user: one titled section per owner.
+    #   1 GENERAL   connection, audio routing, link state
+    #   2 DISPLAY   panafall and its adjust sliders, shared by both receivers
+    #   3 VFO A     RX1, reception
+    #   4 SubVFOA   SubRX1, same presentation as VFO A, its own DSP chain
+    #   5 TX        transmission only
+    #   6 LOG       status
+    def _section(self, parent, title, expand=False, side=None):
+        f = ttk.LabelFrame(parent, text=title, style="Sec.TLabelframe")
+        f.pack(fill="both" if expand else "x", expand=expand, side=side,
+               padx=8, pady=(5, 1), anchor="n")
+        return f
+
+    def _row(self, parent, top=3):
+        r = ttk.Frame(parent)
+        r.pack(fill="x", padx=6, pady=(top, 0))
+        return r
+
     def _build_ui(self):
         s = ttk.Style(self)
         s.theme_use("clam")
@@ -1026,142 +1074,47 @@ class MiniTCI(tk.Tk):
                     foreground="#000000", arrowcolor="#1a1f29")
         s.configure("TCombobox.Listbox", fieldbackground="#ffffff",
                     background="#ffffff", foreground="#111111")
+        s.configure("Sec.TLabelframe", background=C["panel"], borderwidth=1,
+                    relief="solid")
+        s.configure("Sec.TLabelframe.Label", background=C["panel"],
+                    foreground="#3a4254", font=("Segoe UI", 9, "bold"))
         self.option_add("*TCombobox*Listbox.background", "#ffffff")
         self.option_add("*TCombobox*Listbox.foreground", "#111111")
         self.option_add("*TCombobox*Listbox.selectBackground", "#cce4ff")
         self.option_add("*TCombobox*Listbox.selectForeground", "#000000")
         s.map("TButton", background=[("active", "#c8cfda")])
 
-        # --- row 1: connection + band + mode
-        r1 = ttk.Frame(self); r1.pack(fill="x", padx=10, pady=(8, 2))
-        ttk.Label(r1, text="Receiver:").pack(side="left")
-        self.rx_var = tk.StringVar(value="50003 (RX3)")
-        ttk.Combobox(r1, textvariable=self.rx_var, width=11, state="readonly",
-                     values=[f"{p} (RX{p - 50000})" for p in range(PORT_MIN, PORT_MAX + 1)]
-                     ).pack(side="left", padx=(4, 10))
-        self.conn_btn = ttk.Button(r1, text="Connect", width=11, command=self.toggle_conn)
+        # ========================= 1 GENERAL =========================
+        # Connection and audio routing: the only controls that act on the
+        # program rather than on one receiver or on the transmitter.
+        self.sec_general = self._section(self, "1 · GENERAL — CONNECTION")
+        g1 = self._row(self.sec_general)
+        ttk.Label(g1, text="Receiver:").pack(side="left")
+        self.rx_var = tk.StringVar(value="50001 (full TCI)")
+        ttk.Combobox(g1, textvariable=self.rx_var, width=15, state="readonly",
+                     values=[f"{p} (full TCI)" if p == 50001 else f"{p} (RX{p - 50000})"
+                             for p in range(PORT_MIN, PORT_MAX + 1)]
+                     ).pack(side="left", padx=(4, 8))
+        self.conn_btn = ttk.Button(g1, text="Connect", width=11, command=self.toggle_conn)
         self.conn_btn.pack(side="left")
-        ttk.Label(r1, text="Band:", padding=(14, 0, 2, 0)).pack(side="left")
-        self.band_var = tk.StringVar(value="20m")
-        ttk.Combobox(r1, textvariable=self.band_var, width=5, state="readonly",
-                     values=[b[0] for b in BANDS]).pack(side="left")
-        self.band_var.trace_add("write", self._band_changed)
-        ttk.Label(r1, text="Mode:", padding=(14, 0, 2, 0)).pack(side="left")
-        self.mode_var = tk.StringVar(value="USB")
-        ttk.Combobox(r1, textvariable=self.mode_var, width=5, state="readonly",
-                     values=MODES).pack(side="left")
-        self.mode_var.trace_add("write", self._mode_changed)
-        ttk.Label(r1, text="Filter:", padding=(8, 0, 2, 0)).pack(side="left")
-        # H1: Thetis-style filter Low/High entry boxes (udFilterLow/udFilterHigh
-        # parity). Values are the passband edges in Hz relative to the VFO.
-        ttk.Label(r1, text="lo", padding=(2, 0, 2, 0)).pack(side="left")
-        self.filt_low_entry = ttk.Entry(r1, width=7)
-        self.filt_low_entry.pack(side="left", padx=1)
-        self.filt_low_entry.bind("<Return>", self._filter_entries_applied)
-        self.filt_low_entry.bind("<FocusOut>", self._filter_entries_applied)
-        ttk.Label(r1, text="hi", padding=(6, 0, 2, 0)).pack(side="left")
-        self.filt_high_entry = ttk.Entry(r1, width=7)
-        self.filt_high_entry.pack(side="left", padx=1)
-        self.filt_high_entry.bind("<Return>", self._filter_entries_applied)
-        self.filt_high_entry.bind("<FocusOut>", self._filter_entries_applied)
-        # H1: Var bandwidth slider (Thetis ptbFilterWidth parity). Adjusts the
-        # total bandwidth around the current filter CENTRE. Disabled in
-        # DRM/SPEC/FM like Thetis.
-        self.filtw_var = tk.DoubleVar(value=2900)
-        self.filtw_scale = ttk.Scale(r1, from_=10, to=20000, variable=self.filtw_var,
-                                     length=110, command=self._filtw_changed)
-        self.filtw_scale.pack(side="left", padx=(6, 2))
-        self.filtw_lbl = tk.Label(r1, text="2.9k", bg=C["panel"], fg=C["fg"],
-                                  font=("Consolas", 9, "bold"), width=6)
-        self.filtw_lbl.pack(side="left")
-        self._filt_updating = False   # guard against echo-driven loops
-
-        ttk.Label(r1, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
-        # H1: identical to Thetis's comboAGC (AGCMode enum order/casing)
-        self.agc_var = tk.StringVar(value="Med")
-        self.agc_box = ttk.Combobox(r1, textvariable=self.agc_var, width=8, state="readonly",
-                                    values=["Fixed", "Long", "Slow", "Med", "Fast", "Custom"])
-        self.agc_box.pack(side="left")
-        self.agc_var.trace_add("write", self._agc_changed)
-        # Gain slider: only meaningful when AGC = OFF (fixed-gain / manual mode)
-        ttk.Label(r1, text="Gain:", padding=(8, 0, 2, 0)).pack(side="left")
-        self.agc_gain_var = tk.DoubleVar(value=40)
-        # live numeric readout next to the slider (Thetis parity: lblRF)
-        self.agc_gain_lbl = tk.Label(r1, text="40", bg=C["panel"], fg=C["fg"],
-                                     font=("Consolas", 9, "bold"), width=4)
-        self.agc_gain_lbl.pack(side="left", padx=(0, 2))
-        self.agc_gain_scale = ttk.Scale(r1, from_=-20, to=120, variable=self.agc_gain_var,
-                  length=90, command=self._agc_gain_changed)
-        self.agc_gain_scale.pack(side="left", padx=2)
-        self.agc_gain_scale.state(["disabled"])
-
-        # --- row 2: frequency
-        r2 = ttk.Frame(self); r2.pack(fill="x", padx=10, pady=2)
-        ttk.Label(r2, text="VFO A").pack(side="left", padx=(2, 4))
-        self.freq_lbl = tk.Label(r2, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
-                                 font=("Consolas", 24, "bold"))
-        self.freq_lbl.pack(side="left", padx=(2, 14))
-        # Thetis-style per-digit tuning: hover a digit and scroll to change that
-        # place value (1 Hz .. 10 MHz). Replaces the +/-10k/1k/100 step buttons.
-        self._freq_place = 1000          # place under the cursor (default 1 kHz)
-        self._freq_digit_x = []          # [(x_left, x_right, place)] for hit test
-        self._freq_font = tkfont.Font(font=self.freq_lbl.cget("font"))
-        self.freq_lbl.bind("<MouseWheel>", self._freq_wheel)
-        self.freq_lbl.bind("<Button-4>", self._freq_wheel)
-        self.freq_lbl.bind("<Button-5>", self._freq_wheel)
-        self.freq_lbl.bind("<Motion>", self._freq_digit_hover)
-        self.freq_lbl.bind("<Leave>", lambda e: self._freq_digit_x.clear())
-        self.ctun_var = tk.BooleanVar(value=False)
-        self.ctun_btn = ttk.Checkbutton(r2, text="CTUN", variable=self.ctun_var,
-                                        command=self._ctun_toggled)
-        self.ctun_btn.pack(side="left", padx=(12, 4))
-        # Branch H1: hardware centre frequency (middle of the DDS passband)
-        self.dds_lbl = tk.Label(r2, text="DDS 7.100.000", bg=C["panel"], fg="#7a4a9a",
-                                font=("Consolas", 12, "bold"))
-        self.dds_lbl.pack(side="left", padx=(10, 4))
-        ttk.Label(r2, text="Direct kHz:", padding=(12, 0, 2, 0)).pack(side="left")
-        self.tune_entry = ttk.Entry(r2, width=10)
-        self.tune_entry.pack(side="left")
-        self.tune_entry.bind("<Return>", lambda e: self._tune_direct())
-        ttk.Button(r2, text="Go", width=4, command=self._tune_direct).pack(side="left", padx=4)
-
-        # --- Branch H1 row 2b: VFO B / subrx / split
-        r2b = ttk.Frame(self); r2b.pack(fill="x", padx=10, pady=2)
-        self.vfo_lbl = tk.Label(r2b, text="SubVFOA  7.074.000", bg=C["panel"], fg="#0055aa",
-                                font=("Consolas", 15, "bold"))
-        self.vfo_lbl.pack(side="left", padx=(2, 8))
-        self.vfo_lbl.bind("<MouseWheel>", self._sub_wheel)
-        ttk.Label(r2b, text="Direct kHz:").pack(side="left", padx=(6, 2))
-        self.sub_tune_entry = ttk.Entry(r2b, width=10)
-        self.sub_tune_entry.pack(side="left")
-        self.sub_tune_entry.bind("<Return>", lambda e: self._sub_tune_direct())
-        ttk.Button(r2b, text="Go", width=4, command=self._sub_tune_direct).pack(side="left", padx=4)
-        ttk.Label(r2b, text="Sub mode:").pack(side="left", padx=(0, 2))
-        self.submode_var = tk.StringVar(value="USB")
-        ttk.Combobox(r2b, textvariable=self.submode_var, width=5, state="readonly",
-                     values=MODES).pack(side="left")
-        self.submode_var.trace_add("write", self._submode_changed)
-        ttk.Label(r2b, text="Sub filter:").pack(side="left", padx=(10, 2))
-        self.subfilt_var = tk.StringVar(value="2.9k")
-        ttk.Combobox(r2b, textvariable=self.subfilt_var, width=6, state="readonly",
-                     values=BW_PRESETS).pack(side="left")
-        self.subfilt_var.trace_add("write", self._subfilt_changed)
-        ttk.Label(r2b, text="Audio:").pack(side="left", padx=(12, 2))
+        ttk.Label(g1, text="Audio:", padding=(20, 0, 2, 0)).pack(side="left")
         self.audiosel_var = tk.StringVar(value="Main")
-        ttk.Combobox(r2b, textvariable=self.audiosel_var, width=6, state="readonly",
+        ttk.Combobox(g1, textvariable=self.audiosel_var, width=6, state="readonly",
                      values=["Main", "Sub", "Both"]).pack(side="left")
         self.audiosel_var.trace_add("write", self._audiosel_changed)
-        ttk.Label(r2b, text="A<->B mix:").pack(side="left", padx=(8, 2))
+        ttk.Label(g1, text="A<->B mix:", padding=(16, 0, 2, 0)).pack(side="left")
         self.bal_var = tk.DoubleVar(value=1.0)
-        ttk.Scale(r2b, from_=0.0, to=1.0, variable=self.bal_var, length=100,
-                  command=self._bal_changed).pack(side="left")
-        self.sub_btn = ttk.Button(r2b, text="SUB off", width=8, command=self._sub_toggle)
-        self.sub_btn.pack(side="left", padx=(10, 0))
-        self.split_btn = ttk.Button(r2b, text="SPLIT off", width=9, command=self._split_toggle)
-        self.split_btn.pack(side="left", padx=(6, 0))
+        ttk.Scale(g1, from_=0.0, to=1.0, variable=self.bal_var, length=120,
+                  command=self._bal_changed).pack(side="left", padx=2)
+        self.state_lbl = tk.Label(g1, text="● disconnected", bg=C["panel"],
+                                  fg=C["dim"], font=("Segoe UI", 9))
+        self.state_lbl.pack(side="right", padx=(0, 6))
 
-        # --- panadapter + waterfall
-        self.pan = PanFall(self)
+        # ========================= 2 DISPLAY =========================
+        # The panafall draws both receivers, so it belongs to neither of them.
+        self.sec_display = self._section(self, "2 · DISPLAY — SPECTRUM AND WATERFALL",
+                                        expand=True)
+        self.pan = PanFall(self.sec_display)
         self.pan.pack(fill="both", expand=True, padx=10, pady=4)
         self.pan.bind("<Button-1>", self._pan_click)
         self.pan.bind("<B1-Motion>", self._pan_drag)
@@ -1172,53 +1125,127 @@ class MiniTCI(tk.Tk):
         self.pan.bind("<Button-5>", self._pan_wheel)   # linux wheel down
         self.pan.bind("<Motion>", self._pan_motion)
         self.pan.bind("<Double-Button-1>", self._pan_double)   # Branch H1/B7 peak-tune
-
-        # --- Quisk-style display adjust row: Y zero + Y scale + span zoom
-        rz = ttk.Frame(self); rz.pack(fill="x", padx=10, pady=(0, 2))
-        ttk.Label(rz, text="Y zero:").pack(side="left")
+        dz = self._row(self.sec_display, top=4)
+        ttk.Label(dz, text="Y zero:").pack(side="left")
         self.yzero_var = tk.DoubleVar(value=0)
-        self.yzero_scale = ttk.Scale(rz, from_=-40, to=40, variable=self.yzero_var, length=130,
-                  command=self._yzero_changed)
+        self.yzero_scale = ttk.Scale(dz, from_=-40, to=40, variable=self.yzero_var,
+                                     length=150, command=self._yzero_changed)
         self.yzero_scale.pack(side="left", padx=4)
-        ttk.Label(rz, text="Y scale:").pack(side="left", padx=(14, 0))
+        ttk.Label(dz, text="Y scale:", padding=(16, 0, 0, 0)).pack(side="left")
         self.yscale_var = tk.DoubleVar(value=42)
-        self.yscale_scale = ttk.Scale(rz, from_=20, to=90, variable=self.yscale_var, length=130,
-                  command=self._yscale_changed)
+        self.yscale_scale = ttk.Scale(dz, from_=20, to=90, variable=self.yscale_var,
+                                      length=150, command=self._yscale_changed)
         self.yscale_scale.pack(side="left", padx=4)
-        ttk.Label(rz, text="Zoom:").pack(side="left", padx=(14, 0))
+        ttk.Label(dz, text="Zoom:", padding=(16, 0, 0, 0)).pack(side="left")
         self.zoom_var = tk.DoubleVar(value=0)
-        self.zoom_scale = ttk.Scale(rz, from_=0, to=100, variable=self.zoom_var, length=130,
-                  command=self._zoom_changed)
+        self.zoom_scale = ttk.Scale(dz, from_=0, to=100, variable=self.zoom_var,
+                                    length=150, command=self._zoom_changed)
         self.zoom_scale.pack(side="left", padx=4)
-        self.zoom_lbl = ttk.Label(rz, text="96 kHz")
+        self.zoom_lbl = ttk.Label(dz, text="96 kHz")
         self.zoom_lbl.pack(side="left", padx=6)
-        ttk.Label(rz, text="WF intensity:").pack(side="left", padx=(14, 0))
+        ttk.Label(dz, text="WF intensity:", padding=(16, 0, 0, 0)).pack(side="left")
         self.wf_gain_var = tk.DoubleVar(value=50)
-        self.wf_scale = ttk.Scale(rz, from_=0, to=100, variable=self.wf_gain_var, length=130,
-                  command=self._wf_gain_changed)
+        self.wf_scale = ttk.Scale(dz, from_=0, to=100, variable=self.wf_gain_var,
+                                  length=150, command=self._wf_gain_changed)
         self.wf_scale.pack(side="left", padx=4)
+        self._row(self.sec_display, top=2)          # breathing space only
 
-        # --- row 3: volume + sound devices + smeter
-        r3 = ttk.Frame(self); r3.pack(fill="x", padx=10, pady=2)
-        ttk.Label(r3, text="Volume:").pack(side="left")
+        # ---------------- two columns: receivers left, transmit right -------
+        mid = ttk.Frame(self)
+        mid.pack(fill="x", padx=0, pady=0)
+        left = ttk.Frame(mid)
+        left.pack(side="left", fill="both", expand=True, anchor="n")
+        right = ttk.Frame(mid)
+        right.pack(side="left", fill="both", anchor="n")
+
+        # ========================= 3 VFO A =========================
+        self.sec_vfoa = self._section(left, "3 · VFO A — RX1 (reception)")
+        a1 = self._row(self.sec_vfoa)
+        ttk.Label(a1, text="VFO A", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
+        self.freq_lbl = tk.Label(a1, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
+                                 font=("Consolas", 24, "bold"))
+        self.freq_lbl.pack(side="left", padx=(2, 12))
+        # Thetis-style per-digit tuning: hover a digit and scroll to change that
+        # place value (1 Hz .. 10 MHz). No step buttons.
+        self._freq_place = 1000
+        self._freq_digit_x = []
+        self._freq_font = tkfont.Font(font=self.freq_lbl.cget("font"))
+        self._bind_digit_wheel(self.freq_lbl, "A")
+        self.ctun_var = tk.BooleanVar(value=False)
+        self.ctun_btn = ttk.Checkbutton(a1, text="CTUN", variable=self.ctun_var,
+                                        command=self._ctun_toggled)
+        self.ctun_btn.pack(side="left", padx=(8, 4))
+        self.dds_lbl = tk.Label(a1, text="DDS 7.100.000", bg=C["panel"], fg="#7a4a9a",
+                                font=("Consolas", 12, "bold"))
+        self.dds_lbl.pack(side="left", padx=(12, 4))
+        ttk.Label(a1, text="Direct kHz:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.tune_entry = ttk.Entry(a1, width=10)
+        self.tune_entry.pack(side="left")
+        self.tune_entry.bind("<Return>", lambda e: self._tune_direct())
+        ttk.Button(a1, text="Go", width=4, command=self._tune_direct).pack(side="left", padx=4)
+
+        a2 = self._row(self.sec_vfoa)
+        ttk.Label(a2, text="Band:").pack(side="left")
+        self.band_var = tk.StringVar(value="20m")
+        ttk.Combobox(a2, textvariable=self.band_var, width=5, state="readonly",
+                     values=[b[0] for b in BANDS]).pack(side="left", padx=(3, 0))
+        self.band_var.trace_add("write", self._band_changed)
+        ttk.Label(a2, text="Mode:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.mode_var = tk.StringVar(value="USB")
+        ttk.Combobox(a2, textvariable=self.mode_var, width=5, state="readonly",
+                     values=MODES).pack(side="left")
+        self.mode_var.trace_add("write", self._mode_changed)
+        ttk.Label(a2, text="Filter:", padding=(12, 0, 2, 0)).pack(side="left")
+        ttk.Label(a2, text="lo", padding=(2, 0, 2, 0)).pack(side="left")
+        self.filt_low_entry = ttk.Entry(a2, width=7)
+        self.filt_low_entry.pack(side="left", padx=1)
+        self.filt_low_entry.bind("<Return>", self._filter_entries_applied)
+        self.filt_low_entry.bind("<FocusOut>", self._filter_entries_applied)
+        ttk.Label(a2, text="hi", padding=(6, 0, 2, 0)).pack(side="left")
+        self.filt_high_entry = ttk.Entry(a2, width=7)
+        self.filt_high_entry.pack(side="left", padx=1)
+        self.filt_high_entry.bind("<Return>", self._filter_entries_applied)
+        self.filt_high_entry.bind("<FocusOut>", self._filter_entries_applied)
+        self.filtw_var = tk.DoubleVar(value=2900)
+        self.filtw_scale = ttk.Scale(a2, from_=10, to=20000, variable=self.filtw_var,
+                                     length=120, command=self._filtw_changed)
+        self.filtw_scale.pack(side="left", padx=(6, 2))
+        self.filtw_lbl = tk.Label(a2, text="2.9k", bg=C["panel"], fg=C["fg"],
+                                  font=("Consolas", 9, "bold"), width=6)
+        self.filtw_lbl.pack(side="left")
+        self._filt_updating = False
+        ttk.Label(a2, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.agc_var = tk.StringVar(value="Med")
+        self.agc_box = ttk.Combobox(a2, textvariable=self.agc_var, width=8,
+                                    state="readonly", values=AGC_UI_NAMES)
+        self.agc_box.pack(side="left")
+        self.agc_var.trace_add("write", self._agc_changed)
+        ttk.Label(a2, text="Gain:", padding=(8, 0, 2, 0)).pack(side="left")
+        self.agc_gain_lbl = tk.Label(a2, text="40", bg=C["panel"], fg=C["fg"],
+                                     font=("Consolas", 9, "bold"), width=4)
+        self.agc_gain_lbl.pack(side="left", padx=(0, 2))
+        self.agc_gain_var = tk.DoubleVar(value=40)
+        self.agc_gain_scale = ttk.Scale(a2, from_=-20, to=120, variable=self.agc_gain_var,
+                                        length=100, command=self._agc_gain_changed)
+        self.agc_gain_scale.pack(side="left", padx=2)
+        self.agc_gain_scale.state(["disabled"])
+
+        self.secA_row3 = self._row(self.sec_vfoa)
+        ttk.Label(self.secA_row3, text="Volume:").pack(side="left")
         self.vol_var = tk.DoubleVar(value=70)
-        self.vol_scale = ttk.Scale(r3, from_=0, to=100, variable=self.vol_var, length=140,
-                  command=self._vol_changed)
+        self.vol_scale = ttk.Scale(self.secA_row3, from_=0, to=100, variable=self.vol_var,
+                                   length=150, command=self._vol_changed)
         self.vol_scale.pack(side="left", padx=4)
         self.volume = 0.7 * 1.2
-
         self._out_devs = list_output_devices()
         self._in_devs = list_input_devices()
-        ttk.Label(r3, text="Speaker:", padding=(10, 0, 2, 0)).pack(side="left")
+        ttk.Label(self.secA_row3, text="Speaker:", padding=(10, 0, 2, 0)).pack(side="left")
         self.out_dev_var = tk.StringVar(value="(system default)")
         out_names = ["(system default)"] + [n for _, n, _ in self._out_devs]
-        ttk.Combobox(r3, textvariable=self.out_dev_var, width=22, state="readonly",
-                     values=out_names).pack(side="left", padx=2)
+        ttk.Combobox(self.secA_row3, textvariable=self.out_dev_var, width=26,
+                     state="readonly", values=out_names).pack(side="left", padx=2)
         self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
-
-        # analog-style S-meter: colored zone scale + translucent "water" fill,
-        # needle and peak marker inside the bar.
-        self.sm = tk.Canvas(r3, width=310, height=68, bg=C["panel"], highlightthickness=0)
+        self.sm = tk.Canvas(self.secA_row3, width=310, height=68, bg=C["panel"], highlightthickness=0)
         self.sm.pack(side="left", padx=12)
         smL = 8; smR = 302; smY = 26
         self._sm_x0, self._sm_x1, self._sm_y = smL, smR, smY
@@ -1262,92 +1289,154 @@ class MiniTCI(tk.Tk):
         self.sm_txt = self.sm.create_text(smR, 60, text="−140 dBFS", anchor="e",
                                           fill=C["fg"], font=("Consolas", 11, "bold"))
         self._sm_peak_db = -140.0
-        self.state_lbl = tk.Label(r3, text="● disconnected", bg=C["panel"], fg=C["dim"],
-                                  font=("Segoe UI", 9))
-        self.state_lbl.pack(side="right")
 
-        # --- row 4: TX
-        r4 = ttk.Frame(self); r4.pack(fill="x", padx=10, pady=4)
-        self.ptt_btn = tk.Button(r4, text="PTT", bg="#f4d7d4", fg=C["fg"], width=8,
+        # ======================= 4 SubVFOA =======================
+        # Same presentation as VFO A and its OWN DSP chain: its own mode, filter
+        # and AGC. Constraint: it runs inside VFO A's slice, one DDC.
+        self.sec_sub = self._section(left, "4 · SubVFOA — SubRX1 (reception)")
+        b1 = self._row(self.sec_sub)
+        ttk.Label(b1, text="SubVFOA", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
+        self.vfo_lbl = tk.Label(b1, text="7.076.000", bg=C["panel"], fg="#0055aa",
+                                font=("Consolas", 24, "bold"))
+        self.vfo_lbl.pack(side="left", padx=(2, 12))
+        self._sub_digit_x = []
+        self._bind_digit_wheel(self.vfo_lbl, "sub")
+        self.sub_btn = ttk.Button(b1, text="SUB off", width=8, command=self._sub_toggle)
+        self.sub_btn.pack(side="left", padx=(8, 4))
+        ttk.Label(b1, text="Direct kHz:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.sub_tune_entry = ttk.Entry(b1, width=10)
+        self.sub_tune_entry.pack(side="left")
+        self.sub_tune_entry.bind("<Return>", lambda e: self._sub_tune_direct())
+        ttk.Button(b1, text="Go", width=4, command=self._sub_tune_direct).pack(side="left", padx=4)
+
+        b2 = self._row(self.sec_sub)
+        ttk.Label(b2, text="Mode:").pack(side="left")
+        self.submode_var = tk.StringVar(value="USB")
+        ttk.Combobox(b2, textvariable=self.submode_var, width=5, state="readonly",
+                     values=MODES).pack(side="left", padx=(3, 0))
+        self.submode_var.trace_add("write", self._submode_changed)
+        ttk.Label(b2, text="Filter:", padding=(12, 0, 2, 0)).pack(side="left")
+        ttk.Label(b2, text="lo", padding=(2, 0, 2, 0)).pack(side="left")
+        self.sub_filt_low_entry = ttk.Entry(b2, width=7)
+        self.sub_filt_low_entry.pack(side="left", padx=1)
+        self.sub_filt_low_entry.bind("<Return>", self._sub_filter_entries_applied)
+        self.sub_filt_low_entry.bind("<FocusOut>", self._sub_filter_entries_applied)
+        ttk.Label(b2, text="hi", padding=(6, 0, 2, 0)).pack(side="left")
+        self.sub_filt_high_entry = ttk.Entry(b2, width=7)
+        self.sub_filt_high_entry.pack(side="left", padx=1)
+        self.sub_filt_high_entry.bind("<Return>", self._sub_filter_entries_applied)
+        self.sub_filt_high_entry.bind("<FocusOut>", self._sub_filter_entries_applied)
+        self.sub_filtw_var = tk.DoubleVar(value=2650)
+        self.sub_filtw_scale = ttk.Scale(b2, from_=10, to=20000, variable=self.sub_filtw_var,
+                                         length=120, command=self._sub_filtw_changed)
+        self.sub_filtw_scale.pack(side="left", padx=(6, 2))
+        self.sub_filtw_lbl = tk.Label(b2, text="2.6k", bg=C["panel"], fg=C["fg"],
+                                      font=("Consolas", 9, "bold"), width=6)
+        self.sub_filtw_lbl.pack(side="left")
+        self._sub_filt_updating = False
+        ttk.Label(b2, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.sub_agc_var = tk.StringVar(value="Med")
+        self.sub_agc_box = ttk.Combobox(b2, textvariable=self.sub_agc_var, width=8,
+                                        state="readonly", values=AGC_UI_NAMES)
+        self.sub_agc_box.pack(side="left")
+        self.sub_agc_var.trace_add("write", self._sub_agc_changed)
+        ttk.Label(b2, text="Gain:", padding=(8, 0, 2, 0)).pack(side="left")
+        self.sub_agc_gain_lbl = tk.Label(b2, text="40", bg=C["panel"], fg=C["fg"],
+                                         font=("Consolas", 9, "bold"), width=4)
+        self.sub_agc_gain_lbl.pack(side="left", padx=(0, 2))
+        self.sub_agc_gain_var = tk.DoubleVar(value=40)
+        self.sub_agc_gain_scale = ttk.Scale(b2, from_=-20, to=120,
+                                            variable=self.sub_agc_gain_var, length=100,
+                                            command=self._sub_agc_gain_changed)
+        self.sub_agc_gain_scale.pack(side="left", padx=2)
+        self.sub_agc_gain_scale.state(["disabled"])
+
+        b3 = self._row(self.sec_sub)
+        self.split_btn = ttk.Button(b3, text="SPLIT off", width=9, command=self._split_toggle)
+        self.split_btn.pack(side="left", padx=(2, 6))
+        ttk.Label(b3, text="SPLIT sends the transmitter to the SubVFOA frequency",
+                  foreground=C["dim"]).pack(side="left")
+
+        # ========================== 5 TX ==========================
+        # Everything that only matters while transmitting.
+        self.sec_tx = self._section(right, "5 · TX — TRANSMISSION")
+        t1 = self._row(self.sec_tx)
+        self.ptt_btn = tk.Button(t1, text="PTT", bg="#f4d7d4", fg=C["fg"], width=8,
                                  font=("Segoe UI", 10, "bold"))
-        # Thetis parity: MOX is a TOGGLE (click on, click off). A hold-to-talk
-        # button needs a clean release event every time - one missed release
-        # (mouse leaving the widget, a second click, a focus change) left the rig
-        # keyed. One trigger only: command=, never a bind as well.
+        # Thetis parity: MOX is a TOGGLE (click on, click off), one trigger only.
         self.ptt_btn.config(command=self.ptt_toggle)
-        ttk.Label(r4, text="TX tail (ms):", padding=(14, 0, 2, 0)).pack(side="left")
+        self.ptt_btn.pack(side="left", padx=(2, 0))
+        self.tune_btn = tk.Button(t1, text="TUNE", bg="#f7e6c8", fg=C["fg"], width=8,
+                                  font=("Segoe UI", 10, "bold"), command=self.tune_toggle)
+        self.tune_btn.pack(side="left", padx=(8, 0))
+        self.tx_lbl = tk.Label(t1, text="RX", bg=C["panel"], fg=C["dim"],
+                               font=("Segoe UI", 11, "bold"))
+        self.tx_lbl.pack(side="left", padx=12)
+        self._space_down = False
+        self.bind("<KeyPress-space>", self._space_press)
+        self.bind("<KeyRelease-space>", self._space_release)
+
+        t2 = self._row(self.sec_tx)
+        ttk.Label(t2, text="TX tail (ms):").pack(side="left", padx=(2, 2))
         self.txtail_var = tk.IntVar(value=350)
-        self.txtail_entry = ttk.Entry(r4, width=5)
+        self.txtail_entry = ttk.Entry(t2, width=5)
         self.txtail_entry.insert(0, "350")
         self.txtail_entry.pack(side="left")
         self.txtail_entry.bind("<Return>", self._txtail_entry)
         self.txtail_entry.bind("<FocusOut>", self._txtail_entry)
-        self.ptt_btn.pack(side="left")
-        self.tune_btn = tk.Button(r4, text="TUNE", bg="#f7e6c8", fg=C["fg"], width=8,
-                                  font=("Segoe UI", 10, "bold"), command=self.tune_toggle)
-        self.tune_btn.pack(side="left", padx=(8, 0))
-        ttk.Label(r4, text="Tune drive:", padding=(14, 0, 2, 0)).pack(side="left")
-        self.tunedrive_entry = ttk.Entry(r4, width=5)
+        ttk.Label(t2, text="Tune drive (%):", padding=(16, 0, 2, 0)).pack(side="left")
+        self.tunedrive_entry = ttk.Entry(t2, width=5)
         self.tunedrive_entry.insert(0, str(self.tune_drive_pct))
         self.tunedrive_entry.pack(side="left")
         self.tunedrive_entry.bind("<Return>", self._tunedrive_entry)
         self.tunedrive_entry.bind("<FocusOut>", self._tunedrive_entry)
-        self._space_down = False
-        self.bind("<KeyPress-space>", self._space_press)
-        self.bind("<KeyRelease-space>", self._space_release)
-        self.tx_lbl = tk.Label(r4, text="RX", bg=C["panel"], fg=C["dim"],
-                               font=("Segoe UI", 11, "bold"))
-        self.tx_lbl.pack(side="left", padx=12)
-        ttk.Label(r4, text="Mic:", padding=(10, 0, 2, 0)).pack(side="left")
+
+        t3 = self._row(self.sec_tx)
+        ttk.Label(t3, text="Mic device:", padding=(2, 0, 2, 0)).pack(side="left")
         self._in_devs = list_input_devices()
         self.in_dev_var = tk.StringVar(value="(system default)")
         in_names = ["(system default)"] + [n for _, n, _ in self._in_devs]
-        ttk.Combobox(r4, textvariable=self.in_dev_var, width=22, state="readonly",
+        ttk.Combobox(t3, textvariable=self.in_dev_var, width=28, state="readonly",
                      values=in_names).pack(side="left", padx=2)
         self.in_dev_var.trace_add("write", lambda *_: self._reopen_input())
         # The client no longer scales the transmit audio itself: the microphone
-        # gain is applied by Thetis (see the TX DSP row), so one control has one
-        # meaning and both applications show the same value.
+        # gain is applied by Thetis, so one control has one meaning.
         self.mic_gain = 1.0
 
-        # --- row 5: TX DSP chain (mirrors Thetis: mic gain, compander, downward
-        # expander, VOX). Each slider's BOTTOM position means OFF, so no on/off
-        # buttons are needed - exactly like the console controls they mirror.
-        r5 = ttk.Frame(self); r5.pack(fill="x", padx=10, pady=2)
-        ttk.Label(r5, text="TX:").pack(side="left", padx=(2, 6))
         self.txdsp = {}
         for key, label, lo, hi, unit in (
                 ("mic",  "MIC",  MIC_MIN, MIC_MAX, "dB"),
                 ("comp", "COMP", 0, 20, "dB"),
                 ("vox",  "VOX",  -80, 0, "dB")):
-            tk.Label(r5, text=label, bg=C["panel"], fg=C["fg"],
-                     font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 2))
+            r = self._row(self.sec_tx)
+            tk.Label(r, text=label, bg=C["panel"], fg=C["fg"], width=5, anchor="w",
+                     font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 2))
             var = tk.DoubleVar(value=lo)
-            sc = ttk.Scale(r5, from_=lo, to=hi, variable=var, length=90,
+            sc = ttk.Scale(r, from_=lo, to=hi, variable=var, length=170,
                            command=lambda v, k=key: self._txdsp_drag(k, v))
             sc.pack(side="left")
             sc.bind("<ButtonRelease-1>", lambda e, k=key: self._txdsp_send(k))
-            lbl = tk.Label(r5, text="off", bg=C["panel"], fg=C["fg"],
-                           font=("Consolas", 9, "bold"), width=6)
-            lbl.pack(side="left", padx=(3, 0))
+            lbl = tk.Label(r, text="off", bg=C["panel"], fg=C["fg"],
+                           font=("Consolas", 9, "bold"), width=7, anchor="w")
+            lbl.pack(side="left", padx=(4, 0))
             self.txdsp[key] = {"var": var, "scale": sc, "lbl": lbl,
                                "lo": lo, "hi": hi, "unit": unit}
-        # DXP is a TOGGLE BUTTON in Thetis (the gate on/off), so it is one here
-        # too - no slider. Its threshold stays whatever the console has.
-        tk.Label(r5, text="DXP", bg=C["panel"], fg=C["fg"],
-                 font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 2))
-        self.dexp_btn = tk.Button(r5, text="off", width=4,
-                                  font=("Segoe UI", 8, "bold"),
-                                  bg="#e6e8ee", relief="raised",
-                                  command=self._dexp_toggle)
+        tdxp = self._row(self.sec_tx)
+        # DXP is a TOGGLE BUTTON in Thetis (the gate on or off), so it is one here
+        # too; its threshold stays whatever the console holds.
+        tk.Label(tdxp, text="DXP", bg=C["panel"], fg=C["fg"], width=5, anchor="w",
+                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 2))
+        self.dexp_btn = tk.Button(tdxp, text="off", width=5,
+                                  font=("Segoe UI", 9, "bold"), bg="#e6e8ee",
+                                  relief="raised", command=self._dexp_toggle)
         self.dexp_btn.pack(side="left")
-        self.dexp_on = False          # gate enabled (console DEXP button)
+        self.dexp_on = False
 
-        # --- log
-        self.log = tk.Text(self, height=5, bg="#ffffff", fg="#333333", borderwidth=1,
-                           font=("Consolas", 8))
-        self.log.pack(fill="x", padx=10, pady=(2, 8))
-
+        # ========================= 6 LOG =========================
+        self.sec_log = self._section(self, "6 · LOG")
+        self.log = tk.Text(self.sec_log, height=5, bg="#ffffff", fg="#333333",
+                           borderwidth=1, font=("Consolas", 8))
+        self.log.pack(fill="x", padx=6, pady=(2, 6))
     # ---------------- audio out ----------------
     def _open_output(self):
         try:
@@ -1727,6 +1816,11 @@ class MiniTCI(tk.Tk):
                 self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
                 self._txdsp_query()   # mic gain / COMP / DXP / VOX from the console
                 self.send("tune_drive:0;")   # console transmit power during Tune
+                # the SubVFOA's own DSP state, so both apps start in step
+                self.send("sub_mode:0;")
+                self.send("sub_filter:0;")
+                self.send("sub_agc_mode:0;")
+                self.send("sub_agc_gain:0;")
                 self._vox_mic_keep()
             else:
                 self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
@@ -1976,9 +2070,35 @@ class MiniTCI(tk.Tk):
                         fl, fh = int(p[1]), int(p[2])
                         if fh > fl:
                             self.sub_filt = (fl, fh)
-                            self._sub_refresh_ui()
+                            self.pan.sub_filt = self.sub_filt
+                            self._sub_filter_entries_set(self.sub_filt)
+                            self._sub_sync_filtw_slider(self.sub_filt)
                     except ValueError:
                         pass
+                continue
+            if k == "sub_agc_mode" and v:
+                # echo format: sub_agc_mode:<trx>,<token>;
+                name = self._agc_mode_from_tci(str(v).split(",")[-1].strip().lower())
+                self._sub_agc_busy = True
+                try:
+                    self.sub_agc_var.set(name)
+                finally:
+                    self._sub_agc_busy = False
+                continue
+            if k == "sub_agc_gain" and v:
+                # echo format: sub_agc_gain:<trx>,<dB>; (sub rx only)
+                p = str(v).split(",")
+                if len(p) >= 2:
+                    try:
+                        gain = int(float(p[1]))
+                    except ValueError:
+                        continue
+                    self._sub_agc_gain_busy = True
+                    try:
+                        self.sub_agc_gain_var.set(gain)
+                    finally:
+                        self._sub_agc_gain_busy = False
+                    self._update_sub_agc_gain_label()
                 continue
             if k == "probe":
                 # Thetis TX-chain probe (once/s while we transmit):
@@ -2203,13 +2323,32 @@ class MiniTCI(tk.Tk):
         hz = self.freq_hz % 1000
         self.freq_lbl.config(text=f"{mhz}.{khz:03d}.{hz:03d}")
 
-    def _freq_digit_hover(self, e):
-        """Thetis parity: the digit under the pointer selects the place value
-        the wheel will change (1 Hz .. 10 MHz)."""
-        self._freq_place = self._freq_place_at(e.x)
+    def _bind_digit_wheel(self, lbl, which):
+        """Thetis parity, identical for VFO A and SubVFOA: the digit under the
+        pointer selects the place value the wheel changes (1 Hz .. 10 MHz)."""
+        setattr(self, "_sub_font" if which == "sub" else "_freq_font",
+                tkfont.Font(font=lbl.cget("font")))
+        attr = "_sub_digit_x" if which == "sub" else "_freq_digit_x"
+        lbl.bind("<MouseWheel>", lambda e: self._readout_wheel(e, which))
+        lbl.bind("<Button-4>", lambda e: self._readout_wheel(e, which))
+        lbl.bind("<Button-5>", lambda e: self._readout_wheel(e, which))
+        lbl.bind("<Motion>", lambda e: self._readout_hover(e, which))
+        lbl.bind("<Leave>", lambda e: getattr(self, attr).clear())
 
-    def _freq_place_at(self, x):
-        txt = self.freq_lbl.cget("text")
+    def _readout_hover(self, e, which):
+        place = self._readout_place(e.x, which)
+        if which == "sub":
+            self._sub_place = place
+        else:
+            self._freq_place = place
+
+    def _readout_place(self, x, which):
+        """Place value (1 Hz .. 10 MHz) of the digit under x on a readout."""
+        if which == "sub":
+            lbl, font = self.vfo_lbl, self._sub_font
+        else:
+            lbl, font = self.freq_lbl, self._freq_font
+        txt = lbl.cget("text")
         # digits right to left are 1 Hz, 10 Hz, 100 Hz, 1 kHz, ...
         place = 1
         spans = []
@@ -2231,15 +2370,26 @@ class MiniTCI(tk.Tk):
             return min(spans, key=lambda sp: abs((sp[0] + sp[1]) / 2 - x))[2]
         return 1000
 
-    def _freq_wheel(self, e):
-        """Wheel over the frequency readout tunes the digit under the pointer."""
+    def _readout_wheel(self, e, which):
+        """Wheel over a readout tunes the digit under the pointer."""
         try:
-            place = self._freq_place_at(e.x)
+            place = self._readout_place(e.x, which)
         except (tk.TclError, AttributeError):
             place = 1000
-        self._freq_place = place
         d = place if getattr(e, "delta", 120) > 0 else -place
-        self.tune_to(self.freq_hz + d)
+        if which == "sub":
+            self._sub_place = place
+            self._sub_tune_to(max(0, int(self.sub_hz) + d))
+        else:
+            self._freq_place = place
+            self.tune_to(self.freq_hz + d)
+
+    # VFO A entry points, kept for the tests and any caller that names them
+    def _freq_place_at(self, x):
+        return self._readout_place(x, "A")
+
+    def _freq_wheel(self, e):
+        self._readout_wheel(e, "A")
 
     def _draw_smeter(self):
         # IQ-derived peak-bin dBFS on the analog S-bar. dBFS -> S-unit:
@@ -2312,7 +2462,7 @@ class MiniTCI(tk.Tk):
 
     def _sub_refresh_ui(self):
         on = self.sub_enabled
-        self.vfo_lbl.config(text="SubVFOA  " + self._fmt_sub_freq())
+        self.vfo_lbl.config(text=self._fmt_sub_freq())
         self.sub_btn.config(text="SUB on" if on else "SUB off")
         self.split_btn.config(text="SPLIT on" if self.split else "SPLIT off")
         self.pan.sub_hz = self.sub_hz if on else 0.0
@@ -2330,20 +2480,21 @@ class MiniTCI(tk.Tk):
         if getattr(self, "_is_full_tci", False):
             # 50001: rx_channel_enable controls the sub-channel (chkEnableMultiRX)
             self.send(f"rx_channel_enable:0,1,{str(want).lower()};")
-            if want:
-                # vfoasub sets VFOASubFreq (the smaller readout below VFO A)
-                self.send(f"vfoasub:0,{self.sub_hz};")
-                # sub_mode / sub_filter have no TCIServer equivalents;
-                # the sub-channel inherits VFO A's mode and filter on 50001
-                self.send(f"rx_balance:0,{self.bal_var.get():.2f};")
         else:
             self.send(f"subrx:0,{str(want).lower()};")
-            if want:
+        if want:
+            # the sub channel gets its OWN mode, filter and AGC, on both ports;
+            # it only shares VFO A's slice, one DDC
+            if not getattr(self, "_is_full_tci", False):
                 self.send(f"vfo:1,0,{self.sub_hz};")
-                self.send(f"sub_mode:0,{self.sub_mode};")
-                lo, hi = self.sub_filt
-                self.send(f"sub_filter:0,{lo},{hi};")
-                self.send(f"sub_balance:0,{self.bal_var.get():.2f};")
+            else:
+                # vfoasub sets VFOASubFreq (the sub readout in Thetis)
+                self.send(f"vfoasub:0,{self.sub_hz};")
+            self.send(f"sub_mode:0,{self.sub_mode};")
+            self._sub_send_filter()
+            self._sub_send_agc()
+            # audio routing lives in the General section: keep it in step
+            self._apply_audio_selection(force=True)
         # state applied on server echo (subrx handler in _handle)
 
     def _split_toggle(self):
@@ -2358,42 +2509,162 @@ class MiniTCI(tk.Tk):
         self.send(f"split_enable:0,{str(want).lower()};")
         # state applied on server echo
 
+    # ---- SubVFOA: its OWN DSP chain ----------------------------------------
+    # The sub runs in VFO A's slice, one DDC, but it has its own mode, filter and
+    # AGC, exactly like VFO A. The commands are sub_mode / sub_filter /
+    # sub_agc_mode / sub_agc_gain, sent on every port.
     def _submode_changed(self, *_a):
-        # guard: server echoes re-set the var; sending on echo would loop forever
+        """Server echoes re-set the var; sending on echo would loop forever."""
         if getattr(self, "_submode_busy", False):
             return
         new_mode = self.submode_var.get()
         if new_mode == getattr(self, "sub_mode", None):
             return                      # same value - nothing to do
-        # H1: on 50001 the sub-VFO shares VFO A's mode — redirect to VFO A
-        if getattr(self, "_is_full_tci", False):
-            self.mode_var.set(new_mode)
-            return
         self.sub_mode = new_mode
-        # Thetis per-mode table at the selected width (sideband flips with mode)
-        self.sub_filt = _filter_for_mode_width(new_mode, self.subfilt_var.get()) \
-            or (0, 6000)   # SPEC/DRM fallback (not used on headless)
-        self._sub_refresh_ui()
-        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-            self.send(f"sub_mode:0,{self.sub_mode};")
-            lo, hi = self.sub_filt
-            self.send(f"sub_filter:0,{lo},{hi};")
-        self.logprint(f"Sub mode {self.sub_mode} filt {self.sub_filt}")
+        # a mode change redefines the passband: the sideband flips with the mode,
+        # so apply the mode default and send mode and filter together
+        filt = _thetis_filter(new_mode, 4)
+        if filt is None:
+            filt = (-48000, 48000)          # SPEC: no filter, full span
+        self.sub_filt = filt
+        self.pan.sub_filt = filt
+        self._sub_filter_entries_set(filt)
+        self._sub_sync_filtw_slider(filt)
+        try:
+            self.sub_filtw_scale.state(
+                ["disabled"] if new_mode in ("DRM", "SPEC", "FM") else ["!disabled"])
+        except tk.TclError:
+            pass
+        self._sub_send_mode()
+        self._sub_send_filter()
+        self.logprint(f"SubVFOA mode {new_mode} filter {filt}")
 
-    def _subfilt_changed(self, *_a):
-        # H1: on 50001 the filter is shared — redirect to VFO A's entries
-        if getattr(self, "_is_full_tci", False):
-            self._filter_entries_set(_filter_for_mode_width(
-                self.mode_var.get(), self.subfilt_var.get()) or (-48000, 48000))
-            self._filter_entries_applied()
+    def _sub_send_mode(self):
+        if self._sub_enabled():
+            self.send(f"sub_mode:0,{self.sub_mode};")
+
+    def _sub_send_filter(self, filt=None):
+        """The sub channel's own passband. DRM/SPEC filters are the server's."""
+        if self.submode_var.get() in ("DRM", "SPEC"):
             return
-        # Thetis per-mode table at the selected width
-        self.sub_filt = _filter_for_mode_width(self.sub_mode, self.subfilt_var.get()) \
-            or (0, 6000)
-        self._sub_refresh_ui()
-        if self._sub_enabled() and not getattr(self, "_is_full_tci", False):
-            lo, hi = self.sub_filt
-            self.send(f"sub_filter:0,{lo},{hi};")
+        if not self._sub_enabled():
+            return
+        lo, hi = filt if filt else self.sub_filt
+        self.send(f"sub_filter:0,{int(lo)},{int(hi)};")
+
+    def _sub_send_agc(self):
+        if not self._sub_enabled():
+            return
+        self.send(f"sub_agc_mode:0,{self._agc_mode_to_tci(self.sub_agc_var.get())};")
+        self.send(f"sub_agc_gain:0,{int(float(self.sub_agc_gain_var.get()))};")
+
+    def _sub_a_filter(self):
+        """SubVFOA passband from its own Low/High boxes."""
+        if self.submode_var.get() == "SPEC":
+            return None
+        try:
+            lo = int(float(self.sub_filt_low_entry.get()))
+            hi = int(float(self.sub_filt_high_entry.get()))
+        except (ValueError, tk.TclError):
+            return _thetis_filter(self.submode_var.get(), 4)
+        if hi <= lo:
+            lo, hi = -3000, 3000
+        return (lo, hi)
+
+    def _sub_filter_entries_set(self, filt):
+        try:
+            lo, hi = filt
+            self._sub_filt_updating = True
+            self.sub_filt_low_entry.delete(0, "end")
+            self.sub_filt_low_entry.insert(0, str(int(lo)))
+            self.sub_filt_high_entry.delete(0, "end")
+            self.sub_filt_high_entry.insert(0, str(int(hi)))
+        except (tk.TclError, ValueError, TypeError):
+            pass
+        finally:
+            self._sub_filt_updating = False
+
+    def _sub_filter_entries_applied(self, *_a):
+        """Return or focus-out in the sub's boxes: push the new edges."""
+        if self._sub_filt_updating:
+            return
+        filt = self._sub_a_filter()
+        if filt is None:
+            return
+        self.sub_filt = filt
+        self.pan.sub_filt = filt
+        self._sub_sync_filtw_slider(filt)
+        self._sub_send_filter(filt)
+        self.logprint(f"SubVFOA filter {filt[0]}..{filt[1]} Hz")
+
+    def _sub_sync_filtw_slider(self, filt):
+        try:
+            lo, hi = filt
+            bw = hi - lo
+            self._sub_filt_updating = True
+            try:
+                self.sub_filtw_var.set(min(20000, max(10, bw)))
+            finally:
+                self._sub_filt_updating = False
+            self.sub_filtw_lbl.config(
+                text=f"{bw/1000:.1f}k" if bw >= 1000 else f"{bw}")
+        except (tk.TclError, TypeError, ValueError):
+            pass
+
+    def _sub_filtw_changed(self, v):
+        """SubVFOA variable bandwidth: the same law as VFO A's slider, applied to
+        the sub's own mode."""
+        if self._sub_filt_updating:
+            return
+        mode = self.submode_var.get()
+        if mode in ("DRM", "SPEC", "FM"):
+            return                      # Thetis disables the slider here
+        filt = self._sub_a_filter()
+        if filt is None:
+            return
+        lo, hi = filt
+        centre = int((lo + hi) / 2)
+        bw = int(float(v))
+        if mode in ("USB", "DIGU"):
+            new_lo, new_hi = self.LOW_CUT, self.LOW_CUT + bw
+        elif mode in ("LSB", "DIGL"):
+            new_hi, new_lo = -self.LOW_CUT, -self.LOW_CUT - bw
+        elif mode in ("CWL", "CWU"):
+            new_lo, new_hi = centre - bw // 2, centre + bw // 2
+        else:   # AM, SAM, DSB: symmetric half-bandwidth like Thetis
+            new_lo, new_hi = centre - bw, centre + bw
+        new_lo, new_hi = self._constrain_filter(new_lo, new_hi, mode)
+        self.sub_filt = (new_lo, new_hi)
+        self.pan.sub_filt = self.sub_filt
+        self._sub_filter_entries_set(self.sub_filt)
+        shown = new_hi - new_lo
+        self.sub_filtw_lbl.config(
+            text=f"{shown/1000:.1f}k" if shown >= 1000 else f"{shown}")
+        self._sub_send_filter(self.sub_filt)
+
+    def _sub_agc_changed(self, *_a):
+        try:
+            self.sub_agc_gain_scale.state(["!disabled"])
+        except tk.TclError:
+            pass
+        self._update_sub_agc_gain_label()
+        if getattr(self, "_sub_agc_busy", False):
+            return   # echo handler set the var - do not re-send
+        self._sub_send_agc()
+
+    def _sub_agc_gain_changed(self, v):
+        self._update_sub_agc_gain_label()
+        if not self.connected or getattr(self, "_sub_agc_gain_busy", False):
+            return
+        if self._sub_enabled():
+            self.send(f"sub_agc_gain:0,{int(float(v))};")
+
+    def _update_sub_agc_gain_label(self):
+        try:
+            self.sub_agc_gain_lbl.config(
+                text=str(int(float(self.sub_agc_gain_var.get()))))
+        except (ValueError, tk.TclError):
+            pass
 
     def _audiosel_changed(self, *_a):
         self.audio_sel = self.audiosel_var.get().lower()
@@ -2595,7 +2866,7 @@ class MiniTCI(tk.Tk):
                 "a": self.freq_hz, "mode": self.mode,
                 "filt": [int(self.pan.filt[0]), int(self.pan.filt[1])],
                 "b": self.sub_hz, "sub_mode": self.sub_mode,
-                "sub_filt": self.subfilt_var.get(),
+                "sub_filt": [int(self.sub_filt[0]), int(self.sub_filt[1])],
                 "sub_on": self.sub_enabled, "split": self.split,
             }
 
@@ -2617,11 +2888,18 @@ class MiniTCI(tk.Tk):
                     self.pan.filt = (float(fl), float(fh))
             except (ValueError, TypeError, IndexError):
                 pass
-        # sub mode BEFORE sub filter so _subfilt_changed uses the right sideband
+        # sub mode BEFORE sub filter: the passband follows the sideband
         self.sub_mode = st.get("sub_mode", "USB")
         self.submode_var.set(self.sub_mode)
-        if st.get("sub_filt"):
-            self.subfilt_var.set(st["sub_filt"])
+        sub_filt = st.get("sub_filt")
+        if isinstance(sub_filt, (list, tuple)) and len(sub_filt) == 2:
+            self.sub_filt = (int(sub_filt[0]), int(sub_filt[1]))
+        elif isinstance(sub_filt, str):
+            # legacy scene: a width label. Rebuild the edges for this mode.
+            self.sub_filt = _filter_for_mode_width(self.sub_mode, sub_filt) or self.sub_filt
+        self._sub_filter_entries_set(self.sub_filt)
+        self._sub_sync_filtw_slider(self.sub_filt)
+        self.pan.sub_filt = self.sub_filt
         # set the centre synchronously so the restore doesn't clamp B against
         # the previous band's centre
         a = int(st["a"])
@@ -2641,8 +2919,9 @@ class MiniTCI(tk.Tk):
             else:
                 self.send("subrx:0,true;")
                 self.send(f"vfo:1,0,{self.sub_hz};")
-                self.send(f"sub_mode:0,{self.sub_mode};")
-                self.send(f"sub_filter:0,{self.sub_filt[0]},{self.sub_filt[1]};")
+            self.send(f"sub_mode:0,{self.sub_mode};")
+            self._sub_send_filter()
+            self._sub_send_agc()
         elif self.sub_enabled:
             if getattr(self, "_is_full_tci", False):
                 self.send("rx_channel_enable:0,1,false;")
@@ -2717,17 +2996,6 @@ class MiniTCI(tk.Tk):
                 ["disabled"] if self.mode in ("DRM", "SPEC", "FM") else ["!disabled"])
         except tk.TclError:
             pass
-        # H1: on 50001 with RX2 off Thetis forces the sub-VFO to share VFO A's
-        # mode - there is only one DDC, its DSP pipeline is shared.
-        if getattr(self, "_is_full_tci", False):
-            self._submode_busy = True
-            try:
-                self.sub_mode = self.mode
-                self.submode_var.set(self.mode)
-                self.sub_filt = self.pan.filt
-                self._sub_refresh_ui()
-            finally:
-                self._submode_busy = False
 
     def _filter_entries_set(self, filt):
         """Write a (lo, hi) pair into the entry boxes (no send)."""
@@ -2785,10 +3053,13 @@ class MiniTCI(tk.Tk):
     LOW_CUT = 150            # Thetis default_low_cut
     MAX_FILTER_SHIFT = 10000  # Thetis _max_filter_shift (ConstrainFilter clamp)
 
-    def _constrain_filter(self, lo, hi):
+    def _constrain_filter(self, lo, hi, mode=None):
         """Thetis ConstrainFilter parity: clamp edges to the sideband
-        convention and to +/-MAX_FILTER_SHIFT. Returns (lo, hi)."""
-        mode = self.mode_var.get()
+        convention and to +/-MAX_FILTER_SHIFT. Returns (lo, hi).
+
+        mode defaults to VFO A's; the SubVFOA passes its own mode."""
+        if mode is None:
+            mode = self.mode_var.get()
         if mode in ("LSB", "DIGL", "CWL"):
             if hi > 0:
                 hi = 0

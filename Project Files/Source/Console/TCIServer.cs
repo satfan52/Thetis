@@ -3766,6 +3766,186 @@ namespace Thetis
             Audio.VOXEnabled = voxOn;                   // the detector switch itself
         }
 
+        // ---------------------------------------------------------------------
+        // H1: SubVFOA's own DSP chain on a console receiver.
+        //
+        // WDSP runs two channels per receiver: id(rx,0) = VFO A, id(rx,1) = the
+        // sub. The console's own controls write BOTH channels (SetRX1Mode,
+        // SetRX1Filter and comboAGC all assign GetDSPRX(0,1) as well), so the sub
+        // follows VFO A unless something addresses its channel directly. These
+        // handlers do exactly that, which is what makes the sub independent.
+        // ---------------------------------------------------------------------
+        private bool tryGetConsoleSub(int rx, out RadioDSPRX sub)
+        {
+            sub = null;
+            // the console array only covers its own threads: RX1 and RX2
+            if (rx < 0 || rx > 1) return false;
+            if (consoleThreadSafe == null || consoleThreadSafe.radio == null) return false;
+            sub = consoleThreadSafe.radio.GetDSPRX(rx, 1);
+            return sub != null;
+        }
+
+        private static bool tryParseDspMode(string token, out DSPMode mode)
+        {
+            switch ((token ?? "").Trim().ToLowerInvariant())
+            {
+                case "lsb": mode = DSPMode.LSB; return true;
+                case "usb": mode = DSPMode.USB; return true;
+                case "dsb": mode = DSPMode.DSB; return true;
+                case "cwl": mode = DSPMode.CWL; return true;
+                case "cwu": mode = DSPMode.CWU; return true;
+                case "fm":
+                case "nfm": mode = DSPMode.FM; return true;
+                case "am": mode = DSPMode.AM; return true;
+                case "sam": mode = DSPMode.SAM; return true;
+                case "digu": mode = DSPMode.DIGU; return true;
+                case "digl": mode = DSPMode.DIGL; return true;
+                case "drm": mode = DSPMode.DRM; return true;
+                case "spec": mode = DSPMode.SPEC; return true;
+                default: mode = DSPMode.USB; return false;
+            }
+        }
+
+        private static string dspModeToTciToken(DSPMode mode)
+        {
+            switch (mode)
+            {
+                case DSPMode.LSB: return "LSB";
+                case DSPMode.USB: return "USB";
+                case DSPMode.DSB: return "DSB";
+                case DSPMode.CWL: return "CWL";
+                case DSPMode.CWU: return "CWU";
+                case DSPMode.FM: return "FM";
+                case DSPMode.AM: return "AM";
+                case DSPMode.SAM: return "SAM";
+                case DSPMode.DIGU: return "DIGU";
+                case DSPMode.DIGL: return "DIGL";
+                case DSPMode.DRM: return "DRM";
+                case DSPMode.SPEC: return "SPEC";
+                default: return "USB";
+            }
+        }
+
+        private void handleSubMode(string[] args)
+        {
+            if (args == null || args.Length < 1) return;
+            if (!int.TryParse(args[0], out int rx)) return;
+            if (!tryGetConsoleSub(rx, out RadioDSPRX sub)) return;
+
+            if (args.Length == 1)
+            {
+                sendSubMode(rx, sub.DSPMode);
+                return;
+            }
+
+            if (!tryParseDspMode(args[1], out DSPMode mode)) return;
+            if (mode == sub.DSPMode) return;
+
+            // the mode change sequence Thetis uses for its own channels: the
+            // channel must be off while the DSP mode is reprogrammed, and the
+            // passband is re-applied afterwards because the sideband convention
+            // is carried by the filter's sign
+            bool wasActive = sub.Active;
+            int low = sub.RXFilterLow, high = sub.RXFilterHigh;
+            WDSP.SetChannelState(WDSP.id((uint)rx, 1), 0, 1);
+            sub.DSPMode = mode;
+            sub.SetRXFilter(low, high);
+            if (wasActive) WDSP.SetChannelState(WDSP.id((uint)rx, 1), 1, 0);
+
+            sendSubMode(rx, mode);
+        }
+
+        private void handleSubFilter(string[] args)
+        {
+            if (args == null || args.Length < 1) return;
+            if (!int.TryParse(args[0], out int rx)) return;
+            if (!tryGetConsoleSub(rx, out RadioDSPRX sub)) return;
+
+            if (args.Length == 1)
+            {
+                sendSubFilter(rx, sub.RXFilterLow, sub.RXFilterHigh);
+                return;
+            }
+            if (args.Length < 3) return;
+            if (!int.TryParse(args[1], out int lo) || !int.TryParse(args[2], out int hi)) return;
+            if (hi <= lo) return;
+            // a zero-width passband is meaningless, and +/-10 kHz is Thetis's own
+            // ConstrainFilter limit
+            lo = Math.Max(-10000, lo);
+            hi = Math.Min(10000, hi);
+
+            sub.SetRXFilter(lo, hi);
+            sendSubFilter(rx, lo, hi);
+        }
+
+        private void handleSubAgcMode(string[] args)
+        {
+            if (args == null || args.Length < 1) return;
+            if (!int.TryParse(args[0], out int rx)) return;
+            if (!tryGetConsoleSub(rx, out RadioDSPRX sub)) return;
+
+            if (args.Length == 1)
+            {
+                sendSubAgcMode(rx, sub.RXAGCMode);
+                return;
+            }
+
+            AGCMode mode = tciModeToAgcMode(args[1]);
+            if (mode == sub.RXAGCMode) return;
+            sub.RXAGCMode = mode;
+            // Thetis's own AGC time constants, same as its comboAGC handler
+            switch (mode)
+            {
+                case AGCMode.LONG:
+                    sub.RXAGCHang = 2000; sub.RXAGCDecay = 2000; break;
+                case AGCMode.SLOW:
+                    sub.RXAGCHang = 1000; sub.RXAGCDecay = 500; break;
+                case AGCMode.MED:
+                    sub.RXAGCHang = 0; sub.RXAGCDecay = 250; break;
+            }
+            sendSubAgcMode(rx, mode);
+        }
+
+        private void handleSubAgcGain(string[] args)
+        {
+            if (args == null || args.Length < 1) return;
+            if (!int.TryParse(args[0], out int rx)) return;
+            if (!tryGetConsoleSub(rx, out RadioDSPRX sub)) return;
+
+            if (args.Length == 1)
+            {
+                sendSubAgcGain(rx, (int)Math.Round(sub.RXFixedAGC));
+                return;
+            }
+            if (!int.TryParse(args[1], out int gain)) return;
+            gain = Math.Max(-20, Math.Min(120, gain));
+            sub.RXFixedAGC = gain;
+            sendSubAgcGain(rx, gain);
+        }
+
+        // the sub state goes out on the same path as the other H1 settings:
+        // sendTextFrame reaches the client that asked (the console's own change
+        // handlers broadcast to every listener when Thetis itself moves them)
+        private void sendSubMode(int rx, DSPMode mode)
+        {
+            sendTextFrame("sub_mode:" + rx + "," + dspModeToTciToken(mode) + ";");
+        }
+
+        private void sendSubFilter(int rx, int lo, int hi)
+        {
+            sendTextFrame("sub_filter:" + rx + "," + lo + "," + hi + ";");
+        }
+
+        private void sendSubAgcMode(int rx, AGCMode mode)
+        {
+            sendTextFrame("sub_agc_mode:" + rx + "," + agcModeToTciMode(mode) + ";");
+        }
+
+        private void sendSubAgcGain(int rx, int gain)
+        {
+            sendTextFrame("sub_agc_gain:" + rx + "," + gain + ";");
+        }
+
         private void handleTrxMessage(string[] args)
 		{
 			int rx = 0;
@@ -5571,6 +5751,21 @@ namespace Thetis
                         break;
                     case "vox":
                         handleVox(args);
+                        break;
+                    // H1: SubVFOA's OWN DSP chain. The sub runs in VFO A's slice,
+                    // one DDC, but WDSP gives it its own channel: mode, filter and
+                    // AGC are independent of VFO A's.
+                    case "sub_mode":
+                        handleSubMode(args);
+                        break;
+                    case "sub_filter":
+                        handleSubFilter(args);
+                        break;
+                    case "sub_agc_mode":
+                        handleSubAgcMode(args);
+                        break;
+                    case "sub_agc_gain":
+                        handleSubAgcGain(args);
                         break;
                     case "split_enable":
                         handleSplitEnableMessage(args);
