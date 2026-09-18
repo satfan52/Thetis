@@ -3255,6 +3255,9 @@ namespace Thetis
 			TciLog.Log($"[TCIServer.handleStart] power was {consoleThreadSafe?.PowerOn}");
 			if(!consoleThreadSafe.PowerOn)
 				consoleThreadSafe.PowerOn = true;
+            // H1: hand the connecting client the TX microphone/processor state so
+            // its sliders start in step with the console.
+            sendAllTxDsp(0);
         }
 		private void handleStop()
 		{
@@ -3618,7 +3621,132 @@ namespace Thetis
 
             m_server?.HandleCwKeyer(this, rx, pressed, Math.Max(0, durationMs));
         }
-		private void handleTrxMessage(string[] args)
+		// ---------------------------------------------------------------------
+        // H1: TX microphone and processor controls.
+        //
+        // The compander, the downward expander (DEXP, Thetis's gate) and the VOX
+        // detector all sit in the transmit chain that TCI audio enters, so they
+        // process a client's audio. The microphone gain is applied to that path
+        // directly (cmaster.SetTciTxMicGain) because the panel gain is inert
+        // while VAC1 is enabled.
+        //
+        // Each parameter uses the console's own units. The value at the BOTTOM of
+        // its range means OFF, so a client needs no on/off buttons: mic gain at
+        // the minimum = microphone muted, compander 0 = off, gate at its minimum
+        // = off, VOX at its minimum = off.
+        // ---------------------------------------------------------------------
+        private bool tryGetRx(string[] args, out int rx)
+        {
+            rx = 0;
+            return args != null && args.Length >= 1 && int.TryParse(args[0], out rx)
+                   && rx >= 0 && rx <= 1;
+        }
+
+        private void sendMicGain(int rx, int db, bool micInUse)
+        {
+            sendTextFrame("mic_gain:" + rx + "," + db + "," +
+                          (micInUse ? "true" : "false") + ";");
+        }
+
+        private void sendTxComp(int rx, int level, bool on)
+        {
+            sendTextFrame("tx_comp:" + rx + "," + level + "," + (on ? "true" : "false") + ";");
+        }
+
+        private void sendTxDexp(int rx, int threshold, bool on)
+        {
+            sendTextFrame("tx_dexp:" + rx + "," + threshold + "," + (on ? "true" : "false") + ";");
+        }
+
+        private void sendVox(int rx, int sens, bool on)
+        {
+            sendTextFrame("vox:" + rx + "," + sens + "," + (on ? "true" : "false") + ";");
+        }
+
+        private void sendAllTxDsp(int rx)
+        {
+            if (consoleThreadSafe == null) return;
+            sendMicGain(rx, consoleThreadSafe.CATMIC, consoleThreadSafe.MicMute);
+            sendTxComp(rx, consoleThreadSafe.CPDRLevel, consoleThreadSafe.CPDR);
+            sendTxDexp(rx, consoleThreadSafe.NoiseGate, consoleThreadSafe.NoiseGateEnabled);
+            sendVox(rx, consoleThreadSafe.VOXSens, consoleThreadSafe.VOXEnable);
+        }
+
+        private void handleMicGain(string[] args)
+        {
+            if (!tryGetRx(args, out int rx)) return;
+
+            if (args.Length == 1)
+            {
+                sendMicGain(rx, consoleThreadSafe.CATMIC, consoleThreadSafe.MicMute);
+                return;
+            }
+
+            if (!int.TryParse(args[1], out int db)) return;
+
+            int min = consoleThreadSafe.MicGainMin;
+            bool wantMic = db > min;                 // bottom of the range = off
+            if (!wantMic) db = min;
+
+            consoleThreadSafe.CATMIC = db;
+            if (consoleThreadSafe.MicMute != wantMic)
+                consoleThreadSafe.MicMute = wantMic;
+        }
+
+        private void handleTxComp(string[] args)
+        {
+            if (!tryGetRx(args, out int rx)) return;
+
+            if (args.Length == 1)
+            {
+                sendTxComp(rx, consoleThreadSafe.CPDRLevel, consoleThreadSafe.CPDR);
+                return;
+            }
+
+            if (!int.TryParse(args[1], out int level)) return;
+            level = Math.Max(consoleThreadSafe.CPDRMin,
+                             Math.Min(consoleThreadSafe.CPDRMax, level));
+
+            consoleThreadSafe.CPDR = level > 0;      // 0 = compander off
+            if (level > 0)
+                consoleThreadSafe.CPDRLevel = level;
+        }
+
+        private void handleTxDexp(string[] args)
+        {
+            if (!tryGetRx(args, out int rx)) return;
+
+            if (args.Length == 1)
+            {
+                sendTxDexp(rx, consoleThreadSafe.NoiseGate, consoleThreadSafe.NoiseGateEnabled);
+                return;
+            }
+
+            if (!int.TryParse(args[1], out int thresh)) return;
+            thresh = Math.Max(-160, Math.Min(0, thresh));
+
+            consoleThreadSafe.NoiseGateEnabled = thresh > -160;
+            consoleThreadSafe.NoiseGate = thresh;
+        }
+
+        private void handleVox(string[] args)
+        {
+            if (!tryGetRx(args, out int rx)) return;
+
+            if (args.Length == 1)
+            {
+                sendVox(rx, consoleThreadSafe.VOXSens, consoleThreadSafe.VOXEnable);
+                return;
+            }
+
+            if (!int.TryParse(args[1], out int sens)) return;
+            sens = Math.Max(-80, Math.Min(0, sens));
+
+            consoleThreadSafe.VOXEnable = sens > -80;   // bottom = VOX off
+            consoleThreadSafe.VOXSens = sens;
+        }
+
+        private void handleTrxMessage(string[] args)
 		{
 			int rx = 0;
 			bool bMox = false;
@@ -5410,6 +5538,20 @@ namespace Thetis
                     case "trx":
                         handleTrxMessage(args);
                         break;
+                    // H1: TX microphone/processor chain - these stages all act on
+                    // the audio a client injects over TCI
+                    case "mic_gain":
+                        handleMicGain(args);
+                        break;
+                    case "tx_comp":
+                        handleTxComp(args);
+                        break;
+                    case "tx_dexp":
+                        handleTxDexp(args);
+                        break;
+                    case "vox":
+                        handleVox(args);
+                        break;
                     case "split_enable":
                         handleSplitEnableMessage(args);
                         break;
@@ -6075,6 +6217,21 @@ namespace Thetis
                 return m_tciPttActive;
             }
         }
+        internal void TxDspChanged(int rx)
+        {
+            // console value -> client. rx is 1-based on the console handler.
+            if (consoleThreadSafe == null) return;
+            int tciRx = Math.Max(0, rx - 1);
+            sendTextFrame("mic_gain:" + tciRx + "," + consoleThreadSafe.CATMIC + "," +
+                          (consoleThreadSafe.MicMute ? "true" : "false") + ";");
+            sendTextFrame("tx_comp:" + tciRx + "," + consoleThreadSafe.CPDRLevel + "," +
+                          (consoleThreadSafe.CPDR ? "true" : "false") + ";");
+            sendTextFrame("tx_dexp:" + tciRx + "," + consoleThreadSafe.NoiseGate + "," +
+                          (consoleThreadSafe.NoiseGateEnabled ? "true" : "false") + ";");
+            sendTextFrame("vox:" + tciRx + "," + consoleThreadSafe.VOXSens + "," +
+                          (consoleThreadSafe.VOXEnable ? "true" : "false") + ";");
+        }
+
         internal void SyncTciPttToMox(bool expectedMox)
         {
             bool releaseOwner = false;
@@ -6847,6 +7004,7 @@ namespace Thetis
 					console.VFOAFrequencyChangeHandlers += OnVFOAFrequencyChangeHandler;
 					console.VFOBFrequencyChangeHandlers += OnVFOBFrequencyChangeHandler;
 					console.MoxChangeHandlers += OnMoxChangeHandler;
+					console.TxDspChangedHandlers += OnTxDspChangedHandler;
                     console.MoxPreChangeHandlers += OnMoxPreChangeHandler;
 					console.ModeChangeHandlers += OnModeChangeHandler;
 					console.BandChangeHandlers += OnBandChangeHandler;
@@ -6960,6 +7118,7 @@ namespace Thetis
 					console.VFOAFrequencyChangeHandlers -= OnVFOAFrequencyChangeHandler;
 					console.VFOBFrequencyChangeHandlers -= OnVFOBFrequencyChangeHandler;
 					console.MoxChangeHandlers -= OnMoxChangeHandler;
+                    console.TxDspChangedHandlers -= OnTxDspChangedHandler;
                     console.MoxPreChangeHandlers -= OnMoxPreChangeHandler;
 					console.ModeChangeHandlers -= OnModeChangeHandler;
 					console.BandChangeHandlers -= OnBandChangeHandler;
@@ -7476,6 +7635,20 @@ namespace Thetis
 
             RefreshTxAudioSourceState();
 		}
+
+        public void OnTxDspChangedHandler(int rx)
+        {
+            lock (m_objLocker)
+            {
+                if (m_server == null || m_socketListenersList == null) return;
+
+                foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+                {
+                    socketListener.TxDspChanged(rx);
+                }
+            }
+        }
+		
 
         public void OnMoxPreChangeHandler(int rx, bool currentMox, bool expectedMox)
         {

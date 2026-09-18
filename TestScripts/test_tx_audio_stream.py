@@ -55,7 +55,7 @@ def main():
         app.connected = True
         app.ptt = True
         app.tuning = False
-        app.mic_gain = 0.5          # x2 in the path -> unity, so output == input
+        app.mic_gain = 1.0          # client is unity; Thetis applies the mic gain
         app.mic_rate = STREAM_RATE
         app.send = lambda c: None
 

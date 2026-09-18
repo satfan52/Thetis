@@ -1981,6 +1981,21 @@ namespace Thetis
 
         public static long TciTxInCalls = 0;      // diagnostics: TX input cycles
         public static long TciTxInSamples = 0;    // diagnostics: samples pulled from TCI queue
+
+        // H1: microphone-gain scalar applied to audio injected over TCI. The
+        // transmit panel gain (Audio.MicPreamp -> CMSetTXAPanelGain1) is only
+        // assigned when VAC1 is off or bypassed, so with VAC1 enabled the mic
+        // gain would not reach the TCI audio at all. Applying it here makes the
+        // console's MIC slider a real control for a TCI client (0 dB = unity,
+        // 0.0 = microphone muted).
+        private static double m_tciTxMicGain = 1.0;
+        public static void SetTciTxMicGain(double gain)
+        {
+            if (double.IsNaN(gain) || double.IsInfinity(gain) || gain < 0.0) gain = 0.0;
+            if (gain > 100.0) gain = 100.0;
+            m_tciTxMicGain = gain;
+        }
+        public static double GetTciTxMicGain() { return m_tciTxMicGain; }
         private static long m_tciTxDbgTick = 0;
 
         private static unsafe void OnTCITxAudioInSamples(int nsamples, double* data)
@@ -1998,9 +2013,10 @@ namespace Thetis
                     int available = block.Length - m_tciTxSampleQueueOffset;
                     int toCopy = Math.Min(nsamples - copied, available);
 
+                    double micGain = m_tciTxMicGain;
                     for (int i = 0; i < toCopy; i++)
                     {
-                        double sample = block[m_tciTxSampleQueueOffset + i];
+                        double sample = block[m_tciTxSampleQueueOffset + i] * micGain;
                         data[2 * (copied + i)] = sample;
                         data[2 * (copied + i) + 1] = sample;
                     }

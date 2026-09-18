@@ -28889,6 +28889,7 @@ namespace Thetis
             ptbMic_Scroll(this, EventArgs.Empty);
 
             SetGeneralSetting(0, OtherButtonId.MIC, chkMicMute.Checked);
+            NotifyTxDspChanged();
         }
 
         private void ptbMic_Scroll(object sender, System.EventArgs e)
@@ -28913,6 +28914,7 @@ namespace Thetis
 
                 //[2.10.3.9]MW0LGE fix for when mic is disabled
                 setAudioMicGain((double)ptbMic.Value);
+                NotifyTxDspChanged();
             }
 
             if (sender.GetType() == typeof(PrettyTrackBar))
@@ -28934,6 +28936,12 @@ namespace Thetis
                 Audio.MicPreamp = 0.0;
                 _mic_muted = true;
             }
+
+            // H1: the TCI transmit audio enters the TX chain past the panel gain
+            // (CMSetTXAPanelGain1 leaves it at 1.0 whenever VAC1 is enabled), so
+            // the microphone gain is applied to that path directly. One control,
+            // one meaning: 0 dB = unity, muted = silence.
+            cmaster.SetTciTxMicGain(Audio.MicPreamp);
         }
         private void ptbCWSpeed_Scroll(object sender, System.EventArgs e)
         {
@@ -28965,6 +28973,8 @@ namespace Thetis
             _vox_enable = chkVOX.Checked;
 
             if (!IsSetupFormNull) SetupForm.VOXEnable = _vox_enable;
+
+            NotifyTxDspChanged();
 
             if (_vox_enable)
             {
@@ -28999,6 +29009,7 @@ namespace Thetis
             else chkNoiseGate.BackColor = SystemColors.Control;
 
             SetGeneralSetting(0, OtherButtonId.DEXP, chkNoiseGate.Checked);
+            NotifyTxDspChanged();
         }
 
         private void ptbVACRXGain_Scroll(object sender, System.EventArgs e)
@@ -29060,6 +29071,8 @@ namespace Thetis
             lblVOXVal.Text = ptbVOX.Value.ToString();
             if (!IsSetupFormNull) SetupForm.VOXSens = ptbVOX.Value;
 
+            NotifyTxDspChanged();
+
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
                 ptbVOX.Focus();
@@ -29087,6 +29100,8 @@ namespace Thetis
             {
                 ptbNoiseGate.Focus();
             }
+
+            NotifyTxDspChanged();
         }
 
         private void picNoiseGate_Paint(object sender, System.Windows.Forms.PaintEventArgs e)
@@ -36596,6 +36611,7 @@ namespace Thetis
             }
             cat_cmpd_status = Convert.ToInt32(chkCPDR.Checked);
             AndromedaIndicatorCheck(EIndicatorActions.eINCompanderEnabled, false, chkCPDR.Checked);
+            NotifyTxDspChanged();
 
             if (_oldCompandState != chkCPDR.Checked)
             {
@@ -36612,6 +36628,8 @@ namespace Thetis
 
             if (chkCPDR.Checked)
                 radio.GetDSPTX(0).TXCompandLevel = (double)ptbCPDR.Value;
+
+            NotifyTxDspChanged();
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -45223,6 +45241,19 @@ namespace Thetis
         public VFOBFrequencyChanged VFOBFrequencyChangeHandlers;
         public VFOASubFrequencyChanged VFOASubFrequencyChangeHandlers;
         public MoxChanged MoxChangeHandlers;
+
+        // H1: TX microphone/processor parameters changed (mic gain + mic mute,
+        // compander, downward expander, VOX sensitivity). The TCI server
+        // subscribes and broadcasts them so a client stays in step with the
+        // console sliders - these parameters all act on the transmit audio,
+        // including audio injected over TCI.
+        public delegate void TxDspChanged(int rx);
+        public TxDspChanged TxDspChangedHandlers;
+        public void NotifyTxDspChanged()
+        {
+            try { TxDspChangedHandlers?.Invoke(rx2_enabled && VFOBTX ? 2 : 1); }
+            catch { }
+        }
         public MoxPreChanged MoxPreChangeHandlers;
         public SetBandChanged SetBandChangeHanders;
         public PowerChanged PowerChangeHanders;

@@ -39,6 +39,8 @@ HOST = "127.0.0.1"
 PORT_MIN, PORT_MAX = 50001, 50008
 OUT_RATE = 48000
 MIC_RATE = 48000
+MIC_MIN = -40          # Thetis mic gain range (mic_gain_min / mic_gain_max)
+MIC_MAX = 10
 TX_AUDIO_RATE = 48000   # TX audio stream rate (negotiated with the server)
 
 BANDS = [  # name, default MHz, suggested mode
@@ -723,7 +725,7 @@ class MiniTCI(tk.Tk):
         self._mode_busy = False           # H1: modulation echo guard
         self.ddc_center_hz = self.freq_hz  # hardware centre frequency (DDS)
         self.volume = 0.25
-        self.mic_gain = 0.5
+        self.mic_gain = 1.0            # client-side unity; Thetis applies the mic gain
         self.smeter = -140.0
         self.tx_tail_s = 0.35
         self.tuning = False
@@ -782,7 +784,7 @@ class MiniTCI(tk.Tk):
             "split": self.split,
             "audio_sel": self.audio_sel,
             "volume": self.vol_var.get(),
-            "mic_gain": self.mic_var.get(),
+            "mic_gain": 1.0,          # client-side gain fixed; Thetis applies the mic gain
             "agc_mode": self.agc_var.get(),
             "agc_gain": self.agc_gain_var.get(),
             "y_zero": self.yzero_var.get(),
@@ -790,6 +792,7 @@ class MiniTCI(tk.Tk):
             "zoom": self.zoom_var.get(),
             "wf_gain": self.wf_gain_var.get(),
             "ctun": self.ctun_var.get(),
+            "txdsp": {k: int(round(float(v["var"].get()))) for k, v in self.txdsp.items()},
             "tx_tail_ms": int(self.tx_tail_s * 1000),
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
@@ -840,7 +843,7 @@ class MiniTCI(tk.Tk):
                         if val not in ("Fixed", "Long", "Slow", "Med", "Fast", "Custom"):
                             val = "Med"
                     var.set(val)
-            for key, var in (("volume", self.vol_var), ("mic_gain", self.mic_var),
+            for key, var in (("volume", self.vol_var),
                              ("agc_gain", self.agc_gain_var), ("y_zero", self.yzero_var),
                              ("y_scale", self.yscale_var), ("zoom", self.zoom_var),
                              ("wf_gain", self.wf_gain_var)):
@@ -849,6 +852,12 @@ class MiniTCI(tk.Tk):
             # agc_auto checkbox removed (AGC state = mode dropdown)
             if s.get("ctun") is not None:
                 self.ctun_var.set(bool(s["ctun"]))
+            for key, val in (s.get("txdsp") or {}).items():
+                if key in getattr(self, "txdsp", {}):
+                    try:
+                        self._txdsp_set(key, int(val))
+                    except (ValueError, TypeError):
+                        pass
             if s.get("tx_tail_ms") is not None:
                 self.tx_tail_s = max(0.0, min(10.0, float(s["tx_tail_ms"]) / 1000.0))
                 self.txtail_var.set(int(self.tx_tail_s * 1000))
@@ -952,8 +961,7 @@ class MiniTCI(tk.Tk):
         for scale, var, lo, hi, cb, step, fine in (
                 (self.vol_scale if hasattr(self, "vol_scale") else None,
                  self.vol_var, 0, 100, None, None, None),
-                (self.mic_scale if hasattr(self, "mic_scale") else None,
-                 self.mic_var, 0, 100, None, None, None),
+
                 (self.agc_gain_scale, self.agc_gain_var, -20, 120,
                  self._agc_gain_changed, 1.0, 1.0),
                 (getattr(self, "filtw_scale", None), self.filtw_var, 10, 20000,
@@ -968,6 +976,19 @@ class MiniTCI(tk.Tk):
                  self.wf_gain_var, 0, 100, None, None, None)):
             if scale is not None:
                 wheel(scale, var, lo, hi, cb, step, fine)
+        # TX DSP sliders: wheel = 1 dB, and the value is sent immediately
+        for key, d in getattr(self, "txdsp", {}).items():
+            def mk(k):
+                def handler(e):
+                    if d["scale"].instate(["disabled"]):
+                        return "break"
+                    self._txdsp_wheel(k, getattr(e, "delta", 120))
+                    return "break"
+                return handler
+            h = mk(key)
+            d["scale"].bind("<MouseWheel>", h)
+            d["scale"].bind("<Button-4>", h)
+            d["scale"].bind("<Button-5>", h)
 
     def _bind_settings_autosave(self):
         # save on every user-visible change (traces already registered for vars;
@@ -1273,11 +1294,34 @@ class MiniTCI(tk.Tk):
         ttk.Combobox(r4, textvariable=self.in_dev_var, width=22, state="readonly",
                      values=in_names).pack(side="left", padx=2)
         self.in_dev_var.trace_add("write", lambda *_: self._reopen_input())
-        ttk.Label(r4, text="Mic gain:").pack(side="left")
-        self.mic_var = tk.DoubleVar(value=50)
-        self.mic_scale = ttk.Scale(r4, from_=0, to=100, variable=self.mic_var, length=120,
-                  command=self._mic_changed).pack(side="left", padx=4)
-        self.mic_gain = 0.5
+        # The client no longer scales the transmit audio itself: the microphone
+        # gain is applied by Thetis (see the TX DSP row), so one control has one
+        # meaning and both applications show the same value.
+        self.mic_gain = 1.0
+
+        # --- row 5: TX DSP chain (mirrors Thetis: mic gain, compander, downward
+        # expander, VOX). Each slider's BOTTOM position means OFF, so no on/off
+        # buttons are needed - exactly like the console controls they mirror.
+        r5 = ttk.Frame(self); r5.pack(fill="x", padx=10, pady=2)
+        ttk.Label(r5, text="TX:").pack(side="left", padx=(2, 6))
+        self.txdsp = {}
+        for key, label, lo, hi, unit in (
+                ("mic",  "MIC",  MIC_MIN, MIC_MAX, "dB"),
+                ("comp", "COMP", 0, 20, "dB"),
+                ("dexp", "DXP",  -160, 0, "dB"),
+                ("vox",  "VOX",  -80, 0, "dB")):
+            tk.Label(r5, text=label, bg=C["panel"], fg=C["fg"],
+                     font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 2))
+            var = tk.DoubleVar(value=lo)
+            sc = ttk.Scale(r5, from_=lo, to=hi, variable=var, length=90,
+                           command=lambda v, k=key: self._txdsp_drag(k, v))
+            sc.pack(side="left")
+            sc.bind("<ButtonRelease-1>", lambda e, k=key: self._txdsp_send(k))
+            lbl = tk.Label(r5, text="off", bg=C["panel"], fg=C["fg"],
+                           font=("Consolas", 9, "bold"), width=6)
+            lbl.pack(side="left", padx=(3, 0))
+            self.txdsp[key] = {"var": var, "scale": sc, "lbl": lbl,
+                               "lo": lo, "hi": hi, "unit": unit}
 
         # --- log
         self.log = tk.Text(self, height=5, bg="#ffffff", fg="#333333", borderwidth=1,
@@ -1411,7 +1455,9 @@ class MiniTCI(tk.Tk):
         self.logprint(f"TX tail set to {ms} ms")
 
     def _mic_changed(self, v):
-        self.mic_gain = float(v) / 100.0
+        """Obsolete: the transmit level is the console microphone gain, driven by
+        the TX row's MIC slider. Kept for compatibility with old settings."""
+        pass
 
     # ---------------- TCI callbacks (ws thread) ----------------
     def tci_text(self, d):
@@ -1577,7 +1623,7 @@ class MiniTCI(tk.Tk):
                 vals = np.concatenate([vals, fill])
             if need_rs:
                 vals = resample(vals, vals_needed)   # exactly the requested count
-            vals = np.clip(vals * self.mic_gain * 2.0, -1.0, 1.0)
+            vals = np.clip(vals * self.mic_gain, -1.0, 1.0)
             frame = self.build_tx_audio_frame(vals, rate, chans)
             if self.client and self.client.loop:
                 self.client.send_binary(frame)
@@ -1659,6 +1705,7 @@ class MiniTCI(tk.Tk):
             # Phase -1a: full TCI (port 50001) uses rx_ctun_ex instead of ctun
             if getattr(self, "_is_full_tci", False):
                 self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
+                self._txdsp_query()   # mic gain / COMP / DXP / VOX from the console
             else:
                 self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
             # Branch H1: restore subrx state on connect; default B = A + 2 kHz
@@ -2008,6 +2055,10 @@ class MiniTCI(tk.Tk):
                     if tune_on:
                         self.logprint("Thetis TUN active - tune carrier")
                     self._tx_visuals()
+            elif k in ("mic_gain", "tx_comp", "tx_dexp", "vox") and v:
+                # Thetis TX microphone/processor state (console -> client)
+                self._txdsp_echo({"mic_gain": "mic", "tx_comp": "comp",
+                                  "tx_dexp": "dexp", "vox": "vox"}[k], v)
             elif k == "rx_sensors" and v:
                 try:
                     self.smeter = float(v.split(",")[-1])
@@ -3044,6 +3095,100 @@ class MiniTCI(tk.Tk):
             self._sub_tune_to(max(0, self.sub_hz + d))
         else:
             self.tune_to(self.freq_hz + d)
+
+    # ---------------- TX DSP chain (Thetis mirror) ----------------
+    TXDSP_CMD = {"mic": "mic_gain", "comp": "tx_comp",
+                 "dexp": "tx_dexp", "vox": "vox"}
+
+    def _txdsp_off(self, key):
+        """The bottom stop of each control means OFF (the console's own button
+        is left off). No separate on/off buttons are needed."""
+        d = self.txdsp[key]
+        return float(d["var"].get()) <= d["lo"]
+
+    def _txdsp_text(self, key, val=None):
+        d = self.txdsp[key]
+        if val is None:
+            val = float(d["var"].get())
+        if val <= d["lo"]:
+            return "off"
+        if key == "mic":
+            return f"{int(round(val))} dB"
+        return f"{int(round(val))}"
+
+    def _txdsp_drag(self, key, v):
+        """Live readout while the slider moves; nothing is sent until release."""
+        if getattr(self, "_txdsp_busy", False):
+            return
+        try:
+            self.txdsp[key]["lbl"].config(text=self._txdsp_text(key, float(v)))
+        except tk.TclError:
+            pass
+
+    def _txdsp_send(self, key):
+        if getattr(self, "_txdsp_busy", False):
+            return
+        d = self.txdsp[key]
+        val = int(round(float(d["var"].get())))
+        # snap to the bottom stop so 'off' is exact and repeatable
+        if val <= d["lo"] + 1:
+            val = d["lo"]
+            self._txdsp_set(key, val)
+        d["lbl"].config(text=self._txdsp_text(key, val))
+        if not self.connected:
+            self.logprint("not connected - TX setting not sent")
+            return
+        self.send(f"{self.TXDSP_CMD[key]}:0,{val};")
+        if key == "vox":
+            self.logprint(f"VOX {'off' if val <= d['lo'] else str(val) + ' dB'}")
+        elif key == "mic":
+            self.logprint(f"microphone gain {'off' if val <= d['lo'] else str(val) + ' dB'}")
+        elif key == "comp":
+            self.logprint(f"COMP {'off' if val <= 0 else str(val) + ' dB'}")
+        elif key == "dexp":
+            self.logprint(f"DXP gate {'off' if val <= d['lo'] else str(val) + ' dB'}")
+
+    def _txdsp_set(self, key, val, send=False):
+        """Programmatic update (thetis echo / settings restore): no send."""
+        d = self.txdsp[key]
+        val = max(d["lo"], min(d["hi"], float(val)))
+        self._txdsp_busy = True
+        try:
+            d["var"].set(val)
+            d["lbl"].config(text=self._txdsp_text(key, val))
+        except tk.TclError:
+            pass
+        finally:
+            self._txdsp_busy = False
+        if send and self.connected:
+            self.send(f"{self.TXDSP_CMD[key]}:0,{int(round(val))};")
+
+    def _txdsp_wheel(self, key, delta):
+        d = self.txdsp[key]
+        step = 1.0
+        v = max(d["lo"], min(d["hi"], float(d["var"].get()) + (step if delta > 0 else -step)))
+        self._txdsp_set(key, v)
+        self._txdsp_send(key)
+
+    def _txdsp_query(self):
+        """Ask Thetis for the current values so the sliders start in step."""
+        for key in self.txdsp:
+            self.send(f"{self.TXDSP_CMD[key]}:0;")
+
+    def _txdsp_echo(self, key, v):
+        """mic_gain|tx_comp|tx_dexp|vox:<rx>,<value>[,<on>]"""
+        p = str(v).split(",")
+        try:
+            if int(p[0]) != 0:
+                return
+            val = int(p[1])
+            if len(p) > 2:
+                on = p[2].strip().lower() == "true"
+                if not on:
+                    val = int(self.txdsp[key]["lo"])     # off = bottom stop
+        except (ValueError, IndexError):
+            return
+        self._txdsp_set(key, val)
 
     # ---------------- TX ----------------
     def _tx_visuals(self, keyed=None, tune=None):
