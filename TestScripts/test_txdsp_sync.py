@@ -206,6 +206,38 @@ def main():
         check("wheel down = -1 dB and sent",
               (app.txdsp["comp"]["var"].get(), sent), (7.0, ["tx_comp:0,7;"]))
 
+        # ---- Tune level: the percentage drives the CONSOLE, the tone is fixed
+        sent.clear()
+        app.tunedrive_entry.delete(0, "end")
+        app.tunedrive_entry.insert(0, "20")
+        app._tunedrive_entry()
+        check("tune drive 20% is sent to the console", sent, ["tune_drive:0,20;"])
+        check("tone amplitude stays fixed",
+              round(app.tune_amp, 4), round(M.TUNE_TONE_AMP, 4))
+        check("entry shows the accepted value",
+              app.tunedrive_entry.get().strip(), "20")
+
+        sent.clear()
+        app.tunedrive_entry.delete(0, "end")
+        app.tunedrive_entry.insert(0, "150")
+        app._tunedrive_entry()
+        check("out-of-range input is clamped", sent, ["tune_drive:0,100;"])
+        sent.clear()
+        app.tunedrive_entry.delete(0, "end")
+        app.tunedrive_entry.insert(0, "abc")
+        app._tunedrive_entry()
+        check("bad input is reverted, not sent",
+              (sent, app.tunedrive_entry.get().strip()), ([], "100"))
+
+        # the console's own value drives ours
+        app.tci_text({"tune_drive": "0,45"})
+        pump(app)
+        check("tune_drive echo updates the entry",
+              (app.tune_drive_pct, app.tunedrive_entry.get().strip()), (45, "45"))
+        app.tci_text({"tune_drive": "1,70"})
+        pump(app)
+        check("tune_drive for rx 1 ignored", app.tune_drive_pct, 45)
+
         # ---- persistence ---------------------------------------------------
         snap = app._settings_snapshot()
         check("settings carry the slider values", isinstance(snap.get("txdsp"), dict)

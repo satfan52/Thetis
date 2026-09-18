@@ -41,6 +41,7 @@ OUT_RATE = 48000
 MIC_RATE = 48000
 MIC_MIN = -40          # Thetis mic gain range (mic_gain_min / mic_gain_max)
 MIC_MAX = 10
+TUNE_TONE_AMP = 0.2    # fixed tune tone, -14 dBFS (WSJT-X drive convention)
 TX_AUDIO_RATE = 48000   # TX audio stream rate (negotiated with the server)
 
 BANDS = [  # name, default MHz, suggested mode
@@ -737,7 +738,8 @@ class MiniTCI(tk.Tk):
         self._key_requested = False   # local intent: we asked the server to key
         self.tune_phase = 0.0
         self.tune_sample_pos = 0
-        self.tune_amp = 0.075
+        self.tune_amp = TUNE_TONE_AMP
+        self.tune_drive_pct = 30      # console transmit power during Tune
         self.mic_stream = None
         self.tx_audio_q = collections.deque(maxlen=64)
         self.chrono_reqs = collections.deque()
@@ -798,6 +800,7 @@ class MiniTCI(tk.Tk):
             "txdsp": {k: int(round(float(v["var"].get()))) for k, v in self.txdsp.items()},
             "dexp_on": bool(self.dexp_on),
             "tx_tail_ms": int(self.tx_tail_s * 1000),
+            "tune_drive": int(self.tune_drive_pct),
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
             "host": getattr(self, "host_var", None).get() if hasattr(self, "host_var") else None,
@@ -864,6 +867,8 @@ class MiniTCI(tk.Tk):
                         self._txdsp_set(key, int(val))
                     except (ValueError, TypeError):
                         pass
+            if s.get("tune_drive") is not None:
+                self._apply_tune_drive(int(s["tune_drive"]))
             if s.get("tx_tail_ms") is not None:
                 self.tx_tail_s = max(0.0, min(10.0, float(s["tx_tail_ms"]) / 1000.0))
                 self.txtail_var.set(int(self.tx_tail_s * 1000))
@@ -1283,7 +1288,7 @@ class MiniTCI(tk.Tk):
         self.tune_btn.pack(side="left", padx=(8, 0))
         ttk.Label(r4, text="Tune drive:", padding=(14, 0, 2, 0)).pack(side="left")
         self.tunedrive_entry = ttk.Entry(r4, width=5)
-        self.tunedrive_entry.insert(0, "80")
+        self.tunedrive_entry.insert(0, str(self.tune_drive_pct))
         self.tunedrive_entry.pack(side="left")
         self.tunedrive_entry.bind("<Return>", self._tunedrive_entry)
         self.tunedrive_entry.bind("<FocusOut>", self._tunedrive_entry)
@@ -1721,6 +1726,7 @@ class MiniTCI(tk.Tk):
             if getattr(self, "_is_full_tci", False):
                 self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
                 self._txdsp_query()   # mic gain / COMP / DXP / VOX from the console
+                self.send("tune_drive:0;")   # console transmit power during Tune
                 self._vox_mic_keep()
             else:
                 self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
@@ -2073,6 +2079,15 @@ class MiniTCI(tk.Tk):
                     if tune_on:
                         self.logprint("Thetis TUN active - tune carrier")
                     self._tx_visuals()
+            elif k == "tune_drive" and v:
+                # tune_drive:<rx>,<percent> - the console's transmit power during
+                # Tune (the drive slider or the tune slider, per its own setting)
+                p = str(v).split(",")
+                try:
+                    if int(p[0]) == 0:
+                        self._apply_tune_drive(int(float(p[1])))
+                except (ValueError, IndexError):
+                    pass
             elif k in ("mic_gain", "tx_comp", "tx_dexp", "vox") and v:
                 # Thetis TX microphone/processor state (console -> client)
                 self._txdsp_echo({"mic_gain": "mic", "tx_comp": "comp",
@@ -3400,17 +3415,40 @@ class MiniTCI(tk.Tk):
 
     # ---------------- tune ----------------
     def _tunedrive_entry(self, *_):
+        """The Tune LEVEL is the console's transmit power during Tune.
+
+        Scaling the client's tone amplitude looks like a level control but is
+        not one: the transmit chain's compander and ALC normalise a steady tone,
+        so anything above their threshold came out at full power and anything
+        below it vanished - the 'either 0% or 100%' behaviour. The tone is now
+        sent at a fixed, sane amplitude and the percentage drives the console
+        (TCI tune_drive, which follows the console's own 'tune power origin'
+        setting: the drive slider or the tune slider)."""
+        raw = self.tunedrive_entry.get().strip()
         try:
-            pct = float(self.tunedrive_entry.get())
+            pct = int(float(raw))
         except ValueError:
-            self.tunedrive_entry.delete(0, "end")
-            self.tunedrive_entry.insert(0, str(int(self.tune_amp / 0.25 * 100)))
+            self._apply_tune_drive(self.tune_drive_pct)
             return
+        pct = max(1, min(100, pct))
+        self._apply_tune_drive(pct, send=True)
+
+    def _apply_tune_drive(self, pct, send=False):
+        """Show and (optionally) push the tune percentage."""
         pct = max(1, min(100, int(pct)))
-        self.tune_amp = 0.25 * pct / 100.0
-        self.tunedrive_entry.delete(0, "end")
-        self.tunedrive_entry.insert(0, str(pct))
-        self.logprint(f"Tune drive set to {pct}% (peak {20*np.log10(self.tune_amp):.1f} dBFS)")
+        self.tune_drive_pct = pct
+        self.tune_amp = TUNE_TONE_AMP              # fixed tone level
+        try:
+            self.tunedrive_entry.delete(0, "end")
+            self.tunedrive_entry.insert(0, str(pct))
+        except tk.TclError:
+            pass
+        if send:
+            if self.connected:
+                self.send(f"tune_drive:0,{pct};")
+                self.logprint(f"Tune drive {pct}% (console transmit power)")
+            else:
+                self.logprint("not connected - tune drive not sent")
 
     def tune_toggle(self):
         """WSJT-X-style Tune: press to start, press again to stop. Transmits a
@@ -3445,7 +3483,7 @@ class MiniTCI(tk.Tk):
         self._tx_prefilled = True      # the tone needs no microphone prefill
         self._tx_visuals()
         self._start_tx_tick()
-        self.logprint(f"Tune ON: 1500 Hz tone, drive {self.tune_amp:.3f} peak")
+        self.logprint(f"Tune ON: 1500 Hz tone at {self.tune_drive_pct}% console power")
 
     def tune_stop(self):
         if not self.tuning:

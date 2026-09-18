@@ -237,6 +237,12 @@ namespace Thetis
 
                     _rxBuffer.Clear();
 
+                    // A fresh port cannot know the transceiver's PTT state, and the
+                    // radio may still be keyed from a previous session: start from a
+                    // known state and force an unkey.
+                    _lastSentPtt = false;
+                    TrySendFrame(CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, false));
+
                     // Start flood control timer
                     _floodTimer.Change(FLOOD_INTERVAL_MS, FLOOD_INTERVAL_MS);
 
@@ -532,11 +538,20 @@ namespace Thetis
 
         private void OnMoxChanged(int rx, bool oldMox, bool newMox)
         {
-            if (_suppressOutgoingUpdates || !IsOpen) return;
+            if (!IsOpen) return;
 
             if (!newMox && oldMox)
             {
                 _lastTxReleaseTime = Stopwatch.GetTimestamp();
+            }
+
+            if (_suppressOutgoingUpdates)
+            {
+                // A suppressed KEY is survivable - the digital-TX steering keys the
+                // rig itself. A suppressed RELEASE leaves the transceiver
+                // transmitting with nothing left to unkey it, so an unkey is
+                // always allowed through.
+                if (newMox) return;
             }
 
             // PTT changes bypass the flood control timer and are transmitted immediately
@@ -878,6 +893,8 @@ namespace Thetis
         private void OnFloodTimerTick(object state)
         {
             if (!IsOpen || _suppressOutgoingUpdates || _isSwappingVfo || _radioInitiatedSwapInProgress || _isDigitalSliceTxActive) return;
+
+            ReconcilePtt();
 
             double targetVfoAFreq = 0.0;
             double targetVfoBFreq = 0.0;
@@ -1320,6 +1337,24 @@ namespace Thetis
             ActivateSplit(vfoAFreq, capturedFreq);
         }
 
+        /// <summary>
+        /// Safety net: while MOX is the truth, make sure the transceiver agrees
+        /// with it. Runs at the flood-timer rate, so a lost CI-V frame - or a
+        /// release that arrived while outgoing updates were suppressed - cannot
+        /// leave the rig transmitting.
+        /// </summary>
+        private void ReconcilePtt()
+        {
+            if (_console == null) return;
+
+            bool mox = _console.MOX;
+            if (mox == _lastSentPtt) return;
+
+            Log("[PTT:RECONCILE] rig was {0}, MOX is {1} - resending PTT",
+                _lastSentPtt ? "keyed" : "unkeyed", mox ? "on" : "off");
+            SendImmediatePtt(mox);
+        }
+
         private void SendImmediatePtt(bool tx)
         {
             lock (_vfoSwapLock)
@@ -1363,8 +1398,26 @@ namespace Thetis
                 }
 
                 byte[] frame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, tx);
-                SendFrame(frame);
-                _lastSentPtt = tx;
+
+                // A single CI-V write on a half-duplex bus can collide with the
+                // radio's own ACK traffic and be lost. Losing a KEY is
+                // inconvenient; losing an UNKEY leaves the transceiver on the
+                // air, so retry and only record the state once it went out.
+                bool sent = false;
+                for (int attempt = 0; attempt < 3 && !sent; attempt++)
+                {
+                    sent = TrySendFrame(frame);
+                    if (!sent)
+                    {
+                        Log("[PTT:RETRY] PTT {0} frame not sent (attempt {1}/3)", tx, attempt + 1);
+                        Thread.Sleep(30);
+                    }
+                }
+
+                if (sent)
+                    _lastSentPtt = tx;
+                else
+                    Log("[PTT:FAIL] PTT {0} could not be sent - reconciliation will retry", tx);
             }
         }
 
@@ -1423,11 +1476,21 @@ namespace Thetis
 
         private void SendFrame(byte[] frame)
         {
-            if (frame == null || frame.Length == 0) return;
+            TrySendFrame(frame);
+        }
+
+        /// <summary>
+        /// Same as SendFrame but reports whether the frame actually reached the
+        /// port. PTT frames use this: marking the rig as keyed/unkeyed after a
+        /// failed write is what leaves a transceiver stuck on the air.
+        /// </summary>
+        private bool TrySendFrame(byte[] frame)
+        {
+            if (frame == null || frame.Length == 0) return false;
 
             lock (_portLock)
             {
-                if (_serialPort == null || !_serialPort.IsOpen) return;
+                if (_serialPort == null || !_serialPort.IsOpen) return false;
 
                 try
                 {
@@ -1455,11 +1518,13 @@ namespace Thetis
                     _serialPort.Write(frame, 0, frame.Length);
                     _lastFrameSentTime = Stopwatch.GetTimestamp();
                     Log("[TX] {0}", HexDump(frame));
+                    return true;
                 }
                 catch (Exception ex)
                 {
                     Log("[TX:ERROR] Error sending frame {0}: {1}", HexDump(frame), ex.Message);
                     Debug.WriteLine(string.Format("[CIVController] Error sending frame: {0}", ex.Message));
+                    return false;
                 }
             }
         }
