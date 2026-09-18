@@ -138,9 +138,9 @@ def main():
         check("SPLIT belongs to TX, SUB to SubVFOA",
               (owner_of(app.split_btn, sections), owner_of(app.sub_btn, sections)),
               ("tx", "sub"))
-        check("the TX section names where the transmitter goes",
+        check("the TX section names what SPLIT does",
               (app.tx_src_lbl.cget("text"), owner_of(app.tx_src_lbl, sections)),
-              ("TX on VFO A", "tx"))
+              ("TX on SubVFOA", "tx"))
         # devices and output level are program-level, so they sit in GENERAL
         check("volume in GENERAL", owner_of(app.vol_scale, sections), "general")
         devs = [w for w in descendants(app.sec_general)
@@ -244,10 +244,12 @@ def main():
         check("SPLIT on: the transmitter moves to the SubVFOA",
               (app.split_btn.cget("text"), app.tx_src_lbl.cget("text"), app.tx_vfo),
               ("on", "TX on SubVFOA", "B"))
+        check("and the label is marked active", app.tx_src_lbl.cget("fg"), M.C["red"])
         app._split_set(False)
-        check("SPLIT off: back to VFO A",
+        check("SPLIT off: back to VFO A, the label keeps its meaning",
               (app.split_btn.cget("text"), app.tx_src_lbl.cget("text"), app.tx_vfo),
-              ("off", "TX on VFO A", "A"))
+              ("off", "TX on SubVFOA", "A"))
+        check("and the label is dimmed", app.tx_src_lbl.cget("fg"), M.C["dim"])
 
         check("the sub sends its own mode and filter",
               [c.split(":")[0] for c in app.sent], ["sub_mode", "sub_filter"])

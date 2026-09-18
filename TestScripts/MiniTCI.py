@@ -2592,9 +2592,11 @@ class MiniTCI(tk.Tk):
         on = self.sub_enabled
         self.vfo_lbl.config(text=self._fmt_sub_freq())
         self.sub_btn.config(text="SUB on" if on else "SUB off")
-        # SPLIT lives in the TX section: button state and the transmit source
+        # SPLIT lives in the TX section. Its label names what the button does -
+        # Thetis's SPLIT always sends the transmitter to the sub frequency, on or
+        # off - so the text is fixed and the colour carries the state.
         self.split_btn.config(text="on" if self.split else "off")
-        self.tx_src_lbl.config(text="TX on SubVFOA" if self.split else "TX on VFO A",
+        self.tx_src_lbl.config(text="TX on SubVFOA",
                                fg=C["red"] if self.split else C["dim"])
         self.pan.sub_hz = self.sub_hz if on else 0.0
         self.pan.sub_filt = self.sub_filt
