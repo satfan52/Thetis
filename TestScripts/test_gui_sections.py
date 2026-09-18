@@ -113,14 +113,19 @@ def main():
               [owner_of(w, sections) for w in
                (app.freq_lbl, app.ctun_btn, app.dds_lbl, app.tune_entry,
                 app.filt_low_entry, app.filt_high_entry, app.filtw_scale,
-                app.agc_box, app.agc_gain_scale, app.vol_scale, app.sm)],
-              ["vfoa"] * 11)
+                app.agc_box, app.agc_gain_scale, app.sm)],
+              ["vfoa"] * 10)
         check("SubVFOA controls in the SubVFOA section",
               [owner_of(w, sections) for w in
                (app.vfo_lbl, app.sub_btn, app.sub_tune_entry,
                 app.sub_filt_low_entry, app.sub_filt_high_entry,
-                app.sub_filtw_scale, app.sub_agc_box, app.sub_agc_gain_scale)],
-              ["sub"] * 8)
+                app.sub_filtw_scale, app.sub_agc_box, app.sub_agc_gain_scale,
+                app.sub_sm)],
+              ["sub"] * 9)
+        check("each receiver has its own S-meter",
+              (app.sm is not app.sub_sm,
+               owner_of(app.sm, sections), owner_of(app.sub_sm, sections)),
+              (True, "vfoa", "sub"))
         check("transmit controls in the TX section",
               [owner_of(w, sections) for w in
                (app.ptt_btn, app.tune_btn, app.tx_lbl, app.txtail_entry,
@@ -136,10 +141,17 @@ def main():
         check("the TX section names where the transmitter goes",
               (app.tx_src_lbl.cget("text"), owner_of(app.tx_src_lbl, sections)),
               ("TX on VFO A", "tx"))
-        check("mic device with the other transmit controls",
-              owner_of(find(app.sec_tx, "TCombobox",
-                            lambda w: "default" in str(w.cget("values"))), sections),
-              "tx")
+        # devices and output level are program-level, so they sit in GENERAL
+        check("volume in GENERAL", owner_of(app.vol_scale, sections), "general")
+        devs = [w for w in descendants(app.sec_general)
+                if w.winfo_class() == "TCombobox"
+                and "default" in str(w.cget("values"))]
+        check("speaker and microphone device pickers in GENERAL",
+              len(devs), 2)
+        check("no device picker left in the receiver or transmit sections",
+              [w.winfo_class() for w in descendants(app.sec_tx)
+               if w.winfo_class() == "TCombobox" and "default" in str(w.cget("values"))],
+              [])
         check("log in the LOG section", owner_of(app.log, sections), "log")
 
         # ---------------- SubVFOA presented exactly like VFO A ---------------
@@ -196,6 +208,38 @@ def main():
         app.sub_enabled = True
         app.sent.clear()
         app.submode_var.set("USB" if app.sub_mode != "USB" else "LSB")
+        # ---------------- S-meters: one per DSP channel ----------------------
+        check("Thetis's S-unit law is mirrored",
+              [M.smeter_units(x) for x in (-150, -141, -93, -83, -69, -50)],
+              ["S0", "S1", "S9", "S9+10", "S9+20", "S9+40"])
+        app._handle({"rx_channel_sensors": "0,0,-93.0,-95.0,-90.0"})
+        app._handle({"rx_channel_sensors": "0,1,-70.0,-72.0,-68.0"})
+        app.sub_enabled = True
+        app._draw_smeter()
+        check("VFO A's meter shows its own channel reading",
+              app.sm.itemcget(app.sm._txt, "text"), "S9  -93 dBm")
+        check("the sub has its own meter from its own channel",
+              app.sub_sm.itemcget(app.sub_sm._txt, "text"), "S9+20  -70 dBm")
+        app._handle({"rx_channel_sensors": "1,0,-10.0,-10.0,-10.0"})   # RX2
+        app._draw_smeter()
+        check("another receiver's reading moves neither bar",
+              (app.sm.itemcget(app.sm._txt, "text"),
+               app.sub_sm.itemcget(app.sub_sm._txt, "text")),
+              ("S9  -93 dBm", "S9+20  -70 dBm"))
+        app.sub_enabled = False
+        app._draw_smeter()
+        check("with SUB off the sub meter shows idle, not a copy of VFO A",
+              app.sub_sm.itemcget(app.sub_sm._txt, "text"), "SubVFOA idle")
+        app.ptt = True
+        app._handle({"tx_sensors": "0,-21.5,5.0,6.0,1.1"})
+        app._draw_smeter()
+        check("in TX the bar shows Thetis's own microphone reading",
+              app.sm.itemcget(app.sm._txt, "text"), "S9+50  -22 dBm")
+        app.ptt = False
+        app.tx_mic_dbm = None
+        app.sub_enabled = True          # the sub command checks below need it on
+        app._draw_smeter()
+
         app._split_set(True)
         check("SPLIT on: the transmitter moves to the SubVFOA",
               (app.split_btn.cget("text"), app.tx_src_lbl.cget("text"), app.tx_vfo),

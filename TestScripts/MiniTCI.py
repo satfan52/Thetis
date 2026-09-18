@@ -695,6 +695,136 @@ class PanFall(tk.Canvas):
 
 # ================================================================ app
 
+def smeter_units(dbm):
+    """Thetis's own dBm to S-unit mapping, Common.SMeterFromDBM.
+
+    S9 spans -96 to -90 dBm, S9+20 spans -76 to -66, and each S-unit below S9 is
+    6 dB, so S1 is -144 to -138 and S0 is -144 and below. Mirrored exactly so the
+    two applications label the same signal the same way.
+    """
+    if dbm is None:
+        return "idle"
+    if dbm <= -144.0:
+        return "S0"
+    if dbm <= -138.0:
+        return "S1"
+    for n in range(2, 10):
+        lo = -144.0 + (n - 1) * 6.0
+        if dbm <= lo + 6.0:
+            return f"S{n}"
+    if dbm <= -86.0:
+        return "S9+5"
+    if dbm <= -80.0:
+        return "S9+10"
+    if dbm <= -76.0:
+        return "S9+15"
+    if dbm <= -66.0:
+        return "S9+20"
+    if dbm <= -56.0:
+        return "S9+30"
+    if dbm <= -46.0:
+        return "S9+40"
+    return "S9+50"
+
+
+class Smeter(tk.Canvas):
+    """Analog S-meter in Thetis's units, one instance per DSP channel.
+
+    Thetis meters every DSP channel separately (WDSP RXA_S_PK / RXA_S_AV), so VFO
+    A and the sub each get their own bar and show the same numbers Thetis shows.
+    The scale is Thetis's: the bar runs from -147 dBm at the left to -43 dBm at
+    the right, S9 sits at -93 dBm and one S-unit is 6 dB.
+    """
+
+    DB_FLOOR = -147.0        # left end, S0 and below
+    DB_CEIL = -43.0          # right end, S9+50
+    S9_DBM = -93.0
+    P20_DBM = -69.0          # Thetis S9+20
+
+    def __init__(self, master, width=330, height=64, label="S"):
+        super().__init__(master, width=width, height=height, bg=C["panel"],
+                         highlightthickness=0)
+        self._x0, self._x1, self._y = 8, width - 8, 24
+        self._label = label
+        self._peak_db = None
+        self._s9 = self.f2x(self.S9_DBM)
+        self._p20 = self.f2x(self.P20_DBM)
+
+        def _blend(rgb, a):
+            w = (0xa8, 0xd8, 0xea)                      # water tint #a8d8ea
+            return "#%02x%02x%02x" % tuple(int(c * (1.0 - a) + w[i] * a)
+                                           for i, c in enumerate(rgb))
+
+        y = self._y
+        self.create_rectangle(self._x0, y - 11, self._s9, y, fill="#3fa34d", outline="")
+        self.create_rectangle(self._s9, y - 11, self._p20, y, fill="#e0a63a", outline="")
+        self.create_rectangle(self._p20, y - 11, self._x1, y, fill="#c0392b", outline="")
+        self.create_rectangle(self._x0, y - 11, self._x1, y, fill="", outline="#8a8a8a")
+        self._fill_g = self.create_rectangle(self._x0, y - 11, self._x0, y,
+                                            fill=_blend((0x3f, 0xa3, 0x4d), 0.5), outline="")
+        self._fill_a = self.create_rectangle(self._x0, y - 11, self._x0, y,
+                                            fill=_blend((0xe0, 0xa6, 0x3a), 0.5), outline="")
+        self._fill_r = self.create_rectangle(self._x0, y - 11, self._x0, y,
+                                            fill=_blend((0xc0, 0x39, 0x2b), 0.5), outline="")
+        self._needle = self.create_line(self._x0, y - 11, self._x0, y,
+                                        fill="#1a1f29", width=2)
+        self._peak = self.create_line(self._x0, y - 11, self._x0, y,
+                                      fill="#ffffff", width=3)
+        # S1..S9 at 6 dB steps, then the Thetis +10 and +20 marks
+        for n in range(1, 10):
+            x = self.f2x(-144.0 + n * 6.0)
+            self.create_line(x, y - 11, x, y - 16, fill="#444444")
+            self.create_text(x, y - 23, text=str(n), fill="#333333",
+                             font=("Segoe UI", 8, "bold"))
+        for dbm, lab in ((-79.0, "+10"), (-69.0, "+20")):
+            x = self.f2x(dbm)
+            self.create_line(x, y - 11, x, y - 16, fill="#444444")
+            self.create_text(x, y - 23, text=lab, fill="#8a4a10",
+                             font=("Segoe UI", 8, "bold"))
+        self.create_text(self._x0 - 2, y - 18, text=label, fill="#444444",
+                         font=("Segoe UI", 7, "bold"))
+        self._txt = self.create_text(self._x1, height - 6, text="idle", anchor="e",
+                                     fill=C["fg"], font=("Consolas", 11, "bold"))
+
+    def f2x(self, dbm):
+        frac = clamp((dbm - self.DB_FLOOR) / (self.DB_CEIL - self.DB_FLOOR), 0.0, 1.0)
+        return self._x0 + frac * (self._x1 - self._x0)
+
+    def set_level(self, dbm):
+        """dbm = signal level in dBm, or None for idle (no measurement)."""
+        if dbm is None:
+            self._peak_db = None
+            self.coords(self._needle, self._x0, self._y - 11, self._x0, self._y)
+            self.coords(self._peak, self._x0, self._y - 11, self._x0, self._y)
+            for fill in (self._fill_g, self._fill_a, self._fill_r):
+                self.coords(fill, self._x0, self._y - 11, self._x0, self._y)
+            self.itemconfig(self._txt, text=f"{self._label} idle" if self._label else "idle",
+                            fill=C["dim"])
+            return
+        db = clamp(float(dbm), self.DB_FLOOR, 0.0)
+        x = self.f2x(db)
+        y_top, y_bot = self._y - 11, self._y
+        # translucent "water" fill rises with the signal, zone colours show through
+        xg = min(x, self._s9)
+        self.coords(self._fill_g, self._x0, y_top, xg, y_bot)
+        if x > self._s9:
+            self.coords(self._fill_a, self._s9, y_top, min(x, self._p20), y_bot)
+        else:
+            self.coords(self._fill_a, self._s9, y_top, self._s9, y_bot)
+        if x > self._p20:
+            self.coords(self._fill_r, self._p20, y_top, x, y_bot)
+        else:
+            self.coords(self._fill_r, self._p20, y_top, self._p20, y_bot)
+        self.coords(self._needle, x, y_top, x, y_bot)
+        # peak hold: rises instantly, decays slowly
+        pk = db if self._peak_db is None else max(db, self._peak_db - 0.4)
+        self._peak_db = clamp(pk, self.DB_FLOOR, 0.0)
+        px = self.f2x(self._peak_db)
+        self.coords(self._peak, px, y_top, px, y_bot)
+        self.itemconfig(self._txt, text=f"{smeter_units(db)}  {db:.0f} dBm",
+                        fill=C["fg"])
+
+
 class MiniTCI(tk.Tk):
     # H1: MiniTCI's AGC names <-> Thetis TCI agc_mode tokens. These mirror
     # TCIServer's agcModeToTciMode/tciModeToAgcMode EXACTLY (FIXD = "off",
@@ -739,6 +869,8 @@ class MiniTCI(tk.Tk):
         self._vox_keyed = False        # VOX owns the current transmission
         self._vox_above_at = 0.0
         self.smeter = -140.0
+        self.rx_meter_levels = {}      # DSP channel -> dBm, from rx_channel_sensors
+        self.tx_mic_dbm = None         # Thetis's own microphone reading, TX only
         self.tx_tail_s = 0.35
         self.tuning = False
         self.tune_active = False      # Thetis's TUN state
@@ -1110,6 +1242,33 @@ class MiniTCI(tk.Tk):
                                   fg=C["dim"], font=("Segoe UI", 9))
         self.state_lbl.pack(side="right", padx=(0, 6))
 
+        # the sound devices and the output level belong to the program, not to a
+        # receiver or to the transmitter
+        g2 = self._row(self.sec_general)
+        ttk.Label(g2, text="Volume:").pack(side="left", padx=(2, 0))
+        self.vol_var = tk.DoubleVar(value=70)
+        self.vol_scale = ttk.Scale(g2, from_=0, to=100, variable=self.vol_var, length=150,
+                                   command=self._vol_changed)
+        self.vol_scale.pack(side="left", padx=4)
+        self.volume = 0.7 * 1.2
+        self._out_devs = list_output_devices()
+        self._in_devs = list_input_devices()
+        ttk.Label(g2, text="Speaker:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.out_dev_var = tk.StringVar(value="(system default)")
+        out_names = ["(system default)"] + [n for _, n, _ in self._out_devs]
+        ttk.Combobox(g2, textvariable=self.out_dev_var, width=24, state="readonly",
+                     values=out_names).pack(side="left", padx=2)
+        self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
+        ttk.Label(g2, text="Mic device:", padding=(14, 0, 2, 0)).pack(side="left")
+        self.in_dev_var = tk.StringVar(value="(system default)")
+        in_names = ["(system default)"] + [n for _, n, _ in self._in_devs]
+        ttk.Combobox(g2, textvariable=self.in_dev_var, width=28, state="readonly",
+                     values=in_names).pack(side="left", padx=2)
+        self.in_dev_var.trace_add("write", lambda *_: self._reopen_input())
+        # the client does not scale the transmit audio itself: the microphone gain
+        # is applied by Thetis, so one control has one meaning
+        self.mic_gain = 1.0
+
         # ========================= 2 DISPLAY =========================
         # The panafall draws both receivers, so it belongs to neither of them.
         self.sec_display = self._section(self, "2 · DISPLAY — SPECTRUM AND WATERFALL",
@@ -1231,64 +1390,11 @@ class MiniTCI(tk.Tk):
         self.agc_gain_scale.state(["disabled"])
 
         self.secA_row3 = self._row(self.sec_vfoa)
-        ttk.Label(self.secA_row3, text="Volume:").pack(side="left")
-        self.vol_var = tk.DoubleVar(value=70)
-        self.vol_scale = ttk.Scale(self.secA_row3, from_=0, to=100, variable=self.vol_var,
-                                   length=150, command=self._vol_changed)
-        self.vol_scale.pack(side="left", padx=4)
-        self.volume = 0.7 * 1.2
-        self._out_devs = list_output_devices()
-        self._in_devs = list_input_devices()
-        ttk.Label(self.secA_row3, text="Speaker:", padding=(10, 0, 2, 0)).pack(side="left")
-        self.out_dev_var = tk.StringVar(value="(system default)")
-        out_names = ["(system default)"] + [n for _, n, _ in self._out_devs]
-        ttk.Combobox(self.secA_row3, textvariable=self.out_dev_var, width=26,
-                     state="readonly", values=out_names).pack(side="left", padx=2)
-        self.out_dev_var.trace_add("write", lambda *_: self._reopen_output())
-        self.sm = tk.Canvas(self.secA_row3, width=310, height=68, bg=C["panel"], highlightthickness=0)
-        self.sm.pack(side="left", padx=12)
-        smL = 8; smR = 302; smY = 26
-        self._sm_x0, self._sm_x1, self._sm_y = smL, smR, smY
-        def smx(db): return smL + (db + 127.0) / 112.0 * (smR - smL)
-        self._sm_s9 = smx(-35)       # S9 boundary
-        self._sm_p20 = smx(-25)      # +20 dB boundary
-        # colored zone bar (background): S0-S9 green, +0..+20 amber, >+20 red
-        self.sm.create_rectangle(smL, smY - 11, self._sm_s9, smY, fill="#3fa34d", outline="")
-        self.sm.create_rectangle(self._sm_s9, smY - 11, self._sm_p20, smY, fill="#e0a63a", outline="")
-        self.sm.create_rectangle(self._sm_p20, smY - 11, smR, smY, fill="#c0392b", outline="")
-        self.sm.create_rectangle(smL, smY - 11, smR, smY, fill="", outline="#8a8a8a")
-        # translucent "water" fill: a light-blue tint alpha-blended over each
-        # zone colour (smooth, no dither) - the zone shows through tinted.
-        def _blend(rgb, a):
-            w = (0xa8, 0xd8, 0xea)                      # water tint #a8d8ea
-            return "#%02x%02x%02x" % tuple(int(c * (1.0 - a) + w[i] * a)
-                                           for i, c in enumerate(rgb))
-        self.sm_fill_g = self.sm.create_rectangle(smL, smY - 11, smL, smY,
-                fill=_blend((0x3f, 0xa3, 0x4d), 0.5), outline="")
-        self.sm_fill_a = self.sm.create_rectangle(smL, smY - 11, smL, smY,
-                fill=_blend((0xe0, 0xa6, 0x3a), 0.5), outline="")
-        self.sm_fill_r = self.sm.create_rectangle(smL, smY - 11, smL, smY,
-                fill=_blend((0xc0, 0x39, 0x2b), 0.5), outline="")
-        # needle (instantaneous level) + peak-hold marker, both inside the bar
-        self.sm_bar = self.sm.create_line(smL, smY - 11, smL, smY, fill="#1a1f29", width=2)
-        self.sm_peak = self.sm.create_line(smL, smY - 11, smL, smY, fill="#ffffff", width=3)
-        # ticks + labels S1..S9, +10, +20
-        for n in range(1, 10):
-            db = -124.0 + n * 10.0   # S1=-114 ... S9=-34 approx per IARU-ish
-            x = smx(db)
-            self.sm.create_line(x, smY - 11, x, smY - 16, fill="#444444")
-            self.sm.create_text(x, smY - 23, text=str(n), fill="#333333",
-                                font=("Segoe UI", 8, "bold"))
-        for db, lab in ((-25, "+10"), (-17, "+20")):
-            x = smx(db)
-            self.sm.create_line(x, smY - 11, x, smY - 16, fill="#444444")
-            self.sm.create_text(x, smY - 23, text=lab, fill="#8a4a10",
-                                font=("Segoe UI", 8, "bold"))
-        self.sm.create_text(smL - 2, smY - 18, text="S", fill="#444444",
-                            font=("Segoe UI", 7, "bold"))
-        self.sm_txt = self.sm.create_text(smR, 60, text="−140 dBFS", anchor="e",
-                                          fill=C["fg"], font=("Consolas", 11, "bold"))
-        self._sm_peak_db = -140.0
+        # one S-meter per DSP channel: this bar shows VFO A's own signal reading,
+        # taken from Thetis (WDSP meters the channel), and the microphone level
+        # while transmitting, exactly as Thetis's own meter does
+        self.sm = Smeter(self.secA_row3, label="VFO A")
+        self.sm.pack(side="left", padx=(2, 0))
 
         # ======================= 4 SubVFOA =======================
         # Same presentation as VFO A and its OWN DSP chain: its own mode, filter
@@ -1351,6 +1457,11 @@ class MiniTCI(tk.Tk):
         self.sub_agc_gain_scale.pack(side="left", padx=2)
         self.sub_agc_gain_scale.state(["disabled"])
 
+        b3 = self._row(self.sec_sub)
+        # the sub has its own DSP channel and therefore its own signal reading
+        self.sub_sm = Smeter(b3, label="SubVFOA")
+        self.sub_sm.pack(side="left", padx=(2, 0))
+
         # ========================== 5 TX ==========================
         # Everything that only matters while transmitting.
         self.sec_tx = self._section(right, "5 · TX — TRANSMISSION")
@@ -1384,18 +1495,6 @@ class MiniTCI(tk.Tk):
         self.tunedrive_entry.pack(side="left")
         self.tunedrive_entry.bind("<Return>", self._tunedrive_entry)
         self.tunedrive_entry.bind("<FocusOut>", self._tunedrive_entry)
-
-        t3 = self._row(self.sec_tx)
-        ttk.Label(t3, text="Mic device:", padding=(2, 0, 2, 0)).pack(side="left")
-        self._in_devs = list_input_devices()
-        self.in_dev_var = tk.StringVar(value="(system default)")
-        in_names = ["(system default)"] + [n for _, n, _ in self._in_devs]
-        ttk.Combobox(t3, textvariable=self.in_dev_var, width=28, state="readonly",
-                     values=in_names).pack(side="left", padx=2)
-        self.in_dev_var.trace_add("write", lambda *_: self._reopen_input())
-        # The client no longer scales the transmit audio itself: the microphone
-        # gain is applied by Thetis, so one control has one meaning.
-        self.mic_gain = 1.0
 
         self.txdsp = {}
         for key, label, lo, hi, unit in (
@@ -1812,6 +1911,9 @@ class MiniTCI(tk.Tk):
             self.send("iq_start:0;")
             self.send("audio_start:0;")
             self.send("rx_sensors_enable:true,250;")
+            # TX sensors carry Thetis's own microphone reading in dBm, which the
+            # S-meter shows while transmitting instead of a local guess
+            self.send("tx_sensors_enable:true,250;")
             self.send(f"vfo:0,0,{self.freq_hz};")
             self.send(f"modulation:0,{self.mode};")
             lo, hi = self.pan.filt
@@ -2225,9 +2327,35 @@ class MiniTCI(tk.Tk):
                 self._txdsp_echo({"mic_gain": "mic", "tx_comp": "comp",
                                   "tx_dexp": "dexp", "vox": "vox"}[k], v)
             elif k == "rx_sensors" and v:
+                # rx_sensors:<rx>,<dBm>; - the receiver's main channel reading
                 try:
-                    self.smeter = float(v.split(",")[-1])
-                except ValueError:
+                    p = v.split(",")
+                    if int(p[0]) == 0:
+                        self.smeter = float(p[-1])
+                        if 0 not in self.rx_meter_levels:
+                            self.rx_meter_levels[0] = self.smeter
+                except (ValueError, IndexError):
+                    pass
+            elif k == "tx_sensors" and v:
+                # tx_sensors:<rx>,<mic dBm>,<rms W>,<peak W>,<swr>;
+                try:
+                    self.tx_mic_dbm = float(str(v).split(",")[1])
+                except (ValueError, IndexError):
+                    pass
+            elif k == "rx_channel_sensors" and v:
+                # rx_channel_sensors:<rx>,<channel>,<dBm>[,<avg>,<peak bin>];
+                # CHANNEL-ADDRESSED: channel 0 is VFO A, channel 1 the SubVFOA.
+                # Each DSP channel has its own meter, which is what gives the sub
+                # an S-meter of its own rather than a copy of VFO A's.
+                try:
+                    p = str(v).split(",")
+                    if int(p[0]) == 0 and len(p) >= 3:
+                        chan = int(p[1])
+                        if chan in (0, 1):
+                            self.rx_meter_levels[chan] = float(p[2])
+                            if chan == 0:
+                                self.smeter = float(p[2])
+                except (ValueError, IndexError):
                     pass
             elif k == "rx_filter_band" and v:
                 # rx_filter_band:<rx>,<lo>,<hi> - CHANNEL-ADDRESSED; only rx 0
@@ -2396,50 +2524,41 @@ class MiniTCI(tk.Tk):
     def _freq_wheel(self, e):
         self._readout_wheel(e, "A")
 
+    def rx_meter(self, channel):
+        """Thetis's own signal reading for a DSP channel, in dBm, or None.
+
+        0 = VFO A, 1 = the SubVFOA. Fed by the server's rx_channel_sensors
+        frames; before the first frame arrives the bar shows idle rather than a
+        guess, so a meter that has no measurement never looks like a signal.
+        """
+        return getattr(self, "rx_meter_levels", {}).get(channel)
+
     def _draw_smeter(self):
-        # IQ-derived peak-bin dBFS on the analog S-bar. dBFS -> S-unit:
-        # S9 = -35 dBFS, each S-unit 10 dB below (S1 = -115).
+        """VFO A's bar and the SubVFOA's bar, each from its own DSP channel.
+
+        Thetis meters every channel separately (WDSP RXA_S_PK / RXA_S_AV), so the
+        two bars are independent, and both show Thetis's own numbers in dBm with
+        Thetis's S-unit labelling.
+        """
         if self.ptt:
-            # TX: the meter shows the MIC/voice level driving the transmitter
-            db = getattr(self, "mic_level_db", -140.0)
-            self.smeter_db = db
-        else:
-            db = getattr(self.pan, "peak_dbfs", None)
-            if db is None:
-                db = self.smeter
-            self.smeter_db = db
-        x0, x1 = self._sm_x0, self._sm_x1
-        y_top, y_bot = self._sm_y - 11, self._sm_y
-        frac = clamp((db + 127.0) / 112.0, 0.0, 1.0)
-        x = x0 + frac * (x1 - x0)
-        # translucent "water" fill rises with the signal (blended per zone)
-        xg = min(x, self._sm_s9)
-        self.sm.coords(self.sm_fill_g, x0, y_top, xg, y_bot)
-        if x > self._sm_s9:
-            xa = min(x, self._sm_p20)
-            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, xa, y_bot)
-        else:
-            self.sm.coords(self.sm_fill_a, self._sm_s9, y_top, self._sm_s9, y_bot)
-        if x > self._sm_p20:
-            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, x, y_bot)
-        else:
-            self.sm.coords(self.sm_fill_r, self._sm_p20, y_top, self._sm_p20, y_bot)
-        # needle at the current level
-        self.sm.coords(self.sm_bar, x, y_top, x, y_bot)
-        # peak hold: rises instantly, decays slowly; marker sits inside the bar
-        pk = max(db, self._sm_peak_db - 0.4)
-        self._sm_peak_db = clamp(pk, -140.0, 0.0)
-        pf = clamp((self._sm_peak_db + 127.0) / 112.0, 0.0, 1.0)
-        px = x0 + pf * (x1 - x0)
-        self.sm.coords(self.sm_peak, px, y_top, px, y_bot)
-        # S-unit readout
-        s_units = max(0.0, min(9.0, (db + 115.0) / 10.0))
-        over = db - (-35.0)
-        if db >= -35.0:
-            txt = f"S9+{over:.0f} dB  ({db:.0f} dBFS)"
-        else:
-            txt = f"S{s_units:.1f}  ({db:.0f} dBFS)"
-        self.sm.itemconfig(self.sm_txt, text=txt)
+            # TX: VFO A's bar shows the microphone level driving the transmitter,
+            # exactly as Thetis's own meter does during transmit. The bar's scale
+            # is dBm, so it uses Thetis's own microphone reading; the local level
+            # is still named in the text (it is what the VOX threshold compares
+            # against) but does not place the needle, or a dBFS value would be
+            # drawn on a dBm scale.
+            dbm = getattr(self, "tx_mic_dbm", None)
+            self.sm.set_level(dbm)
+            if dbm is None:
+                local = getattr(self, "mic_level_db", None)
+                if local is not None:
+                    self.sm.itemconfig(
+                        self.sm._txt, text=f"MIC {local:.0f} dBFS (local)",
+                        fill=C["fg"])
+            self.sub_sm.set_level(None)
+            return
+        self.sm.set_level(self.rx_meter(0))
+        self.sub_sm.set_level(self.rx_meter(1) if self.sub_enabled else None)
 
     # ---------------- controls ----------------
     def send(self, cmd):

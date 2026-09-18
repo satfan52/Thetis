@@ -2765,10 +2765,22 @@ namespace Thetis
 			    m_sensorManager.ConsumeRxChannelReading(0, 0);
 		    }
 
-			if (rx1SubEnabled && m_sensorManager.TryGetRxChannelReadingForSend(0, 1, out double rx1Sub_sig, out double rx1Sub_avgsig, out double rx1Sub_peak_bin_sig))
-		    {
-				sendRxChannelSensors(0, 1, rx1Sub_sig, rx1Sub_avgsig, rx1Sub_peak_bin_sig);
-				m_sensorManager.ConsumeRxChannelReading(0, 1);
+			if (rx1SubEnabled)
+			{
+			    // The console publishes only its MAIN channel reading - MeterReadingsChanged
+			    // stores every reading under channel 0 - so the sub channel's meter was
+			    // never sent and a sub S-meter was impossible. WDSP meters each DSP
+			    // channel separately (id(rx,1) is the sub), so read it here: the client
+			    // then shows the same numbers Thetis shows for the sub channel.
+			    try
+			    {
+			        double sub_sig = WDSP.CalculateRXMeter(0, 1, WDSP.MeterType.SIGNAL_STRENGTH);
+			        double sub_avgsig = WDSP.CalculateRXMeter(0, 1, WDSP.MeterType.AVG_SIGNAL_STRENGTH);
+			        sendRxChannelSensors(0, 1, sub_sig, sub_avgsig, sub_sig);
+			    }
+			    catch
+			    {
+			    }
 			}
 
 			if (rx2Enabled && m_sensorManager.TryGetRxChannelReadingForSend(1, 0, out double rx2Main_sig, out double rx2Miain_avgsig, out double rx2Main_peak_bin_sig))
