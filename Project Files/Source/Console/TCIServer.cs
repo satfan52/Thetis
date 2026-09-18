@@ -3730,7 +3730,8 @@ namespace Thetis
             // threshold, so a client that mirrors the button sends the third
             // field: the threshold it last saw plus the wanted state. Without
             // it the bottom of the threshold range still means "off".
-            bool haveState = args.Length > 2 && bool.TryParse(args[2], out bool on);
+            bool on = false;
+            bool haveState = args.Length > 2 && bool.TryParse(args[2], out on);
             if (haveState)
             {
                 consoleThreadSafe.NoiseGate = thresh;
