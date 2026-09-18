@@ -1834,6 +1834,9 @@ class MiniTCI(tk.Tk):
             pass
 
         self._check_key_watchdog()
+        # keep the microphone in step with VOX: an armed detector must always have
+        # an open input, however the stream was lost (release, device error)
+        self._vox_mic_keep()
         self._vox_tick()
         self._draw_smeter()
         self.after(50, self._poll_safe)
@@ -3543,12 +3546,13 @@ class MiniTCI(tk.Tk):
             self.logprint(f"TX audio: {self._tx_audio_sent} blocks, "
                           f"{self.mic_blocks} mic blocks, "
                           f"{self.tx_underruns} underruns")
-        if self.mic_stream:
-            try:
-                self.mic_stream.stop(); self.mic_stream.close()
-            except Exception:
-                pass
-            self.mic_stream = None
+        # Do NOT close the microphone unconditionally here. With VOX armed the
+        # microphone is the detector's input: closing it on release left
+        # mic_level_db frozen at -140 dB, so the FIRST transmission worked and
+        # every later one silently never keyed ("unless I move the slider a
+        # bit", which re-opened it through _vox_mic_keep). _vox_mic_keep closes
+        # the device when VOX is off, which is the case that actually wants it.
+        self._vox_mic_keep()
 
     def _space_press(self, e):
         """Space = TX toggle, same as the button. Key auto-repeat must not flip
@@ -3569,6 +3573,8 @@ class MiniTCI(tk.Tk):
     def _mic_open(self):
         if self.mic_stream:
             return
+        if time.time() < getattr(self, "_mic_retry_after", 0.0):
+            return                      # a device that just failed: do not spin on it
         try:
             kw = {"samplerate": MIC_RATE, "channels": 1, "dtype": "float32",
                   "blocksize": 1024, "callback": self._mic_cb}
@@ -3586,6 +3592,7 @@ class MiniTCI(tk.Tk):
                 self.logprint(f"note: mic runs at {self.mic_rate:.0f} Hz, "
                               f"resampling to {TX_AUDIO_RATE} Hz for TX")
         except Exception as e:
+            self._mic_retry_after = time.time() + 2.0
             self.logprint(f"mic error: {e}")
 
     def _reopen_input(self):
