@@ -237,6 +237,10 @@ def main():
         app.tci_text({"tune_drive": "1,70"})
         pump(app)
         check("tune_drive for rx 1 ignored", app.tune_drive_pct, 45)
+        app.tci_text({"drive": "0,35"})
+        pump(app)
+        check("drive echo also drives the tune level (drive-slider origin)",
+              (app.tune_drive_pct, app.tunedrive_entry.get().strip()), (35, "35"))
 
         # ---- persistence ---------------------------------------------------
         snap = app._settings_snapshot()

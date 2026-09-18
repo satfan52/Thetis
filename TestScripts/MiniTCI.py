@@ -2079,9 +2079,13 @@ class MiniTCI(tk.Tk):
                     if tune_on:
                         self.logprint("Thetis TUN active - tune carrier")
                     self._tx_visuals()
-            elif k == "tune_drive" and v:
-                # tune_drive:<rx>,<percent> - the console's transmit power during
-                # Tune (the drive slider or the tune slider, per its own setting)
+            elif k in ("tune_drive", "drive") and v:
+                # tune_drive:<rx>,<pct> = the console's TUNE power, drive:<rx>,<pct>
+                # = its DRIVE power. Which one governs Tune depends on the
+                # console's "tune power origin" setting, and with the drive-slider
+                # origin the frames arrive as `drive:`; the Tune level shown here
+                # follows whichever the console reports, so it always shows the
+                # power a tune will actually use.
                 p = str(v).split(",")
                 try:
                     if int(p[0]) == 0:
