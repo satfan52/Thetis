@@ -88,9 +88,11 @@ void create_pipe()
 		0);										// specmode
 	(*pip.create_Scope)(0);						// scope display for rcvr[0]
 	ppip->rbuff = (double **) malloc0 (pcm->cmRCVR * sizeof (double *));
+	ppip->tci_buff = (double **) malloc0 (pcm->cmRCVR * sizeof (double *));
 	for (i = 0; i < pcm->cmRCVR; i++)
 	{
 		ppip->rbuff[i] = (double *) malloc0 (pcm->rcvr[i].ch_outsize * sizeof (complex));
+		ppip->tci_buff[i] = (double *) malloc0 (pcm->rcvr[i].ch_outsize * sizeof (complex));
 		(*pip.create_WavePlay)(i);
 		(*pip.create_WaveRecord)(i);
 		create_ivac(
@@ -144,10 +146,12 @@ void destroy_pipe()
 	for (i = 0; i < pcm->cmRCVR; i++)
 	{
 		_aligned_free (ppip->rbuff[i]);
+		_aligned_free (ppip->tci_buff[i]);
 		destroy_ivac (i);
 	}
 	destroy_ivac(pcm->cmRCVR);
 	_aligned_free (ppip->rbuff);
+	_aligned_free (ppip->tci_buff);
 	destroy_siphonEXT (0);
 }
 
@@ -208,7 +212,22 @@ void xpipe (int stream, int pos, double** buffs)
 					ppip->rbuff[rx][j] += buffs[i][j];
 			xscope(rx, 0, ppip->rbuff[rx]);														// scope
 			xvacOUT(rx, 1, ppip->rbuff[rx]);													// data to VAC
-			xtciOUT(rx, 1, ppip->rbuff[rx]);													// data to TCI rx audio
+			// H1: TCI rx audio is the same mix scaled by the client's channel
+			// selection (main/sub/both). The copy keeps VAC, the wav recorder and
+			// the console's own listening exactly as they were.
+			if (tci_rx_chan_gain[rx][0] == 1.0 && tci_rx_chan_gain[rx][1] == 1.0)
+				xtciOUT(rx, 1, ppip->rbuff[rx]);										// data to TCI rx audio
+			else
+			{
+				int n2 = 2 * pcm->rcvr[rx].ch_outsize;
+				double g0 = tci_rx_chan_gain[rx][0], g1 = tci_rx_chan_gain[rx][1];
+				for (j = 0; j < n2; j++)
+					ppip->tci_buff[rx][j] = buffs[0][j] * g0;
+				if (pcm->cmSubRCVR > 1)
+					for (j = 0; j < n2; j++)
+						ppip->tci_buff[rx][j] += buffs[1][j] * g1;
+				xtciOUT(rx, 1, ppip->tci_buff[rx]);										// data to TCI rx audio
+			}
 			xrecordwave(rx, 0, 1, ppip->rbuff[rx]);												// wav recorder
 			break;
 		}
@@ -230,7 +249,22 @@ void xpipe (int stream, int pos, double** buffs)
 				for (j = 0; j < 2 * pcm->rcvr[rx].ch_outsize; j++)
 					ppip->rbuff[rx][j] += buffs[i][j];
 			xvacOUT(rx, 1, ppip->rbuff[rx]);													// data to VAC
-			xtciOUT(rx, 1, ppip->rbuff[rx]);													// data to TCI rx audio
+			// H1: TCI rx audio is the same mix scaled by the client's channel
+			// selection (main/sub/both). The copy keeps VAC, the wav recorder and
+			// the console's own listening exactly as they were.
+			if (tci_rx_chan_gain[rx][0] == 1.0 && tci_rx_chan_gain[rx][1] == 1.0)
+				xtciOUT(rx, 1, ppip->rbuff[rx]);										// data to TCI rx audio
+			else
+			{
+				int n2 = 2 * pcm->rcvr[rx].ch_outsize;
+				double g0 = tci_rx_chan_gain[rx][0], g1 = tci_rx_chan_gain[rx][1];
+				for (j = 0; j < n2; j++)
+					ppip->tci_buff[rx][j] = buffs[0][j] * g0;
+				if (pcm->cmSubRCVR > 1)
+					for (j = 0; j < n2; j++)
+						ppip->tci_buff[rx][j] += buffs[1][j] * g1;
+				xtciOUT(rx, 1, ppip->tci_buff[rx]);										// data to TCI rx audio
+			}
 			xrecordwave(rx, 0, 1, ppip->rbuff[rx]);												// wav recorder
 			break;
 		}

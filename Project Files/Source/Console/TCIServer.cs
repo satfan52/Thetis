@@ -2403,7 +2403,9 @@ namespace Thetis
         }
 		private void sendTxSensors(int rx, double micLevelDbm, double rmsPowerWatts, double peakPowerWatts, double swr)
 		{
-			string message = string.Format(
+			// invariant culture: on a comma-decimal locale the default formatting
+			// turns every value into two comma-separated fields and corrupts the frame
+			string message = string.Format(CultureInfo.InvariantCulture,
 				"tx_sensors:{0},{1:F1},{2:F1},{3:F1},{4:F1};",
 				rx,
 				micLevelDbm,
@@ -3787,6 +3789,49 @@ namespace Thetis
         // follows VFO A unless something addresses its channel directly. These
         // handlers do exactly that, which is what makes the sub independent.
         // ---------------------------------------------------------------------
+        /// <summary>
+        /// Run a console-side RECEIVER change while the sub channel keeps its own
+        /// DSP settings.
+        ///
+        /// The console writes BOTH WDSP channels for several receiver controls -
+        /// SetRX1Mode assigns the mode to id(rx,0) and id(rx,1), the filter path
+        /// calls SetRXFilter on both, and comboAGC assigns RXAGCMode plus the hang
+        /// and decay times to both. So any receiver-level change made by a client
+        /// silently reset the sub's independent mode, filter and AGC. Snapshot the
+        /// sub channel around the change and put it back: the sub has its own DSP
+        /// chain and only shares VFO A's slice.
+        /// </summary>
+        private void PreservingSubChannel(int rx, Action apply)
+        {
+            if (apply == null) return;
+
+            RadioDSPRX sub;
+            if (!tryGetConsoleSub(rx, out sub))
+            {
+                apply();
+                return;
+            }
+
+            DSPMode mode = sub.DSPMode;
+            int lo = sub.RXFilterLow, hi = sub.RXFilterHigh;
+            AGCMode agc = sub.RXAGCMode;
+            int hang = sub.RXAGCHang, decay = sub.RXAGCDecay;
+            double fixedGain = sub.RXFixedAGC;
+
+            apply();
+
+            if (sub.DSPMode != mode) sub.DSPMode = mode;
+            if (sub.RXFilterLow != lo || sub.RXFilterHigh != hi) sub.SetRXFilter(lo, hi);
+            if (sub.RXAGCMode != agc) sub.RXAGCMode = agc;
+            if (sub.RXAGCHang != hang) sub.RXAGCHang = hang;
+            if (sub.RXAGCDecay != decay) sub.RXAGCDecay = decay;
+            if (Math.Abs(sub.RXFixedAGC - fixedGain) > 0.001) sub.RXFixedAGC = fixedGain;
+        }
+
+        // last sub AGC gain we applied per receiver; seeded from the console's own
+        // fixed gain so a client query before any change reports a real value
+        private readonly double[] _subAgcGainDb = new double[] { 40.0, 40.0 };
+
         private bool tryGetConsoleSub(int rx, out RadioDSPRX sub)
         {
             sub = null;
@@ -3926,12 +3971,18 @@ namespace Thetis
 
             if (args.Length == 1)
             {
-                sendSubAgcGain(rx, (int)Math.Round(sub.RXFixedAGC));
+                sendSubAgcGain(rx, (int)Math.Round(_subAgcGainDb[rx]));
                 return;
             }
             if (!int.TryParse(args[1], out int gain)) return;
             gain = Math.Max(-20, Math.Min(120, gain));
-            sub.RXFixedAGC = gain;
+            // same rule as the receiver's own unified gain: the fixed gain when the
+            // sub runs manual AGC, the AGC threshold (top) in the automatic modes
+            if (sub.RXAGCMode == AGCMode.FIXD)
+                sub.RXFixedAGC = gain;
+            else
+                WDSP.SetRXAAGCTop(WDSP.id((uint)rx, 1), (double)gain);
+            _subAgcGainDb[rx] = gain;
             sendSubAgcGain(rx, gain);
         }
 
@@ -4456,15 +4507,23 @@ namespace Thetis
 							}
 						}
 
+						// the console's mode setter writes the sub channel too: keep
+						// the sub's own mode and passband across a receiver change
 						if (effectiveRx == 0)
 						{
-							if(consoleThreadSafe.RX1DSPMode != mode)
-								consoleThreadSafe.RX1DSPMode = mode;
+							PreservingSubChannel(0, () =>
+							{
+								if (consoleThreadSafe.RX1DSPMode != mode)
+									consoleThreadSafe.RX1DSPMode = mode;
+							});
 						}
 						else if (effectiveRx == 1)
 						{
-							if(consoleThreadSafe.RX2DSPMode != mode)
-								consoleThreadSafe.RX2DSPMode = mode;
+							PreservingSubChannel(1, () =>
+							{
+								if (consoleThreadSafe.RX2DSPMode != mode)
+									consoleThreadSafe.RX2DSPMode = mode;
+							});
 						}
 					}
 				}
@@ -4991,8 +5050,11 @@ namespace Thetis
 						                            // console filter buttons show VAR1 selected, then
 						                            // apply the client's edges - otherwise Thetis would
 						                            // apply the numbers while still highlighting F5.
-						                            consoleThreadSafe.SetRX1Filter(Filter.VAR1);
-						                            consoleThreadSafe.UpdateRX1Filters(low, high);
+						                            PreservingSubChannel(0, () =>
+						                            {
+						                                consoleThreadSafe.SetRX1Filter(Filter.VAR1);
+						                                consoleThreadSafe.UpdateRX1Filters(low, high);
+						                            });
 						                            break;
 						case 1:
                             consoleThreadSafe.UpdateRX2Filters(low, high);
@@ -5286,6 +5348,24 @@ namespace Thetis
             if (args == null || args.Length < 2 || args.Length > 3) return;
             if (!int.TryParse(args[0], out int rx)) return;
             if (rx < 0 || rx > 1) return;
+
+            // H1: the two-field form is also the AUDIO SELECTION. MiniTCI sends
+            // rx_balance:<rx>,<0..1> (0 = main only, 0.5 = equal mix, 1 = sub only)
+            // and that used to be dropped silently because the parser wanted an
+            // integer channel. A fractional second field is the selection, applied
+            // as per-channel gains on the TCI rx audio TAP only - the console's own
+            // audio path is untouched, which is what makes this safe where the
+            // earlier gain-law attempt on the console channels was not.
+            if (args.Length == 2 && !int.TryParse(args[1], out int _))
+            {
+                if (!double.TryParse(args[1], NumberStyles.Float,
+                                     CultureInfo.InvariantCulture, out double sel))
+                    return;
+                sel = Math.Max(0.0, Math.Min(1.0, sel));
+                ApplyTciRxSelection(rx, sel);
+                return;
+            }
+
             if (!int.TryParse(args[1], out int chan)) return;
             if (chan < 0 || chan > 1) return;
 
@@ -5308,6 +5388,34 @@ namespace Thetis
                 consoleThreadSafe.SetBal(rx + 1, pan, subrx);
             }
         }
+        /// <summary>
+        /// H1: apply a main/sub audio selection to the TCI rx audio tap.
+        ///
+        /// Same law as the headless slices use: gains around unity so 'both' gives
+        /// equal levels for the two receivers and the extremes mute the other one.
+        /// Only the TCI copy of the mix is scaled (ChannelMaster's tci_buff).
+        /// </summary>
+        private void ApplyTciRxSelection(int rx, double selection)
+        {
+            double gMain = Math.Cos(selection * Math.PI / 2.0);
+            double gSub = Math.Sin(selection * Math.PI / 2.0);
+            try
+            {
+                cmaster.SetTCIRxChannelGains(rx, gMain, gSub);
+            }
+            catch (Exception)
+            {
+                return;     // older ChannelMaster without the export: stay untouched
+            }
+            sendTciRxSelection(rx, selection);
+        }
+
+        private void sendTciRxSelection(int rx, double selection)
+        {
+            sendTextFrame("rx_balance:" + rx + "," +
+                selection.ToString("F2", CultureInfo.InvariantCulture) + ";");
+        }
+
         private void handleRxStepAttEnabledEx(string[] args)
         {
             if (args == null || args.Length < 1 || args.Length > 2) return;
@@ -5433,7 +5541,8 @@ namespace Thetis
             }
             else
             {
-                consoleThreadSafe.SetAGCMode(rx + 1, tciModeToAgcMode(args[1]));
+                PreservingSubChannel(rx, () =>
+                    consoleThreadSafe.SetAGCMode(rx + 1, tciModeToAgcMode(args[1])));
             }
         }
         private void handleAgcGain(string[] args)

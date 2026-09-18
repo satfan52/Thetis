@@ -437,6 +437,20 @@ void SetRXTCIRun (int active)
 	_InterlockedExchange (&pcm->tci_rx_out_run, active);
 }
 
+// H1: the TCI rx audio tap is the SUM of the receiver's DSP channels (main plus
+// sub). A TCI client needs to choose between them, and the console's own audio
+// path (VAC, wav recorder, the user's listening) must not change - so the gains
+// live here and are applied in pipe.c to a TCI-only copy of the mix.
+double tci_rx_chan_gain[cmMAXrcvr][2] = {{1.0, 1.0}};
+
+PORT
+void SetTCIRxChannelGains (int rx, double mainGain, double subGain)
+{
+	if (rx < 0 || rx >= cmMAXrcvr) return;
+	tci_rx_chan_gain[rx][0] = mainGain;
+	tci_rx_chan_gain[rx][1] = subGain;
+}
+
 PORT
 void SetTXTCIAudioRun (int txid, int active)
 {

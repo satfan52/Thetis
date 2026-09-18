@@ -99,6 +99,9 @@ typedef struct _cmaster
 } cmaster, *CMASTER;
 
 extern CMASTER pcm;
+// H1: per-receiver, per-channel gains applied to the TCI RX AUDIO TAP ONLY
+// (main channel 0, sub channel 1). 1.0/1.0 = untouched.
+extern double tci_rx_chan_gain[cmMAXrcvr][2];
 
 extern __declspec (dllexport) void xcmaster (int id);
 

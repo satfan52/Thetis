@@ -902,6 +902,8 @@ class MiniTCI(tk.Tk):
 
         self._build_ui()
         self._bind_slider_wheel()
+        self.logprint(f"--- MiniTCI session {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                      f"(local; the server's TCI log runs on UTC) ---")
         # size the window exactly to the widgets (no dead space)
         self.update_idletasks()
         self.geometry("")
@@ -2531,7 +2533,9 @@ class MiniTCI(tk.Tk):
         frames; before the first frame arrives the bar shows idle rather than a
         guess, so a meter that has no measurement never looks like a signal.
         """
-        return getattr(self, "rx_meter_levels", {}).get(channel)
+        dbm = getattr(self, "rx_meter_levels", {}).get(channel)
+        # -400 is WDSP's "no measurement" value for an uninitialised channel
+        return None if dbm is None or dbm < -200.0 else dbm
 
     def _draw_smeter(self):
         """VFO A's bar and the SubVFOA's bar, each from its own DSP channel.
@@ -4019,14 +4023,34 @@ class MiniTCI(tk.Tk):
                 self.mic_blocks += 1
 
     # ---------------- log ----------------
+    LOG_PATH = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                            "MiniTCI", "minitci.log")
+
     def logprint(self, s):
+        """Every line goes to the log widget AND to a file.
+
+        The file matters for diagnosis: a session that drops and reconnects reports
+        the reason once (a reader or watchdog error), and by the time anyone looks
+        the window is often gone. The file survives the session.
+        """
+        line = f"[{time.strftime('%H:%M:%S')}] {s}"
         try:
-            stamp = time.strftime("%H:%M:%S")
-            self.log.insert("end", f"[{stamp}] {s}\n")
+            self.log.insert("end", line + "\n")
             self.log.see("end")
             if float(self.log.index("end-1c").split(".")[0]) > 60:
                 self.log.delete("1.0", "20.0")
         except Exception:
+            pass
+        try:
+            os.makedirs(os.path.dirname(self.LOG_PATH), exist_ok=True)
+            if os.path.getsize(self.LOG_PATH) > 1_000_000:
+                with open(self.LOG_PATH, "r", errors="ignore") as f:
+                    tail = f.readlines()[-2000:]
+                with open(self.LOG_PATH, "w", errors="ignore") as f:
+                    f.writelines(tail)
+            with open(self.LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
             pass
 
 

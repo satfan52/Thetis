@@ -34,6 +34,9 @@ warren@wpratt.com
 typedef struct _pipe
 {
 	double** rbuff;																// receiver audio buffers
+	double** tci_buff;														// H1: TCI rx audio scratch,
+																	// used only for the TCI tap so per-channel
+																	// gains never touch the VAC/console path
 	void (__stdcall *create_Scope)(int id);
 	void (__stdcall *create_WaveRecord)(int id);
 	void (__stdcall *create_WavePlay)(int id);

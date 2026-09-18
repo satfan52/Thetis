@@ -124,6 +124,11 @@ namespace Thetis
         [DllImport("ChannelMaster.dll", EntryPoint = "SetRXTCIRun", CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetRXTCIRun(int active);
 
+        // H1: per-channel gains for the TCI rx AUDIO tap only (main channel 0,
+        // sub channel 1). The console's own audio path is not affected.
+        [DllImport("ChannelMaster.dll", EntryPoint = "SetTCIRxChannelGains", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void SetTCIRxChannelGains(int rx, double mainGain, double subGain);
+
         [DllImport("ChannelMaster.dll", EntryPoint = "SetTXTCIAudioRun", CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetTXTCIAudioRun(int txid, int active);
 
