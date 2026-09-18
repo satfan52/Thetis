@@ -45,22 +45,20 @@ def main():
         app.connected = True
         app.send = lambda c: sent.append(c)
 
-        check("four TX sliders", sorted(app.txdsp.keys()),
-              ["comp", "dexp", "mic", "vox"])
+        check("three TX sliders plus the DXP button", sorted(app.txdsp.keys()),
+              ["comp", "mic", "vox"])
+        check("DXP is a button, not a slider", hasattr(app, "dexp_btn"), True)
         check("MIC uses the console range",
               (app.txdsp["mic"]["lo"], app.txdsp["mic"]["hi"]),
               (M.MIC_MIN, M.MIC_MAX))
         check("COMP range", (app.txdsp["comp"]["lo"], app.txdsp["comp"]["hi"]),
               (0, 20))
-        check("DXP range", (app.txdsp["dexp"]["lo"], app.txdsp["dexp"]["hi"]),
-              (-160, 0))
         check("VOX range", (app.txdsp["vox"]["lo"], app.txdsp["vox"]["hi"]),
               (-80, 0))
 
         # ---- the bottom stop = off, and that is what is sent --------------
         for key, want_cmd in (("mic", "mic_gain:0,-40;"),
                               ("comp", "tx_comp:0,0;"),
-                              ("dexp", "tx_dexp:0,-160;"),
                               ("vox", "vox:0,-80;")):
             sent.clear()
             app._txdsp_set(key, app.txdsp[key]["lo"])
@@ -82,11 +80,6 @@ def main():
         check("COMP 7 dB is sent", sent, ["tx_comp:0,7;"])
 
         sent.clear()
-        app._txdsp_set("dexp", -100)
-        app._txdsp_send("dexp")
-        check("DXP -100 dB is sent", sent, ["tx_dexp:0,-100;"])
-
-        sent.clear()
         app._txdsp_set("vox", -40)
         app._txdsp_send("vox")
         check("VOX -40 dB is sent", sent, ["vox:0,-40;"])
@@ -99,6 +92,76 @@ def main():
               "-30 dB")
 
         # ---- console broadcasts drive the sliders -------------------------
+        # ---- DXP: a toggle button mirroring the console DEXP button --------
+        sent.clear()
+        app._dexp_set(False)
+        app._dexp_toggle()
+        check("DXP on sends the console threshold + true",
+              sent, [f"tx_dexp:0,{int(app.dexp_threshold)},true;"])
+        check("DXP button shows on", app.dexp_btn.cget("text"), "on")
+        sent.clear()
+        app._dexp_toggle()
+        check("DXP off sends false",
+              sent, [f"tx_dexp:0,{int(app.dexp_threshold)},false;"])
+        check("DXP button shows off", app.dexp_btn.cget("text"), "off")
+
+        # the console's own gate button drives ours (threshold kept)
+        app.tci_text({"tx_dexp": "0,-55,true"})
+        pump(app)
+        check("tx_dexp echo turns the button on",
+              (app.dexp_on, app.dexp_threshold, app.dexp_btn.cget("text")),
+              (True, -55, "on"))
+        app.tci_text({"tx_dexp": "0,-55,false"})
+        pump(app)
+        check("tx_dexp echo turns the button off", app.dexp_on, False)
+
+        # ---- VOX: MiniTCI keys itself from the microphone level ------------
+        app._mic_open = lambda: None            # no real device in the test
+        app.mic_stream = None
+        app.ptt = False
+        app.tuning = False
+        app._vox_keyed = False
+        app._txdsp_set("vox", app.txdsp["vox"]["lo"])      # VOX at the bottom
+        app.mic_level_db = -10.0
+        sent.clear()
+        app._vox_tick()
+        check("VOX off never keys", (app.ptt, sent), (False, []))
+
+        app._txdsp_set("vox", -40)                          # armed
+        app.mic_level_db = -55.0                            # silence
+        sent.clear()
+        app._vox_tick()
+        check("VOX stays quiet below the threshold", (app.ptt, sent), (False, []))
+
+        app.mic_level_db = -20.0                            # speech
+        sent.clear()
+        app._vox_tick()
+        check("VOX keys on speech",
+              (app.ptt, app._vox_keyed, [c for c in sent if c.startswith("trx:")]),
+              (True, True, ["trx:0,true,tci;"]))
+
+        # level drops: the carrier holds for the hang time, then releases
+        app.mic_level_db = -70.0
+        sent.clear()
+        app._vox_tick()
+        check("VOX holds during the hang time", app.ptt, True)
+        app._vox_above_at = time.time() - (app.VOX_HANG_S + 0.2)
+        sent.clear()
+        app._vox_tick()
+        check("VOX releases after the hang time",
+              (app.ptt, app._vox_keyed, [c for c in sent if c.startswith("trx:")]),
+              (False, False, ["trx:0,false,tci;"]))
+
+        # a manual PTT is never released by the VOX engine
+        app._mic_open = lambda: None
+        app.ptt_on()
+        check("manual PTT keyed", app.ptt, True)
+        app.mic_level_db = -70.0
+        app._vox_above_at = time.time() - (app.VOX_HANG_S + 0.2)
+        app._vox_tick()
+        check("VOX leaves a manual PTT alone", app.ptt, True)
+        app.ptt_off()
+
         app.tci_text({"mic_gain": "0,-12,true"})
         pump(app)
         check("mic_gain echo sets the slider", app.txdsp["mic"]["var"].get(), -12.0)
@@ -130,7 +193,7 @@ def main():
         sent.clear()
         app._txdsp_query()
         check("connect query", sent,
-              ["mic_gain:0;", "tx_comp:0;", "tx_dexp:0;", "vox:0;"])
+              ["mic_gain:0;", "tx_comp:0;", "vox:0;", "tx_dexp:0;"])
 
         # ---- wheel steps 1 dB and sends ----------------------------------
         sent.clear()
@@ -145,8 +208,10 @@ def main():
 
         # ---- persistence ---------------------------------------------------
         snap = app._settings_snapshot()
-        check("settings carry the TX values", isinstance(snap.get("txdsp"), dict)
-              and sorted(snap["txdsp"].keys()), ["comp", "dexp", "mic", "vox"])
+        check("settings carry the slider values", isinstance(snap.get("txdsp"), dict)
+              and sorted(snap["txdsp"].keys()), ["comp", "mic", "vox"])
+        check("settings carry the DXP button state",
+              snap.get("dexp_on"), app.dexp_on)
     finally:
         app.destroy()
 

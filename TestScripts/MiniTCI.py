@@ -726,6 +726,9 @@ class MiniTCI(tk.Tk):
         self.ddc_center_hz = self.freq_hz  # hardware centre frequency (DDS)
         self.volume = 0.25
         self.mic_gain = 1.0            # client-side unity; Thetis applies the mic gain
+        self.dexp_threshold = -40      # console gate threshold we keep untouched
+        self._vox_keyed = False        # VOX owns the current transmission
+        self._vox_above_at = 0.0
         self.smeter = -140.0
         self.tx_tail_s = 0.35
         self.tuning = False
@@ -793,6 +796,7 @@ class MiniTCI(tk.Tk):
             "wf_gain": self.wf_gain_var.get(),
             "ctun": self.ctun_var.get(),
             "txdsp": {k: int(round(float(v["var"].get()))) for k, v in self.txdsp.items()},
+            "dexp_on": bool(self.dexp_on),
             "tx_tail_ms": int(self.tx_tail_s * 1000),
             "out_dev": self.out_dev_var.get(),
             "in_dev": self.in_dev_var.get(),
@@ -852,6 +856,8 @@ class MiniTCI(tk.Tk):
             # agc_auto checkbox removed (AGC state = mode dropdown)
             if s.get("ctun") is not None:
                 self.ctun_var.set(bool(s["ctun"]))
+            if s.get("dexp_on") is not None:
+                self._dexp_set(bool(s["dexp_on"]))
             for key, val in (s.get("txdsp") or {}).items():
                 if key in getattr(self, "txdsp", {}):
                     try:
@@ -1308,7 +1314,6 @@ class MiniTCI(tk.Tk):
         for key, label, lo, hi, unit in (
                 ("mic",  "MIC",  MIC_MIN, MIC_MAX, "dB"),
                 ("comp", "COMP", 0, 20, "dB"),
-                ("dexp", "DXP",  -160, 0, "dB"),
                 ("vox",  "VOX",  -80, 0, "dB")):
             tk.Label(r5, text=label, bg=C["panel"], fg=C["fg"],
                      font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 2))
@@ -1322,6 +1327,16 @@ class MiniTCI(tk.Tk):
             lbl.pack(side="left", padx=(3, 0))
             self.txdsp[key] = {"var": var, "scale": sc, "lbl": lbl,
                                "lo": lo, "hi": hi, "unit": unit}
+        # DXP is a TOGGLE BUTTON in Thetis (the gate on/off), so it is one here
+        # too - no slider. Its threshold stays whatever the console has.
+        tk.Label(r5, text="DXP", bg=C["panel"], fg=C["fg"],
+                 font=("Segoe UI", 8, "bold")).pack(side="left", padx=(8, 2))
+        self.dexp_btn = tk.Button(r5, text="off", width=4,
+                                  font=("Segoe UI", 8, "bold"),
+                                  bg="#e6e8ee", relief="raised",
+                                  command=self._dexp_toggle)
+        self.dexp_btn.pack(side="left")
+        self.dexp_on = False          # gate enabled (console DEXP button)
 
         # --- log
         self.log = tk.Text(self, height=5, bg="#ffffff", fg="#333333", borderwidth=1,
@@ -1755,6 +1770,7 @@ class MiniTCI(tk.Tk):
                 self.tuning = False
                 self.tune_active = False
                 self._key_requested = False
+                self._vox_keyed = False
                 self._key_false_since = None
                 self._tx_visuals()
             self.conn_btn.config(text="Connect")
@@ -1811,6 +1827,7 @@ class MiniTCI(tk.Tk):
             pass
 
         self._check_key_watchdog()
+        self._vox_tick()
         self._draw_smeter()
         self.after(50, self._poll_safe)
 
@@ -3097,8 +3114,79 @@ class MiniTCI(tk.Tk):
             self.tune_to(self.freq_hz + d)
 
     # ---------------- TX DSP chain (Thetis mirror) ----------------
-    TXDSP_CMD = {"mic": "mic_gain", "comp": "tx_comp",
-                 "dexp": "tx_dexp", "vox": "vox"}
+    TXDSP_CMD = {"mic": "mic_gain", "comp": "tx_comp", "vox": "vox"}
+    VOX_HANG_S = 0.7          # how long the carrier holds after speech stops
+
+    # ---- DXP: a toggle, like the console's DEXP button ----------------------
+    def _dexp_toggle(self):
+        self._dexp_set(not self.dexp_on, send=True)
+
+    def _dexp_set(self, on, send=False):
+        self.dexp_on = bool(on)
+        try:
+            self.dexp_btn.config(text="on" if self.dexp_on else "off",
+                                 bg=C["red"] if self.dexp_on else "#e6e8ee",
+                                 fg="#ffffff" if self.dexp_on else C["fg"],
+                                 relief="sunken" if self.dexp_on else "raised")
+        except tk.TclError:
+            pass
+        if send and self.connected:
+            # keep the console's threshold, only switch the gate on or off
+            self.send(f"tx_dexp:0,{int(self.dexp_threshold)},"
+                      f"{'true' if self.dexp_on else 'false'};")
+        if send:
+            self.logprint(f"DXP gate {'on' if self.dexp_on else 'off'}")
+
+    # ---- VOX: keys MiniTCI from the microphone level ------------------------
+    def _vox_threshold(self):
+        """Slider value in dB, or None when the slider sits at its bottom stop."""
+        d = self.txdsp["vox"]
+        v = float(d["var"].get())
+        return None if v <= d["lo"] else v
+
+    def _vox_tick(self):
+        """The console's VOX detector cannot see a client's audio before the
+        client transmits, so MiniTCI keys itself: speech above the threshold
+        keys, and the carrier holds for VOX_HANG_S after the level drops."""
+        thr = self._vox_threshold()
+        if thr is None or not self.connected:
+            if getattr(self, "_vox_keyed", False):
+                self._vox_release()
+            return
+        if self.tuning:
+            return
+        lvl = getattr(self, "mic_level_db", -140.0)
+        now = time.time()
+        if lvl > thr:
+            self._vox_above_at = now
+            if not self.ptt and not getattr(self, "_vox_keyed", False):
+                self._vox_keyed = True
+                self.ptt_on()
+                self.logprint(f"VOX keyed ({lvl:.0f} dB > {thr:.0f} dB)")
+        elif getattr(self, "_vox_keyed", False) and self.ptt:
+            if now - getattr(self, "_vox_above_at", 0.0) > self.VOX_HANG_S:
+                self.logprint("VOX released")
+                self._vox_release()
+
+    def _vox_release(self):
+        self._vox_keyed = False
+        if self.ptt and not self.tuning:
+            self.ptt_off()
+
+    def _vox_mic_keep(self):
+        """While VOX is armed the microphone must stay open in receive, or the
+        detector has nothing to measure."""
+        if self._vox_threshold() is not None and self.connected:
+            self._mic_open()
+        elif self.mic_stream and not self.ptt:
+            try:
+                self.mic_stream.stop(); self.mic_stream.close()
+            except Exception:
+                pass
+            self.mic_stream = None
+            self.logprint("mic closed (VOX off)")
+
+
 
     def _txdsp_off(self, key):
         """The bottom stop of each control means OFF (the console's own button
@@ -3140,7 +3228,11 @@ class MiniTCI(tk.Tk):
             return
         self.send(f"{self.TXDSP_CMD[key]}:0,{val};")
         if key == "vox":
-            self.logprint(f"VOX {'off' if val <= d['lo'] else str(val) + ' dB'}")
+            if val <= d["lo"]:
+                self.logprint("VOX off")
+            else:
+                self.logprint(f"VOX armed at {val} dB - MiniTCI keys on speech")
+            self._vox_mic_keep()
         elif key == "mic":
             self.logprint(f"microphone gain {'off' if val <= d['lo'] else str(val) + ' dB'}")
         elif key == "comp":
@@ -3171,9 +3263,10 @@ class MiniTCI(tk.Tk):
         self._txdsp_send(key)
 
     def _txdsp_query(self):
-        """Ask Thetis for the current values so the sliders start in step."""
+        """Ask Thetis for the current values so the controls start in step."""
         for key in self.txdsp:
             self.send(f"{self.TXDSP_CMD[key]}:0;")
+        self.send("tx_dexp:0;")        # drives the DXP toggle button
 
     def _txdsp_echo(self, key, v):
         """mic_gain|tx_comp|tx_dexp|vox:<rx>,<value>[,<on>]"""
@@ -3182,12 +3275,16 @@ class MiniTCI(tk.Tk):
             if int(p[0]) != 0:
                 return
             val = int(p[1])
-            if len(p) > 2:
-                on = p[2].strip().lower() == "true"
-                if not on:
-                    val = int(self.txdsp[key]["lo"])     # off = bottom stop
+            on = p[2].strip().lower() == "true" if len(p) > 2 else True
         except (ValueError, IndexError):
             return
+        if key == "dexp":
+            # the console's gate is a button: mirror its state and threshold
+            self.dexp_threshold = val
+            self._dexp_set(on)
+            return
+        if not on:
+            val = int(self.txdsp[key]["lo"])             # off = bottom stop
         self._txdsp_set(key, val)
 
     # ---------------- TX ----------------
@@ -3378,6 +3475,7 @@ class MiniTCI(tk.Tk):
         # fixed minimum tail, then playback resumes (the box controls the tail)
         self._tx_mute_until = time.time() + self.tx_tail_s
         self.mic_level_db = -140.0
+        self._vox_keyed = False
         if getattr(self, "tuning", False):
             # a tune carrier must be dropped on Thetis too, not only the key
             self.tuning = False
@@ -3452,13 +3550,18 @@ class MiniTCI(tk.Tk):
         block, so slices of the microphone signal were repeated each callback
         period - an audible stutter/oscillation that is NOT acoustic feedback.
         Only the consumer advances (and resets) it."""
-        if self.ptt and self.connected:
+        if not self.connected:
+            return
+        # level first: the VOX detector needs it even while receiving
+        try:
+            rms = float(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
+            self.mic_level_db = 20.0 * np.log10(rms + 1e-10)
+        except Exception:
+            pass
+        if self.ptt:
             with self.mic_lock:
                 self.tx_audio_q.append(indata.reshape(-1).copy())
                 self.mic_blocks += 1
-            # voice level for the S-meter (dBFS, same scale as RX)
-            rms = float(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
-            self.mic_level_db = 20.0 * np.log10(rms + 1e-10)
 
     # ---------------- log ----------------
     def logprint(self, s):

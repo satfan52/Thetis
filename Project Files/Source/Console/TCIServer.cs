@@ -3725,8 +3725,22 @@ namespace Thetis
             if (!int.TryParse(args[1], out int thresh)) return;
             thresh = Math.Max(-160, Math.Min(0, thresh));
 
-            consoleThreadSafe.NoiseGateEnabled = thresh > -160;
-            consoleThreadSafe.NoiseGate = thresh;
+            // tx_dexp:<rx>,<threshold>[,<on>]
+            // The console's downward expander is a BUTTON with a separate
+            // threshold, so a client that mirrors the button sends the third
+            // field: the threshold it last saw plus the wanted state. Without
+            // it the bottom of the threshold range still means "off".
+            bool haveState = args.Length > 2 && bool.TryParse(args[2], out bool on);
+            if (haveState)
+            {
+                consoleThreadSafe.NoiseGate = thresh;
+                consoleThreadSafe.NoiseGateEnabled = on;
+            }
+            else
+            {
+                consoleThreadSafe.NoiseGateEnabled = thresh > -160;
+                consoleThreadSafe.NoiseGate = thresh;
+            }
         }
 
         private void handleVox(string[] args)
