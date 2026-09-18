@@ -3898,6 +3898,15 @@ namespace Thetis
             if (!tryParseDspMode(args[1], out DSPMode mode)) return;
             if (mode == sub.DSPMode) return;
 
+            // rx 0 is the console's own sub channel: use its setter so the console's
+            // second-slice controls follow the client, and let the console's change
+            // notification broadcast the new state
+            if (rx == 0)
+            {
+                consoleThreadSafe.SetSubMode(mode);
+                return;
+            }
+
             // the mode change sequence Thetis uses for its own channels: the
             // channel must be off while the DSP mode is reprogrammed, and the
             // passband is re-applied afterwards because the sideband convention
@@ -3931,6 +3940,11 @@ namespace Thetis
             lo = Math.Max(-10000, lo);
             hi = Math.Min(10000, hi);
 
+            if (rx == 0)
+            {
+                consoleThreadSafe.SetSubFilter(lo, hi);
+                return;
+            }
             sub.SetRXFilter(lo, hi);
             sendSubFilter(rx, lo, hi);
         }
@@ -3949,6 +3963,12 @@ namespace Thetis
 
             AGCMode mode = tciModeToAgcMode(args[1]);
             if (mode == sub.RXAGCMode) return;
+
+            if (rx == 0)
+            {
+                consoleThreadSafe.SetSubAgcMode(mode);
+                return;
+            }
             sub.RXAGCMode = mode;
             // Thetis's own AGC time constants, same as its comboAGC handler
             switch (mode)
@@ -3971,11 +3991,18 @@ namespace Thetis
 
             if (args.Length == 1)
             {
-                sendSubAgcGain(rx, (int)Math.Round(_subAgcGainDb[rx]));
+                sendSubAgcGain(rx, rx == 0 ? consoleThreadSafe.GetSubAgcGain()
+                                           : (int)Math.Round(_subAgcGainDb[rx]));
                 return;
             }
             if (!int.TryParse(args[1], out int gain)) return;
             gain = Math.Max(-20, Math.Min(120, gain));
+
+            if (rx == 0)
+            {
+                consoleThreadSafe.SetSubAgcGain(gain);
+                return;
+            }
             // same rule as the receiver's own unified gain: the fixed gain when the
             // sub runs manual AGC, the AGC threshold (top) in the automatic modes
             if (sub.RXAGCMode == AGCMode.FIXD)
@@ -6568,6 +6595,25 @@ namespace Thetis
                           (consoleThreadSafe.VOXEnable ? "true" : "false") + ";");
         }
 
+        /// <summary>
+        /// H1: the second slice, when it is the sub, changed in the console. Tell the
+        /// client so both applications show the same mode, filter and AGC. With RX2
+        /// enabled the second slice is receiver 2 and the sub is not it, so nothing
+        /// is sent - the console's own RX2 frames carry that.
+        /// </summary>
+        internal void SubRxChanged()
+        {
+            if (consoleThreadSafe == null) return;
+            if (consoleThreadSafe.RX2Enabled) return;
+
+            sendTextFrame("sub_mode:0," + dspModeToTciToken(consoleThreadSafe.GetSubMode()) + ";");
+            sendTextFrame("sub_filter:0," + consoleThreadSafe.GetSubFilterLow() + ","
+                          + consoleThreadSafe.GetSubFilterHigh() + ";");
+            sendTextFrame("sub_agc_mode:0,"
+                          + agcModeToTciMode(consoleThreadSafe.GetSubAgcMode()) + ";");
+            sendTextFrame("sub_agc_gain:0," + consoleThreadSafe.GetSubAgcGain() + ";");
+        }
+
         internal void SyncTciPttToMox(bool expectedMox)
         {
             bool releaseOwner = false;
@@ -7341,6 +7387,7 @@ namespace Thetis
 					console.VFOBFrequencyChangeHandlers += OnVFOBFrequencyChangeHandler;
 					console.MoxChangeHandlers += OnMoxChangeHandler;
 					console.TxDspChangedHandlers += OnTxDspChangedHandler;
+					console.SubRxChangedHandlers += OnSubRxChangedHandler;
                     console.MoxPreChangeHandlers += OnMoxPreChangeHandler;
 					console.ModeChangeHandlers += OnModeChangeHandler;
 					console.BandChangeHandlers += OnBandChangeHandler;
@@ -7455,6 +7502,7 @@ namespace Thetis
 					console.VFOBFrequencyChangeHandlers -= OnVFOBFrequencyChangeHandler;
 					console.MoxChangeHandlers -= OnMoxChangeHandler;
                     console.TxDspChangedHandlers -= OnTxDspChangedHandler;
+                    console.SubRxChangedHandlers -= OnSubRxChangedHandler;
                     console.MoxPreChangeHandlers -= OnMoxPreChangeHandler;
 					console.ModeChangeHandlers -= OnModeChangeHandler;
 					console.BandChangeHandlers -= OnBandChangeHandler;
@@ -7971,6 +8019,19 @@ namespace Thetis
 
             RefreshTxAudioSourceState();
 		}
+
+        public void OnSubRxChangedHandler()
+        {
+            lock (m_objLocker)
+            {
+                if (m_server == null || m_socketListenersList == null) return;
+
+                foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+                {
+                    socketListener.SubRxChanged();
+                }
+            }
+        }
 
         public void OnTxDspChangedHandler(int rx)
         {

@@ -36747,6 +36747,8 @@ namespace Thetis
         {
             //[2.10.3.5]MW0LGE
             if (!initializing) radio.GetDSPRX(0, 1).Active = chkEnableMultiRX.Checked; //MW0LGE only set after init complete
+            // H1: the second-slice controls belong to the sub whenever RX2 is off
+            UpdateSecondSliceControlsVisible();
                                                                                        //for some reason fixes issue where multirx has no audio if
                                                                                        //thetis loaded with multirx already on
             if (chkEnableMultiRX.Checked)
@@ -37605,6 +37607,10 @@ namespace Thetis
 
             RX2Enabled = chkRX2.Checked;
 
+            // H1: with RX2 off the second-slice controls serve the sub, with RX2 on
+            // they serve receiver 2 again - their own job
+            UpdateSecondSliceControlsVisible();
+
             //[2.10.3.9]MW0LGE restore VAC on/off state for VAC2 if the TX profile is configured to do so
             if (RX2Enabled && !IsSetupFormNull && oldRX2Enabled != chkRX2.Checked)
             {
@@ -37814,6 +37820,246 @@ namespace Thetis
         {
             vfoa_sub_hover_digit = -1;
             panelVFOASubHover.Invalidate();
+        }
+
+        // ==================================================================
+        // H1: THE SECOND SLICE, and the sub channel's own DSP settings.
+        //
+        // With RX2 enabled the second slice is receiver 2, and the controls that
+        // exist for it - mode buttons, filter buttons and low/high boxes, AGC
+        // dropdown, AGC gain slider - drive radio.GetDSPRX(1, 0). That is their
+        // original job and it is unchanged.
+        //
+        // With RX2 OFF there is no receiver 2, but RX1 still has a second DSP
+        // channel: the sub, which is VFO A Sub / MultiRX, WDSP id(0, 1). Those same
+        // controls then drive the sub, so the console shows and sets the sub's own
+        // mode, filter and AGC instead of leaving them controllable only from a TCI
+        // client. The band selector is deliberately NOT part of this: the sub lives
+        // inside VFO A's slice, so there is exactly one band.
+        // ==================================================================
+        public bool SecondSliceIsSub
+        {
+            get { return !RX2Enabled; }
+        }
+
+        public bool SecondSliceActive
+        {
+            get
+            {
+                return RX2Enabled ||
+                       (chkEnableMultiRX != null && chkEnableMultiRX.Checked);
+            }
+        }
+
+        private bool _sub_console_updating = false;
+        private int _sub_agc_gain = 40;
+        private DSPMode _sub_dsp_mode = DSPMode.USB;
+        private Filter _sub_filter = Filter.F5;
+
+        public DSPMode GetSubMode() { return radio.GetDSPRX(0, 1).DSPMode; }
+        public int GetSubFilterLow() { return radio.GetDSPRX(0, 1).RXFilterLow; }
+        public int GetSubFilterHigh() { return radio.GetDSPRX(0, 1).RXFilterHigh; }
+        public AGCMode GetSubAgcMode() { return radio.GetDSPRX(0, 1).RXAGCMode; }
+        public int GetSubAgcGain() { return _sub_agc_gain; }
+
+        /// <summary>
+        /// Set the sub channel's own DSP mode. The same sequence Thetis uses for one
+        /// of its receivers: take the channel out of service, set the mode, re-apply
+        /// the passband because the sideband convention is carried by the filter's
+        /// sign, then put the channel back.
+        /// </summary>
+        public void SetSubMode(DSPMode new_mode, bool from_console = false)
+        {
+            if (new_mode == DSPMode.FIRST || new_mode == DSPMode.LAST) return;
+
+            RadioDSPRX sub = radio.GetDSPRX(0, 1);
+            bool wasActive = sub.Active;
+            int low = sub.RXFilterLow, high = sub.RXFilterHigh;
+
+            WDSP.SetChannelState(WDSP.id(0, 1), 0, 1);
+            WDSP.SetDSPSamplerate(WDSP.id(0, 1), new_mode == DSPMode.FM ? 192000 : 48000);
+            sub.DSPMode = new_mode;
+            sub.SetRXFilter(low, high);
+            if (wasActive) WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
+
+            _sub_dsp_mode = new_mode;
+            if (!from_console) UpdateSubControls();
+            NotifySubRxChanged();
+        }
+
+        public void SetSubFilter(int low, int high, bool from_console = false)
+        {
+            if (high <= low) return;
+            if (low < -_max_filter_shift) low = -_max_filter_shift;
+            if (high > _max_filter_shift) high = _max_filter_shift;
+
+            radio.GetDSPRX(0, 1).SetRXFilter(low, high);
+            if (!from_console) UpdateSubControls();
+            NotifySubRxChanged();
+        }
+
+        public void SetSubAgcMode(AGCMode mode, bool from_console = false)
+        {
+            RadioDSPRX sub = radio.GetDSPRX(0, 1);
+            sub.RXAGCMode = mode;
+            switch (mode)
+            {
+                case AGCMode.LONG: sub.RXAGCHang = 2000; sub.RXAGCDecay = 2000; break;
+                case AGCMode.SLOW: sub.RXAGCHang = 1000; sub.RXAGCDecay = 500; break;
+                case AGCMode.MED: sub.RXAGCHang = 0; sub.RXAGCDecay = 250; break;
+                case AGCMode.FAST: sub.RXAGCHang = 0; sub.RXAGCDecay = 50; break;
+            }
+            if (!from_console) UpdateSubControls();
+            NotifySubRxChanged();
+        }
+
+        /// <summary>
+        /// The sub's gain: the fixed gain while the sub runs manual AGC, the AGC
+        /// threshold in the automatic modes - the same rule the receiver's own
+        /// unified gain control follows.
+        /// </summary>
+        public void SetSubAgcGain(int value, bool from_console = false)
+        {
+            value = Math.Max(-20, Math.Min(120, value));
+
+            RadioDSPRX sub = radio.GetDSPRX(0, 1);
+            if (sub.RXAGCMode == AGCMode.FIXD)
+                sub.RXFixedAGC = value;
+            else
+                WDSP.SetRXAAGCTop(WDSP.id(0, 1), (double)value);
+
+            _sub_agc_gain = value;
+            if (!from_console) UpdateSubControls();
+            NotifySubRxChanged();
+        }
+
+        /// <summary>Make the second-slice widgets show the sub's state.</summary>
+        private void UpdateSubControls()
+        {
+            if (!SecondSliceIsSub || _sub_console_updating) return;
+
+            _sub_console_updating = true;
+            try
+            {
+                DSPMode mode = GetSubMode();
+                _sub_dsp_mode = mode;
+                switch (mode)
+                {
+                    case DSPMode.LSB: radRX2ModeLSB.Checked = true; break;
+                    case DSPMode.USB: radRX2ModeUSB.Checked = true; break;
+                    case DSPMode.DSB: radRX2ModeDSB.Checked = true; break;
+                    case DSPMode.CWL: radRX2ModeCWL.Checked = true; break;
+                    case DSPMode.CWU: radRX2ModeCWU.Checked = true; break;
+                    case DSPMode.FM: radRX2ModeFMN.Checked = true; break;
+                    case DSPMode.AM: radRX2ModeAM.Checked = true; break;
+                    case DSPMode.SAM: radRX2ModeSAM.Checked = true; break;
+                    case DSPMode.DIGL: radRX2ModeDIGL.Checked = true; break;
+                    case DSPMode.DIGU: radRX2ModeDIGU.Checked = true; break;
+                    case DSPMode.DRM: radRX2ModeDRM.Checked = true; break;
+                }
+
+                int low = GetSubFilterLow(), high = GetSubFilterHigh();
+                _filter_console_controls_force_update = true;
+                try
+                {
+                    if (low >= udRX2FilterLow.Minimum && low <= udRX2FilterLow.Maximum)
+                        udRX2FilterLow.Value = low;
+                    if (high >= udRX2FilterHigh.Minimum && high <= udRX2FilterHigh.Maximum)
+                        udRX2FilterHigh.Value = high;
+                }
+                finally
+                {
+                    _filter_console_controls_force_update = false;
+                }
+
+                AGCMode agc = GetSubAgcMode();
+                comboRX2AGC.SelectedIndex = (int)agc;
+                lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
+
+                int gain = GetSubAgcGain();
+                if (gain >= ptbRX2RF.Minimum && gain <= ptbRX2RF.Maximum)
+                    ptbRX2RF.Value = gain;
+                lblRX2RF.Text = (agc == AGCMode.FIXD ? "Fixed Gain:  " : "AGC Gain:  ")
+                                + ptbRX2RF.Value.ToString();
+            }
+            catch { }
+            finally
+            {
+                _sub_console_updating = false;
+            }
+        }
+
+        /// <summary>
+        /// Show the second-slice controls when there is a second slice: receiver 2
+        /// when RX2 is enabled, the sub when SUB is on with RX2 off. RX2's own extras
+        /// - the band selector and the mute - only appear when RX2 really is the
+        /// second slice, because the band belongs to the slice the sub lives in.
+        /// </summary>
+        public void UpdateSecondSliceControlsVisible()
+        {
+            try
+            {
+                bool show = SecondSliceActive;
+                bool sub = SecondSliceIsSub;
+
+                panelRX2Mode.Visible = show;
+                panelRX2Filter.Visible = show;
+                panelRX2DSP.Visible = show;
+                panelRX2RF.Visible = show;
+
+                chkRX2Mute.Visible = show && !sub;
+                lblRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
+                comboRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
+
+                if (show && sub) UpdateSubControls();
+            }
+            catch { }
+        }
+
+        /// <summary>The second-slice mode buttons route to whoever owns the slice.</summary>
+        private void SecondSliceModeSelected(DSPMode mode)
+        {
+            if (!SecondSliceIsSub)
+            {
+                SetRX2Mode(mode);
+                return;
+            }
+
+            SetSubMode(mode, true);
+
+            // a mode change redefines the passband, because the sideband convention
+            // is carried by the filter's sign: apply that mode's default filter (F5),
+            // exactly as a receiver's own mode change does. DRM and SPEC take their
+            // edges from the server, so they keep what they have.
+            if (mode != DSPMode.FIRST && mode != DSPMode.LAST &&
+                mode != DSPMode.DRM && mode != DSPMode.SPEC)
+            {
+                SetSubFilter(rx1_filters[(int)mode].GetLow(Filter.F5),
+                             rx1_filters[(int)mode].GetHigh(Filter.F5), true);
+            }
+            UpdateSubControls();
+        }
+
+        /// <summary>
+        /// The second-slice filter buttons. For the sub the preset comes from the RX1
+        /// filter tables indexed by the SUB's own mode, because that is the mode its
+        /// DSP channel runs.
+        /// </summary>
+        private void SecondSliceFilterSelected(Filter f)
+        {
+            if (!SecondSliceIsSub)
+            {
+                SetRX2Filter(f);
+                return;
+            }
+
+            DSPMode mode = GetSubMode();
+            if (mode == DSPMode.FIRST || mode == DSPMode.LAST) return;
+
+            _sub_filter = f;
+            SetSubFilter(rx1_filters[(int)mode].GetLow(f),
+                         rx1_filters[(int)mode].GetHigh(f), true);
+            UpdateSubControls();
         }
 
         private void SetRX2Mode(DSPMode new_mode)
@@ -38313,37 +38559,37 @@ namespace Thetis
             switch (radiobut)
             {
                 case "LSB":
-                    SetRX2Mode(DSPMode.LSB);
+                    SecondSliceModeSelected(DSPMode.LSB);
                     break;
                 case "USB":
-                    SetRX2Mode(DSPMode.USB);
+                    SecondSliceModeSelected(DSPMode.USB);
                     break;
                 case "DSB":
-                    SetRX2Mode(DSPMode.DSB);
+                    SecondSliceModeSelected(DSPMode.DSB);
                     break;
                 case "CWL":
-                    SetRX2Mode(DSPMode.CWL);
+                    SecondSliceModeSelected(DSPMode.CWL);
                     break;
                 case "CWU":
-                    SetRX2Mode(DSPMode.CWU);
+                    SecondSliceModeSelected(DSPMode.CWU);
                     break;
                 case "FM":
-                    SetRX2Mode(DSPMode.FM);
+                    SecondSliceModeSelected(DSPMode.FM);
                     break;
                 case "AM":
-                    SetRX2Mode(DSPMode.AM);
+                    SecondSliceModeSelected(DSPMode.AM);
                     break;
                 case "SAM":
-                    SetRX2Mode(DSPMode.SAM);
+                    SecondSliceModeSelected(DSPMode.SAM);
                     break;
                 case "DIGL":
-                    SetRX2Mode(DSPMode.DIGL);
+                    SecondSliceModeSelected(DSPMode.DIGL);
                     break;
                 case "DIGU":
-                    SetRX2Mode(DSPMode.DIGU);
+                    SecondSliceModeSelected(DSPMode.DIGU);
                     break;
                 case "DRM":
-                    SetRX2Mode(DSPMode.DRM);
+                    SecondSliceModeSelected(DSPMode.DRM);
                     break;
             }
 
@@ -38554,59 +38800,72 @@ namespace Thetis
         private void radRX2Filter1_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter1.Checked)
-                SetRX2Filter(Filter.F1);
+                SecondSliceFilterSelected(Filter.F1);
         }
 
         private void radRX2Filter2_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter2.Checked)
-                SetRX2Filter(Filter.F2);
+                SecondSliceFilterSelected(Filter.F2);
         }
 
         private void radRX2Filter3_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter3.Checked)
-                SetRX2Filter(Filter.F3);
+                SecondSliceFilterSelected(Filter.F3);
         }
 
         private void radRX2Filter4_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter4.Checked)
-                SetRX2Filter(Filter.F4);
+                SecondSliceFilterSelected(Filter.F4);
         }
 
         private void radRX2Filter5_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter5.Checked)
-                SetRX2Filter(Filter.F5);
+                SecondSliceFilterSelected(Filter.F5);
         }
 
         private void radRX2Filter6_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter6.Checked)
-                SetRX2Filter(Filter.F6);
+                SecondSliceFilterSelected(Filter.F6);
         }
 
         private void radRX2Filter7_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2Filter7.Checked)
-                SetRX2Filter(Filter.F7);
+                SecondSliceFilterSelected(Filter.F7);
         }
 
         private void radRX2FilterVar1_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2FilterVar1.Checked)
-                SetRX2Filter(Filter.VAR1);
+                SecondSliceFilterSelected(Filter.VAR1);
         }
 
         private void radRX2FilterVar2_CheckedChanged(object sender, System.EventArgs e)
         {
             if (radRX2FilterVar2.Checked)
-                SetRX2Filter(Filter.VAR2);
+                SecondSliceFilterSelected(Filter.VAR2);
         }
 
         private void udRX2FilterLow_ValueChanged(object sender, System.EventArgs e)
         {
+            // H1: with RX2 off this box sets the SUB channel's passband. The
+            // handler returns either way, so RX2's own filter tables are never
+            // written with the sub's edges.
+            if (SecondSliceIsSub)
+            {
+                if (!_sub_console_updating)
+                {
+                    SetSubFilter((int)udRX2FilterLow.Value,
+                                 (int)udRX2FilterHigh.Value, true);
+                }
+                return;
+            }
+
             //MW0LGE_21d filter
             if (_filter_console_controls_force_update || udRX2FilterLow.Focused || udRX2FilterLow.ClientRectangle.Contains(udRX2FilterLow.PointToClient(Control.MousePosition)))
             {
@@ -38634,6 +38893,19 @@ namespace Thetis
 
         private void udRX2FilterHigh_ValueChanged(object sender, System.EventArgs e)
         {
+            // H1: with RX2 off this box sets the SUB channel's passband. The
+            // handler returns either way, so RX2's own filter tables are never
+            // written with the sub's edges.
+            if (SecondSliceIsSub)
+            {
+                if (!_sub_console_updating)
+                {
+                    SetSubFilter((int)udRX2FilterLow.Value,
+                                 (int)udRX2FilterHigh.Value, true);
+                }
+                return;
+            }
+
             //MW0LGE_21d filter
             if (_filter_console_controls_force_update || udRX2FilterHigh.Focused || udRX2FilterHigh.ClientRectangle.Contains(udRX2FilterHigh.PointToClient(Control.MousePosition)))
             {
@@ -38756,6 +39028,21 @@ namespace Thetis
 
         private void ptbRX2RF_Scroll(object sender, System.EventArgs e)
         {
+            // H1: with RX2 off this slider sets the SUB channel's AGC gain, and
+            // returns either way so RX2's fixed gain and per-band AGC-T are left
+            // alone.
+            if (SecondSliceIsSub)
+            {
+                if (!_sub_console_updating)
+                {
+                    SetSubAgcGain(ptbRX2RF.Value, true);
+                    lblRX2RF.Text = (GetSubAgcMode() == AGCMode.FIXD ? "Fixed Gain:  "
+                                                                     : "AGC Gain:  ")
+                                    + ptbRX2RF.Value.ToString();
+                }
+                return;
+            }
+
             switch (RX2AGCMode)
             {
                 case AGCMode.FIXD:
@@ -39686,6 +39973,19 @@ namespace Thetis
         private void comboRX2AGC_SelectedIndexChanged(object sender, System.EventArgs e)
         {
             if (IsSetupFormNull) return;
+
+            // H1: with RX2 off this dropdown sets the SUB channel's own AGC, and
+            // returns either way so RX2's AGC settings are left alone.
+            if (SecondSliceIsSub)
+            {
+                if (!_sub_console_updating)
+                {
+                    SetSubAgcMode((AGCMode)comboRX2AGC.SelectedIndex, true);
+                    lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
+                }
+                return;
+            }
+
             AGCMode old_mode = radio.GetDSPRX(1, 0).RXAGCMode;
             radio.GetDSPRX(1, 0).RXAGCMode = (AGCMode)comboRX2AGC.SelectedIndex;
             lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
@@ -45284,6 +45584,15 @@ namespace Thetis
         public void NotifyTxDspChanged()
         {
             try { TxDspChangedHandlers?.Invoke(rx2_enabled && VFOBTX ? 2 : 1); }
+            catch { }
+        }
+        public delegate void SubRxChanged();
+        public SubRxChanged SubRxChangedHandlers;
+        /// <summary>The second slice, when it is the sub, changed state: the TCI
+        /// server turns this into sub_mode / sub_filter / sub_agc_* frames.</summary>
+        public void NotifySubRxChanged()
+        {
+            try { SubRxChangedHandlers?.Invoke(); }
             catch { }
         }
         public MoxPreChanged MoxPreChangeHandlers;
