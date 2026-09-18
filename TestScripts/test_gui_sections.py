@@ -109,6 +109,16 @@ def main():
               [owner_of(w, sections) for w in
                (app.pan, app.yzero_scale, app.yscale_scale, app.zoom_scale, app.wf_scale)],
               ["display"] * 5)
+        band_combo = find(app.sec_vfoa, "TCombobox",
+                          lambda w: "160m" in list(w.cget("values")))
+        check("band selector on the VFO A row with the readout and the DDS",
+              (owner_of(band_combo, sections),
+               band_combo.master is app.freq_lbl.master,
+               band_combo.master is app.dds_lbl.master),
+              ("vfoa", True, True))
+        check("and the sub block has no band selector of its own",
+              find(app.sec_sub, "TCombobox", lambda w: "160m" in list(w.cget("values"))),
+              None)
         check("VFO A controls in the VFO A section",
               [owner_of(w, sections) for w in
                (app.freq_lbl, app.ctun_btn, app.dds_lbl, app.tune_entry,

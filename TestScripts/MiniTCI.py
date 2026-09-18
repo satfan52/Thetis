@@ -1322,6 +1322,14 @@ class MiniTCI(tk.Tk):
         # ========================= 3 VFO A =========================
         self.sec_vfoa = self._section(left, "3 · VFO A — RX1 (reception)")
         a1 = self._row(self.sec_vfoa)
+        # the band selector and the DDS indicator belong to this section and to the
+        # same row as the readout: the band is a slice property, the DDS is where
+        # the slice actually is, and the readout is where the VFO is inside it
+        ttk.Label(a1, text="Band:").pack(side="left", padx=(2, 0))
+        self.band_var = tk.StringVar(value="20m")
+        ttk.Combobox(a1, textvariable=self.band_var, width=5, state="readonly",
+                     values=[b[0] for b in BANDS]).pack(side="left", padx=(3, 10))
+        self.band_var.trace_add("write", self._band_changed)
         ttk.Label(a1, text="VFO A", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
         self.freq_lbl = tk.Label(a1, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
@@ -1346,12 +1354,7 @@ class MiniTCI(tk.Tk):
         ttk.Button(a1, text="Go", width=4, command=self._tune_direct).pack(side="left", padx=4)
 
         a2 = self._row(self.sec_vfoa)
-        ttk.Label(a2, text="Band:").pack(side="left")
-        self.band_var = tk.StringVar(value="20m")
-        ttk.Combobox(a2, textvariable=self.band_var, width=5, state="readonly",
-                     values=[b[0] for b in BANDS]).pack(side="left", padx=(3, 0))
-        self.band_var.trace_add("write", self._band_changed)
-        ttk.Label(a2, text="Mode:", padding=(14, 0, 2, 0)).pack(side="left")
+        ttk.Label(a2, text="Mode:").pack(side="left")
         self.mode_var = tk.StringVar(value="USB")
         ttk.Combobox(a2, textvariable=self.mode_var, width=5, state="readonly",
                      values=MODES).pack(side="left")
