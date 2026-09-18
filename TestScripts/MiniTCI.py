@@ -3159,10 +3159,14 @@ class MiniTCI(tk.Tk):
 
     # ---- VOX: keys MiniTCI from the microphone level ------------------------
     def _vox_threshold(self):
-        """Slider value in dB, or None when the slider sits at its bottom stop."""
+        """The threshold in dB, or None when the slider sits at its bottom stop.
+
+        Rounded exactly like the value sent to the console, so the local detector
+        and Thetis agree on the number (a ttk.Scale can sit between two values).
+        """
         d = self.txdsp["vox"]
-        v = float(d["var"].get())
-        return None if v <= d["lo"] else v
+        v = int(round(float(d["var"].get())))
+        return None if v <= d["lo"] else float(v)
 
     def _vox_tick(self):
         """The console's VOX detector cannot see a client's audio before the
@@ -3241,8 +3245,9 @@ class MiniTCI(tk.Tk):
         # snap to the bottom stop so 'off' is exact and repeatable
         if val <= d["lo"] + 1:
             val = d["lo"]
-            self._txdsp_set(key, val)
-        d["lbl"].config(text=self._txdsp_text(key, val))
+        # park the slider on the value that was sent: a ttk.Scale can sit at
+        # -39.6 while the console stores -40, and the two must not drift
+        self._txdsp_set(key, val)
         if not self.connected:
             self.logprint("not connected - TX setting not sent")
             return

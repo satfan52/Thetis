@@ -84,6 +84,19 @@ def main():
         app._txdsp_send("vox")
         check("VOX -40 dB is sent", sent, ["vox:0,-40;"])
 
+        # a repeated value must still be sent: the console programs its detector
+        # only when the value changes, so a dedupe here would silently stop a
+        # sensitivity from being applied ("-39 worked, -40 did not")
+        sent.clear(); app._txdsp_send("vox")
+        check("the same VOX value is sent again, not deduped", sent, ["vox:0,-40;"])
+
+        # the slider must park on the value that was actually sent
+        app._txdsp_set("vox", -39.6)
+        sent.clear(); app._txdsp_send("vox")
+        check("the slider parks on the value sent",
+              (sent, app.txdsp["vox"]["var"].get()), (["vox:0,-40;"], -40.0))
+        app._txdsp_set("vox", -40)
+
         # ---- dragging must not send (only the readout moves) --------------
         sent.clear()
         app._txdsp_drag("mic", -30)

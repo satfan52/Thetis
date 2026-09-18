@@ -12848,6 +12848,38 @@ namespace Thetis
                 }
             }
         }
+        /// <summary>
+        /// H1: apply the VOX / downward-expander threshold so it actually reaches
+        /// the DSP.
+        ///
+        /// The front-panel VOX sensitivity slider only programs the detector
+        /// indirectly: console.VOXSens -> ptbVOX -> SetupForm.VOXSens ->
+        /// udDEXPThreshold, whose ValueChanged handler is the ONLY caller of
+        /// cmaster.CMSetTXAVoxThresh. WinForms raises ValueChanged only when the
+        /// value CHANGES, so asking for the value the Setup form already holds
+        /// programmed nothing at all - which is why a client could set -39 and hear
+        /// it work, then set -40 (the stored value) and get nothing until it was
+        /// touched again. This applies the threshold unconditionally.
+        /// </summary>
+        public void ApplyVoxGateThreshold(int thresholdDb)
+        {
+            if (thresholdDb > 0) thresholdDb = 0;
+            if (thresholdDb < -160) thresholdDb = -160;
+
+            if (IsSetupFormNull)
+                VOXSens = thresholdDb;              // keeps the front-panel slider honest
+            else
+                SetupForm.VOXSens = thresholdDb;    // udDEXPThreshold + mirrored sliders
+
+            cmaster.CMSetTXAVoxThresh(0, Math.Pow(10.0, thresholdDb / 20.0));
+        }
+
+        /// <summary>The VOX / gate threshold that is actually programmed.</summary>
+        public int VoxGateThresholdDb
+        {
+            get { return IsSetupFormNull ? VOXSens : SetupForm.VOXSens; }
+        }
+
         // added G8NJJ to allow scaling of VOX gain CAT command to Thetis range which is typ -80 to 0, not 0 to 1000
         public int VOXSensExtent
         {

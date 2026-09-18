@@ -3668,8 +3668,10 @@ namespace Thetis
             if (consoleThreadSafe == null) return;
             sendMicGain(rx, consoleThreadSafe.CATMIC, consoleThreadSafe.MicMute);
             sendTxComp(rx, consoleThreadSafe.CPDRLevel, consoleThreadSafe.CPDR);
-            sendTxDexp(rx, consoleThreadSafe.NoiseGate, consoleThreadSafe.NoiseGateEnabled);
-            sendVox(rx, consoleThreadSafe.VOXSens, consoleThreadSafe.VOXEnable);
+            // the threshold is shared: the console feeds one DEXP attack threshold
+            // to both the gate and the VOX detector
+            sendTxDexp(rx, consoleThreadSafe.VoxGateThresholdDb, consoleThreadSafe.NoiseGateEnabled);
+            sendVox(rx, consoleThreadSafe.VoxGateThresholdDb, consoleThreadSafe.VOXEnable);
         }
 
         private void handleMicGain(string[] args)
@@ -3718,7 +3720,7 @@ namespace Thetis
 
             if (args.Length == 1)
             {
-                sendTxDexp(rx, consoleThreadSafe.NoiseGate, consoleThreadSafe.NoiseGateEnabled);
+                sendTxDexp(rx, consoleThreadSafe.VoxGateThresholdDb, consoleThreadSafe.NoiseGateEnabled);
                 return;
             }
 
@@ -3732,16 +3734,14 @@ namespace Thetis
             // it the bottom of the threshold range still means "off".
             bool on = false;
             bool haveState = args.Length > 2 && bool.TryParse(args[2], out on);
-            if (haveState)
-            {
-                consoleThreadSafe.NoiseGate = thresh;
-                consoleThreadSafe.NoiseGateEnabled = on;
-            }
-            else
-            {
-                consoleThreadSafe.NoiseGateEnabled = thresh > -160;
-                consoleThreadSafe.NoiseGate = thresh;
-            }
+            if (!haveState)
+                on = thresh > -160;                 // bottom of the range = off
+
+            // Program the detector FIRST (unconditionally: asking for the value the
+            // console already holds used to program nothing), then switch the gate.
+            consoleThreadSafe.ApplyVoxGateThreshold(thresh);
+            consoleThreadSafe.NoiseGateEnabled = on;    // front-panel DXP button
+            cmaster.SetDEXPRun(0, on);                  // the gate itself
         }
 
         private void handleVox(string[] args)
@@ -3750,15 +3750,20 @@ namespace Thetis
 
             if (args.Length == 1)
             {
-                sendVox(rx, consoleThreadSafe.VOXSens, consoleThreadSafe.VOXEnable);
+                sendVox(rx, consoleThreadSafe.VoxGateThresholdDb, consoleThreadSafe.VOXEnable);
                 return;
             }
 
             if (!int.TryParse(args[1], out int sens)) return;
-            sens = Math.Max(-80, Math.Min(0, sens));
+            sens = Math.Max(-160, Math.Min(0, sens));
 
-            consoleThreadSafe.VOXEnable = sens > -80;   // bottom = VOX off
-            consoleThreadSafe.VOXSens = sens;
+            // Threshold first, then enable: the detector must know its level before
+            // it is asked to run, and the value has to be programmed even when it
+            // equals the one already stored (see ApplyVoxGateThreshold).
+            consoleThreadSafe.ApplyVoxGateThreshold(sens);
+            bool voxOn = sens > -80;                    // bottom = VOX off
+            consoleThreadSafe.VOXEnable = voxOn;        // front-panel button + Setup form
+            Audio.VOXEnabled = voxOn;                   // the detector switch itself
         }
 
         private void handleTrxMessage(string[] args)
