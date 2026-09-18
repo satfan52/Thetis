@@ -119,9 +119,8 @@ def main():
               [owner_of(w, sections) for w in
                (app.vfo_lbl, app.sub_btn, app.sub_tune_entry,
                 app.sub_filt_low_entry, app.sub_filt_high_entry,
-                app.sub_filtw_scale, app.sub_agc_box, app.sub_agc_gain_scale,
-                app.split_btn)],
-              ["sub"] * 9)
+                app.sub_filtw_scale, app.sub_agc_box, app.sub_agc_gain_scale)],
+              ["sub"] * 8)
         check("transmit controls in the TX section",
               [owner_of(w, sections) for w in
                (app.ptt_btn, app.tune_btn, app.tx_lbl, app.txtail_entry,
@@ -129,6 +128,14 @@ def main():
                 app.txdsp["mic"]["scale"], app.txdsp["comp"]["scale"],
                 app.txdsp["vox"]["scale"])],
               ["tx"] * 9)
+        # SPLIT is a transmit decision and SUB is a reception one: the two must
+        # sit in different sections
+        check("SPLIT belongs to TX, SUB to SubVFOA",
+              (owner_of(app.split_btn, sections), owner_of(app.sub_btn, sections)),
+              ("tx", "sub"))
+        check("the TX section names where the transmitter goes",
+              (app.tx_src_lbl.cget("text"), owner_of(app.tx_src_lbl, sections)),
+              ("TX on VFO A", "tx"))
         check("mic device with the other transmit controls",
               owner_of(find(app.sec_tx, "TCombobox",
                             lambda w: "default" in str(w.cget("values"))), sections),
@@ -189,6 +196,15 @@ def main():
         app.sub_enabled = True
         app.sent.clear()
         app.submode_var.set("USB" if app.sub_mode != "USB" else "LSB")
+        app._split_set(True)
+        check("SPLIT on: the transmitter moves to the SubVFOA",
+              (app.split_btn.cget("text"), app.tx_src_lbl.cget("text"), app.tx_vfo),
+              ("on", "TX on SubVFOA", "B"))
+        app._split_set(False)
+        check("SPLIT off: back to VFO A",
+              (app.split_btn.cget("text"), app.tx_src_lbl.cget("text"), app.tx_vfo),
+              ("off", "TX on VFO A", "A"))
+
         check("the sub sends its own mode and filter",
               [c.split(":")[0] for c in app.sent], ["sub_mode", "sub_filter"])
         check("the sub filter is a sub_filter, never rx_filter_band",

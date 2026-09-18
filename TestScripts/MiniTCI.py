@@ -1351,12 +1351,6 @@ class MiniTCI(tk.Tk):
         self.sub_agc_gain_scale.pack(side="left", padx=2)
         self.sub_agc_gain_scale.state(["disabled"])
 
-        b3 = self._row(self.sec_sub)
-        self.split_btn = ttk.Button(b3, text="SPLIT off", width=9, command=self._split_toggle)
-        self.split_btn.pack(side="left", padx=(2, 6))
-        ttk.Label(b3, text="SPLIT sends the transmitter to the SubVFOA frequency",
-                  foreground=C["dim"]).pack(side="left")
-
         # ========================== 5 TX ==========================
         # Everything that only matters while transmitting.
         self.sec_tx = self._section(right, "5 · TX — TRANSMISSION")
@@ -1431,6 +1425,17 @@ class MiniTCI(tk.Tk):
                                   relief="raised", command=self._dexp_toggle)
         self.dexp_btn.pack(side="left")
         self.dexp_on = False
+
+        # SPLIT is a TRANSMIT decision - it sends the transmitter to the SubVFOA
+        # frequency - so it lives here, not with the sub receiver's own controls.
+        tsp = self._row(self.sec_tx)
+        tk.Label(tsp, text="SPLIT", bg=C["panel"], fg=C["fg"], width=5, anchor="w",
+                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 2))
+        self.split_btn = ttk.Button(tsp, text="off", width=5, command=self._split_toggle)
+        self.split_btn.pack(side="left")
+        self.tx_src_lbl = tk.Label(tsp, text="TX on VFO A", bg=C["panel"],
+                                   fg=C["dim"], font=("Segoe UI", 9))
+        self.tx_src_lbl.pack(side="left", padx=(10, 0))
 
         # ========================= 6 LOG =========================
         self.sec_log = self._section(self, "6 · LOG")
@@ -2464,7 +2469,10 @@ class MiniTCI(tk.Tk):
         on = self.sub_enabled
         self.vfo_lbl.config(text=self._fmt_sub_freq())
         self.sub_btn.config(text="SUB on" if on else "SUB off")
-        self.split_btn.config(text="SPLIT on" if self.split else "SPLIT off")
+        # SPLIT lives in the TX section: button state and the transmit source
+        self.split_btn.config(text="on" if self.split else "off")
+        self.tx_src_lbl.config(text="TX on SubVFOA" if self.split else "TX on VFO A",
+                               fg=C["red"] if self.split else C["dim"])
         self.pan.sub_hz = self.sub_hz if on else 0.0
         self.pan.sub_filt = self.sub_filt
 
