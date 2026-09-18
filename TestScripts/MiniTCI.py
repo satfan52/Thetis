@@ -1721,6 +1721,7 @@ class MiniTCI(tk.Tk):
             if getattr(self, "_is_full_tci", False):
                 self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
                 self._txdsp_query()   # mic gain / COMP / DXP / VOX from the console
+                self._vox_mic_keep()
             else:
                 self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
             # Branch H1: restore subrx state on connect; default B = A + 2 kHz
@@ -3252,6 +3253,8 @@ class MiniTCI(tk.Tk):
             pass
         finally:
             self._txdsp_busy = False
+        if key == "vox":
+            self._vox_mic_keep()       # armed VOX needs the mic open in receive
         if send and self.connected:
             self.send(f"{self.TXDSP_CMD[key]}:0,{int(round(val))};")
 
