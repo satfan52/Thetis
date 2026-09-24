@@ -610,6 +610,16 @@ namespace Thetis
             }
         }
 
+        private static bool sub_rx2_enabled = false; // H1: SubRX2, the sub receiver of RX2
+        public static bool SubRX2Enabled
+        {
+            get { return sub_rx2_enabled; }
+            set
+            {
+                sub_rx2_enabled = value;
+            }
+        }
+
         private static bool split_enabled = false;
         public static bool SplitEnabled
         {

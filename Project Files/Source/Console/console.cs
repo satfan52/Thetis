@@ -261,6 +261,7 @@ namespace Thetis
         private int vfoa_hover_digit;						// Digit for hover display
         private int vfo_sub_pixel_offset;
         private int vfoa_sub_hover_digit;					// Digit for VFOA sub hover display
+        private int vfob_sub_hover_digit;					// H1: Digit for SubVFOB hover display
         private int vfob_hover_digit;						// Digit for hover display
 
         private DSPMode quick_save_mode;					// Quick Save Mode
@@ -2812,6 +2813,7 @@ namespace Thetis
             a.Add("VFOBFreq/" + VFOBFreq);
 
             a.Add("VFOASubFreq/" + m_dVFOASubFreq);
+            a.Add("VFOBSubFreq/" + m_dVFOBSubFreq); // H1: SubVFOB, RX2's sub receiver
 
             a.Add("CentreRX2Frequency/" + CentreRX2Frequency);
             a.Add("diversity_gain_160m/" + diversity_gain_160m);
@@ -4167,6 +4169,12 @@ namespace Thetis
                         VFOASubFreq = double.Parse(val);
                         _force_vfo_update = false;
                         saved_vfoa_sub_freq = m_dVFOASubFreq;  // init the save sub freq (i dont like this, TODO)
+                        break;
+                    case "VFOBSubFreq": // H1: SubVFOB, the sub receiver of RX2
+                        _force_vfo_update = true;
+                        VFOBSubFreq = double.Parse(val);
+                        _force_vfo_update = false;
+                        saved_vfob_sub_freq = m_dVFOBSubFreq;
                         break;
                     case "CentreRX2Frequency":
                         dRX2_centre_freq = double.Parse(val);
@@ -14927,6 +14935,7 @@ namespace Thetis
 
         private double saved_vfoa_freq = 7.1;
         private double saved_vfoa_sub_freq = 7.1;
+        private double saved_vfob_sub_freq = 7.1;
         private double saved_vfob_freq = 7.1;
 
         private bool m_bHotSwitchOCTXPins = false;
@@ -18517,6 +18526,43 @@ namespace Thetis
                 else
                 {
                     VFOUpdateDel del = new VFOUpdateDel(VFOBUpdate);
+                    Invoke(del, new object[] { value });
+                }
+            }
+        }
+
+        // H1: SubVFOB - the frequency of RX2's sub receiver. Same storage and same
+        // update path as SubVFOA above: the row shows the live frequency while the
+        // sub runs and the last one used while it is idle.
+        private void VFOBSubUpdate(double freq)
+        {
+            m_dVFOBSubFreq = Math.Round(freq, 6);
+            txtVFOBSub.Text = freq.ToString("f6");
+            txtVFOBSub_LostFocus(this, EventArgs.Empty);
+        }
+
+        public bool VFOBSubInUse
+        {
+            get { return rx2_enabled && chkEnableMultiRX2.Checked; }
+        }
+
+        private double m_dVFOBSubFreq = 0;
+        public double VFOBSubFreq //rx2 sub
+        {
+            get
+            {
+                if (!VFOBSubInUse) return -999.999;
+                return Math.Round(m_dVFOBSubFreq, 6);
+            }
+            set
+            {
+                if (!this.InvokeRequired)
+                {
+                    VFOBSubUpdate(value);
+                }
+                else
+                {
+                    VFOUpdateDel del = new VFOUpdateDel(VFOBSubUpdate);
                     Invoke(del, new object[] { value });
                 }
             }
@@ -27611,6 +27657,7 @@ namespace Thetis
                 WDSP.SetChannelState(WDSP.id(0, 0), 1, 1);
                 if (radio.GetDSPRX(0, 1).Active) WDSP.SetChannelState(WDSP.id(0, 1), 1, 1);
                 if (radio.GetDSPRX(1, 0).Active) WDSP.SetChannelState(WDSP.id(2, 0), 1, 1);
+                if (radio.GetDSPRX(1, 1).Active) WDSP.SetChannelState(WDSP.id(2, 1), 1, 1); // H1: SubRX2
 
                 DataFlowing = true;
                 HeadlessSliceManager.Instance.SyncActiveSlices();
@@ -27634,6 +27681,7 @@ namespace Thetis
                     WDSP.SetChannelState(WDSP.id(0, 0), 0, 1);
                     if (radio.GetDSPRX(0, 1).Active) WDSP.SetChannelState(WDSP.id(0, 1), 0, 1);
                     if (radio.GetDSPRX(1, 0).Active) WDSP.SetChannelState(WDSP.id(2, 0), 0, 1);
+                    if (radio.GetDSPRX(1, 1).Active) WDSP.SetChannelState(WDSP.id(2, 1), 0, 1); // H1: SubRX2
                 }
 
                 UpdateAAudioMixerStates();
@@ -29808,12 +29856,16 @@ namespace Thetis
                         WDSP.SetChannelState(WDSP.id(0, 0), 0, 1);
                     }
                     if (!RX1_shutdown && RX2_shutdown)
+                    {
                         WDSP.SetChannelState(WDSP.id(2, 0), 0, 1);
+                        if (radio.GetDSPRX(1, 1).Active) WDSP.SetChannelState(WDSP.id(2, 1), 0, 0); // H1: SubRX2
+                    }
                     if (RX1_shutdown && RX2_shutdown)
                     {
                         WDSP.SetChannelState(WDSP.id(0, 1), 0, 0);
                         WDSP.SetChannelState(WDSP.id(0, 0), 0, 0);
                         WDSP.SetChannelState(WDSP.id(2, 0), 0, 1);
+                        if (radio.GetDSPRX(1, 1).Active) WDSP.SetChannelState(WDSP.id(2, 1), 0, 0); // H1: SubRX2
                     }
                 }
 
@@ -29905,6 +29957,8 @@ namespace Thetis
                     WDSP.SetChannelState(WDSP.id(2, 0), 1, 0);
                 if (radio.GetDSPRX(0, 1).Active)
                     WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
+                if (radio.GetDSPRX(1, 1).Active)
+                    WDSP.SetChannelState(WDSP.id(2, 1), 1, 0); // H1: SubRX2
 
                 Audio.RX1BlankDisplayTX = blank_rx1_on_vfob_tx;
 
@@ -31289,6 +31343,7 @@ namespace Thetis
             VFOA = 0,
             VFOB,
             VFOASub,
+            VFOBSub,
             DisplayBottom,
             DisplayTop,
             Other,
@@ -31318,6 +31373,13 @@ namespace Thetis
             bottom = top + txtVFOABand.Height;
             if (x > left && x < right && y > top && y < bottom)
                 return TuneLocation.VFOASub;
+
+            left = grpVFOB.Left + txtVFOBSub.Left;
+            right = left + txtVFOBSub.Width;
+            top = grpVFOB.Top + txtVFOBSub.Top;
+            bottom = top + txtVFOBSub.Height;
+            if (x > left && x < right && y > top && y < bottom)
+                return TuneLocation.VFOBSub;
 
             left = panelDisplay.Left + pnlDisplay.Left;
             right = left + pnlDisplay.Width;
@@ -31475,6 +31537,41 @@ namespace Thetis
                     }
                     break;
 
+                case TuneLocation.VFOBSub:
+                    if (rx2_enabled && chkEnableMultiRX2.Checked)
+                    {
+                        freq = VFOBSubFreq;
+                        mult = 1000.0;
+                        right = grpVFOB.Left + txtVFOBSub.Left + txtVFOBSub.Width;
+                        if (vfob_sub_hover_digit < 0)
+                        {
+                            int x = right + 2 - (vfo_sub_pixel_offset - 5);
+                            while (x < e.X && mult > 0.0000011)
+                            {
+                                mult /= 10;
+                                x += vfo_sub_char_width;
+                                if (mult == 1.0)
+                                    x += vfo_sub_decimal_space;
+                                else x += vfo_sub_char_space;
+                            }
+                        }
+                        else
+                        {
+                            mult = Math.Pow(10, -vfob_sub_hover_digit) * 1000.0;
+                        }
+
+                        if (mult <= 1.0)
+                        {
+                            freq += mult * num_steps;
+                            VFOBSubFreq = freq;
+                        }
+                    }
+                    else
+                    {
+                        VFOBFreq = SnapTune(VFOBFreq, step, num_steps);
+                    }
+                    break;
+
                 case TuneLocation.DisplayBottom:
                     if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
                         VFOASubFreq = SnapTune(VFOASubFreq, step, num_steps);
@@ -31548,6 +31645,7 @@ namespace Thetis
         private bool m_bVFOAChangedByKeys = false;  // true if frequency has been changed by pressing enter on vfo box
         private bool m_bVFOBChangedByKeys = false;
         private bool m_bVFOABandChangedByKeys = false;
+        private bool m_bVFOBSubChangedByKeys = false; // H1: SubVFOB row
 
         private void txtVFOAFreq_LostFocus(object sender, System.EventArgs e)
         {
@@ -32572,6 +32670,108 @@ namespace Thetis
             }
         }
 
+        // H1: the SubVFOB row - the frequency of RX2's sub receiver, typed or wheel tuned
+        private void txtVFOBSub_LostFocus(object sender, System.EventArgs e)
+        {
+            if (!rx2_enabled || !chkEnableMultiRX2.Checked) return;
+            if (txtVFOBSub.Text == "." || string.IsNullOrEmpty(txtVFOBSub.Text))
+            {
+                VFOBSubFreq = VFOBFreq;
+                return;
+            }
+
+            if (m_bVFOBSubChangedByKeys)
+            {
+                m_bVFOBSubChangedByKeys = false;
+                string text = txtVFOBSub.Text.Trim();
+                double typedFreq;
+                string normalizedText = text.Replace(',', '.');
+                if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
+                    double.TryParse(text, out typedFreq))
+                {
+                    VFOBSubFreq = typedFreq;
+                    return;
+                }
+                else
+                {
+                    txtVFOBSub.Text = ((rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq : saved_vfob_sub_freq).ToString("f6");
+                    return;
+                }
+            }
+
+            double vfob = VFOBFreq;
+            double freq = VFOBSubFreq;
+
+            Display.VFOBSub = (long)(freq * 1e6);
+            saved_vfob_sub_freq = freq;
+
+            if (chkEnableMultiRX2.Checked)
+            {
+                int diff = (int)((freq - vfob) * 1e6);
+                double sub_osc = radio.GetDSPRX(1, 0).RXOsc - diff;
+
+                if (sub_osc < -sample_rate_rx2 / 2)
+                {
+                    VFOBSubFreq = vfob + (sample_rate_rx2 / 2 + radio.GetDSPRX(1, 0).RXOsc - 1) * 0.0000010;
+                    return;
+                }
+                else if (sub_osc > sample_rate_rx2 / 2)
+                {
+                    VFOBSubFreq = vfob + (-sample_rate_rx2 / 2 + radio.GetDSPRX(1, 0).RXOsc + 1) * 0.0000010;
+                    return;
+                }
+
+                if (sub_osc > -sample_rate_rx2 / 2 && sub_osc < sample_rate_rx2 / 2)
+                {
+                    radio.GetDSPRX(1, 1).RXOsc = sub_osc;
+                }
+            }
+        }
+
+        private void txtVFOBSub_KeyPress(object sender, System.Windows.Forms.KeyPressEventArgs e)
+        {
+            if (!rx2_enabled || !chkEnableMultiRX2.Checked)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            string separator = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+            int KeyCode = (int)e.KeyChar;
+            if ((KeyCode < 48 || KeyCode > 57) &&				// numeric keys
+                KeyCode != 8 &&									// backspace
+                !e.KeyChar.ToString().Equals(separator) &&		// decimal
+                !e.KeyChar.ToString().Equals(".") &&
+                !e.KeyChar.ToString().Equals(",") &&
+                KeyCode != 27)									// escape
+            {
+                e.Handled = true;
+            }
+            else
+            {
+                if (e.KeyChar.ToString().Equals(separator) || e.KeyChar == '.' || e.KeyChar == ',')
+                {
+                    e.Handled = (((TextBoxTS)sender).Text.IndexOf(separator) >= 0 || ((TextBoxTS)sender).Text.IndexOf('.') >= 0 || ((TextBoxTS)sender).Text.IndexOf(',') >= 0);
+                    if (!e.Handled) m_bVFOBSubChangedByKeys = true;
+                }
+                else if (KeyCode == 27)
+                {
+                    m_bVFOBSubChangedByKeys = false;
+                    VFOBSubFreq = saved_vfob_sub_freq;
+                    btnHidden.Focus();
+                }
+                else if ((KeyCode >= 48 && KeyCode <= 57) || KeyCode == 8)
+                {
+                    m_bVFOBSubChangedByKeys = true;
+                }
+            }
+            if (e.KeyChar == (char)Keys.Enter)
+            {
+                m_bVFOBSubChangedByKeys = true;
+                btnHidden.Focus();
+            }
+        }
+
         // txtVFOBFreq
         private void txtVFOBFreq_LostFocus(object sender, System.EventArgs e)
         {
@@ -32779,6 +32979,21 @@ namespace Thetis
                                     else VFOBFreq = VFOAFreq; // snap to VFOA instead of disabling SUB
             }
 
+            // H1: SubRX2 keeps its own frequency while VFO B is tuned - same rule the
+            // SubVFOA row follows in the VFO A path
+            if (chkEnableMultiRX2.Checked && rx2_enabled && !_mox)
+            {
+                int sub_diff = (int)((m_dVFOBSubFreq - VFOBFreq) * 1e6);
+
+                double sub_osc = radio.GetDSPRX(1, 0).RXOsc - sub_diff;
+
+                if (sub_osc > -sample_rate_rx2 / 2 && sub_osc < sample_rate_rx2 / 2)
+                {
+                    radio.GetDSPRX(1, 1).RXOsc = sub_osc;
+                }
+                else VFOBSubFreq = VFOBFreq; // snap to VFO B instead of losing the sub
+            }
+
             //[2.10.3.7]MW0LGE limits added
             bool xvtr = false;
             if (XVTRForm != null)
@@ -32941,11 +33156,14 @@ namespace Thetis
             }
 
             if (!DB.BandText(db_freq, out bandInfo))
-                txtVFOBBand.BackColor = Color.DimGray;
+                txtVFOBSub.BackColor = Color.DimGray;
             else
-                txtVFOBBand.BackColor = band_background_color;
+                txtVFOBSub.BackColor = band_background_color;
 
-            txtVFOBBand.Text = bandInfo;
+            // H1: the VFO B band line is the SubVFOB row - the band name moves into the
+            // frame caption, the row itself always shows the sub receiver frequency
+            grpVFOB.Text = "VFO B   " + bandInfo;
+            txtVFOBSub.Text = ((rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq : saved_vfob_sub_freq).ToString("f6");
 
             Band lo_band = Band.FIRST;
             Band lo_banda = Band.FIRST;
@@ -35971,6 +36189,28 @@ namespace Thetis
                 _old_tx_band = TXBand;
             }
         }
+
+        // H1: the VFO B lower row is SubVFOB. It shows the sub receiver frequency,
+        // dimmed while that sub is idle, and it stays tunable while it is active -
+        // the same treatment the SubVFOA row gets in the VFO A frame.
+        private void UpdateVFOBSub()
+        {
+            if (txtVFOBSub == null) return;
+
+            bool sub_row_active = rx2_enabled && chkEnableMultiRX2.Checked;
+
+            txtVFOBSub.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
+            txtVFOBSub.TextAlign = HorizontalAlignment.Right;
+            if (!sub_row_active) txtVFOBSub.ForeColor = band_text_dark_color;
+            else txtVFOBSub.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
+            txtVFOBSub.ReadOnly = false;
+
+            double sub_row_freq = sub_row_active ? m_dVFOBSubFreq : saved_vfob_sub_freq;
+            txtVFOBSub.Text = sub_row_freq.ToString("f6");
+
+            if (panelVFOBSubHover != null) panelVFOBSubHover.Visible = sub_row_active;
+        }
+
         private bool _bOldVFOSplit = false; //MW0LGE_22a
         private void chkVFOSplit_CheckedChanged(object sender, System.EventArgs e)
         {
@@ -36942,6 +37182,66 @@ namespace Thetis
             }
         }
 
+        // ==================================================================
+        // H1: SubRX2 - the sub receiver of RX2, WDSP channel id(2, 1).
+        //
+        // Same shape as the SubRX1 button above: the DSP channel is put in and out
+        // of service and the audio mixer is told whether to mix it. RX2 has to be
+        // on for this to mean anything - with RX2 off there is no second DDC to
+        // demodulate, so the button is disabled and the SubVFOB row keeps showing
+        // the stored frequency.
+        // ==================================================================
+        private bool _sub_rx2_enabled = false;
+        public bool SubRX2Enabled
+        {
+            get { return _sub_rx2_enabled; }
+        }
+
+        unsafe private void chkEnableMultiRX2_CheckedChanged(object sender, System.EventArgs e)
+        {
+            if (!initializing) radio.GetDSPRX(1, 1).Active = chkEnableMultiRX2.Checked;
+
+            if (chkEnableMultiRX2.Checked)
+            {
+                cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), !Audio.MuteRX2);
+
+                // the sub takes RX2's mode, filter and AGC when it is switched on -
+                // the same inheritance SubRX1 gets from RX1
+                RadioDSPRX main_rx2 = radio.GetDSPRX(1, 0);
+                RadioDSPRX sub_rx2 = radio.GetDSPRX(1, 1);
+                sub_rx2.DSPMode = main_rx2.DSPMode;
+                sub_rx2.SetRXFilter(main_rx2.RXFilterLow, main_rx2.RXFilterHigh);
+                sub_rx2.RXAGCMode = main_rx2.RXAGCMode;
+                sub_rx2.RXAGCHang = main_rx2.RXAGCHang;
+                sub_rx2.RXAGCDecay = main_rx2.RXAGCDecay;
+                sub_rx2.RXFixedAGC = main_rx2.RXFixedAGC;
+                sub_rx2.RXOutputGain = main_rx2.RXOutputGain;
+
+                if (!_mox) WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
+
+                chkEnableMultiRX2.BackColor = button_selected_color;
+
+                // a sub that has never been tuned sits on VFO B's frequency
+                if (m_dVFOBSubFreq <= 0.0)
+                {
+                    m_dVFOBSubFreq = VFOBFreq;
+                    saved_vfob_sub_freq = VFOBFreq;
+                }
+            }
+            else
+            {
+                WDSP.SetChannelState(WDSP.id(2, 1), 0, 0);
+                cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), false);
+
+                chkEnableMultiRX2.BackColor = SystemColors.Control;
+            }
+
+            _sub_rx2_enabled = chkEnableMultiRX2.Checked;
+            Display.SubRX2Enabled = chkEnableMultiRX2.Checked;
+
+            UpdateVFOBSub();
+        }
+
         private bool _old_pan_swap = false;
         private int _old_master_af = -999;
         private int _old_rx1_pan = -999;
@@ -37741,6 +38041,12 @@ namespace Thetis
             // they serve receiver 2 again - their own job
             UpdateSecondSliceControlsVisible();
 
+            // H1: SubRX2 is a sub receiver OF RX2, so it cannot outlive it: switching
+            // RX2 off switches the second sub receiver off and greys its button out
+            chkEnableMultiRX2.Enabled = chkRX2.Checked;
+            if (!chkRX2.Checked && chkEnableMultiRX2.Checked) chkEnableMultiRX2.Checked = false;
+            UpdateVFOBSub();
+
             //[2.10.3.9]MW0LGE restore VAC on/off state for VAC2 if the TX profile is configured to do so
             if (RX2Enabled && !IsSetupFormNull && oldRX2Enabled != chkRX2.Checked)
             {
@@ -37950,6 +38256,72 @@ namespace Thetis
         {
             vfoa_sub_hover_digit = -1;
             panelVFOASubHover.Invalidate();
+        }
+
+        // H1: the same digit-hover indicator for the SubVFOB row
+        private void panelVFOBSubHover_Paint(object sender, System.Windows.Forms.PaintEventArgs e)
+        {
+            if (!rx2_enabled || !chkEnableMultiRX2.Checked) return;
+            if (vfob_sub_hover_digit < 0) return;
+
+            int x = 0;
+            int width = 0;
+
+            x += (vfo_sub_char_width + vfo_sub_char_space) * vfob_sub_hover_digit;
+            if (vfob_sub_hover_digit > 3)
+                x += (vfo_sub_decimal_space - vfo_sub_char_space);
+            width = x + vfo_sub_char_width;
+
+            e.Graphics.DrawLine(new Pen(txtVFOBSub.ForeColor, 2.0f), x, 1, width, 1);
+        }
+
+        private void panelVFOBSubHover_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
+        {
+            if (!rx2_enabled || !chkEnableMultiRX2.Checked) return;
+            Control c1 = (Control)sender;
+            Control c2 = txtVFOBSub;
+            int client_width = (c1.Size.Width - c1.ClientSize.Width) + (c2.Size.Width - c2.ClientSize.Width);
+            int client_height = (c1.Size.Height - c1.ClientSize.Height) + (c2.Size.Height - c2.ClientSize.Height);
+            int x_offset = c1.Left - c2.Left - client_width / 2;
+            int y_offset = c1.Top - c2.Top - client_height / 2;
+            txtVFOBSub_MouseMove(sender, new MouseEventArgs(e.Button, e.Clicks, e.X + x_offset, e.Y + y_offset, e.Delta));
+        }
+
+        private void txtVFOBSub_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
+        {
+            if (!rx2_enabled || !chkEnableMultiRX2.Checked || !chkPower.Checked) return;
+            panelVFOBSubHover.Visible = true;
+            if (this.ContainsFocus)
+            {
+                int old_digit = vfob_sub_hover_digit;
+                int digit_index = 0;
+                if (vfo_sub_char_width == 0)
+                    GetVFOSubCharWidth();
+
+                int x = txtVFOBSub.Width - (vfo_sub_pixel_offset - 5);
+                while (x < e.X)
+                {
+                    digit_index++;
+
+                    x += vfo_sub_char_width;
+                    if (digit_index == 3)
+                        x += vfo_sub_decimal_space;
+                    else
+                        x += vfo_sub_char_space;
+                }
+
+                if (digit_index < 3) digit_index = -1;
+                if (digit_index > 9) digit_index = 9;
+                vfob_sub_hover_digit = digit_index;
+                if (vfob_sub_hover_digit != old_digit)
+                    panelVFOBSubHover.Invalidate();
+            }
+        }
+
+        private void txtVFOBSub_MouseLeave(object sender, System.EventArgs e)
+        {
+            vfob_sub_hover_digit = -1;
+            panelVFOBSubHover.Invalidate();
         }
 
         // ==================================================================
@@ -38229,13 +38601,22 @@ namespace Thetis
             DSPMode old_mode = _rx2_dsp_mode;
 
             WDSP.SetChannelState(WDSP.id(2, 0), 0, 1);              // turn OFF the DSP channel
+            if (radio.GetDSPRX(1, 1).Active)                        // H1: and its sub receiver, if it runs
+                WDSP.SetChannelState(WDSP.id(2, 1), 0, 0);
 
             if (new_mode == DSPMode.FM)                             // set DSP samplerate
+            {
                 WDSP.SetDSPSamplerate(WDSP.id(2, 0), 192000);
+                WDSP.SetDSPSamplerate(WDSP.id(2, 1), 192000);       // H1: the sub follows the mode
+            }
             else
+            {
                 WDSP.SetDSPSamplerate(WDSP.id(2, 0), 48000);
+                WDSP.SetDSPSamplerate(WDSP.id(2, 1), 48000);
+            }
 
             radio.GetDSPRX(1, 0).DSPMode = new_mode;			    // set new DSP mode
+            radio.GetDSPRX(1, 1).DSPMode = new_mode;                // H1: the sub follows the mode
 
             if (rx2_enabled)
             {
@@ -38707,6 +39088,8 @@ namespace Thetis
 
             if (rx2_enabled)
                 WDSP.SetChannelState(WDSP.id(2, 0), 1, 0);              // turn ON the DSP channel
+            if (rx2_enabled && radio.GetDSPRX(1, 1).Active)             // H1: and its sub receiver, if it runs
+                WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
 
             //MW0LGE_21b
             if (old_mode != new_mode) ModeChangeHandlers?.Invoke(2, old_mode, new_mode, oldBand, RX2Band);
@@ -53101,7 +53484,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 case 1:
                     return chkEnableMultiRX.Checked;
                 case 2:
-                    return chkEnableMultiRX.Checked; // not imlemented on rx2
+                    return chkEnableMultiRX2.Checked; // H1: SubRX2, the sub receiver of RX2
                 default:
                     return false;
             }
@@ -53451,7 +53834,7 @@ private void incrementMutliMeterDisplayModeRX2()
                     chkEnableMultiRX.Checked = state;
                     return true;
                 case 2:
-                    chkEnableMultiRX.Checked = state; // not implemented on rx2, just set it anyway
+                    chkEnableMultiRX2.Checked = state; // H1: SubRX2, the sub receiver of RX2
                     return true;
                 default:
                     return false;

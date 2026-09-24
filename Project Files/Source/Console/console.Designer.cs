@@ -13,6 +13,8 @@
         private System.Windows.Forms.GroupBoxTS grpVFOA;
         private System.Windows.Forms.GroupBoxTS grpVFOB;
         private System.Windows.Forms.TextBoxTS txtVFOBBand;
+        private System.Windows.Forms.TextBoxTS txtVFOBSub;
+        private System.Windows.Forms.Panel panelVFOBSubHover;
         private System.Windows.Forms.CheckBoxTS chkPower;
         private System.Windows.Forms.ComboBoxTS comboDisplayMode;
         private System.Windows.Forms.NumericUpDownTS udFilterLow;
@@ -136,6 +138,7 @@
         private System.Windows.Forms.CheckBoxTS chkTXEQ;
         private System.ComponentModel.IContainer components;
         public System.Windows.Forms.CheckBoxTS chkEnableMultiRX;
+        public System.Windows.Forms.CheckBoxTS chkEnableMultiRX2;
         private System.Windows.Forms.ButtonTS btnTuneStepChangeLarger;
         private System.Windows.Forms.CheckBoxTS chkSplitDisplay;
         private System.Windows.Forms.ComboBoxTS comboDisplayModeTop;
@@ -594,6 +597,7 @@
             this.comboRX2DisplayMode = new System.Windows.Forms.ComboBoxTS();
             this.chkPanSwap = new System.Windows.Forms.CheckBoxTS();
             this.chkEnableMultiRX = new System.Windows.Forms.CheckBoxTS();
+            this.chkEnableMultiRX2 = new System.Windows.Forms.CheckBoxTS();
             this.chkDisplayPeak = new System.Windows.Forms.CheckBoxTS();
             this.comboDisplayMode = new System.Windows.Forms.ComboBoxTS();
             this.chkDisplayAVG = new System.Windows.Forms.CheckBoxTS();
@@ -1089,6 +1093,8 @@
             this.lblRX2APF = new System.Windows.Forms.LabelTS();
             this.panelVFOBHover = new System.Windows.Forms.Panel();
             this.txtVFOBBand = new System.Windows.Forms.TextBoxTS();
+            this.txtVFOBSub = new System.Windows.Forms.TextBoxTS();
+            this.panelVFOBSubHover = new System.Windows.Forms.Panel();
             this.txtVFOBLSD = new System.Windows.Forms.TextBoxTS();
             this.lblRX2FilterLabel = new System.Windows.Forms.LabelTS();
             this.lblRX2MuteVFOB = new System.Windows.Forms.LabelTS();
@@ -2395,6 +2401,15 @@
             this.chkEnableMultiRX.Name = "chkEnableMultiRX";
             this.toolTip1.SetToolTip(this.chkEnableMultiRX, resources.GetString("chkEnableMultiRX.ToolTip"));
             this.chkEnableMultiRX.CheckedChanged += new System.EventHandler(this.chkEnableMultiRX_CheckedChanged);
+            // 
+            // chkEnableMultiRX2
+            // 
+            resources.ApplyResources(this.chkEnableMultiRX2, "chkEnableMultiRX2");
+            this.chkEnableMultiRX2.FlatAppearance.BorderSize = 0;
+            this.chkEnableMultiRX2.ForeColor = System.Drawing.SystemColors.ControlLightLight;
+            this.chkEnableMultiRX2.Name = "chkEnableMultiRX2";
+            this.toolTip1.SetToolTip(this.chkEnableMultiRX2, resources.GetString("chkEnableMultiRX2.ToolTip"));
+            this.chkEnableMultiRX2.CheckedChanged += new System.EventHandler(this.chkEnableMultiRX2_CheckedChanged);
             // 
             // chkDisplayPeak
             // 
@@ -6608,6 +6623,7 @@
             this.panelRX2Mode.Controls.Add(this.radRX2ModeDRM);
             this.panelRX2Mode.Controls.Add(this.radRX2ModeDIGL);
             this.panelRX2Mode.Controls.Add(this.radRX2ModeSPEC);
+            this.panelRX2Mode.Controls.Add(this.chkEnableMultiRX2);
             this.panelRX2Mode.Name = "panelRX2Mode";
             // 
             // panelRX2Display
@@ -7051,7 +7067,8 @@
             this.grpVFOB.Controls.Add(this.lblRX2APF);
             this.grpVFOB.Controls.Add(this.chkVFOBTX);
             this.grpVFOB.Controls.Add(this.panelVFOBHover);
-            this.grpVFOB.Controls.Add(this.txtVFOBBand);
+            this.grpVFOB.Controls.Add(this.panelVFOBSubHover);
+            this.grpVFOB.Controls.Add(this.txtVFOBSub);
             this.grpVFOB.Controls.Add(this.txtVFOBLSD);
             this.grpVFOB.Controls.Add(this.lblRX2FilterLabel);
             this.grpVFOB.Controls.Add(this.lblRX2MuteVFOB);
@@ -7093,6 +7110,27 @@
             this.txtVFOBBand.Name = "txtVFOBBand";
             this.txtVFOBBand.ReadOnly = true;
             this.txtVFOBBand.GotFocus += new System.EventHandler(this.HideFocus);
+            // 
+            // txtVFOBSub
+            // 
+            this.txtVFOBSub.BackColor = System.Drawing.Color.Black;
+            resources.ApplyResources(this.txtVFOBSub, "txtVFOBSub");
+            this.txtVFOBSub.ForeColor = System.Drawing.Color.Green;
+            this.txtVFOBSub.Name = "txtVFOBSub";
+            this.txtVFOBSub.ReadOnly = true;
+            this.txtVFOBSub.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.txtVFOBSub_KeyPress);
+            this.txtVFOBSub.LostFocus += new System.EventHandler(this.txtVFOBSub_LostFocus);
+            this.txtVFOBSub.MouseLeave += new System.EventHandler(this.txtVFOBSub_MouseLeave);
+            this.txtVFOBSub.MouseMove += new System.Windows.Forms.MouseEventHandler(this.txtVFOBSub_MouseMove);
+            // 
+            // panelVFOBSubHover
+            // 
+            this.panelVFOBSubHover.BackColor = System.Drawing.Color.Black;
+            this.panelVFOBSubHover.ForeColor = System.Drawing.Color.Black;
+            resources.ApplyResources(this.panelVFOBSubHover, "panelVFOBSubHover");
+            this.panelVFOBSubHover.Name = "panelVFOBSubHover";
+            this.panelVFOBSubHover.Paint += new System.Windows.Forms.PaintEventHandler(this.panelVFOBSubHover_Paint);
+            this.panelVFOBSubHover.MouseMove += new System.Windows.Forms.MouseEventHandler(this.panelVFOBSubHover_MouseMove);
             // 
             // txtVFOBLSD
             // 
