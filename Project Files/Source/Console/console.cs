@@ -23875,29 +23875,30 @@ namespace Thetis
                 {
                     switch (txMode)
                     {
-                        case MeterTXMode.MIC:
-                        case MeterTXMode.LEVELER:
-                        case MeterTXMode.LVL_G:
-                        case MeterTXMode.EQ:
-                        case MeterTXMode.CFC_PK:
-                        case MeterTXMode.CFC_G:
-                        case MeterTXMode.COMP:
-                        case MeterTXMode.ALC:
-                        case MeterTXMode.ALC_G:
-                        case MeterTXMode.ALC_GROUP:
-                            output = num.ToString(format) + " dB";
-                            break;
+                        // H1: every transmit value carries its own label so the readout is unambiguous
+                        case MeterTXMode.MIC: output = "MIC " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.LEVELER: output = "LVL " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.LVL_G: output = "LVL " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.EQ: output = "EQ " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.CFC_PK: output = "CFC " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.CFC_G: output = "CFC " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.COMP: output = "COMP " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC: output = "ALC " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC_G: output = "ALC " + num.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC_GROUP: output = "ALC " + num.ToString(format) + " dB"; break;
                         case MeterTXMode.FORWARD_POWER:
                         case MeterTXMode.REVERSE_POWER:
                         case MeterTXMode.SWR_POWER:
+                            string tx_prefix = txMode == MeterTXMode.FORWARD_POWER ? "FWD "
+                                             : txMode == MeterTXMode.REVERSE_POWER ? "REF " : "SWR ";
                             if (HardwareSpecific.Model == HPSDRModel.ANAN10 ||
                                 HardwareSpecific.Model == HPSDRModel.ANAN10E ||
-                                apollopresent) output = num.ToString(format) + " W";
-                            else if (alexpresent || pa_present) output = num.ToString(format) + " W";
-                            else output = num.ToString(format) + " mW";
+                                apollopresent) output = tx_prefix + num.ToString(format) + " W";
+                            else if (alexpresent || pa_present) output = tx_prefix + num.ToString(format) + " W";
+                            else output = tx_prefix + num.ToString(format) + " mW";
                             break;
                         case MeterTXMode.SWR:
-                            output = num.ToString("f1") + " : 1";
+                            output = "SWR " + num.ToString("f1") + " : 1";
                             break;
                         case MeterTXMode.OFF:
                             output = "";
