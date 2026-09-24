@@ -10765,7 +10765,9 @@ namespace Thetis
         {
             bool isCIV = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
             if (lblCIVAddress != null) lblCIVAddress.Enabled = isCIV;
-            if (txtCIVAddress != null) txtCIVAddress.Enabled = isCIV && (chkCATEnable == null || !chkCATEnable.Checked);
+            // the address is read live when each CI-V frame is built (and TextChanged pushes
+            // it into the running controller), so it stays editable even while CAT1 is open
+            if (txtCIVAddress != null) txtCIVAddress.Enabled = isCIV;
             if (chkCIVTransceive != null) chkCIVTransceive.Enabled = isCIV;
             if (chkCIVSyncSplit != null) chkCIVSyncSplit.Enabled = isCIV;
             if (chkCIVSyncPTT != null) chkCIVSyncPTT.Enabled = isCIV;

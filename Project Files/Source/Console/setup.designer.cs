@@ -58141,6 +58141,10 @@ namespace Thetis
             this.comboCAT1Protocol.Size = new System.Drawing.Size(145, 21);
             this.comboCAT1Protocol.TabIndex = 1;
             this.comboCAT1Protocol.SelectedIndexChanged += new System.EventHandler(this.comboCAT1Protocol_SelectedIndexChanged);
+            this.toolTip1.SetToolTip(this.comboCAT1Protocol, "Selects the rig-control protocol spoken on CAT1." + System.Environment.NewLine +
+                "\"Kenwood TS-2000\": classic Kenwood/Elecraft style ASCII commands." + System.Environment.NewLine +
+                "\"Icom CI-V (IC-7100)\": Icom CI-V bus - frequency, mode, split, VFO" + System.Environment.NewLine +
+                "tracking and PTT for the IC-7100 (and other CI-V rigs).");
             // 
             // lblCIVAddress
             // 
@@ -58161,6 +58165,10 @@ namespace Thetis
             this.txtCIVAddress.TabIndex = 3;
             this.txtCIVAddress.Text = "88";
             this.txtCIVAddress.TextChanged += new System.EventHandler(this.txtCIVAddress_TextChanged);
+            this.toolTip1.SetToolTip(this.txtCIVAddress, "The rig's CI-V bus address in hex (two digits)." + System.Environment.NewLine +
+                "IC-7100 factory default is 0x88; the PC (host) address is 0xE0." + System.Environment.NewLine +
+                "Must match the CI-V address set in the rig's own menu." + System.Environment.NewLine +
+                "Takes effect immediately on the next command sent.");
             // 
             // chkCIVTransceive
             // 
@@ -58186,6 +58194,9 @@ namespace Thetis
             this.chkCIVSyncSplit.TabIndex = 5;
             this.chkCIVSyncSplit.Text = "Sync Split / Full Duplex (VFO B)";
             this.chkCIVSyncSplit.CheckedChanged += new System.EventHandler(this.chkCIVSyncSplit_CheckedChanged);
+            this.toolTip1.SetToolTip(this.chkCIVSyncSplit, "When checked, Thetis SPLIT, RX2 and VFO A/B changes are mirrored" + System.Environment.NewLine +
+                "to the IC-7100 over CI-V (split on/off, VFO B frequency, A/B swap)." + System.Environment.NewLine +
+                "When unchecked, the rig's own split/VFO state is left alone.");
             // 
             // chkCIVSyncPTT
             // 
