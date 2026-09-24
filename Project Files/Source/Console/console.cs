@@ -44769,6 +44769,19 @@ namespace Thetis
         }
         #endregion
 
+        private void incrementMultiMeterTXMode()
+        {
+            // H1: cycle the transmit meter values the same way reception cycles its units
+            MeterTXMode tmp = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode;
+            tmp++;
+            if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
+            if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode = tmp;
+            picMultiMeterDigital.Invalidate();
+            picRX2Meter.Invalidate();
+            txtMultiText.Invalidate();
+            txtRX2Meter.Invalidate();
+        }
+
         private void incrementMutliMeterDisplayMode()
         {
             // step through the display modes for the multimeter, smeter, dbm, uv, etc
@@ -44796,12 +44809,14 @@ private void incrementMutliMeterDisplayModeRX2()
 
         private void txtMultiText_Click(object sender, EventArgs e)
         {
-            incrementMutliMeterDisplayMode();
+            if (_mox || chkTUN.Checked) incrementMultiMeterTXMode();
+            else incrementMutliMeterDisplayMode();
         }
 
         private void txtRX2Meter_Click(object sender, EventArgs e)
         {
-            incrementMutliMeterDisplayModeRX2();
+            if (_mox || chkTUN.Checked) incrementMultiMeterTXMode();
+            else incrementMutliMeterDisplayModeRX2();
         }
 
         private void toolStripStatusLabel_SeqWarning_Click(object sender, EventArgs e)
