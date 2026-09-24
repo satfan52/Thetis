@@ -170,7 +170,9 @@
         private System.Windows.Forms.RadioButtonTS radRX2Filter4;
         private System.Windows.Forms.RadioButtonTS radRX2Filter5;
         private System.Windows.Forms.RadioButtonTS radRX2Filter6;
-        private System.Windows.Forms.RadioButtonTS radRX2Filter7;
+        private System.Windows.Forms.RadioButtonTS radRX2Filter7;        private System.Windows.Forms.RadioButtonTS radRX2Filter8;
+        private System.Windows.Forms.RadioButtonTS radRX2Filter9;
+        private System.Windows.Forms.RadioButtonTS radRX2Filter10;
         private System.Windows.Forms.RadioButtonTS radRX2FilterVar1;
         private System.Windows.Forms.RadioButtonTS radRX2FilterVar2;
         private System.Windows.Forms.GroupBoxTS grpRX2Meter;
@@ -1032,7 +1034,9 @@
             this.radRX2Filter3 = new System.Windows.Forms.RadioButtonTS();
             this.radRX2FilterVar1 = new System.Windows.Forms.RadioButtonTS();
             this.radRX2Filter4 = new System.Windows.Forms.RadioButtonTS();
-            this.radRX2Filter7 = new System.Windows.Forms.RadioButtonTS();
+            this.radRX2Filter7 = new System.Windows.Forms.RadioButtonTS();            this.radRX2Filter8 = new System.Windows.Forms.RadioButtonTS();
+            this.radRX2Filter9 = new System.Windows.Forms.RadioButtonTS();
+            this.radRX2Filter10 = new System.Windows.Forms.RadioButtonTS();
             this.radRX2Filter5 = new System.Windows.Forms.RadioButtonTS();
             this.radRX2Filter6 = new System.Windows.Forms.RadioButtonTS();
             this.panelRX2Mode = new System.Windows.Forms.PanelTS();
@@ -2158,7 +2162,8 @@
             resources.GetString("comboRX2Band.Items9"),
             resources.GetString("comboRX2Band.Items10"),
             resources.GetString("comboRX2Band.Items11"),
-            resources.GetString("comboRX2Band.Items12")});
+            resources.GetString("comboRX2Band.Items12"),
+            resources.GetString("comboRX2Band.Items13")});
             this.comboRX2Band.Name = "comboRX2Band";
             this.toolTip1.SetToolTip(this.comboRX2Band, resources.GetString("comboRX2Band.ToolTip"));
             this.comboRX2Band.SelectedIndexChanged += new System.EventHandler(this.comboRX2Band_SelectedIndexChanged);
@@ -6461,7 +6466,9 @@
             this.panelRX2Filter.Controls.Add(this.radRX2Filter3);
             this.panelRX2Filter.Controls.Add(this.radRX2FilterVar1);
             this.panelRX2Filter.Controls.Add(this.radRX2Filter4);
-            this.panelRX2Filter.Controls.Add(this.radRX2Filter7);
+            this.panelRX2Filter.Controls.Add(this.radRX2Filter7);            this.panelRX2Filter.Controls.Add(this.radRX2Filter8);
+            this.panelRX2Filter.Controls.Add(this.radRX2Filter9);
+            this.panelRX2Filter.Controls.Add(this.radRX2Filter10);
             this.panelRX2Filter.Controls.Add(this.radRX2Filter5);
             this.panelRX2Filter.Controls.Add(this.radRX2Filter6);
             this.panelRX2Filter.Name = "panelRX2Filter";
@@ -6539,7 +6546,33 @@
             this.radRX2Filter7.ForeColor = System.Drawing.SystemColors.ControlLightLight;
             this.radRX2Filter7.Name = "radRX2Filter7";
             this.radRX2Filter7.CheckedChanged += new System.EventHandler(this.radRX2Filter_CheckedChanged);
-            this.radRX2Filter7.MouseUp += new System.Windows.Forms.MouseEventHandler(this.radFilter_rx2_MouseUp);
+            this.radRX2Filter7.MouseUp += new System.Windows.Forms.MouseEventHandler(this.radFilter_rx2_MouseUp);            // 
+            // radRX2Filter8
+            // 
+            resources.ApplyResources(this.radRX2Filter8, "radRX2Filter8");
+            this.radRX2Filter8.FlatAppearance.BorderSize = 0;
+            this.radRX2Filter8.ForeColor = System.Drawing.SystemColors.ControlLightLight;
+            this.radRX2Filter8.Name = "radRX2Filter8";
+            this.radRX2Filter8.CheckedChanged += new System.EventHandler(this.radRX2Filter_CheckedChanged);
+            this.radRX2Filter8.MouseUp += new System.Windows.Forms.MouseEventHandler(this.radFilter_rx2_MouseUp);
+            // 
+            // radRX2Filter9
+            // 
+            resources.ApplyResources(this.radRX2Filter9, "radRX2Filter9");
+            this.radRX2Filter9.FlatAppearance.BorderSize = 0;
+            this.radRX2Filter9.ForeColor = System.Drawing.SystemColors.ControlLightLight;
+            this.radRX2Filter9.Name = "radRX2Filter9";
+            this.radRX2Filter9.CheckedChanged += new System.EventHandler(this.radRX2Filter_CheckedChanged);
+            this.radRX2Filter9.MouseUp += new System.Windows.Forms.MouseEventHandler(this.radFilter_rx2_MouseUp);
+            // 
+            // radRX2Filter10
+            // 
+            resources.ApplyResources(this.radRX2Filter10, "radRX2Filter10");
+            this.radRX2Filter10.FlatAppearance.BorderSize = 0;
+            this.radRX2Filter10.ForeColor = System.Drawing.SystemColors.ControlLightLight;
+            this.radRX2Filter10.Name = "radRX2Filter10";
+            this.radRX2Filter10.CheckedChanged += new System.EventHandler(this.radRX2Filter_CheckedChanged);
+            this.radRX2Filter10.MouseUp += new System.Windows.Forms.MouseEventHandler(this.radFilter_rx2_MouseUp);
             // 
             // radRX2Filter5
             // 

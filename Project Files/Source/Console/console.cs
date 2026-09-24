@@ -7774,6 +7774,15 @@ namespace Thetis
                 case Filter.F7:
                     radRX2Filter7.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F7);
                     break;
+                case Filter.F8:
+                    radRX2Filter8.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F8);
+                    break;
+                case Filter.F9:
+                    radRX2Filter9.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F9);
+                    break;
+                case Filter.F10:
+                    radRX2Filter10.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F10);
+                    break;
                 case Filter.VAR1:
                     radRX2FilterVar1.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.VAR1);
                     break;
@@ -19681,6 +19690,9 @@ namespace Thetis
                 m_RX1agcMode = value;
                 comboAGC.SelectedIndex = (int)value;
                 lblAGCLabel.Text = "AGC: " + comboAGC.Text;
+                // H1: the slider caption changes between fixed/max-gain with the mode
+                lblRF.Text = (value == AGCMode.FIXD ? "Fixed Gain RX1:  " : "AGC Gain RX1:  ")
+                             + ptbRF.Value.ToString();
             }
         }
         private AGCMode m_RX2agcMode = AGCMode.FIRST;
@@ -19695,6 +19707,9 @@ namespace Thetis
                 m_RX2agcMode = value;
                 comboRX2AGC.SelectedIndex = (int)value;
                 lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
+                // H1: the slider caption changes between fixed/max-gain with the mode
+                lblRX2RF.Text = (value == AGCMode.FIXD ? "Fixed Gain RX2:  " : "AGC Gain RX2:  ")
+                                + ptbRX2RF.Value.ToString();
             }
         }
 
@@ -28875,11 +28890,11 @@ namespace Thetis
             switch (RX1AGCMode)
             {
                 case AGCMode.FIXD:
-                    lblRF.Text = "Fixed Gain:  " + ptbRF.Value.ToString();
+                    lblRF.Text = "Fixed Gain RX1:  " + ptbRF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCFixedGain = ptbRF.Value;
                     break;
                 default:
-                    lblRF.Text = "AGC Gain:  " + ptbRF.Value.ToString();
+                    lblRF.Text = "AGC Gain RX1:  " + ptbRF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCMaxGain = ptbRF.Value;
                     break;
             }
@@ -35070,6 +35085,15 @@ namespace Thetis
                     SetRX2Filter(Filter.F7);
                     toolStripMenuItem14.Text = radRX2Filter7.Text;
                     break;
+                case "radRX2Filter8":
+                    SetRX2Filter(Filter.F8);
+                    break;
+                case "radRX2Filter9":
+                    SetRX2Filter(Filter.F9);
+                    break;
+                case "radRX2Filter10":
+                    SetRX2Filter(Filter.F10);
+                    break;
                 case "radRX2FilterVar1":
                     SetRX2Filter(Filter.VAR1);
                     break;
@@ -35679,11 +35703,7 @@ namespace Thetis
                 VFOBFreq = VFOAFreq;
                 switch (rx1_filter)
                 {
-                    case Filter.F8:
-                    case Filter.F9:
-                    case Filter.F10:
-                        RX2Filter = Filter.F1;
-                        break;
+                    // H1: RX2 now offers F8/F9/F10 as well, so these copy like the others
                     case Filter.VAR1:
                     case Filter.VAR2:
                         RX2Filter = RX1Filter;
@@ -35803,11 +35823,7 @@ namespace Thetis
                 VFOBFreq = a_freq;
                 switch (a_filter)
                 {
-                    case Filter.F8:
-                    case Filter.F9:
-                    case Filter.F10:
-                        RX2Filter = Filter.F1;
-                        break;
+                    // H1: RX2 now offers F8/F9/F10 as well, so these copy like the others
                     case Filter.VAR1:
                     case Filter.VAR2:
                         RX2Filter = a_filter;
@@ -37640,6 +37656,9 @@ namespace Thetis
 
                 Audio.RX2Enabled = rx2_enabled;
                 Display.RX2Enabled = rx2_enabled;
+                // H1: keep the RX2-only controls (AF row, band, preamp) in step with
+                // an enable that did not come from the checkbox click
+                UpdateSecondSliceControlsVisible();
                 chkSplitDisplay.Checked = rx2_enabled;
             }
         }
@@ -38060,9 +38079,37 @@ namespace Thetis
                 lblRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
                 comboRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
 
+                // the RX2 monitor-volume row and the RX2 hardware extras belong to
+                // receiver 2 only: with RX2 off they have no meaning (a source of
+                // confusion), so they follow RX2, not the sub. The collapsed display
+                // re-parents and manages these itself - leave it alone there.
+                if (!IsCollapsedView || IsExpandedView)
+                {
+                    lblRX2AF.Visible = RX2Enabled;
+                    ptbRX2AF.Visible = RX2Enabled;
+
+                    lblRX2Preamp.Visible = RX2Enabled;
+                    comboRX2Preamp.Visible = RX2Enabled && _rx2_preamp_present;
+                    udRX2StepAttData.Visible = RX2Enabled && _rx2_preamp_present;
+                }
+
                 if (show && sub) UpdateSubControls();
+                if (show && !sub) UpdateRX2SliceControls();
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Refresh the RX2 slice captions so they match the receiver's own state
+        /// (the sub channel gets the same treatment from UpdateSubControls).
+        /// </summary>
+        private void UpdateRX2SliceControls()
+        {
+            if (lblRX2RF == null || ptbRX2RF == null || comboRX2AGC == null) return;
+            lblRX2RF.Text = (RX2AGCMode == AGCMode.FIXD ? "Fixed Gain RX2:  " : "AGC Gain RX2:  ")
+                            + ptbRX2RF.Value.ToString();
+            if (!string.IsNullOrEmpty(comboRX2AGC.Text))
+                lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
         }
 
         /// <summary>The second-slice mode buttons route to whoever owns the slice.</summary>
@@ -38544,6 +38591,11 @@ namespace Thetis
             kToolStripMenuItem4.Text = radRX2Filter5.Text = rx2_filters[(int)new_mode].GetName(Filter.F5);
             toolStripMenuItem13.Text = radRX2Filter6.Text = rx2_filters[(int)new_mode].GetName(Filter.F6);
             toolStripMenuItem14.Text = radRX2Filter7.Text = rx2_filters[(int)new_mode].GetName(Filter.F7);
+            // H1: RX2 now has F8/F9/F10 like RX1 (the RX2 context menu stops at F7,
+            // so these are button captions only)
+            radRX2Filter8.Text = rx2_filters[(int)new_mode].GetName(Filter.F8);
+            radRX2Filter9.Text = rx2_filters[(int)new_mode].GetName(Filter.F9);
+            radRX2Filter10.Text = rx2_filters[(int)new_mode].GetName(Filter.F10);
             radRX2FilterVar1.Text = rx2_filters[(int)new_mode].GetName(Filter.VAR1);
             radRX2FilterVar2.Text = rx2_filters[(int)new_mode].GetName(Filter.VAR2);
 
@@ -38779,6 +38831,15 @@ namespace Thetis
                 case Filter.F7:
                     radRX2Filter7.BackColor = SystemColors.Control;
                     break;
+                case Filter.F8:
+                    radRX2Filter8.BackColor = SystemColors.Control;
+                    break;
+                case Filter.F9:
+                    radRX2Filter9.BackColor = SystemColors.Control;
+                    break;
+                case Filter.F10:
+                    radRX2Filter10.BackColor = SystemColors.Control;
+                    break;
                 case Filter.VAR1:
                     udRX2FilterLow.Enabled = false;
                     udRX2FilterHigh.Enabled = false;
@@ -38820,6 +38881,15 @@ namespace Thetis
                 case Filter.F7:
                     radRX2Filter7.BackColor = button_selected_color;
                     break;
+                case Filter.F8:
+                    radRX2Filter8.BackColor = button_selected_color;
+                    break;
+                case Filter.F9:
+                    radRX2Filter9.BackColor = button_selected_color;
+                    break;
+                case Filter.F10:
+                    radRX2Filter10.BackColor = button_selected_color;
+                    break;
                 case Filter.VAR1:
                     udRX2FilterLow.Enabled = true;
                     udRX2FilterHigh.Enabled = true;
@@ -38844,48 +38914,6 @@ namespace Thetis
 
             if (update) UpdateRX2Filters(low, high, true);
             if (filterAndDspModeValid(2) && oldFilter != rx2_filter) FilterChangedHandlers?.Invoke(2, oldFilter, rx2_filter, RX2Band, rx2_filters[(int)_rx2_dsp_mode].GetLow(rx2_filter), rx2_filters[(int)_rx2_dsp_mode].GetHigh(rx2_filter), rx2_filters[(int)_rx2_dsp_mode].GetName(rx2_filter)); //MW0LGE [2.9.0.7]
-        }
-
-        private void radRX2Filter1_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter1.Checked)
-                SecondSliceFilterSelected(Filter.F1);
-        }
-
-        private void radRX2Filter2_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter2.Checked)
-                SecondSliceFilterSelected(Filter.F2);
-        }
-
-        private void radRX2Filter3_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter3.Checked)
-                SecondSliceFilterSelected(Filter.F3);
-        }
-
-        private void radRX2Filter4_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter4.Checked)
-                SecondSliceFilterSelected(Filter.F4);
-        }
-
-        private void radRX2Filter5_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter5.Checked)
-                SecondSliceFilterSelected(Filter.F5);
-        }
-
-        private void radRX2Filter6_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter6.Checked)
-                SecondSliceFilterSelected(Filter.F6);
-        }
-
-        private void radRX2Filter7_CheckedChanged(object sender, System.EventArgs e)
-        {
-            if (radRX2Filter7.Checked)
-                SecondSliceFilterSelected(Filter.F7);
         }
 
         private void radRX2FilterVar1_CheckedChanged(object sender, System.EventArgs e)
@@ -39085,8 +39113,9 @@ namespace Thetis
                 if (!_sub_console_updating)
                 {
                     SetSubAgcGain(ptbRX2RF.Value, true);
-                    lblRX2RF.Text = (GetSubAgcMode() == AGCMode.FIXD ? "Fixed Gain:  "
-                                                                     : "AGC Gain:  ")
+                    // while RX2 is off this panel serves the sub channel: caption it SUB
+                    lblRX2RF.Text = (GetSubAgcMode() == AGCMode.FIXD ? "Fixed Gain SUB:  "
+                                                                     : "AGC Gain SUB:  ")
                                     + ptbRX2RF.Value.ToString();
                 }
                 return;
@@ -39095,11 +39124,11 @@ namespace Thetis
             switch (RX2AGCMode)
             {
                 case AGCMode.FIXD:
-                    lblRX2RF.Text = "Fixed Gain:  " + ptbRX2RF.Value.ToString();
+                    lblRX2RF.Text = "Fixed Gain RX2:  " + ptbRX2RF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCRX2FixedGain = ptbRX2RF.Value;
                     break;
                 default:
-                    lblRX2RF.Text = "AGC Gain:  " + ptbRX2RF.Value.ToString();
+                    lblRX2RF.Text = "AGC Gain RX2:  " + ptbRX2RF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCRX2MaxGain = ptbRX2RF.Value;
                     break;
             }
@@ -39896,6 +39925,32 @@ namespace Thetis
             }
         }
 
+        /// <summary>
+        /// Switch receiver 2 to a band by name ("40m", "2m"...): the same path as the
+        /// band dropdown, so RX2 tunes its own DDS through that band's stack entries.
+        /// </summary>
+        public string MatchRX2BandItem(string sBand)
+        {
+            if (comboRX2Band == null || string.IsNullOrEmpty(sBand)) return null;
+            foreach (object o in comboRX2Band.Items)
+            {
+                string s = o as string;
+                if (s != null && string.Equals(s, sBand, StringComparison.OrdinalIgnoreCase))
+                    return s;
+            }
+            return null;
+        }
+
+        public bool ChangeRX2Band(string sBand)
+        {
+            if (comboRX2Band == null || string.IsNullOrEmpty(sBand)) return false;
+            if (!comboRX2Band.Items.Contains(sBand)) return false;
+            if (comboRX2Band.Text != sBand)
+                comboRX2Band.Text = sBand;
+            SetupRX2Band(sBand);
+            return true;
+        }
+
         private void comboRX2Band_SelectedIndexChanged(object sender, System.EventArgs e)
         {
             // MW0LGE reinstated and moved block to another function to be called from here, and via CAT
@@ -40488,6 +40543,9 @@ namespace Thetis
             radRX2Filter5.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F5);
             radRX2Filter6.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F6);
             radRX2Filter7.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F7);
+            radRX2Filter8.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F8);
+            radRX2Filter9.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F9);
+            radRX2Filter10.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.F10);
             radRX2FilterVar1.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.VAR1);
             radRX2FilterVar2.Text = rx2_filters[(int)_rx2_dsp_mode].GetName(Filter.VAR2);
             RX2Filter = rx2_filter;

@@ -1493,6 +1493,8 @@ namespace Thetis
 
 			// check band for tx? TODO
 			sendTXEnable(rx-1, rx == 1 ? true : consoleThreadSafe.RX2Enabled); // MW0LGE_22b fixed, rx1 should be tx only, not rx2
+            // H1: mirror the new band to every client (rx is 1-based from the console)
+            sendBand(rx - 1, BandStackManager.BandToString(newBand));
 		}
 		public void FilterChange(int rx, Filter oldFilter, Filter newFilter, Band band, int low, int high)
         {
@@ -1668,6 +1670,7 @@ namespace Thetis
                         return command + ":" + args[0] + "," + args[1];
                     break;
                 case "dds":
+                case "band":
                 case "rx_filter_band":
                 case "rx_balance":
                 case "rx_step_att_ex":
@@ -2434,6 +2437,11 @@ namespace Thetis
 			string s = "rx_filter_band:" + rx.ToString() + "," + low.ToString() + "," + high.ToString() + ";";
 			sendTextFrame(s);
 		}
+		private void sendBand(int rx, string bandName)
+        {
+            string s = "band:" + rx.ToString() + "," + bandName + ";";
+            sendTextFrame(s);
+        }
         private void normalizeTXFilterBandForSet(ref int low, ref int high)
         {
             low = Math.Max(0, low);
@@ -5090,7 +5098,38 @@ namespace Thetis
 				}
             }
         }
-        private void handleTXFilterBandEx(string[] args)
+                /// <summary>
+        /// H1: band:<rx> queries and band:<rx>,<name> (e.g. "40m", "2m") switches
+        /// receiver 2 to that band through its bandstack, exactly like the console
+        /// dropdown; the console's BandChange event echoes "band:<rx>,<name>" to
+        /// every client. Receiver 0 (the VFO A slice) follows VFO A's band.
+        /// </summary>
+        /// <summary>
+        /// H1: band:<rx> queries and band:<rx>,<name> (e.g. "40m", "2m") switches
+        /// receiver 2 to that band through its bandstack, exactly like the console
+        /// dropdown; the console's BandChange event echoes "band:<rx>,<name>" to
+        /// every client. Receiver 0's band is VFO A's band (tune via vfo:).
+        /// </summary>
+        private void handleBand(string[] args)
+        {
+            if (args == null || args.Length < 1 || args.Length > 2) return;
+            if (!int.TryParse(args[0], out int rx)) return;
+            if (rx < 0 || rx > 1) return;
+
+            if (args.Length == 1)
+            {
+                Band b = rx == 0 ? consoleThreadSafe.RX1Band : consoleThreadSafe.RX2Band;
+                sendBand(rx, BandStackManager.BandToString(b));
+                return;
+            }
+
+            if (rx == 0) return;   // RX1's band belongs to VFO A; clients tune with vfo:
+            string match = consoleThreadSafe.MatchRX2BandItem(args[1]);
+            if (match == null) return;
+            consoleThreadSafe.ChangeRX2Band(match);
+        }
+
+private void handleTXFilterBandEx(string[] args)
         {
             if (m_server == null) return;
             if (args != null && args.Length != 0 && args.Length != 2) return;
@@ -6062,7 +6101,10 @@ namespace Thetis
                     case "spot_simulate_click":
                         handleSpotSimulateClick(args);
                         break;
-                    case "rx_filter_band":
+                    case "band":
+                    handleBand(args);
+                    break;
+                case "rx_filter_band":
                         handleRxFilterBand(args);
                         break;
                     case "tx_filter_band_ex":
