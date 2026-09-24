@@ -277,6 +277,16 @@ namespace Thetis
             chkProcessedTXOutputEnable.AutoSize = true;
             chkProcessedTXOutputEnable.Location = new System.Drawing.Point(12, 230);
             chkProcessedTXOutputEnable.UseVisualStyleBackColor = true;
+            string sTipProcessedTX =
+            "Sends the fully processed TX audio (after all DSP: mic/VAC input," + System.Environment.NewLine +
+            "gain, compression, filters, ALC) to the selected output device," + System.Environment.NewLine +
+            "for driving an external transceiver." + System.Environment.NewLine +
+            System.Environment.NewLine +
+            "Independent of VAC1/VAC2; opens no input device." + System.Environment.NewLine +
+            System.Environment.NewLine +
+            "While enabled, the console MIC slider and the VAC1 TX gain are" + System.Environment.NewLine +
+            "linked and follow each other.";
+            toolTip1.SetToolTip(chkProcessedTXOutputEnable, sTipProcessedTX);
 
             lblProcessedTXDescription = new System.Windows.Forms.LabelTS();
             lblProcessedTXDescription.Name = "lblProcessedTXDescription";
@@ -381,6 +391,8 @@ namespace Thetis
         {
             ApplyProcessedTXOutputSettings(false);
             Audio.ProcessedTXOutputEnabled = chkProcessedTXOutputEnable.Checked;
+            // [linked MIC/VAC1 TX gain] re-sync the panel slider for the new route state
+            console.SyncMicToVacGain();
         }
 
         internal void AfterConstructor()
@@ -11022,7 +11034,9 @@ namespace Thetis
         {
             bool isCIV = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
             if (lblCIVAddress != null) lblCIVAddress.Enabled = isCIV;
-            if (txtCIVAddress != null) txtCIVAddress.Enabled = isCIV && (chkCATEnable == null || !chkCATEnable.Checked);
+            // the address is read live when each CI-V frame is built (and TextChanged pushes
+            // it into the running controller), so it stays editable even while CAT1 is open
+            if (txtCIVAddress != null) txtCIVAddress.Enabled = isCIV;
             if (chkCIVTransceive != null) chkCIVTransceive.Enabled = isCIV;
             if (chkCIVSyncSplit != null) chkCIVSyncSplit.Enabled = isCIV;
             if (chkCIVSyncPTT != null) chkCIVSyncPTT.Enabled = isCIV;
