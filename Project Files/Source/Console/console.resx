@@ -5662,7 +5662,7 @@
     <value>Off</value>
   </data>
   <data name="btnMemoryQuickRestore.Location" type="System.Drawing.Point, System.Drawing">
-    <value>123, 222</value>
+    <value>123, 128</value>
   </data>
   <data name="btnMemoryQuickRestore.Size" type="System.Drawing.Size, System.Drawing">
     <value>48, 22</value>
@@ -5701,7 +5701,7 @@
     <value>Off</value>
   </data>
   <data name="btnMemoryQuickSave.Location" type="System.Drawing.Point, System.Drawing">
-    <value>80, 222</value>
+    <value>80, 128</value>
   </data>
   <data name="btnMemoryQuickSave.Size" type="System.Drawing.Size, System.Drawing">
     <value>39, 22</value>
@@ -5731,7 +5731,7 @@
     <value>9</value>
   </data>
   <data name="txtMemoryQuick.Location" type="System.Drawing.Point, System.Drawing">
-    <value>5, 222</value>
+    <value>5, 128</value>
   </data>
   <data name="txtMemoryQuick.Size" type="System.Drawing.Size, System.Drawing">
     <value>72, 20</value>
@@ -7481,7 +7481,7 @@ CTRL + Right Click on any Band Button to add Band Stack.</value>
     <value>Off</value>
   </data>
   <data name="lblBandStack.Location" type="System.Drawing.Point, System.Drawing">
-    <value>5, 196</value>
+    <value>5, 104</value>
   </data>
   <data name="lblBandStack.Size" type="System.Drawing.Size, System.Drawing">
     <value>66, 16</value>
@@ -7515,7 +7515,7 @@ CTRL + Right Click on any Band Button to add Band Stack.</value>
     <value>Microsoft Sans Serif, 6.75pt, style=Bold</value>
   </data>
   <data name="regBandStackCurrentEntry.Location" type="System.Drawing.Point, System.Drawing">
-    <value>72, 197</value>
+    <value>72, 105</value>
   </data>
   <data name="regBandStackCurrentEntry.Size" type="System.Drawing.Size, System.Drawing">
     <value>20, 18</value>
@@ -7548,7 +7548,7 @@ CTRL + Right Click on any Band Button to add Band Stack.</value>
     <value>Microsoft Sans Serif, 6.75pt, style=Bold</value>
   </data>
   <data name="regBandStackTotalEntries.Location" type="System.Drawing.Point, System.Drawing">
-    <value>96, 197</value>
+    <value>96, 105</value>
   </data>
   <data name="regBandStackTotalEntries.Size" type="System.Drawing.Size, System.Drawing">
     <value>20, 18</value>
@@ -8266,7 +8266,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>NoControl</value>
   </data>
   <data name="chkRxAnt.Location" type="System.Drawing.Point, System.Drawing">
-    <value>5, 250</value>
+    <value>5, 156</value>
   </data>
   <data name="chkRxAnt.Size" type="System.Drawing.Size, System.Drawing">
     <value>78, 22</value>
@@ -11705,7 +11705,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>840, 392</value>
   </data>
   <data name="panelFilter.Size" type="System.Drawing.Size, System.Drawing">
-    <value>173, 272</value>
+    <value>173, 192</value>
   </data>
   <data name="panelFilter.TabIndex" type="System.Int32, mscorlib">
     <value>62</value>
@@ -15428,7 +15428,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Yes</value>
   </data>
   <data name="panelMode.Size" type="System.Drawing.Size, System.Drawing">
-    <value>173, 104</value>
+    <value>173, 182</value>
   </data>
   <data name="panelMode.TabIndex" type="System.Int32, mscorlib">
     <value>114</value>
@@ -16334,7 +16334,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>8</value>
   </data>
   <data name="ucQuickRecallPad.Location" type="System.Drawing.Point, System.Drawing">
-    <value>87, 250</value>
+    <value>87, 156</value>
   </data>
   <data name="ucQuickRecallPad.Size" type="System.Drawing.Size, System.Drawing">
     <value>61, 21</value>

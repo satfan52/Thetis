@@ -7173,20 +7173,20 @@
             // grpVFOBetween
             // 
             this.grpVFOBetween.BackColor = System.Drawing.Color.Transparent;
-            this.panelFilter.Controls.Add(this.ucQuickRecallPad);
+            this.panelMode.Controls.Add(this.ucQuickRecallPad);
             this.grpVFOBetween.Controls.Add(this.labelTS1);
             this.grpVFOBetween.Controls.Add(this.chkVFOBLock);
-            this.panelFilter.Controls.Add(this.chkRxAnt);
+            this.panelMode.Controls.Add(this.chkRxAnt);
             this.grpVFOBetween.Controls.Add(this.btnTuneStepChangeLarger);
             this.grpVFOBetween.Controls.Add(this.btnTuneStepChangeSmaller);
-            this.panelFilter.Controls.Add(this.lblBandStack);
-            this.panelFilter.Controls.Add(this.btnMemoryQuickRestore);
+            this.panelMode.Controls.Add(this.lblBandStack);
+            this.panelMode.Controls.Add(this.btnMemoryQuickRestore);
             this.grpVFOBetween.Controls.Add(this.lblTuneStep);
-            this.panelFilter.Controls.Add(this.btnMemoryQuickSave);
+            this.panelMode.Controls.Add(this.btnMemoryQuickSave);
             this.grpVFOBetween.Controls.Add(this.txtWheelTune);
-            this.panelFilter.Controls.Add(this.regBandStackCurrentEntry);
-            this.panelFilter.Controls.Add(this.txtMemoryQuick);
-            this.panelFilter.Controls.Add(this.regBandStackTotalEntries);
+            this.panelMode.Controls.Add(this.regBandStackCurrentEntry);
+            this.panelMode.Controls.Add(this.txtMemoryQuick);
+            this.panelMode.Controls.Add(this.regBandStackTotalEntries);
             this.grpVFOBetween.Controls.Add(this.chkVFOSync);
             this.grpVFOBetween.Controls.Add(this.chkVFOLock);
             resources.ApplyResources(this.grpVFOBetween, "grpVFOBetween");
