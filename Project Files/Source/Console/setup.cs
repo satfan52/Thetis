@@ -277,7 +277,17 @@ namespace Thetis
             chkProcessedTXOutputEnable.AutoSize = true;
             chkProcessedTXOutputEnable.Location = new System.Drawing.Point(12, 230);
             chkProcessedTXOutputEnable.UseVisualStyleBackColor = true;
-            toolTip1.SetToolTip(chkProcessedTXOutputEnable, "Sends the fully processed TX audio (after all DSP: mic/VAC input, gain, compression, filters, ALC) to the selected output device, for driving an external transceiver such as a transverter or the IC-7100's line input. Independent of VAC1/VAC2; opens no input device. While enabled, the console MIC slider and the VAC1 TX gain are linked and follow each other.");
+            string sTipProcessedTX =
+            "Sends the fully processed TX audio (after all DSP: mic/VAC input," + System.Environment.NewLine +
+            "gain, compression, filters, ALC) to the selected output device," + System.Environment.NewLine +
+            "for driving an external transceiver such as a transverter or the" + System.Environment.NewLine +
+            "IC-7100's line input." + System.Environment.NewLine +
+            System.Environment.NewLine +
+            "Independent of VAC1/VAC2; opens no input device." + System.Environment.NewLine +
+            System.Environment.NewLine +
+            "While enabled, the console MIC slider and the VAC1 TX gain are" + System.Environment.NewLine +
+            "linked and follow each other.";
+            toolTip1.SetToolTip(chkProcessedTXOutputEnable, sTipProcessedTX);
 
             lblProcessedTXDescription = new System.Windows.Forms.LabelTS();
             lblProcessedTXDescription.Name = "lblProcessedTXDescription";
