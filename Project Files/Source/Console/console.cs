@@ -37221,12 +37221,14 @@ namespace Thetis
 
                     grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
                 chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30); // H1: RX2 button mirrors the power button
+                chkRX2.BringToFront(); // H1: reparented to the form, must stay on top
                     grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
 
                     setupHiddenButton();//grpVFOA);
 
                     //MW0LGE -- uses pad radio between meter and vfoB
                     grpMultimeterMenus.Location = new Point(grpVFOB.Right - grpMultimeterMenus.Width, gr_multi_meter_menus_basis.Y);
+                grpMultimeterMenus.Visible = false; // H1: meter modes are chosen by clicking the meter figures
 
                     // H1: meter placement anchored to the VFO boxes (RX1 right of VFO A, RX2 left of VFO B)
 
@@ -41840,6 +41842,7 @@ namespace Thetis
             grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
             grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
                 chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30); // H1: RX2 button mirrors the power button
+                chkRX2.BringToFront(); // H1: reparented to the form, must stay on top
 
             picMultiMeterDigital.Parent = grpMultimeter;
 
@@ -41847,6 +41850,7 @@ namespace Thetis
 
             //MW0LGE -- uses pad radio between meter and vfoB
             grpMultimeterMenus.Location = new Point(grpVFOB.Right - grpMultimeterMenus.Width, gr_multi_meter_menus_basis.Y);
+                grpMultimeterMenus.Visible = false; // H1: meter modes are chosen by clicking the meter figures
 
             // H1: meter placement anchored to the VFO boxes (RX1 right of VFO A, RX2 left of VFO B)
 
