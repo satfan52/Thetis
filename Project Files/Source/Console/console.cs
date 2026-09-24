@@ -298,6 +298,15 @@ namespace Thetis
         private Size console_basis_size = new Size(100, 100);
         private Size pnldisplay_basis_size = new Size(100, 100);
         private Point gr_filter_basis_location = new Point(100, 100);
+        // H1: memory-quick / band-stack / RxAnt / quick-recall block lives in the right column
+        private Point lbl_band_stack_basis = new Point(100, 100);
+        private Point reg_band_stack_current_basis = new Point(100, 100);
+        private Point reg_band_stack_total_basis = new Point(100, 100);
+        private Point txt_memory_quick_basis = new Point(100, 100);
+        private Point btn_memory_quick_save_basis = new Point(100, 100);
+        private Point btn_memory_quick_restore_basis = new Point(100, 100);
+        private Point chk_rx_ant_basis = new Point(100, 100);
+        private Point uc_quick_recall_pad_basis = new Point(100, 100);
         private Point gr_Multimeter_basis_location = new Point(100, 100);
         private Point gr_BandHF_basis_location = new Point(100, 100);
         private Point gr_BandGEN_basis_location = new Point(100, 100);
@@ -37195,6 +37204,7 @@ namespace Thetis
 
                 panelMode.Location = new Point(gr_Mode_basis_location.X + h_delta, gr_Mode_basis_location.Y + (v_delta / 2));
 
+
                 panelVFO.Location = new Point(gr_VFO_basis_location.X + (h_delta / 4), gr_VFO_basis_location.Y + v_delta);
 
                 grpVFOBetween.Location = new Point(gr_vfobetween_basis_location.X + (h_delta / 2), gr_vfobetween_basis_location.Y);
@@ -37309,6 +37319,14 @@ namespace Thetis
             console_basis_size = this.Size;
             pnldisplay_basis_size = pnlDisplay.Size;
             gr_filter_basis_location = this.panelFilter.Location;
+            lbl_band_stack_basis = this.lblBandStack.Location;
+            reg_band_stack_current_basis = this.regBandStackCurrentEntry.Location;
+            reg_band_stack_total_basis = this.regBandStackTotalEntries.Location;
+            txt_memory_quick_basis = this.txtMemoryQuick.Location;
+            btn_memory_quick_save_basis = this.btnMemoryQuickSave.Location;
+            btn_memory_quick_restore_basis = this.btnMemoryQuickRestore.Location;
+            chk_rx_ant_basis = this.chkRxAnt.Location;
+            uc_quick_recall_pad_basis = this.ucQuickRecallPad.Location;
 
             gr_Multimeter_basis_location = this.grpMultimeter.Location;
             gr_BandHF_basis_location = this.panelBandHF.Location;
@@ -42011,6 +42029,7 @@ namespace Thetis
             btnBandHF.Location = btn_bandHF_basis;//w3sz
 
             panelMode.Location = new Point(gr_Mode_basis_location.X + h_delta, gr_Mode_basis_location.Y + (v_delta / 2));
+
             panelMode.Size = gr_Mode_basis_size;
 
             panelRX2Mode.Location = new Point(gr_RX2Mode_basis_location.X + (int)(h_delta * 0.492), gr_RX2Mode_basis_location.Y + v_delta);
