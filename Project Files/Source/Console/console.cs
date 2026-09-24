@@ -37226,16 +37226,24 @@ namespace Thetis
 
                     //MW0LGE -- uses pad radio between meter and vfoB
                     grpMultimeterMenus.Location = new Point(grpVFOB.Right - grpMultimeterMenus.Width, gr_multi_meter_menus_basis.Y);
-                grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
 
                     // H1: meter placement anchored to the VFO boxes (RX1 right of VFO A, RX2 left of VFO B)
 
 
                     grpMultimeter.Location = new Point(grpVFOA.Right + 4, gr_Multimeter_basis_location.Y);
-                    grpMultimeter.Size = gr_multi_meter_size_basis;
+                // H1: four meter slots between the frames; meters grow with the window (88..220)
+                int meter_w = ((grpVFOB.Left - 4) - (grpVFOA.Right + 4) - grpVFOBetween.Width - 24) / 4;
+                if (meter_w < 88) meter_w = 88;
+                if (meter_w > 220) meter_w = 220;
+                grpMultimeter.Size = new Size(meter_w, gr_multi_meter_size_basis.Height);
+                txtMultiText.Size = new Size(meter_w - 8, txt_multi_text_size_basis.Height);
+                picMultiMeterDigital.Size = new Size(meter_w - 8, pic_multi_meter_size_basis.Height);
+                grpRX2Meter.Size = new Size(meter_w, 88);
+                txtRX2Meter.Size = new Size(meter_w - 8, txt_rx2meter_size_basis.Height);
+                picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
+                grpRX2Meter.Location = new Point(grpVFOB.Left - meter_w - 4, gr_rx2_meter_basis.Y);
+                grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
 
-                    txtMultiText.Size = new Size(grpMultimeter.Size.Width - (gr_multi_meter_size_basis.Width - txt_multi_text_size_basis.Width), txt_multi_text_size_basis.Height);
-                    picMultiMeterDigital.Size = new Size(grpMultimeter.Size.Width - (gr_multi_meter_size_basis.Width - pic_multi_meter_size_basis.Width), pic_multi_meter_size_basis.Height);
                     //
 
                     //panelDisplay.Size = new Size(gr_display_size_basis.Width + h_delta, gr_display_size_basis.Height + v_delta);
@@ -37261,7 +37269,6 @@ namespace Thetis
                 picSquelch.Location = new Point(pic_sql_basis.X, pic_sql_basis.Y + (v_delta / 2));
                 ptbSquelch.Location = new Point(tb_sql_basis.X, tb_sql_basis.Y + (v_delta / 2));
                 grpDisplaySplit.Location = new Point(gr_display_split_basis.X + (h_delta / 2), gr_display_split_basis.Y + v_delta);
-                grpRX2Meter.Location = new Point(grpVFOB.Left - grpRX2Meter.Width - 4, gr_rx2_meter_basis.Y);
                 panelRX2Filter.Location = new Point(gr_rx2_filter_basis.X + (int)(h_delta * 0.66), gr_rx2_filter_basis.Y + v_delta);
                 panelRX2Mode.Location = new Point(gr_RX2Mode_basis_location.X + (int)(h_delta * 0.492), gr_RX2Mode_basis_location.Y + v_delta); // MW0LGE changed to gr_RX2Mode_basis_location
                 panelRX2Display.Location = new Point(gr_rx2_display_basis.X + (int)(h_delta * 0.383), gr_rx2_display_basis.Y + v_delta);
@@ -41838,15 +41845,23 @@ namespace Thetis
 
             //MW0LGE -- uses pad radio between meter and vfoB
             grpMultimeterMenus.Location = new Point(grpVFOB.Right - grpMultimeterMenus.Width, gr_multi_meter_menus_basis.Y);
-                grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
 
             // H1: meter placement anchored to the VFO boxes (RX1 right of VFO A, RX2 left of VFO B)
 
             grpMultimeter.Location = new Point(grpVFOA.Right + 4, gr_Multimeter_basis_location.Y);
-            grpMultimeter.Size = gr_multi_meter_size_basis;
+                // H1: four meter slots between the frames; meters grow with the window (88..220)
+                int meter_w = ((grpVFOB.Left - 4) - (grpVFOA.Right + 4) - grpVFOBetween.Width - 24) / 4;
+                if (meter_w < 88) meter_w = 88;
+                if (meter_w > 220) meter_w = 220;
+                grpMultimeter.Size = new Size(meter_w, gr_multi_meter_size_basis.Height);
+                txtMultiText.Size = new Size(meter_w - 8, txt_multi_text_size_basis.Height);
+                picMultiMeterDigital.Size = new Size(meter_w - 8, pic_multi_meter_size_basis.Height);
+                grpRX2Meter.Size = new Size(meter_w, 88);
+                txtRX2Meter.Size = new Size(meter_w - 8, txt_rx2meter_size_basis.Height);
+                picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
+                grpRX2Meter.Location = new Point(grpVFOB.Left - meter_w - 4, gr_rx2_meter_basis.Y);
+                grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
 
-            txtMultiText.Size = new Size(grpMultimeter.Size.Width - (gr_multi_meter_size_basis.Width - txt_multi_text_size_basis.Width), txt_multi_text_size_basis.Height);
-            picMultiMeterDigital.Size = new Size(grpMultimeter.Size.Width - (gr_multi_meter_size_basis.Width - pic_multi_meter_size_basis.Width), pic_multi_meter_size_basis.Height);
             //
 
             picRX2Meter.Parent = grpRX2Meter;
