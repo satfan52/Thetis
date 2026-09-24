@@ -6446,7 +6446,7 @@
             // 
             resources.ApplyResources(this.panelPower, "panelPower");
             this.panelPower.BackColor = System.Drawing.Color.Transparent;
-            this.Controls.Add(this.chkRX2);
+            this.panelPower.Controls.Add(this.chkRX2);
             this.panelPower.Controls.Add(this.chkPower);
             this.panelPower.ForeColor = System.Drawing.SystemColors.ControlLightLight;
             this.panelPower.Name = "panelPower";
