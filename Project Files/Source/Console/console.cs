@@ -37219,7 +37219,8 @@ namespace Thetis
                 {
                     moveModeSpecificPanels();// [2.10.3.4]MW0LGE  SelectModeDependentPanel will deal with this when collapsed
 
-                    grpVFOB.Location = new Point(this.ClientSize.Width - grpVFOB.Width - 5, gr_VFOB_basis_location.Y); // H1: right edge
+                    grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
+                chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30); // H1: RX2 button mirrors the power button
                     grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
 
                     setupHiddenButton();//grpVFOA);
@@ -41837,7 +41838,8 @@ namespace Thetis
             int v_delta = Math.Max(this.Height - console_basis_size.Height, 0);
 
             grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
-            grpVFOB.Location = new Point(this.ClientSize.Width - grpVFOB.Width - 5, gr_VFOB_basis_location.Y); // H1: right edge
+            grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
+                chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30); // H1: RX2 button mirrors the power button
 
             picMultiMeterDigital.Parent = grpMultimeter;
 
@@ -41866,7 +41868,7 @@ namespace Thetis
 
             picRX2Meter.Parent = grpRX2Meter;
             picRX2Meter.Location = pic_rx2meter_basis;
-            picRX2Meter.Size = pic_rx2meter_size_basis;
+            picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
 
             lblRX2RF.Parent = panelSoundControls;
             lblRX2RF.Location = lbl_rx2_rf_basis;
