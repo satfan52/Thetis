@@ -19691,7 +19691,7 @@ namespace Thetis
                 comboAGC.SelectedIndex = (int)value;
                 lblAGCLabel.Text = "AGC: " + comboAGC.Text;
                 // H1: the slider caption changes between fixed/max-gain with the mode
-                lblRF.Text = (value == AGCMode.FIXD ? "Fixed Gain RX1:  " : "AGC Gain RX1:  ")
+                lblRF.Text = (value == AGCMode.FIXD ? "Fixed RX1:  " : "AGC RX1:  ")
                              + ptbRF.Value.ToString();
             }
         }
@@ -19708,7 +19708,7 @@ namespace Thetis
                 comboRX2AGC.SelectedIndex = (int)value;
                 lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
                 // H1: the slider caption changes between fixed/max-gain with the mode
-                lblRX2RF.Text = (value == AGCMode.FIXD ? "Fixed Gain RX2:  " : "AGC Gain RX2:  ")
+                lblRX2RF.Text = (value == AGCMode.FIXD ? "Fixed RX2:  " : "AGC RX2:  ")
                                 + ptbRX2RF.Value.ToString();
             }
         }
@@ -28890,11 +28890,11 @@ namespace Thetis
             switch (RX1AGCMode)
             {
                 case AGCMode.FIXD:
-                    lblRF.Text = "Fixed Gain RX1:  " + ptbRF.Value.ToString();
+                    lblRF.Text = "Fixed RX1:  " + ptbRF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCFixedGain = ptbRF.Value;
                     break;
                 default:
-                    lblRF.Text = "AGC Gain RX1:  " + ptbRF.Value.ToString();
+                    lblRF.Text = "AGC RX1:  " + ptbRF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCMaxGain = ptbRF.Value;
                     break;
             }
@@ -38047,7 +38047,7 @@ namespace Thetis
                 int gain = GetSubAgcGain();
                 if (gain >= ptbRX2RF.Minimum && gain <= ptbRX2RF.Maximum)
                     ptbRX2RF.Value = gain;
-                lblRX2RF.Text = (agc == AGCMode.FIXD ? "Fixed Gain:  " : "AGC Gain:  ")
+                lblRX2RF.Text = (agc == AGCMode.FIXD ? "Fixed RX2:  " : "AGC RX2:  ")
                                 + ptbRX2RF.Value.ToString();
             }
             catch { }
@@ -38073,7 +38073,8 @@ namespace Thetis
                 panelRX2Mode.Visible = show;
                 panelRX2Filter.Visible = show;
                 panelRX2DSP.Visible = show;
-                panelRX2RF.Visible = show;
+                lblRX2RF.Visible = show;
+                ptbRX2RF.Visible = show;
 
                 chkRX2Mute.Visible = show && !sub;
                 lblRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
@@ -38106,7 +38107,7 @@ namespace Thetis
         private void UpdateRX2SliceControls()
         {
             if (lblRX2RF == null || ptbRX2RF == null || comboRX2AGC == null) return;
-            lblRX2RF.Text = (RX2AGCMode == AGCMode.FIXD ? "Fixed Gain RX2:  " : "AGC Gain RX2:  ")
+            lblRX2RF.Text = (RX2AGCMode == AGCMode.FIXD ? "Fixed RX2:  " : "AGC RX2:  ")
                             + ptbRX2RF.Value.ToString();
             if (!string.IsNullOrEmpty(comboRX2AGC.Text))
                 lblRX2AGCLabel.Text = "AGC: " + comboRX2AGC.Text;
@@ -39114,8 +39115,8 @@ namespace Thetis
                 {
                     SetSubAgcGain(ptbRX2RF.Value, true);
                     // while RX2 is off this panel serves the sub channel: caption it SUB
-                    lblRX2RF.Text = (GetSubAgcMode() == AGCMode.FIXD ? "Fixed Gain SUB:  "
-                                                                     : "AGC Gain SUB:  ")
+                    lblRX2RF.Text = (GetSubAgcMode() == AGCMode.FIXD ? "Fixed SUB:  "
+                                                                     : "AGC SUB:  ")
                                     + ptbRX2RF.Value.ToString();
                 }
                 return;
@@ -39124,11 +39125,11 @@ namespace Thetis
             switch (RX2AGCMode)
             {
                 case AGCMode.FIXD:
-                    lblRX2RF.Text = "Fixed Gain RX2:  " + ptbRX2RF.Value.ToString();
+                    lblRX2RF.Text = "Fixed RX2:  " + ptbRX2RF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCRX2FixedGain = ptbRX2RF.Value;
                     break;
                 default:
-                    lblRX2RF.Text = "AGC Gain RX2:  " + ptbRX2RF.Value.ToString();
+                    lblRX2RF.Text = "AGC RX2:  " + ptbRX2RF.Value.ToString();
                     if (!IsSetupFormNull) SetupForm.AGCRX2MaxGain = ptbRX2RF.Value;
                     break;
             }
@@ -41826,7 +41827,7 @@ namespace Thetis
             picRX2Meter.Location = pic_rx2meter_basis;
             picRX2Meter.Size = pic_rx2meter_size_basis;
 
-            lblRX2RF.Parent = panelRX2RF;
+            lblRX2RF.Parent = panelSoundControls;
             lblRX2RF.Location = lbl_rx2_rf_basis;
             txtMultiText.Parent = grpMultimeter;
             txtMultiText.Location = txt_multi_text_basis;
@@ -41881,7 +41882,7 @@ namespace Thetis
 
             ptbRF.Parent = panelSoundControls;
             ptbRF.Location = tb_rf_basis;
-            ptbRX2RF.Parent = panelRX2RF;
+            ptbRX2RF.Parent = panelSoundControls;
             ptbRX2RF.Location = tb_rx2_rf_basis;
 
             comboAGC.Parent = panelSoundControls;

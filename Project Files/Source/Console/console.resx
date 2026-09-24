@@ -1372,7 +1372,7 @@
     <value>Off</value>
   </data>
   <data name="ptbRX2RF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>6, 24</value>
+    <value>8, 181</value>
   </data>
   <data name="ptbRX2RF.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -1381,7 +1381,7 @@
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbRX2RF.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbRX2RF.TabIndex" type="System.Int32, mscorlib">
     <value>118</value>
@@ -1408,16 +1408,16 @@
     <value>Off</value>
   </data>
   <data name="lblRX2RF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 6</value>
+    <value>9, 164</value>
   </data>
   <data name="lblRX2RF.Size" type="System.Drawing.Size, System.Drawing">
-    <value>88, 16</value>
+    <value>90, 16</value>
   </data>
   <data name="lblRX2RF.TabIndex" type="System.Int32, mscorlib">
     <value>91</value>
   </data>
   <data name="lblRX2RF.Text" xml:space="preserve">
-    <value>AGC Gain RX2:</value>
+    <value>AGC RX2:</value>
   </data>
   <data name="lblRX2RF.TextAlign" type="System.Drawing.ContentAlignment, System.Drawing">
     <value>MiddleLeft</value>
@@ -4549,7 +4549,7 @@
     <value>13</value>
   </data>
   <data name="comboAGC.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 293</value>
+    <value>8, 305</value>
   </data>
   <data name="comboAGC.Size" type="System.Drawing.Size, System.Drawing">
     <value>50, 21</value>
@@ -4579,7 +4579,7 @@
     <value>NoControl</value>
   </data>
   <data name="lblAGC.Location" type="System.Drawing.Point, System.Drawing">
-    <value>9, 274</value>
+    <value>9, 288</value>
   </data>
   <data name="lblAGC.Size" type="System.Drawing.Size, System.Drawing">
     <value>30, 16</value>
@@ -4615,7 +4615,7 @@
     <value>13</value>
   </data>
   <data name="comboPreamp.Location" type="System.Drawing.Point, System.Drawing">
-    <value>56, 293</value>
+    <value>56, 305</value>
   </data>
   <data name="comboPreamp.Size" type="System.Drawing.Size, System.Drawing">
     <value>52, 21</value>
@@ -4645,7 +4645,7 @@
     <value>Off</value>
   </data>
   <data name="lblRF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>9, 139</value>
+    <value>9, 124</value>
   </data>
   <data name="lblRF.Size" type="System.Drawing.Size, System.Drawing">
     <value>90, 16</value>
@@ -4654,7 +4654,7 @@
     <value>49</value>
   </data>
   <data name="lblRF.Text" xml:space="preserve">
-    <value>AGC Gain RX1:</value>
+    <value>AGC RX1:</value>
   </data>
   <data name="lblRF.TextAlign" type="System.Drawing.ContentAlignment, System.Drawing">
     <value>MiddleLeft</value>
@@ -5620,7 +5620,7 @@
     <value>Off</value>
   </data>
   <data name="chkSquelch.Location" type="System.Drawing.Point, System.Drawing">
-    <value>23, 524</value>
+    <value>23, 538</value>
   </data>
   <data name="chkSquelch.Size" type="System.Drawing.Size, System.Drawing">
     <value>80, 23</value>
@@ -7391,7 +7391,7 @@ CTRL + Right Click on any Band Button to add Band Stack.</value>
     <value>2</value>
   </data>
   <data name="udRX1StepAttData.Location" type="System.Drawing.Point, System.Drawing">
-    <value>56, 294</value>
+    <value>56, 306</value>
   </data>
   <data name="udRX1StepAttData.Size" type="System.Drawing.Size, System.Drawing">
     <value>52, 20</value>
@@ -8350,7 +8350,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbPWR.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 202</value>
+    <value>8, 221</value>
   </data>
   <data name="ptbPWR.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -8359,7 +8359,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbPWR.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbPWR.TabIndex" type="System.Int32, mscorlib">
     <value>105</value>
@@ -8386,7 +8386,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbRF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 158</value>
+    <value>8, 141</value>
   </data>
   <data name="ptbRF.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -8395,7 +8395,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbRF.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbRF.TabIndex" type="System.Int32, mscorlib">
     <value>104</value>
@@ -8422,7 +8422,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbAF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 23</value>
+    <value>8, 21</value>
   </data>
   <data name="ptbAF.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -8431,7 +8431,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbAF.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbAF.TabIndex" type="System.Int32, mscorlib">
     <value>64</value>
@@ -8728,7 +8728,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbRX2AF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 112</value>
+    <value>8, 101</value>
   </data>
   <data name="ptbRX2AF.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -8737,7 +8737,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbRX2AF.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbRX2AF.TabIndex" type="System.Int32, mscorlib">
     <value>109</value>
@@ -8764,7 +8764,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbRX1AF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 69</value>
+    <value>8, 61</value>
   </data>
   <data name="ptbRX1AF.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -8773,7 +8773,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbRX1AF.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbRX1AF.TabIndex" type="System.Int32, mscorlib">
     <value>107</value>
@@ -8800,7 +8800,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbTune.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 246</value>
+    <value>8, 261</value>
   </data>
   <data name="ptbTune.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
@@ -8809,7 +8809,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2, 2, 2, 2</value>
   </data>
   <data name="ptbTune.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 24</value>
+    <value>100, 22</value>
   </data>
   <data name="ptbTune.TabIndex" type="System.Int32, mscorlib">
     <value>143</value>
@@ -8830,7 +8830,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>1</value>
   </data>
   <data name="udTXStepAttData.Location" type="System.Drawing.Point, System.Drawing">
-    <value>33, 301</value>
+    <value>33, 313</value>
   </data>
   <data name="udTXStepAttData.Size" type="System.Drawing.Size, System.Drawing">
     <value>52, 20</value>
@@ -8872,7 +8872,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="pbAutoAttWarningRX1.Location" type="System.Drawing.Point, System.Drawing">
-    <value>97, 271</value>
+    <value>97, 284</value>
   </data>
   <data name="pbAutoAttWarningRX1.Size" type="System.Drawing.Size, System.Drawing">
     <value>20, 20</value>
@@ -10448,7 +10448,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="picSquelch.Location" type="System.Drawing.Point, System.Drawing">
-    <value>22, 568</value>
+    <value>22, 582</value>
   </data>
   <data name="picSquelch.Size" type="System.Drawing.Size, System.Drawing">
     <value>83, 3</value>
@@ -14894,7 +14894,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="lblTune.Location" type="System.Drawing.Point, System.Drawing">
-    <value>9, 227</value>
+    <value>9, 244</value>
   </data>
   <data name="lblTune.Size" type="System.Drawing.Size, System.Drawing">
     <value>100, 16</value>
@@ -14927,7 +14927,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="lblRX2AF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>9, 96</value>
+    <value>9, 84</value>
   </data>
   <data name="lblRX2AF.Size" type="System.Drawing.Size, System.Drawing">
     <value>90, 16</value>
@@ -14960,7 +14960,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="lblRX1AF.Location" type="System.Drawing.Point, System.Drawing">
-    <value>9, 50</value>
+    <value>9, 44</value>
   </data>
   <data name="lblRX1AF.Size" type="System.Drawing.Size, System.Drawing">
     <value>90, 16</value>
@@ -15026,7 +15026,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="lblPWR.Location" type="System.Drawing.Point, System.Drawing">
-    <value>9, 183</value>
+    <value>9, 204</value>
   </data>
   <data name="lblPWR.Size" type="System.Drawing.Size, System.Drawing">
     <value>100, 16</value>
@@ -15059,7 +15059,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="lblPreamp.Location" type="System.Drawing.Point, System.Drawing">
-    <value>56, 274</value>
+    <value>56, 288</value>
   </data>
   <data name="lblPreamp.Size" type="System.Drawing.Size, System.Drawing">
     <value>48, 16</value>
@@ -15089,7 +15089,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>5, 204</value>
   </data>
   <data name="panelSoundControls.Size" type="System.Drawing.Size, System.Drawing">
-    <value>117, 319</value>
+    <value>117, 330</value>
   </data>
   <data name="panelSoundControls.TabIndex" type="System.Int32, mscorlib">
     <value>117</value>
@@ -17786,7 +17786,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="ptbSquelch.Location" type="System.Drawing.Point, System.Drawing">
-    <value>13, 547</value>
+    <value>13, 561</value>
   </data>
   <data name="ptbSquelch.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>2, 2, 2, 2</value>
