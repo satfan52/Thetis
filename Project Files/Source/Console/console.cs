@@ -31864,8 +31864,10 @@ namespace Thetis
             else
                 txtVFOABand.BackColor = band_background_color;
 
-            if (!(rx2_enabled && (chkEnableMultiRX.Checked || chkVFOSplit.Checked)))
-                txtVFOABand.Text = bandInfo;
+            // H1: the band line is the SubVFOA row - the band name moves into the frame caption,
+            // the row itself always shows the sub receiver frequency
+            grpVFOA.Text = "VFO A   " + bandInfo;
+            txtVFOABand.Text = (rx2_enabled ? VFOASubFreq : VFOBFreq).ToString("f6");
 
             Band b = BandByFreq(freq, rx1_xvtr_index, current_region);
             if (b != rx1_band)
@@ -35908,8 +35910,7 @@ namespace Thetis
             {
                 // H1: this row is SubVFOA - it always shows the sub receiver frequency and stays tunable.
                 // The band name moves into the frame caption so the information is not lost.
-                txtVFOAFreq_LostFocus(this, EventArgs.Empty); // also sets the band text
-                grpVFOA.Text = "VFO A   " + txtVFOABand.Text;
+                txtVFOAFreq_LostFocus(this, EventArgs.Empty); // sets caption and sub row
                 double sub_row_freq = rx2_enabled ? VFOASubFreq : VFOBFreq;
                 txtVFOABand.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
                 txtVFOABand.TextAlign = HorizontalAlignment.Right;
