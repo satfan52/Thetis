@@ -5443,7 +5443,7 @@
     <value>Off</value>
   </data>
   <data name="chkVFOATX.Location" type="System.Drawing.Point, System.Drawing">
-    <value>199, 56</value>
+    <value>165, 56</value>
   </data>
   <data name="chkVFOATX.Size" type="System.Drawing.Size, System.Drawing">
     <value>27, 26</value>
@@ -6046,10 +6046,10 @@
     <value>13</value>
   </data>
   <data name="comboRX2MeterMode.Location" type="System.Drawing.Point, System.Drawing">
-    <value>88, 11</value>
+    <value>4, 15</value>
   </data>
   <data name="comboRX2MeterMode.Size" type="System.Drawing.Size, System.Drawing">
-    <value>72, 21</value>
+    <value>112, 20</value>
   </data>
   <data name="comboRX2MeterMode.TabIndex" type="System.Int32, mscorlib">
     <value>3</value>
@@ -10949,10 +10949,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>0, 0</value>
   </data>
   <data name="pnlResizeMeter.Location" type="System.Drawing.Point, System.Drawing">
-    <value>4, 18</value>
+    <value>0, 0</value>
   </data>
   <data name="pnlResizeMeter.Size" type="System.Drawing.Size, System.Drawing">
-    <value>4, 64</value>
+    <value>2, 2</value>
   </data>
   <data name="pnlResizeMeter.TabIndex" type="System.Int32, mscorlib">
     <value>62</value>
@@ -10976,10 +10976,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="picMultiMeterDigital.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 52</value>
+    <value>4, 52</value>
   </data>
   <data name="picMultiMeterDigital.Size" type="System.Drawing.Size, System.Drawing">
-    <value>157, 30</value>
+    <value>112, 30</value>
   </data>
   <data name="picMultiMeterDigital.SizeMode" type="System.Windows.Forms.PictureBoxSizeMode, System.Windows.Forms">
     <value>StretchImage</value>
@@ -11003,10 +11003,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 18pt</value>
   </data>
   <data name="txtMultiText.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 16</value>
+    <value>4, 16</value>
   </data>
   <data name="txtMultiText.Size" type="System.Drawing.Size, System.Drawing">
-    <value>157, 35</value>
+    <value>112, 34</value>
   </data>
   <data name="txtMultiText.TabIndex" type="System.Int32, mscorlib">
     <value>1</value>
@@ -11027,16 +11027,16 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2</value>
   </data>
   <data name="grpMultimeter.Location" type="System.Drawing.Point, System.Drawing">
-    <value>841, 24</value>
+    <value>325, 24</value>
   </data>
   <data name="grpMultimeter.Size" type="System.Drawing.Size, System.Drawing">
-    <value>172, 88</value>
+    <value>120, 88</value>
   </data>
   <data name="grpMultimeter.TabIndex" type="System.Int32, mscorlib">
     <value>54</value>
   </data>
   <data name="grpMultimeter.Text" xml:space="preserve">
-    <value>RX1 Meter       TX Meter</value>
+    <value>RX1 / TX Meter</value>
   </data>
   <data name="&gt;&gt;grpMultimeter.Name" xml:space="preserve">
     <value>grpMultimeter</value>
@@ -15482,7 +15482,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>8, 16</value>
   </data>
   <data name="txtVFOAFreq.Size" type="System.Drawing.Size, System.Drawing">
-    <value>216, 38</value>
+    <value>180, 38</value>
   </data>
   <data name="txtVFOAFreq.TabIndex" type="System.Int32, mscorlib">
     <value>0</value>
@@ -15509,7 +15509,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>63, 49</value>
   </data>
   <data name="panelVFOAHover.Size" type="System.Drawing.Size, System.Drawing">
-    <value>156, 2</value>
+    <value>124, 2</value>
   </data>
   <data name="panelVFOAHover.TabIndex" type="System.Int32, mscorlib">
     <value>16</value>
@@ -15725,7 +15725,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 15.75pt</value>
   </data>
   <data name="txtVFOALSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>177, 24</value>
+    <value>141, 24</value>
   </data>
   <data name="txtVFOALSD.Size" type="System.Drawing.Size, System.Drawing">
     <value>44, 24</value>
@@ -15758,7 +15758,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>8, 16</value>
   </data>
   <data name="txtVFOAMSD.Size" type="System.Drawing.Size, System.Drawing">
-    <value>216, 38</value>
+    <value>180, 38</value>
   </data>
   <data name="txtVFOAMSD.TabIndex" type="System.Int32, mscorlib">
     <value>116</value>
@@ -15785,7 +15785,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>92, 80</value>
   </data>
   <data name="panelVFOASubHover.Size" type="System.Drawing.Size, System.Drawing">
-    <value>104, 1</value>
+    <value>88, 1</value>
   </data>
   <data name="panelVFOASubHover.TabIndex" type="System.Int32, mscorlib">
     <value>118</value>
@@ -15812,7 +15812,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>8, 56</value>
   </data>
   <data name="txtVFOABand.Size" type="System.Drawing.Size, System.Drawing">
-    <value>188, 26</value>
+    <value>152, 26</value>
   </data>
   <data name="txtVFOABand.TabIndex" type="System.Int32, mscorlib">
     <value>1</value>
@@ -15842,7 +15842,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>125, 24</value>
   </data>
   <data name="grpVFOA.Size" type="System.Drawing.Size, System.Drawing">
-    <value>232, 88</value>
+    <value>196, 88</value>
   </data>
   <data name="grpVFOA.TabIndex" type="System.Int32, mscorlib">
     <value>2</value>
@@ -15944,7 +15944,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>63, 49</value>
   </data>
   <data name="panelVFOBHover.Size" type="System.Drawing.Size, System.Drawing">
-    <value>156, 2</value>
+    <value>124, 2</value>
   </data>
   <data name="panelVFOBHover.TabIndex" type="System.Int32, mscorlib">
     <value>17</value>
@@ -15968,7 +15968,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>36, 56</value>
   </data>
   <data name="txtVFOBBand.Size" type="System.Drawing.Size, System.Drawing">
-    <value>188, 26</value>
+    <value>152, 26</value>
   </data>
   <data name="txtVFOBBand.TabIndex" type="System.Int32, mscorlib">
     <value>1</value>
@@ -15995,7 +15995,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 15.75pt</value>
   </data>
   <data name="txtVFOBLSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>177, 24</value>
+    <value>141, 24</value>
   </data>
   <data name="txtVFOBLSD.Size" type="System.Drawing.Size, System.Drawing">
     <value>44, 24</value>
@@ -16145,7 +16145,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>8, 16</value>
   </data>
   <data name="txtVFOBMSD.Size" type="System.Drawing.Size, System.Drawing">
-    <value>216, 38</value>
+    <value>180, 38</value>
   </data>
   <data name="txtVFOBMSD.TabIndex" type="System.Int32, mscorlib">
     <value>117</value>
@@ -16181,7 +16181,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="lblVFOBLSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>173, 24</value>
+    <value>137, 24</value>
   </data>
   <data name="lblVFOBLSD.Size" type="System.Drawing.Size, System.Drawing">
     <value>48, 28</value>
@@ -16217,7 +16217,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>8, 16</value>
   </data>
   <data name="txtVFOBFreq.Size" type="System.Drawing.Size, System.Drawing">
-    <value>216, 38</value>
+    <value>180, 38</value>
   </data>
   <data name="txtVFOBFreq.TabIndex" type="System.Int32, mscorlib">
     <value>0</value>
@@ -16244,10 +16244,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 8.25pt, style=Bold</value>
   </data>
   <data name="grpVFOB.Location" type="System.Drawing.Point, System.Drawing">
-    <value>603, 24</value>
+    <value>817, 24</value>
   </data>
   <data name="grpVFOB.Size" type="System.Drawing.Size, System.Drawing">
-    <value>232, 88</value>
+    <value>196, 88</value>
   </data>
   <data name="grpVFOB.TabIndex" type="System.Int32, mscorlib">
     <value>3</value>
@@ -16385,7 +16385,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>1</value>
   </data>
   <data name="grpVFOBetween.Location" type="System.Drawing.Point, System.Drawing">
-    <value>360, 24</value>
+    <value>449, 24</value>
   </data>
   <data name="grpVFOBetween.Size" type="System.Drawing.Size, System.Drawing">
     <value>240, 88</value>
@@ -16499,10 +16499,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Off</value>
   </data>
   <data name="picRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 69</value>
+    <value>4, 63</value>
   </data>
   <data name="picRX2Meter.Size" type="System.Drawing.Size, System.Drawing">
-    <value>157, 30</value>
+    <value>112, 22</value>
   </data>
   <data name="picRX2Meter.SizeMode" type="System.Windows.Forms.PictureBoxSizeMode, System.Windows.Forms">
     <value>StretchImage</value>
@@ -16526,10 +16526,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 18pt</value>
   </data>
   <data name="txtRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 33</value>
+    <value>4, 36</value>
   </data>
   <data name="txtRX2Meter.Size" type="System.Drawing.Size, System.Drawing">
-    <value>157, 35</value>
+    <value>112, 26</value>
   </data>
   <data name="txtRX2Meter.TabIndex" type="System.Int32, mscorlib">
     <value>1</value>
@@ -16550,10 +16550,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>2</value>
   </data>
   <data name="grpRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
-    <value>841, 588</value>
+    <value>693, 24</value>
   </data>
   <data name="grpRX2Meter.Size" type="System.Drawing.Size, System.Drawing">
-    <value>172, 108</value>
+    <value>120, 88</value>
   </data>
   <data name="grpRX2Meter.TabIndex" type="System.Int32, mscorlib">
     <value>90</value>
@@ -17630,10 +17630,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>49</value>
   </data>
   <data name="grpMultimeterMenus.Location" type="System.Drawing.Point, System.Drawing">
-    <value>841, 105</value>
+    <value>841, 116</value>
   </data>
   <data name="grpMultimeterMenus.Size" type="System.Drawing.Size, System.Drawing">
-    <value>172, 40</value>
+    <value>172, 34</value>
   </data>
   <data name="grpMultimeterMenus.TabIndex" type="System.Int32, mscorlib">
     <value>142</value>
