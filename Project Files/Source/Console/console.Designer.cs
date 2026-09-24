@@ -7665,7 +7665,6 @@
             this.Controls.Add(this.panelMeterLabels);
             this.Controls.Add(this.panelButtonBar);
             this.Controls.Add(this.panelVFOBLabels);
-            this.Controls.Add(this.grpMultimeterMenus);
             this.Controls.Add(this.panelVFOALabels);
             this.Controls.Add(this.panelVFOLabels);
             this.Controls.Add(this.panelAndromedaMisc);
