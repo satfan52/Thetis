@@ -37220,8 +37220,13 @@ namespace Thetis
                     moveModeSpecificPanels();// [2.10.3.4]MW0LGE  SelectModeDependentPanel will deal with this when collapsed
 
                     grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
-                chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30); // H1: RX2 button mirrors the power button
-                chkRX2.BringToFront(); // H1: reparented to the form, must stay on top
+                // H1: RX2 button mirrors the power button on the right - parent it to the form first,
+                // otherwise it stays a child of the power panel and is clipped out of sight
+                chkRX2.Parent = this;
+                chkRX2.Text = "RX2";
+                chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30);
+                chkRX2.BringToFront();
+                chkRX2.Invalidate();
                     grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
 
                     setupHiddenButton();//grpVFOA);
@@ -41841,8 +41846,13 @@ namespace Thetis
 
             grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
             grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
-                chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30); // H1: RX2 button mirrors the power button
-                chkRX2.BringToFront(); // H1: reparented to the form, must stay on top
+                // H1: RX2 button mirrors the power button on the right - parent it to the form first,
+                // otherwise it stays a child of the power panel and is clipped out of sight
+                chkRX2.Parent = this;
+                chkRX2.Text = "RX2";
+                chkRX2.Location = new Point(this.ClientSize.Width - chkRX2.Width - 5, 30);
+                chkRX2.BringToFront();
+                chkRX2.Invalidate();
 
             picMultiMeterDigital.Parent = grpMultimeter;
 
