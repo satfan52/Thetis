@@ -20888,6 +20888,13 @@ namespace Thetis
         }
 
         private MultiMeterMeasureMode m_eMeasureMode = MultiMeterMeasureMode.DBM;
+        // H1: RX2 meter keeps its own readout unit so clicking one meter never moves the other
+        private MultiMeterMeasureMode m_eMeasureModeRX2 = MultiMeterMeasureMode.DBM;
+        public MultiMeterMeasureMode MMMeasureModeRX2
+        {
+            get { return m_eMeasureModeRX2; }
+            set { m_eMeasureModeRX2 = value; }
+        }
         public MultiMeterMeasureMode MMMeasureMode {
             get { return m_eMeasureMode; }
             set { m_eMeasureMode = value; }
@@ -24075,7 +24082,7 @@ namespace Thetis
                 {
                     case MeterRXMode.SIGNAL_STRENGTH:
                     case MeterRXMode.SIGNAL_AVERAGE:
-                        switch (m_eMeasureMode)
+                        switch (m_eMeasureModeRX2)
                         {
                             case MultiMeterMeasureMode.SMeter:
                                 output = Common.SMeterFromDBM(num, VFOBFreq >= S9Frequency);
@@ -32330,10 +32337,11 @@ namespace Thetis
 
         private void txtVFOABand_LostFocus(object sender, System.EventArgs e)
         {
-            if (!rx2_enabled || (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked)) return;
+            // H1: with RX2 off this row is SubVFOA and drives VFO B, the sub receiver's VFO
+            if (rx2_enabled && !chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
             if (txtVFOABand.Text == "." || string.IsNullOrEmpty(txtVFOABand.Text))
             {
-                VFOASubFreq = VFOAFreq;
+                if (rx2_enabled) VFOASubFreq = VFOAFreq; else VFOBFreq = VFOAFreq;
                 return;
             }
 
@@ -32346,12 +32354,12 @@ namespace Thetis
                 if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
                     double.TryParse(text, out typedFreq))
                 {
-                    VFOASubFreq = typedFreq;
+                    if (rx2_enabled) VFOASubFreq = typedFreq; else VFOBFreq = typedFreq;
                     return;
                 }
                 else
                 {
-                    txtVFOABand.Text = VFOASubFreq.ToString("f6");
+                    txtVFOABand.Text = (rx2_enabled ? VFOASubFreq : VFOBFreq).ToString("f6");
                     return;
                 }
             }
@@ -35898,22 +35906,19 @@ namespace Thetis
 
             if (!bIgnore)
             {
-                if (chkPower.Checked)
-                {
-                    txtVFOABand.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
-                    txtVFOABand.ForeColor = band_text_light_color;
-                    txtVFOABand.TextAlign = HorizontalAlignment.Center;
-                    txtVFOAFreq_LostFocus(this, EventArgs.Empty);
-                    panelVFOASubHover.Visible = false;
-                }
-                else
-                {
-                    txtVFOABand.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
-                    txtVFOABand.ForeColor = band_text_dark_color;
-                    txtVFOABand.TextAlign = HorizontalAlignment.Center;
-                    txtVFOAFreq_LostFocus(this, EventArgs.Empty);
-                    panelVFOASubHover.Visible = false;
-                }
+                // H1: this row is SubVFOA - it always shows the sub receiver frequency and stays tunable.
+                // The band name moves into the frame caption so the information is not lost.
+                txtVFOAFreq_LostFocus(this, EventArgs.Empty); // also sets the band text
+                grpVFOA.Text = "VFO A   " + txtVFOABand.Text;
+                double sub_row_freq = rx2_enabled ? VFOASubFreq : VFOBFreq;
+                txtVFOABand.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
+                txtVFOABand.TextAlign = HorizontalAlignment.Right;
+                bool sub_row_active = !rx2_enabled || chkEnableMultiRX.Checked || chkVFOSplit.Checked;
+                if (!sub_row_active) txtVFOABand.ForeColor = band_text_dark_color;
+                else txtVFOABand.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
+                txtVFOABand.ReadOnly = false;
+                txtVFOABand.Text = sub_row_freq.ToString("f6");
+                panelVFOASubHover.Visible = true;
             }
 
             //MW0LGE [2.9.0.7] also in VFOASubUpdate
@@ -37213,13 +37218,14 @@ namespace Thetis
                 {
                     moveModeSpecificPanels();// [2.10.3.4]MW0LGE  SelectModeDependentPanel will deal with this when collapsed
 
-                    grpVFOB.Location = new Point(gr_VFOB_basis_location.X + h_delta - (h_delta / 4), gr_VFOB_basis_location.Y);
-                    grpVFOA.Location = new Point(gr_VFOA_basis_location.X + (h_delta / 4), gr_VFOA_basis_location.Y);
+                    grpVFOB.Location = new Point(this.ClientSize.Width - grpVFOB.Width - 5, gr_VFOB_basis_location.Y); // H1: right edge
+                    grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
 
                     setupHiddenButton();//grpVFOA);
 
                     //MW0LGE -- uses pad radio between meter and vfoB
-                    grpMultimeterMenus.Location = new Point(gr_multi_meter_menus_basis.X + h_delta, gr_multi_meter_menus_basis.Y);
+                    grpMultimeterMenus.Location = new Point(grpVFOB.Right - grpMultimeterMenus.Width, gr_multi_meter_menus_basis.Y);
+                grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
 
                     // H1: meter placement anchored to the VFO boxes (RX1 right of VFO A, RX2 left of VFO B)
 
@@ -41822,15 +41828,16 @@ namespace Thetis
             int h_delta = this.Width - console_basis_size.Width;
             int v_delta = Math.Max(this.Height - console_basis_size.Height, 0);
 
-            grpVFOA.Location = new Point(gr_VFOA_basis_location.X + (h_delta / 4), gr_VFOA_basis_location.Y);
-            grpVFOB.Location = new Point(gr_VFOB_basis_location.X + h_delta - (h_delta / 4), gr_VFOB_basis_location.Y);
+            grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
+            grpVFOB.Location = new Point(this.ClientSize.Width - grpVFOB.Width - 5, gr_VFOB_basis_location.Y); // H1: right edge
 
             picMultiMeterDigital.Parent = grpMultimeter;
 
             picMultiMeterDigital.Location = pic_multi_meter_digital_basis;
 
             //MW0LGE -- uses pad radio between meter and vfoB
-            grpMultimeterMenus.Location = new Point(gr_multi_meter_menus_basis.X + h_delta, gr_multi_meter_menus_basis.Y);
+            grpMultimeterMenus.Location = new Point(grpVFOB.Right - grpMultimeterMenus.Width, gr_multi_meter_menus_basis.Y);
+                grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
 
             // H1: meter placement anchored to the VFO boxes (RX1 right of VFO A, RX2 left of VFO B)
 
@@ -41855,7 +41862,7 @@ namespace Thetis
             comboMeterRXMode.Parent = grpMultimeterMenus; //MW0LGE
             comboMeterRXMode.Location = combo_meter_rxmode_basis;
             comboRX2MeterMode.Location = combo_rx2meter_mode_basis;
-            comboRX2MeterMode.Parent = grpRX2Meter;
+            comboRX2MeterMode.Parent = grpMultimeterMenus;
             comboRX2MeterMode.Location = combo_rx2meter_mode_basis;
 
             comboMeterTXMode.Parent = grpMultimeterMenus; //MW0LGE
@@ -44755,6 +44762,19 @@ namespace Thetis
             //set it through setupform so that settings are updated
             if (!IsSetupFormNull) SetupForm.SetMultiMeterMode(tmp);
         }
+private void incrementMutliMeterDisplayModeRX2()
+        {
+            // step through the display modes for the multimeter, smeter, dbm, uv, etc
+
+            MultiMeterMeasureMode tmp = m_eMeasureModeRX2;
+            tmp++;
+            if (tmp >= MultiMeterMeasureMode.LAST) tmp = MultiMeterMeasureMode.FIRST + 1;
+
+            //set it through setupform so that settings are updated
+            m_eMeasureModeRX2 = tmp;
+            picRX2Meter.Invalidate();
+            txtRX2Meter.Invalidate();
+        }
 
         private void txtMultiText_Click(object sender, EventArgs e)
         {
@@ -44763,7 +44783,7 @@ namespace Thetis
 
         private void txtRX2Meter_Click(object sender, EventArgs e)
         {
-            incrementMutliMeterDisplayMode();
+            incrementMutliMeterDisplayModeRX2();
         }
 
         private void toolStripStatusLabel_SeqWarning_Click(object sender, EventArgs e)

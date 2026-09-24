@@ -7173,20 +7173,20 @@
             // grpVFOBetween
             // 
             this.grpVFOBetween.BackColor = System.Drawing.Color.Transparent;
-            this.panelMode.Controls.Add(this.ucQuickRecallPad);
+            this.grpVFOBetween.Controls.Add(this.ucQuickRecallPad);
             this.grpVFOBetween.Controls.Add(this.labelTS1);
             this.grpVFOBetween.Controls.Add(this.chkVFOBLock);
-            this.panelMode.Controls.Add(this.chkRxAnt);
+            this.grpVFOBetween.Controls.Add(this.chkRxAnt);
             this.grpVFOBetween.Controls.Add(this.btnTuneStepChangeLarger);
             this.grpVFOBetween.Controls.Add(this.btnTuneStepChangeSmaller);
-            this.panelMode.Controls.Add(this.lblBandStack);
-            this.panelMode.Controls.Add(this.btnMemoryQuickRestore);
+            this.grpVFOBetween.Controls.Add(this.lblBandStack);
+            this.grpVFOBetween.Controls.Add(this.btnMemoryQuickRestore);
             this.grpVFOBetween.Controls.Add(this.lblTuneStep);
-            this.panelMode.Controls.Add(this.btnMemoryQuickSave);
+            this.grpVFOBetween.Controls.Add(this.btnMemoryQuickSave);
             this.grpVFOBetween.Controls.Add(this.txtWheelTune);
-            this.panelMode.Controls.Add(this.regBandStackCurrentEntry);
-            this.panelMode.Controls.Add(this.txtMemoryQuick);
-            this.panelMode.Controls.Add(this.regBandStackTotalEntries);
+            this.grpVFOBetween.Controls.Add(this.regBandStackCurrentEntry);
+            this.grpVFOBetween.Controls.Add(this.txtMemoryQuick);
+            this.grpVFOBetween.Controls.Add(this.regBandStackTotalEntries);
             this.grpVFOBetween.Controls.Add(this.chkVFOSync);
             this.grpVFOBetween.Controls.Add(this.chkVFOLock);
             resources.ApplyResources(this.grpVFOBetween, "grpVFOBetween");
@@ -7232,7 +7232,7 @@
             // 
             this.grpRX2Meter.BackColor = System.Drawing.Color.Transparent;
             this.grpRX2Meter.Controls.Add(this.picRX2Meter);
-            this.grpRX2Meter.Controls.Add(this.comboRX2MeterMode);
+            this.grpMultimeterMenus.Controls.Add(this.comboRX2MeterMode);
             this.grpRX2Meter.Controls.Add(this.txtRX2Meter);
             this.grpRX2Meter.ForeColor = System.Drawing.Color.White;
             resources.ApplyResources(this.grpRX2Meter, "grpRX2Meter");
