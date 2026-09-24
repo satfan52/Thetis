@@ -18197,6 +18197,8 @@ namespace Thetis
         }
 
         private MeterTXMode current_meter_tx_mode = MeterTXMode.FORWARD_POWER;
+        // H1: RX2 meter keeps its own transmit value so both meters can differ
+        private MeterTXMode current_meter_tx_mode_rx2 = MeterTXMode.FORWARD_POWER;
         public MeterTXMode CurrentMeterTXMode
         {
             get { return current_meter_tx_mode; }
@@ -24108,6 +24110,32 @@ namespace Thetis
                         break;
                 }
 
+                if (_mox || chkTUN.Checked)
+                {
+                    // H1: RX2 transmit readout - same values as RX1, chosen per meter
+                    MeterTXMode tx2 = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
+                    float txnum;
+                    string txout = "";
+                    switch (tx2)
+                    {
+                        case MeterTXMode.MIC: txnum = (float)Math.Max(-195.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.MIC_PK)); txout = "MIC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.EQ: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.EQ_PK)); txout = "EQ " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.LEVELER: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.LEVELER_PK)); txout = "LVL " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.LVL_G: txnum = (float)Math.Max(0, WDSP.CalculateTXMeter(1, WDSP.MeterType.LVL_G)); txout = "LVL " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.CFC_PK: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_PK)); txout = "CFC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.CFC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_G)); txout = "CFC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.COMP: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR)); txout = "COMP " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC_GROUP: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)) + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.FORWARD_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "FWD " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.SWR_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "SWR " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.REVERSE_POWER: txnum = (float)alex_rev; txout = "REF " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.SWR: txnum = alex_swr; txout = "SWR " + txnum.ToString("f1") + " : 1"; break;
+                        case MeterTXMode.OFF: txout = ""; break;
+                    }
+                    output = txout;
+                }
                 txtRX2Meter.Text = output;
                 rx2_meter_timer.Start();
             }
@@ -44783,6 +44811,17 @@ namespace Thetis
             txtRX2Meter.Invalidate();
         }
 
+private void incrementMultiMeterTXModeRX2()
+        {
+            // H1: cycle the transmit meter values the same way reception cycles its units
+            MeterTXMode tmp = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
+            tmp++;
+            if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
+            if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode_rx2 = tmp;
+            picRX2Meter.Invalidate();
+            txtRX2Meter.Invalidate();
+        }
+
         private void incrementMutliMeterDisplayMode()
         {
             // step through the display modes for the multimeter, smeter, dbm, uv, etc
@@ -44816,7 +44855,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
         private void txtRX2Meter_Click(object sender, EventArgs e)
         {
-            if (_mox || chkTUN.Checked) incrementMultiMeterTXMode();
+            if (_mox || chkTUN.Checked) incrementMultiMeterTXModeRX2();
             else incrementMutliMeterDisplayModeRX2();
         }
 
