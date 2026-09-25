@@ -37123,19 +37123,14 @@ namespace Thetis
                     }
                     else
                     {
+                        // H1: VFO B stays in its own lane with RX2 off - enabling the RX1 sub
+                        // lights the SubVFOA row, never VFO B
                         txtVFOBFreq_LostFocus(this, EventArgs.Empty);
                         if (chkVFOSplit.Checked)
                         {
                             _ignoreQuickSplitSet = true;
                             chkVFOSplit_CheckedChanged(this, EventArgs.Empty);
                             _ignoreQuickSplitSet = false;
-                        }
-                        else
-                        {
-                            txtVFOBFreq.ForeColor = vfo_text_light_color;
-                            txtVFOBMSD.ForeColor = vfo_text_light_color;
-                            txtVFOBLSD.ForeColor = small_vfo_color;
-                            txtVFOBBand.ForeColor = band_text_light_color;
                         }
                         UpdateVFOASub(); // H1: light up the SubVFOA row with the sub's own frequency
                     }
@@ -37163,13 +37158,7 @@ namespace Thetis
                         chkVFOSplit_CheckedChanged(this, EventArgs.Empty);
                         _ignoreQuickSplitSet = false;
                     }
-                    else
-                    {
-                        txtVFOBFreq.ForeColor = vfo_text_dark_color;
-                        txtVFOBMSD.ForeColor = vfo_text_dark_color;
-                        txtVFOBLSD.ForeColor = vfo_text_dark_color;
-                        txtVFOBBand.ForeColor = band_text_dark_color;
-                    }
+                    // H1: dimming the SubVFOA row is all that changes; VFO B keeps its own colour
                     UpdateVFOASub(); // H1: dim the SubVFOA row again
                 }
 
