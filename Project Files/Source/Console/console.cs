@@ -32257,7 +32257,13 @@ namespace Thetis
                                                 {
                                                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                                                 }
-                                                else VFOASubFreq = VFOAFreq;
+                                                else
+                                                {
+                                                    // H1: hold the sub inside RX1's passband by moving it to the
+                                                    // nearest edge rather than dropping it onto VFO A
+                                                    double dbEdge = (rx2_osc > 0) ? (sample_rate_rx1 / 2 - 1) : (-sample_rate_rx1 / 2 + 1);
+                                                    VFOASubFreq = VFOAFreq + (radio.GetDSPRX(0, 0).RXOsc - dbEdge) * 0.0000010;
+                                                }
                     }
 
                 }
@@ -32974,21 +32980,10 @@ namespace Thetis
                 }
             }
 
-            if ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) && !rx2_enabled && !_mox)  //MW0LGE [2.7.0.9] only when RX'ing. Fixes issue where multirx would be outside sample area after a tx
-            {
-                // H1: this keeps RX1's sub receiver inside RX1's passband while VFO B moves. The
-                // sub has its own frequency now, so VFO B's movement must not drag it: aim the sub
-                // channel from VFOASubFreq and snap the sub, not VFO B, at the edge.
-                int diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
-
-                double rx2_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
-
-                if (rx2_osc > -sample_rate_rx1 / 2 && rx2_osc < sample_rate_rx1 / 2)
-                {
-                    radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
-                                    }
-                                    else VFOASubFreq = VFOAFreq; // snap the sub to VFOA instead of losing it
-            }
+            // H1: with RX2 off the RX1 sub receiver is tuned by its own frequency, SubVFOA, and
+            // VFO B has nothing to do with it. This block used to aim the sub channel from VFO B,
+            // which is what made VFO B drag SubRX1 around. The sub is kept inside RX1's passband
+            // by the SubVFOA row and by the VFO A update, never from here. Do not re-add it.
 
             // H1: SubRX2 keeps its own frequency while VFO B is tuned - same rule the
             // SubVFOA row follows in the VFO A path
@@ -36181,6 +36176,11 @@ namespace Thetis
                 txtVFOABand.ReadOnly = false;
                 txtVFOABand.Text = sub_row_freq.ToString("f6");
                 panelVFOASubHover.Visible = true;
+
+                // H1: make the sub channel actually sit on the frequency this row shows. The row is
+                // what the user tunes, and on startup the stored frequency arrives after the first
+                // aim, so aiming here as well keeps the receiver and the row in step.
+                if (sub_row_active) txtVFOABand_LostFocus(this, EventArgs.Empty);
             }
 
             //MW0LGE [2.9.0.7] also in VFOASubUpdate
