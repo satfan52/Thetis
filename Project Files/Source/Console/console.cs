@@ -31510,7 +31510,8 @@ namespace Thetis
                     break;
 
                 case TuneLocation.VFOASub:
-                    if (rx2_enabled && (chkEnableMultiRX.Checked || chkVFOSplit.Checked))
+                    // H1: the row is SubVFOA - it tunes the sub receiver with RX2 on or off
+                    if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
                     {
                         freq = VFOASubFreq;
                         mult = 1000.0;
@@ -31545,6 +31546,7 @@ namespace Thetis
                     break;
 
                 case TuneLocation.VFOBSub:
+                    // H1: the row is SubVFOB - it tunes the RX2 sub receiver while RX2 is on
                     if (rx2_enabled && chkEnableMultiRX2.Checked)
                     {
                         freq = VFOBSubFreq;
@@ -51143,18 +51145,11 @@ private void incrementMutliMeterDisplayModeRX2()
                 int vfoa_sub_high_x = 0;
                 if (chkEnableMultiRX.Checked && !_mox)
                 {
-                    if (!rx2_enabled)
-                    {
-                        vfoa_sub_x = HzToPixel((float)((VFOBFreq - VFOAFreq) * 1e6));
-                        vfoa_sub_low_x = vfoa_sub_x + (HzToPixel(radio.GetDSPRX(0, 0).RXFilterLow) - HzToPixel(0.0f));
-                        vfoa_sub_high_x = vfoa_sub_x + (HzToPixel(radio.GetDSPRX(0, 0).RXFilterHigh) - HzToPixel(0.0f));
-                    }
-                    else
-                    {
-                        vfoa_sub_x = HzToPixel((float)((VFOASubFreq - VFOAFreq) * 1e6));
-                        vfoa_sub_low_x = vfoa_sub_x + (HzToPixel(radio.GetDSPRX(0, 1).RXFilterLow) - HzToPixel(0.0f));
-                        vfoa_sub_high_x = vfoa_sub_x + (HzToPixel(radio.GetDSPRX(0, 1).RXFilterHigh) - HzToPixel(0.0f));
-                    }
+                    // H1: the RX1 sub window sits at the sub receiver's own frequency with RX2
+                    // on or off - VFO B has nothing to do with it
+                    vfoa_sub_x = HzToPixel((float)((VFOASubFreq - VFOAFreq) * 1e6));
+                    vfoa_sub_low_x = vfoa_sub_x + (HzToPixel(radio.GetDSPRX(0, 1).RXFilterLow) - HzToPixel(0.0f));
+                    vfoa_sub_high_x = vfoa_sub_x + (HzToPixel(radio.GetDSPRX(0, 1).RXFilterHigh) - HzToPixel(0.0f));
                 }
 
                 // get VFO B filter location information
