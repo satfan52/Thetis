@@ -33110,6 +33110,8 @@ namespace Thetis
                     else //MW0LGE_21k8
                         Display.VFOASub = (long)(freq * 1e6);
                 }
+                else if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                    Display.VFOASub = (long)(VFOASubFreq * 1e6); // RX1 sub belongs to SubVFOA, not VFO B
                 else
                     Display.VFOASub = (long)(freq * 1e6);
 
@@ -50540,6 +50542,26 @@ private void incrementMutliMeterDisplayModeRX2()
                     }
                     //
 
+                    // Prioritize the RX1 sub window over click-tune (including CTUN). Otherwise
+                    // a drag beginning on the blue window enters the VFO B click-tune path.
+                    if (bOverRX1 && chkEnableMultiRX.Checked && !_mox && !gridminmaxadjust && !gridmaxadjust &&
+                        !agc_knee_drag && !agc_hang_drag &&
+                        (Display.CurrentDisplayMode == DisplayMode.PANADAPTER ||
+                         Display.CurrentDisplayMode == DisplayMode.WATERFALL ||
+                         Display.CurrentDisplayMode == DisplayMode.PANAFALL ||
+                         Display.CurrentDisplayMode == DisplayMode.PANASCOPE))
+                    {
+                        int subLow = 0, subHigh = 0, subX = 0, subFilterLow = 0, subFilterHigh = 0;
+                        getFilterEdgesInPixels(e, ref subLow, ref subHigh, ref subX, ref subFilterLow, ref subFilterHigh);
+                        if (e.X > subFilterLow - 3 && e.X < subFilterHigh + 3)
+                        {
+                            sub_drag_last_x = e.X;
+                            sub_drag_start_freq = VFOASubFreq;
+                            rx1_sub_drag = true;
+                            return;
+                        }
+                    }
+
                     if (Display.HightlightFilterEdgeRX1 == 0 && Display.HightlightFilterEdgeRX2 == 0 &&
                         !agc_knee_drag &&
                         !agc_hang_drag &&
@@ -52357,8 +52379,9 @@ private void incrementMutliMeterDisplayModeRX2()
                 if (rx1_sub_drag)
                 {
                     rx1_sub_drag = false;
-                    if (rx2_enabled) txtVFOABand_LostFocus(this, EventArgs.Empty);
-                    else txtVFOBFreq_LostFocus(this, EventArgs.Empty);
+                    // The dragged receiver is always RX1's sub. Never finalize through VFO B:
+                    // with RX2 off that handler overwrote the sub display with VFO B's frequency.
+                    txtVFOABand_LostFocus(this, EventArgs.Empty);
                 }
 
                 if (rx1_spectrum_drag)
