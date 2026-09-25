@@ -11343,10 +11343,12 @@ namespace Thetis
 
                 if (!rx2_enabled)
                 {
-                    if (!chkVFOBTX.Checked)
-                        tx_freq = VFOAFreq;
-                    else
+                    if (chkVFOBTX.Checked)
                         tx_freq = VFOBFreq;
+                    else if (chkVFOSplit.Checked)
+                        tx_freq = VFOASubFreq; // H1: SPLIT transmits on SubVFOA, RX2 on or off
+                    else
+                        tx_freq = VFOAFreq;
                 }
                 else
                 {
@@ -11365,10 +11367,12 @@ namespace Thetis
             {
                 if (!rx2_enabled)
                 {
-                    if (!chkVFOBTX.Checked)
-                        VFOAFreq = value;
-                    else
+                    if (chkVFOBTX.Checked)
                         VFOBFreq = value;
+                    else if (chkVFOSplit.Checked)
+                        VFOASubFreq = value; // H1: SPLIT transmits on SubVFOA, RX2 on or off
+                    else
+                        VFOAFreq = value;
                 }
                 else
                 {
@@ -18482,7 +18486,10 @@ namespace Thetis
         }
         public bool VFOASubInUse
         {
-            get { return rx2_enabled && (chkEnableMultiRX.Checked || chkVFOSplit.Checked); }
+            // H1: RX2's presence is not what makes the RX1 sub receiver exist - that sub runs on
+            // RX1's DDC with RX2 on or off, and SubVFOA is its frequency in both cases. Only the
+            // sub being off, with SPLIT not asking for it either, makes this false.
+            get { return chkEnableMultiRX.Checked || chkVFOSplit.Checked; }
         }
         private double m_dVFOASubFreq = 0;
         public double VFOASubFreq //rx2
@@ -31994,7 +32001,7 @@ namespace Thetis
             // H1: the band line is the SubVFOA row - the band name moves into the frame caption,
             // the row itself always shows the sub receiver frequency
             grpVFOA.Text = "VFO A   " + bandInfo;
-            txtVFOABand.Text = (rx2_enabled ? ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq) : VFOBFreq).ToString("f6");
+            txtVFOABand.Text = ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq).ToString("f6");
 
             Band b = BandByFreq(freq, rx1_xvtr_index, current_region);
             if (b != rx1_band)
@@ -32466,11 +32473,12 @@ namespace Thetis
 
         private void txtVFOABand_LostFocus(object sender, System.EventArgs e)
         {
-            // H1: with RX2 off this row is SubVFOA and drives VFO B, the sub receiver's VFO
-            if (rx2_enabled && !chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
+            // H1: this row is SubVFOA, the sub receiver of RX1, and it is tuned by that sub's own
+            // frequency whether RX2 is on or off. It is only tunable while the sub is in use.
+            if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
             if (txtVFOABand.Text == "." || string.IsNullOrEmpty(txtVFOABand.Text))
             {
-                if (rx2_enabled) VFOASubFreq = VFOAFreq; else VFOBFreq = VFOAFreq;
+                VFOASubFreq = VFOAFreq;
                 return;
             }
 
@@ -32483,12 +32491,12 @@ namespace Thetis
                 if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
                     double.TryParse(text, out typedFreq))
                 {
-                    if (rx2_enabled) VFOASubFreq = typedFreq; else VFOBFreq = typedFreq;
+                    VFOASubFreq = typedFreq;
                     return;
                 }
                 else
                 {
-                    txtVFOABand.Text = (rx2_enabled ? ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq) : VFOBFreq).ToString("f6");
+                    txtVFOABand.Text = ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq).ToString("f6");
                     return;
                 }
             }
@@ -32525,7 +32533,7 @@ namespace Thetis
                     chkMOX.Checked = false;
             }
 
-            if (chkEnableMultiRX.Checked)
+            if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
             {
                 int diff = (int)((freq - vfoa) * 1e6);
                 double sub_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
@@ -32628,7 +32636,7 @@ namespace Thetis
 
         private void txtVFOABand_KeyPress(object sender, System.Windows.Forms.KeyPressEventArgs e)
         {
-            if (!rx2_enabled || (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked))
+            if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked)
             {
                 e.Handled = true;
                 return;
@@ -32966,9 +32974,12 @@ namespace Thetis
                 }
             }
 
-            if (chkEnableMultiRX.Checked && !rx2_enabled && !_mox)  //MW0LGE [2.7.0.9] only when RX'ing. Fixes issue where multirx would be outside sample area after a tx
+            if ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) && !rx2_enabled && !_mox)  //MW0LGE [2.7.0.9] only when RX'ing. Fixes issue where multirx would be outside sample area after a tx
             {
-                int diff = (int)((VFOBFreq - VFOAFreq) * 1e6);
+                // H1: this keeps RX1's sub receiver inside RX1's passband while VFO B moves. The
+                // sub has its own frequency now, so VFO B's movement must not drag it: aim the sub
+                // channel from VFOASubFreq and snap the sub, not VFO B, at the edge.
+                int diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
 
                 double rx2_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
 
@@ -32976,7 +32987,7 @@ namespace Thetis
                 {
                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                                     }
-                                    else VFOBFreq = VFOAFreq; // snap to VFOA instead of disabling SUB
+                                    else VFOASubFreq = VFOAFreq; // snap the sub to VFOA instead of losing it
             }
 
             // H1: SubRX2 keeps its own frequency while VFO B is tuned - same rule the
@@ -33895,7 +33906,7 @@ namespace Thetis
                 {
                     if (!rx2_enabled)
                     {
-                        vfoa_sub_x = HzToPixel((float)((VFOBFreq - VFOAFreq) * 1000000.0));
+                        vfoa_sub_x = HzToPixel((float)((VFOASubFreq - VFOAFreq) * 1000000.0)); // H1: the sub has its own frequency
                         vfoa_sub_low_x = vfoa_sub_x + (HzToPixel((int)udFilterLow.Value) - HzToPixel(0.0f));
                         vfoa_sub_high_x = vfoa_sub_x + (HzToPixel((int)udFilterHigh.Value) - HzToPixel(0.0f));
                     }
@@ -36158,11 +36169,14 @@ namespace Thetis
                 // H1: this row is SubVFOA - it always shows the sub receiver frequency and stays tunable.
                 // The band name moves into the frame caption so the information is not lost.
                 txtVFOAFreq_LostFocus(this, EventArgs.Empty); // sets caption and sub row
-                double sub_row_freq = rx2_enabled ? ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq) : VFOBFreq;
+                // H1: the row is SubVFOA in both configurations - it shows the sub receiver's own
+                // frequency, or the last one used while the sub is idle
+                bool sub_row_active = chkEnableMultiRX.Checked || chkVFOSplit.Checked;
+                double sub_row_freq = sub_row_active ? VFOASubFreq : saved_vfoa_sub_freq;
                 txtVFOABand.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
                 txtVFOABand.TextAlign = HorizontalAlignment.Right;
-                bool sub_row_active = !rx2_enabled || chkEnableMultiRX.Checked || chkVFOSplit.Checked;
-                if (!sub_row_active) txtVFOABand.ForeColor = band_text_dark_color;
+                if (chkVFOSplit.Checked) txtVFOABand.ForeColor = Color.Red; // H1: SPLIT transmits here - mark it red
+                else if (!sub_row_active) txtVFOABand.ForeColor = band_text_dark_color;
                 else txtVFOABand.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
                 txtVFOABand.ReadOnly = false;
                 txtVFOABand.Text = sub_row_freq.ToString("f6");
@@ -36268,23 +36282,15 @@ namespace Thetis
                 if (chkVFOSplit.Checked)
                 {
                     if (chkVFOSync.Checked) chkVFOSync.Checked = false;
-                    TXBand = BandByFreq(VFOBFreq, tx_xvtr_index, current_region);
-                    grpVFOB.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Bold);
-                    grpVFOB.ForeColor = Color.Red;
-
-                    grpVFOA.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Bold);
-                    grpVFOA.ForeColor = SystemColors.ControlLightLight;
-                    chkVFOBTX.Checked = true;
+                    // H1: with RX2 off SPLIT sends the transmitter to SubVFOA, the sub receiver of
+                    // RX1. That row carries the transmit frequency and turns red; VFO B keeps its
+                    // own role and its own tick box, so SPLIT no longer ticks it.
+                    TXBand = BandByFreq(VFOASubFreq, tx_xvtr_index, current_region);
 
                     if (chkPower.Checked)
                     {
-                        txtVFOBFreq.ForeColor = Color.Red;
-
-                        txtVFOBMSD.ForeColor = vfo_text_light_color;
-                        txtVFOBLSD.ForeColor = small_vfo_color;
-                        txtVFOBBand.ForeColor = band_text_light_color;
-
-                        txtVFOBFreq_LostFocus(this, EventArgs.Empty);
+                        UpdateVFOASub();
+                        txtVFOAFreq_LostFocus(this, EventArgs.Empty);
                     }
                 }
                 else
@@ -36314,6 +36320,7 @@ namespace Thetis
 
                         if (!full_duplex)
                             txtVFOAFreq_LostFocus(this, EventArgs.Empty);
+                        UpdateVFOASub(); // H1: clear the red from the SubVFOA row
                     }
                     if (current_click_tune_mode == ClickTuneMode.VFOB && !chkEnableMultiRX.Checked && !chkFullDuplex.Checked)
                         CurrentClickTuneMode = ClickTuneMode.VFOA;
@@ -37128,6 +37135,7 @@ namespace Thetis
                             txtVFOBLSD.ForeColor = small_vfo_color;
                             txtVFOBBand.ForeColor = band_text_light_color;
                         }
+                        UpdateVFOASub(); // H1: light up the SubVFOA row with the sub's own frequency
                     }
                 }
                 radio.GetDSPRX(0, 1).SetRXFilter(
@@ -37160,6 +37168,7 @@ namespace Thetis
                         txtVFOBLSD.ForeColor = vfo_text_dark_color;
                         txtVFOBBand.ForeColor = band_text_dark_color;
                     }
+                    UpdateVFOASub(); // H1: dim the SubVFOA row again
                 }
 
                 if (current_click_tune_mode == ClickTuneMode.VFOB && !chkFullDuplex.Checked && !chkVFOSplit.Checked)
@@ -38195,7 +38204,7 @@ namespace Thetis
 
         private void panelVFOASubHover_Paint(object sender, System.Windows.Forms.PaintEventArgs e)
         {
-            if (!rx2_enabled || (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked)) return;
+            if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
             if (vfoa_sub_hover_digit < 0) return;
 
             int x = 0;
@@ -38211,7 +38220,7 @@ namespace Thetis
 
         private void panelVFOASubHover_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
         {
-            if (!rx2_enabled || (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked)) return;
+            if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
             Control c1 = (Control)sender;
             Control c2 = txtVFOABand;
             int client_width = (c1.Size.Width - c1.ClientSize.Width) + (c2.Size.Width - c2.ClientSize.Width);
@@ -38223,7 +38232,7 @@ namespace Thetis
 
         private void txtVFOABand_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
         {
-            if (!rx2_enabled || (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) || !chkPower.Checked) return;
+            if ((!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) || !chkPower.Checked) return;
             panelVFOASubHover.Visible = true;
             if (this.ContainsFocus)
             {
@@ -50891,8 +50900,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     (e.X > vfoa_sub_low_x - 3 && e.X < vfoa_sub_high_x + 3))
                                 {
                                     sub_drag_last_x = e.X;
-                                    if (rx2_enabled) sub_drag_start_freq = VFOASubFreq;
-                                    else sub_drag_start_freq = VFOBFreq;
+                                    sub_drag_start_freq = VFOASubFreq; // H1: dragging the sub tunes SubVFOA, RX2 or not
                                     rx1_sub_drag = true;
                                 }
                                 else
@@ -51935,9 +51943,7 @@ private void incrementMutliMeterDisplayModeRX2()
                             else if (rx1_sub_drag)
                             {
                                 int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
-                                if (rx2_enabled)
-                                    VFOASubFreq = sub_drag_start_freq + diff * 1e-6;
-                                else VFOBFreq = sub_drag_start_freq + diff * 1e-6;
+                                VFOASubFreq = sub_drag_start_freq + diff * 1e-6; // H1: dragging the sub tunes SubVFOA
                             }
                             else if (rx2_high_filter_drag)
                             {
