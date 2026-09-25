@@ -32246,18 +32246,18 @@ namespace Thetis
                         RX1DDSFreq = dTmpFreq;
                     }
 
-                    if ((chkEnableMultiRX.Checked || (rx2_enabled && chkVFOSplit.Checked)) && !_mox) //MW0LGE [2.7.0.9] range-check also for SPLIT-only — snap VFOASubFreq on band change
+                    if ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) && !_mox) //MW0LGE [2.7.0.9] range-check also for SPLIT-only — snap VFOASubFreq on band change
                     {
-                        int diff;
-                        if (rx2_enabled) diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
-                        else diff = (int)((VFOBFreq - VFOAFreq) * 1e6);
+                        // H1: the sub receiver of RX1 has its own frequency with RX2 on or off, so
+                        // aiming its channel from VFO B here is what made VFO B steer SubRX1
+                        int diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
                         if (chkRIT.Checked && !_mox && bRitOk) diff -= (int)udRIT.Value;
                         int rx2_osc = (int)(radio.GetDSPRX(0, 0).RXOsc - diff);
                         if (rx2_osc > -sample_rate_rx1 / 2 && rx2_osc < sample_rate_rx1 / 2)
                                                 {
                                                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                                                 }
-                                                else if (rx2_enabled) VFOASubFreq = VFOAFreq; else VFOBFreq = VFOAFreq;
+                                                else VFOASubFreq = VFOAFreq;
                     }
 
                 }
