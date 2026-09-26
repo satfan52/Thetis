@@ -51001,14 +51001,36 @@ private void incrementMutliMeterDisplayModeRX2()
                          Display.CurrentDisplayMode == DisplayMode.PANAFALL ||
                          Display.CurrentDisplayMode == DisplayMode.PANASCOPE))
                     {
-                        int subLow = 0, subHigh = 0, subX = 0, subFilterLow = 0, subFilterHigh = 0;
-                        getFilterEdgesInPixels(e, ref subLow, ref subHigh, ref subX, ref subFilterLow, ref subFilterHigh);
-                        if (e.X > subFilterLow - 3 && e.X < subFilterHigh + 3)
+                        // H1: the window's drawn bounds - the same rule the wheel hit test
+                        // uses. Recomputing them from offsets disagreed with the drawn
+                        // window, which is why edge clicks could fall through to the RX1
+                        // filter edge drag below. Edges first: grabbing one drags the
+                        // sub's passband, exactly like the receiver windows; the rest of
+                        // the window still tunes the sub.
+                        if (Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                            (!rx2_enabled || e.Y <= pnlDisplay.Height / 2))
                         {
-                            sub_drag_last_x = e.X;
-                            sub_drag_start_freq = VFOASubFreq;
-                            rx1_sub_drag = true;
-                            return;
+                            if (Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx1_sub_filter_start_low = radio.GetDSPRX(0, 1).RXFilterLow;
+                                rx1_sub_low_filter_drag = true;
+                                return;
+                            }
+                            if (Math.Abs(e.X - Display.VFOASubWindowRight) < 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx1_sub_filter_start_high = radio.GetDSPRX(0, 1).RXFilterHigh;
+                                rx1_sub_high_filter_drag = true;
+                                return;
+                            }
+                            if (e.X > Display.VFOASubWindowLeft - 3 && e.X < Display.VFOASubWindowRight + 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                sub_drag_start_freq = VFOASubFreq;
+                                rx1_sub_drag = true;
+                                return;
+                            }
                         }
                     }
 
@@ -51025,12 +51047,32 @@ private void incrementMutliMeterDisplayModeRX2()
                         int sub2Low = Display.VFOBSubWindowLeft;
                         int sub2High = Display.VFOBSubWindowRight;
 
-                        if (sub2Low >= 0 && sub2High > sub2Low && e.X > sub2Low - 3 && e.X < sub2High + 3)
+                        // H1: the SubRX2 window's edges first - drag them to change the
+                        // sub's passband, the same gesture as the receiver windows; the
+                        // rest of the window still tunes the sub.
+                        if (sub2Low >= 0 && sub2High > sub2Low)
                         {
-                            sub_drag_last_x = e.X;
-                            rx2_sub_drag_start_freq = VFOBSubFreq;
-                            rx2_sub_drag = true;
-                            return;
+                            if (Math.Abs(e.X - sub2Low) < 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx2_sub_filter_start_low = radio.GetDSPRX(1, 1).RXFilterLow;
+                                rx2_sub_low_filter_drag = true;
+                                return;
+                            }
+                            if (Math.Abs(e.X - sub2High) < 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx2_sub_filter_start_high = radio.GetDSPRX(1, 1).RXFilterHigh;
+                                rx2_sub_high_filter_drag = true;
+                                return;
+                            }
+                            if (e.X > sub2Low - 3 && e.X < sub2High + 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx2_sub_drag_start_freq = VFOBSubFreq;
+                                rx2_sub_drag = true;
+                                return;
+                            }
                         }
                     }
 
