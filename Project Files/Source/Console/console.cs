@@ -32689,12 +32689,18 @@ namespace Thetis
                 int diff = (int)((freq - vfoa) * 1e6);
                 double sub_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
 
-                if (sub_osc < -sample_rate_rx1 / 2)
+                // H1: never park the sub from an unsettled oscillator. At start-up this
+                // finaliser runs while the receiver's DDS is still mid-restore, the
+                // computed sub_osc is garbage, and the park below synthesised a wrong sub
+                // frequency from it - which the later checks then snapped onto VFO A. The
+                // trace: restore 7.169957, this park made 7.136509, the span check made
+                // VFO A. The clamps stay live for every runtime edit.
+                if (!initializing && sub_osc < -sample_rate_rx1 / 2)
                 {
                     VFOASubFreq = vfoa + (sample_rate_rx1 / 2 + radio.GetDSPRX(0, 0).RXOsc - 1) * 0.0000010;
                     return;
                 }
-                else if (sub_osc > sample_rate_rx1 / 2)
+                else if (!initializing && sub_osc > sample_rate_rx1 / 2)
                 {
                     VFOASubFreq = vfoa + (-sample_rate_rx1 / 2 + radio.GetDSPRX(0, 0).RXOsc + 1) * 0.0000010;
                     return;
