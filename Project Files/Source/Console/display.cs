@@ -9059,11 +9059,13 @@ namespace Thetis
 
                 if ((bIsWaterfall && m_bShowRXFilterOnWaterfall) || !bIsWaterfall)
                 {
-                    // f_diff is VFO B's offset from the display centre: without it the window
-                    // is only right while CTUN is off, because CTUN locks the display and
-                    // lets VFO B walk away from the centre
-                    int sub2_left_x = (int)((float)(filter_low - Low - f_diff + localSub2Diff) / width * W);
-                    int sub2_right_x = (int)((float)(filter_high - Low - f_diff + localSub2Diff) / width * W);
+                    // No f_diff term here. Under RX2 click-tune the console pushes the display's
+                    // VFO B as the CTUN centre rather than VFO B's own frequency, so the sub's
+                    // offset from the display reference is exactly (sub - Display.VFOB), which is
+                    // localSub2Diff. Adding the offset as well displaced the window by VFO B's
+                    // tuning, which is why it appeared to follow the RX2 window.
+                    int sub2_left_x = (int)((float)(filter_low - Low + localSub2Diff) / width * W);
+                    int sub2_right_x = (int)((float)(filter_high - Low + localSub2Diff) / width * W);
 
                     vfob_sub_win_left = Math.Min(sub2_left_x, sub2_right_x);
                     vfob_sub_win_right = Math.Max(sub2_left_x, sub2_right_x);
@@ -9073,7 +9075,7 @@ namespace Thetis
 
                 if ((bIsWaterfall && m_bShowRXZeroLineOnWaterfall) || !bIsWaterfall)
                 {
-                    int sub2_x = (int)((float)(localSub2Diff - Low - f_diff) / width * W);
+                    int sub2_x = (int)((float)(localSub2Diff - Low) / width * W);
                     drawLineDX2D(m_bDX2_sub_rx_zero_line_pen, sub2_x, nVerticalShift + top, sub2_x, nVerticalShift + H, 2);
                 }
             }

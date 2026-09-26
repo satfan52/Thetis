@@ -36229,6 +36229,11 @@ namespace Thetis
             txtVFOBSub.Text = sub_row_freq.ToString("f6");
 
             if (panelVFOBSubHover != null) panelVFOBSubHover.Visible = sub_row_active;
+
+            // H1: keep the display's copy of the sub's frequency current here, not only in the
+            // row's own handler. Switching the sub on used to leave the display holding zero,
+            // so the window stayed away until the row was touched once.
+            if (sub_row_active) Display.VFOBSub = (long)(m_dVFOBSubFreq * 1e6);
         }
 
         private bool _bOldVFOSplit = false; //MW0LGE_22a
