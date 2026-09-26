@@ -399,9 +399,12 @@ namespace Thetis
         {
             if (!_syncSplitAndFullDuplex || _console == null) return false;
 
+            // H1: transmitting on SubVFOB is a split transmit too, even though neither
+            // the SPLIT button nor the VFO B tick is involved.
             return _console.VFOSplit || 
                    _console.FullDuplex || 
-                   _console.VFOBTX;
+                   _console.VFOBTX || 
+                   _console.TXOnSubVFOB;
         }
 
         public void SyncCurrentThetisState()
@@ -493,7 +496,10 @@ namespace Thetis
                 // In RX2+SPLIT special mode, Thetis VFO B is RX2 and does not correspond to IC-7100 VFO B.
                 // IC-7100 VFO B holds the VFO A sub-frequency (TX).
                 // Under no circumstances should Thetis VFO B updates overwrite IC-7100 VFO B or _pendingTxFreq!
-                if (_console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                // H1: the same holds while SubVFOB is the transmit frequency - Thetis VFO B is
+                // then RX2's main receiver and must not move the rig off the sub.
+                if (_console != null && (_console.TXOnSubVFOB ||
+                    (_console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)))
                 {
                     return;
                 }
