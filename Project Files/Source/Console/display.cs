@@ -9042,6 +9042,18 @@ namespace Thetis
                 }
             }
 
+            // RX2's sub is separate from RX1's sub. Use RX2's own frequency and
+            // passband to draw its blue window, including the waterfall whenever enabled.
+            if (!local_mox && sub_rx2_enabled && rx == 2)
+            {
+                long subDiff2 = vfob_sub_hz - vfob_hz;
+                int subLeft = (int)((float)(filter_low - Low + subDiff2) / width * W);
+                int subRight = (int)((float)(filter_high - Low + subDiff2) / width * W);
+                drawFilterOverlayDX2D(m_bDX2_sub_rx_filter_brush, subLeft, subRight, W, H, rx, top, bottom, nVerticalShift);
+                int subZero = (int)((float)(subDiff2 - Low) / width * W);
+                drawLineDX2D(m_bDX2_sub_rx_zero_line_pen, subZero, nVerticalShift + top, subZero, nVerticalShift + H, 2);
+            }
+
             // RX FILTER overlay + highlight edges
             if ((bIsWaterfall && m_bShowRXFilterOnWaterfall) || !bIsWaterfall)
             {

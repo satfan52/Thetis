@@ -1,4 +1,4 @@
-//=================================================================
+﻿//=================================================================
 // console.cs
 //=================================================================
 // Thetis is a C# implementation of a Software Defined Radio.
@@ -224,7 +224,12 @@ namespace Thetis
 
         private bool rx2_meter_data_ready;					// used to synchronize the new DSP data with the multimeter
         private float rx2_meter_new_data;					// new data for the multimeter from the DSP
-        private float rx2_meter_current_data;				// current data for the multimeter
+        private float rx2_meter_current_data;
+        // The two sub receivers have independent readouts and cycle state.
+        private readonly float[] sub_meter_value = { -200.0f, -200.0f };
+        private readonly MultiMeterMeasureMode[] sub_meter_units = { MultiMeterMeasureMode.DBM, MultiMeterMeasureMode.DBM };
+        private readonly MeterTXMode[] sub_meter_tx_modes = { MeterTXMode.FORWARD_POWER, MeterTXMode.FORWARD_POWER };
+        private readonly MeterRXMode[] sub_meter_rx_modes = { MeterRXMode.SIGNAL_STRENGTH, MeterRXMode.SIGNAL_STRENGTH };				// current data for the multimeter
         private int rx2_meter_peak_count;					// Counter for peak hold on multimeter
         private int rx2_meter_peak_value;					// Value for peak hold on multimeter
         public int pa_fwd_power;							// forward power as read by the ADC on the PA
@@ -24922,9 +24927,126 @@ namespace Thetis
                     }
                     meter_data_ready = true;
                     picMultiMeterDigital.Invalidate();
+                    refreshSubMeters();
                 }
 
                 await Task.Delay(Math.Min(meter_delay, meter_dig_delay));
+            }
+        }
+
+        private string subMeterTxText(MeterTXMode tx2)
+        {
+            string format = meter_detail ? "f1" : "f0";
+            float txnum;
+            string txout = "";
+                    switch (tx2)
+                    {
+                        case MeterTXMode.MIC: txnum = (float)Math.Max(-195.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.MIC_PK)); txout = "MIC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.EQ: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.EQ_PK)); txout = "EQ " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.LEVELER: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.LEVELER_PK)); txout = "LVL " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.LVL_G: txnum = (float)Math.Max(0, WDSP.CalculateTXMeter(1, WDSP.MeterType.LVL_G)); txout = "LVL " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.CFC_PK: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_PK)); txout = "CFC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.CFC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_G)); txout = "CFC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.COMP: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR)); txout = "COMP " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.ALC_GROUP: txnum = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC))) + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
+                        case MeterTXMode.FORWARD_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "FWD " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.SWR_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "SWR " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.REVERSE_POWER: txnum = (float)alex_rev; txout = "REF " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.SWR: txnum = alex_swr; txout = "SWR " + txnum.ToString("f1") + " : 1"; break;
+                        case MeterTXMode.OFF: txout = ""; break;
+                    }
+            return txout;
+        }
+
+        // Sub channels belong to RX1 thread 0 / sub 1, RX2 thread 2 / sub 1.
+        // The sub meters use the same readout and bar shape as the two main meters.
+        private void paintSubMeter(int sub, System.Windows.Forms.PaintEventArgs e)
+        {
+            System.Windows.Forms.PictureBox bar = sub == 0 ? picSubRX1Meter : picSubRX2Meter;
+            System.Windows.Forms.TextBoxTS readout = sub == 0 ? txtSubRX1Meter : txtSubRX2Meter;
+            bool enabled = sub == 0 ? chkEnableMultiRX.Checked : rx2_enabled && chkEnableMultiRX2.Checked;
+            int width = bar.ClientSize.Width;
+            int height = bar.ClientSize.Height;
+            if (width < 4 || height < 4) return;
+            e.Graphics.Clear(Color.Black);
+            if (_mox || chkTUN.Checked)
+            {
+                MeterTXMode txMode = sub_meter_tx_modes[sub];
+                readout.Text = subMeterTxText(txMode);
+                // Each sub meter selects its own TX quantity; scale its bar accordingly.
+                float txLevel;
+                switch (txMode)
+                {
+                    case MeterTXMode.FORWARD_POWER:
+                    case MeterTXMode.SWR_POWER:
+                        txLevel = ((alexpresent || apollopresent) ? calfwdpower : drivepwr) / 100f;
+                        break;
+                    case MeterTXMode.REVERSE_POWER:
+                        txLevel = (float)alex_rev / 100f;
+                        break;
+                    case MeterTXMode.SWR:
+                        txLevel = (alex_swr - 1f) / 4f;
+                        break;
+                    case MeterTXMode.OFF:
+                        txLevel = 0;
+                        break;
+                    default:
+                        // Other TX quantities use a common dB scale, independent of
+                        // the forward-power sensor.
+                        txLevel = 0;
+                        double db;
+                        string[] fields = readout.Text.Split(' ');
+                        if (fields.Length > 1 && double.TryParse(fields[1], out db))
+                            txLevel = (float)Math.Max(0, Math.Min(1, (db + 30) / 42));
+                        break;
+                }
+                int txWidth = (int)Math.Max(0, Math.Min(width - 3, txLevel * (width - 3)));
+                if (txWidth > 0) e.Graphics.FillRectangle(Brushes.OrangeRed, 0, 0, txWidth, height - 4);
+                return;
+            }
+            float value = enabled && chkPower.Checked ? sub_meter_value[sub] : -200.0f;
+            if (!enabled || !chkPower.Checked)
+            {
+                readout.Text = "";
+                return;
+            }
+            switch (sub_meter_units[sub])
+            {
+                case MultiMeterMeasureMode.SMeter:
+                    readout.Text = Common.SMeterFromDBM(value, (sub == 0 ? VFOASubFreq : VFOBSubFreq) >= S9Frequency);
+                    break;
+                case MultiMeterMeasureMode.UV:
+                    readout.Text = Common.UVfromDBM(value).ToString("f1") + " uV";
+                    break;
+                default:
+                    readout.Text = value.ToString("f0") + " dBm";
+                    break;
+            }
+            int pixels = (int)Math.Max(0, Math.Min(width - 3, (value + 130f) / 70f * (width - 3)));
+            if (pixels > 0) e.Graphics.FillRectangle(Brushes.YellowGreen, 0, 0, pixels, height - 4);
+            e.Graphics.DrawLine(Pens.Red, Math.Max(0, pixels), 0, Math.Max(0, pixels), height - 4);
+        }
+
+        private void picSubRX1Meter_Paint(object sender, System.Windows.Forms.PaintEventArgs e) { paintSubMeter(0, e); }
+        private void picSubRX2Meter_Paint(object sender, System.Windows.Forms.PaintEventArgs e) { paintSubMeter(1, e); }
+
+        private void refreshSubMeters()
+        {
+            bool[] enabled = { chkEnableMultiRX.Checked, rx2_enabled && chkEnableMultiRX2.Checked };
+            System.Windows.Forms.PictureBox[] bars = { picSubRX1Meter, picSubRX2Meter };
+            for (int sub = 0; sub < 2; sub++)
+            {
+                if (!_mox && chkPower.Checked && enabled[sub])
+                {
+                    uint thread = sub == 0 ? 0u : 2u;
+                    WDSP.MeterType type = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_AVERAGE
+                        ? WDSP.MeterType.AVG_SIGNAL_STRENGTH : WDSP.MeterType.SIGNAL_STRENGTH;
+                    sub_meter_value[sub] = WDSP.CalculateRXMeter(thread, 1, type) + RXOffset(sub + 1);
+                }
+                else if (!_mox) sub_meter_value[sub] = -200.0f;
+                bars[sub].Invalidate();
             }
         }
 
@@ -33644,6 +33766,9 @@ namespace Thetis
         private bool rx1_high_filter_drag = false;
         private bool rx1_whole_filter_drag = false;
         private bool rx1_sub_drag = false;
+        private bool rx2_sub_drag = false;
+        private double rx2_sub_drag_start_freq = 0.0;
+        private int rx2_sub_drag_start_x = 0;
         private bool rx1_spectrum_drag = false;
 
         private bool rx2_low_filter_drag = false;
@@ -37575,6 +37700,13 @@ namespace Thetis
                 picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
                 grpRX2Meter.Location = new Point(grpVFOB.Left - meter_w - 4, gr_rx2_meter_basis.Y);
                 grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
+                // Two sub meters occupy the reserved meter slots, adjacent to their parents.
+                grpSubRX1Meter.Bounds = new Rectangle(grpMultimeter.Right + 4, grpMultimeter.Top, meter_w, grpMultimeter.Height);
+                txtSubRX1Meter.Size = new Size(meter_w - 8, txtMultiText.Height);
+                picSubRX1Meter.Size = new Size(meter_w - 8, picMultiMeterDigital.Height);
+                grpSubRX2Meter.Bounds = new Rectangle(grpRX2Meter.Left - meter_w - 4, grpRX2Meter.Top, meter_w, grpRX2Meter.Height);
+                txtSubRX2Meter.Size = new Size(meter_w - 8, txtRX2Meter.Height);
+                picSubRX2Meter.Size = new Size(meter_w - 8, picRX2Meter.Height);
 
                     //
 
@@ -42277,6 +42409,13 @@ namespace Thetis
                 picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
                 grpRX2Meter.Location = new Point(grpVFOB.Left - meter_w - 4, gr_rx2_meter_basis.Y);
                 grpVFOBetween.Location = new Point((grpMultimeter.Right + grpRX2Meter.Left) / 2 - (grpVFOBetween.Width / 2), grpVFOBetween.Location.Y);
+                // Two sub meters occupy the reserved meter slots, adjacent to their parents.
+                grpSubRX1Meter.Bounds = new Rectangle(grpMultimeter.Right + 4, grpMultimeter.Top, meter_w, grpMultimeter.Height);
+                txtSubRX1Meter.Size = new Size(meter_w - 8, txtMultiText.Height);
+                picSubRX1Meter.Size = new Size(meter_w - 8, picMultiMeterDigital.Height);
+                grpSubRX2Meter.Bounds = new Rectangle(grpRX2Meter.Left - meter_w - 4, grpRX2Meter.Top, meter_w, grpRX2Meter.Height);
+                txtSubRX2Meter.Size = new Size(meter_w - 8, txtRX2Meter.Height);
+                picSubRX2Meter.Size = new Size(meter_w - 8, picRX2Meter.Height);
 
             //
 
@@ -45231,6 +45370,39 @@ private void incrementMutliMeterDisplayModeRX2()
             picRX2Meter.Invalidate();
             txtRX2Meter.Invalidate();
         }
+
+        private void cycleSubMeter(int sub)
+        {
+            if (_mox || chkTUN.Checked)
+            {
+                MeterTXMode mode = sub_meter_tx_modes[sub];
+                do
+                {
+                    mode++;
+                    if (mode >= MeterTXMode.LAST) mode = MeterTXMode.FIRST + 1;
+                } while (mode == MeterTXMode.OFF);
+                sub_meter_tx_modes[sub] = mode;
+            }
+            else
+            {
+                MultiMeterMeasureMode unit = sub_meter_units[sub];
+                unit++;
+                if (unit >= MultiMeterMeasureMode.LAST) unit = MultiMeterMeasureMode.FIRST + 1;
+                sub_meter_units[sub] = unit;
+            }
+            (sub == 0 ? picSubRX1Meter : picSubRX2Meter).Invalidate();
+        }
+        private void cycleSubSignalMode(int sub)
+        {
+            if (_mox || chkTUN.Checked) { cycleSubMeter(sub); return; }
+            sub_meter_rx_modes[sub] = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_STRENGTH
+                ? MeterRXMode.SIGNAL_AVERAGE : MeterRXMode.SIGNAL_STRENGTH;
+            (sub == 0 ? picSubRX1Meter : picSubRX2Meter).Invalidate();
+        }
+        private void txtSubRX1Meter_Click(object sender, EventArgs e) { cycleSubMeter(0); }
+        private void picSubRX1Meter_Click(object sender, EventArgs e) { cycleSubSignalMode(0); }
+        private void txtSubRX2Meter_Click(object sender, EventArgs e) { cycleSubMeter(1); }
+        private void picSubRX2Meter_Click(object sender, EventArgs e) { cycleSubSignalMode(1); }
 
         private void txtMultiText_Click(object sender, EventArgs e)
         {
@@ -50562,6 +50734,25 @@ private void incrementMutliMeterDisplayModeRX2()
                         }
                     }
 
+                    // RX2's sub window takes precedence over click-tune and RX2's main filter.
+                    if (bOverRX2 && rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
+                        !gridminmaxadjust && !gridmaxadjust && !agc_knee_drag && !agc_hang_drag &&
+                        (Display.CurrentDisplayModeBottom == DisplayMode.PANADAPTER ||
+                         Display.CurrentDisplayModeBottom == DisplayMode.WATERFALL ||
+                         Display.CurrentDisplayModeBottom == DisplayMode.PANAFALL))
+                    {
+                        int subX = HzToPixel((float)((VFOBSubFreq - VFOBFreq) * 1e6), 2);
+                        int subL = subX + HzToPixel(radio.GetDSPRX(1, 1).RXFilterLow, 2) - HzToPixel(0f, 2);
+                        int subH = subX + HzToPixel(radio.GetDSPRX(1, 1).RXFilterHigh, 2) - HzToPixel(0f, 2);
+                        if (e.X > subL - 3 && e.X < subH + 3)
+                        {
+                            rx2_sub_drag_start_x = e.X;
+                            rx2_sub_drag_start_freq = VFOBSubFreq;
+                            rx2_sub_drag = true;
+                            return;
+                        }
+                    }
+
                     if (Display.HightlightFilterEdgeRX1 == 0 && Display.HightlightFilterEdgeRX2 == 0 &&
                         !agc_knee_drag &&
                         !agc_hang_drag &&
@@ -51180,7 +51371,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 #region Notches
                 //NOTCH MW0LGE
                 bool bDraggingAFilter = rx1_high_filter_drag || rx1_low_filter_drag || rx2_high_filter_drag || rx2_low_filter_drag ||
-                    rx1_sub_drag || rx1_whole_filter_drag || rx2_whole_filter_drag || tx_low_filter_drag || tx_high_filter_drag || tx_whole_filter_drag ||
+                    rx2_sub_drag || rx1_sub_drag || rx1_whole_filter_drag || rx2_whole_filter_drag || tx_low_filter_drag || tx_high_filter_drag || tx_whole_filter_drag ||
                     rx1_click_tune_drag || rx2_click_tune_drag;
 
                 if (!SetupForm.NotchAdminBusy && !m_frmNotchPopup.Visible & !bDraggingAFilter) // only highlight/select if we are not actively adding/edditing via setup form, or the popup is hidden
@@ -51951,6 +52142,11 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
                                 VFOASubFreq = sub_drag_start_freq + diff * 1e-6; // H1: dragging the sub tunes SubVFOA
                             }
+                            else if (rx2_sub_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X, 2) - PixelToHz(rx2_sub_drag_start_x, 2));
+                                VFOBSubFreq = rx2_sub_drag_start_freq + diff * 1e-6;
+                            }
                             else if (rx2_high_filter_drag)
                             {
                                 int lowerLimit;
@@ -52382,6 +52578,11 @@ private void incrementMutliMeterDisplayModeRX2()
                     // The dragged receiver is always RX1's sub. Never finalize through VFO B:
                     // with RX2 off that handler overwrote the sub display with VFO B's frequency.
                     txtVFOABand_LostFocus(this, EventArgs.Empty);
+                }
+                if (rx2_sub_drag)
+                {
+                    rx2_sub_drag = false;
+                    txtVFOBSub_LostFocus(this, EventArgs.Empty);
                 }
 
                 if (rx1_spectrum_drag)
