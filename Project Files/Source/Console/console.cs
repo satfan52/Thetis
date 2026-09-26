@@ -31390,6 +31390,8 @@ namespace Thetis
             VFOB,
             VFOASub,
             VFOBSub,
+            VFOASubWindow,   // H1: the wheel over the SubRX1 window on the spectral display
+            VFOBSubWindow,   // H1: the wheel over the SubRX2 window on the spectral display
             DisplayBottom,
             DisplayTop,
             Other,
@@ -31426,6 +31428,29 @@ namespace Thetis
             bottom = top + txtVFOBSub.Height;
             if (x > left && x < right && y > top && y < bottom)
                 return TuneLocation.VFOBSub;
+
+            // H1: a sub receiver's window on the spectral display tunes that sub with the
+            // wheel, the way a receiver's own window tunes the receiver. Test the bounds
+            // the display drew - recomputing them from offsets disagrees with the drawn
+            // window when CTUN is on.
+            left = panelDisplay.Left + pnlDisplay.Left;
+            right = left + pnlDisplay.Width;
+            top = panelDisplay.Top + pnlDisplay.Top;
+            bottom = top + pnlDisplay.Height;
+            if (!_mox && x > left && x < right && y > top && y < bottom)
+            {
+                int dx = x - left;
+                int dy = y - top;
+                bool rx2Half = rx2_enabled && dy > pnlDisplay.Height / 2;
+
+                if (!rx2Half && chkEnableMultiRX.Checked &&
+                    Display.VFOASubWindowLeft >= 0 && dx > Display.VFOASubWindowLeft - 3 && dx < Display.VFOASubWindowRight + 3)
+                    return TuneLocation.VFOASubWindow;
+
+                if (rx2Half && chkEnableMultiRX2.Checked &&
+                    Display.VFOBSubWindowLeft >= 0 && dx > Display.VFOBSubWindowLeft - 3 && dx < Display.VFOBSubWindowRight + 3)
+                    return TuneLocation.VFOBSubWindow;
+            }
 
             left = panelDisplay.Left + pnlDisplay.Left;
             right = left + pnlDisplay.Width;
@@ -31618,6 +31643,23 @@ namespace Thetis
                     {
                         VFOBFreq = SnapTune(VFOBFreq, step, num_steps);
                     }
+                    break;
+
+                case TuneLocation.VFOASubWindow:
+                    // H1: the wheel over the SubRX1 window fine tunes the sub receiver,
+                    // the way the wheel over a receiver's window tunes that receiver
+                    if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                        VFOASubFreq = SnapTune(VFOASubFreq, step, num_steps);
+                    else
+                        VFOAFreq = SnapTune(VFOAFreq, step, num_steps);
+                    break;
+
+                case TuneLocation.VFOBSubWindow:
+                    // H1: the wheel over the SubRX2 window fine tunes the sub of RX2
+                    if (rx2_enabled && chkEnableMultiRX2.Checked)
+                        VFOBSubFreq = SnapTune(VFOBSubFreq, step, num_steps);
+                    else
+                        VFOBFreq = SnapTune(VFOBFreq, step, num_steps);
                     break;
 
                 case TuneLocation.DisplayBottom:

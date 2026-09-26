@@ -1,4 +1,4 @@
-//=================================================================
+﻿//=================================================================
 // display.cs
 //=================================================================
 // Thetis is a C# implementation of a Software Defined Radio.
@@ -618,6 +618,13 @@ namespace Thetis
         private static int vfob_sub_win_right = -1;
         public static int VFOBSubWindowLeft { get { return vfob_sub_win_left; } }
         public static int VFOBSubWindowRight { get { return vfob_sub_win_right; } }
+
+        // H1: the SubRX1 window's drawn bounds, the same contract as the SubRX2 pair.
+        // The console reads these so a wheel over the window tunes exactly what is drawn.
+        private static int vfoa_sub_win_left = -1;
+        private static int vfoa_sub_win_right = -1;
+        public static int VFOASubWindowLeft { get { return vfoa_sub_win_left; } }
+        public static int VFOASubWindowRight { get { return vfoa_sub_win_right; } }
         public static bool SubRX2Enabled
         {
             get { return sub_rx2_enabled; }
@@ -9037,6 +9044,11 @@ namespace Thetis
                     // get filter screen coordinates
                     int filter_left_x = (int)((float)(filter_low - Low + localSubDiff + localRit) / width * W);
                     int filter_right_x = (int)((float)(filter_high - Low + localSubDiff + localRit) / width * W);
+
+                    // H1: record the drawn bounds, so the console's wheel hit test works on
+                    // exactly the window that is on screen
+                    vfoa_sub_win_left = Math.Min(filter_left_x, filter_right_x);
+                    vfoa_sub_win_right = Math.Max(filter_left_x, filter_right_x);
 
                     drawFilterOverlayDX2D(m_bDX2_sub_rx_filter_brush, filter_left_x, filter_right_x, W, H, rx, top, bottom, nVerticalShift);
                 }
