@@ -33644,6 +33644,8 @@ namespace Thetis
         private bool rx1_high_filter_drag = false;
         private bool rx1_whole_filter_drag = false;
         private bool rx1_sub_drag = false;
+        private bool rx2_sub_drag = false; // H1: dragging the SubRX2 window on the RX2 panadapter
+        private double rx2_sub_drag_start_freq = 0.0;
         private bool rx1_spectrum_drag = false;
 
         private bool rx2_low_filter_drag = false;
@@ -50573,6 +50575,28 @@ private void incrementMutliMeterDisplayModeRX2()
                         }
                     }
 
+                    // H1: the same priority for the SubRX2 window on the RX2 panadapter. With
+                    // CTUN on the RX2 click-tune path is armed, and it claims the click before
+                    // any filter-drag chain is reached, so the sub drag has to come first.
+                    if (bOverRX2 && rx2_enabled && chkEnableMultiRX2.Checked && !_mox && !gridminmaxadjust && !gridmaxadjust &&
+                        !agc_knee_drag && !agc_hang_drag &&
+                        (Display.CurrentDisplayMode == DisplayMode.PANADAPTER ||
+                         Display.CurrentDisplayMode == DisplayMode.WATERFALL ||
+                         Display.CurrentDisplayMode == DisplayMode.PANAFALL ||
+                         Display.CurrentDisplayMode == DisplayMode.PANASCOPE))
+                    {
+                        int sub2Low = Display.VFOBSubWindowLeft;
+                        int sub2High = Display.VFOBSubWindowRight;
+
+                        if (sub2Low >= 0 && sub2High > sub2Low && e.X > sub2Low - 3 && e.X < sub2High + 3)
+                        {
+                            sub_drag_last_x = e.X;
+                            rx2_sub_drag_start_freq = VFOBSubFreq;
+                            rx2_sub_drag = true;
+                            return;
+                        }
+                    }
+
                     if (Display.HightlightFilterEdgeRX1 == 0 && Display.HightlightFilterEdgeRX2 == 0 &&
                         !agc_knee_drag &&
                         !agc_hang_drag &&
@@ -50821,6 +50845,20 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int vfoa_sub_high_x = 0;
                                 getFilterEdgesInPixels(e, ref low_x, ref high_x, ref vfoa_sub_x, ref vfoa_sub_low_x, ref vfoa_sub_high_x);
 
+                                // H1: where the SubRX2 window sits on the RX2 panadapter, so a click
+                                // inside it starts a sub drag instead of a VFO B filter drag
+                                int vfob_sub_low_x = 0;
+                                int vfob_sub_high_x = 0;
+                                if (rx2_enabled && chkEnableMultiRX2.Checked)
+                                {
+                                    // H1: use the window's drawn bounds, so the clickable region is
+                                    // exactly what is on screen. Computing it from offsets here went
+                                    // wrong with CTUN on, where the display holds VFO B away from
+                                    // the centre while the panadapter stays put.
+                                    vfob_sub_low_x = Display.VFOBSubWindowLeft;
+                                    vfob_sub_high_x = Display.VFOBSubWindowRight;
+                                }
+
                                 if (Math.Abs(e.X - low_x) < 3 && e.X < high_x)
                                 {
                                     if (rx2_enabled && e.Y > pnlDisplay.Height / 2)
@@ -50926,6 +50964,15 @@ private void incrementMutliMeterDisplayModeRX2()
                                     sub_drag_last_x = e.X;
                                     sub_drag_start_freq = VFOASubFreq; // H1: dragging the sub tunes SubVFOA, RX2 or not
                                     rx1_sub_drag = true;
+                                }
+                                else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
+                                    e.Y > pnlDisplay.Height / 2 &&
+                                    (e.X > vfob_sub_low_x - 3 && e.X < vfob_sub_high_x + 3))
+                                {
+                                    // H1: dragging the SubRX2 window tunes SubVFOB, the sub of RX2
+                                    sub_drag_last_x = e.X;
+                                    rx2_sub_drag_start_freq = VFOBSubFreq;
+                                    rx2_sub_drag = true;
                                 }
                                 else
                                 {
@@ -51191,7 +51238,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 #region Notches
                 //NOTCH MW0LGE
                 bool bDraggingAFilter = rx1_high_filter_drag || rx1_low_filter_drag || rx2_high_filter_drag || rx2_low_filter_drag ||
-                    rx1_sub_drag || rx1_whole_filter_drag || rx2_whole_filter_drag || tx_low_filter_drag || tx_high_filter_drag || tx_whole_filter_drag ||
+                    rx1_sub_drag || rx2_sub_drag || rx1_whole_filter_drag || rx2_whole_filter_drag || tx_low_filter_drag || tx_high_filter_drag || tx_whole_filter_drag ||
                     rx1_click_tune_drag || rx2_click_tune_drag;
 
                 if (!SetupForm.NotchAdminBusy && !m_frmNotchPopup.Visible & !bDraggingAFilter) // only highlight/select if we are not actively adding/edditing via setup form, or the popup is hidden
@@ -51962,6 +52009,11 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
                                 VFOASubFreq = sub_drag_start_freq + diff * 1e-6; // H1: dragging the sub tunes SubVFOA
                             }
+                            else if (rx2_sub_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X, 2) - PixelToHz(sub_drag_last_x, 2));
+                                VFOBSubFreq = rx2_sub_drag_start_freq + diff * 1e-6; // H1: dragging the SubRX2 window tunes SubVFOB
+                            }
                             else if (rx2_high_filter_drag)
                             {
                                 int lowerLimit;
@@ -52385,6 +52437,14 @@ private void incrementMutliMeterDisplayModeRX2()
                         Display.HightlightFilterEdgeRX2 = 0;
 
                         break;
+                }
+
+                if (rx2_sub_drag)
+                {
+                    rx2_sub_drag = false;
+                    // H1: the dragged receiver is always RX2's sub. Finalise through SubVFOB's
+                    // own handler so the display learns the new sub frequency.
+                    txtVFOBSub_LostFocus(this, EventArgs.Empty);
                 }
 
                 if (rx1_sub_drag)

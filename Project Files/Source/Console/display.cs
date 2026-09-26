@@ -611,6 +611,13 @@ namespace Thetis
         }
 
         private static bool sub_rx2_enabled = false; // H1: SubRX2, the sub receiver of RX2
+        // H1: the pixel bounds of the SubRX2 window as last drawn. The console's drag
+        // hit test reads these so the clickable region is exactly the drawn window,
+        // whatever the display's offset conventions do under CTUN.
+        private static int vfob_sub_win_left = -1;
+        private static int vfob_sub_win_right = -1;
+        public static int VFOBSubWindowLeft { get { return vfob_sub_win_left; } }
+        public static int VFOBSubWindowRight { get { return vfob_sub_win_right; } }
         public static bool SubRX2Enabled
         {
             get { return sub_rx2_enabled; }
@@ -9039,6 +9046,35 @@ namespace Thetis
                     // draw Sub RX 0Hz line
                     int x = (int)((float)(localSubDiff - Low + localRit) / width * W);
                     drawLineDX2D(m_bDX2_sub_rx_zero_line_pen, x, nVerticalShift + top, x, nVerticalShift + H, 2);
+                }
+            }
+
+            // H1: the SubRX2 window on the RX2 panadapter, the same treatment the sub of
+            // RX1 gets just above. The window sits at the sub's own frequency, offset from
+            // VFO B, and carries the receiver's passband width, so it is a window and not a
+            // bare line. Drawn only while SubRX2 is on, and never during transmit.
+            if (!local_mox && sub_rx2_enabled && rx == 2)
+            {
+                long localSub2Diff = vfob_sub_hz - vfob_hz;
+
+                if ((bIsWaterfall && m_bShowRXFilterOnWaterfall) || !bIsWaterfall)
+                {
+                    // f_diff is VFO B's offset from the display centre: without it the window
+                    // is only right while CTUN is off, because CTUN locks the display and
+                    // lets VFO B walk away from the centre
+                    int sub2_left_x = (int)((float)(filter_low - Low - f_diff + localSub2Diff) / width * W);
+                    int sub2_right_x = (int)((float)(filter_high - Low - f_diff + localSub2Diff) / width * W);
+
+                    vfob_sub_win_left = Math.Min(sub2_left_x, sub2_right_x);
+                    vfob_sub_win_right = Math.Max(sub2_left_x, sub2_right_x);
+
+                    drawFilterOverlayDX2D(m_bDX2_sub_rx_filter_brush, sub2_left_x, sub2_right_x, W, H, rx, top, bottom, nVerticalShift);
+                }
+
+                if ((bIsWaterfall && m_bShowRXZeroLineOnWaterfall) || !bIsWaterfall)
+                {
+                    int sub2_x = (int)((float)(localSub2Diff - Low - f_diff) / width * W);
+                    drawLineDX2D(m_bDX2_sub_rx_zero_line_pen, sub2_x, nVerticalShift + top, sub2_x, nVerticalShift + H, 2);
                 }
             }
 
