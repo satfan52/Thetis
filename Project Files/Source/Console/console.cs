@@ -37124,6 +37124,16 @@ namespace Thetis
                 if (!_mox) WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
 
                 chkEnableMultiRX.BackColor = button_selected_color;
+
+                // H1: same rule the RX2 sub uses. A sub that has never been tuned sits on its
+                // own receiver's frequency. Without this the first activation after a power-on
+                // ran the sub at zero and left it outside VFO A's span.
+                if (m_dVFOASubFreq <= 0.0)
+                {
+                    m_dVFOASubFreq = VFOAFreq;
+                    saved_vfoa_sub_freq = VFOAFreq;
+                }
+
                 if (chkPower.Checked)
                 {
                     if (rx2_enabled)
