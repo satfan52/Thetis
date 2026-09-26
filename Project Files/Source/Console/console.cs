@@ -38076,6 +38076,15 @@ namespace Thetis
 
                     WDSP.SetChannelState(WDSP.id(2, 0), 1, 0);
 
+                    // H1: turning the channel on alone leaves RX2 degenerate - no
+                    // demodulated audio, no meter data and no tuning window on the
+                    // display - until a mode or filter touch re-applies everything,
+                    // which is exactly SetRX2Mode. With the console already powered
+                    // apply that here so RX2 comes up live; at startup the power-on
+                    // sequence does it on its own.
+                    if (chkPower.Checked && !initializing)
+                        SetRX2Mode(_rx2_dsp_mode);
+
                     if (chkEnableMultiRX.Checked)
                         txtVFOABand_LostFocus(this, EventArgs.Empty);
 
