@@ -4174,6 +4174,7 @@ namespace Thetis
                         double vfoaSubRestored = double.Parse(val);
                         m_dVFOASubFreq = Math.Round(vfoaSubRestored, 6);
                         saved_vfoa_sub_freq = m_dVFOASubFreq;  // init the save sub freq (i dont like this, TODO)
+                        BandLog("restore VFOASubFreq=" + vfoaSubRestored + " -> m_dVFOASubFreq");
                         _force_vfo_update = true;
                         VFOASubFreq = vfoaSubRestored;
                         _force_vfo_update = false;
@@ -32383,8 +32384,22 @@ namespace Thetis
                                                     // That is the band-change case, where it otherwise stayed on the old
                                                     // band's frequency and its window sat outside the span. A sub only
                                                     // just outside the passband is still parked at the nearest edge.
+                                                    // H1: these adjustments judge the sub against the display span and
+                                                    // the receiver's DDS. At start-up, when VFO A applies its restored
+                                                    // value, the span still reads zero - and a zero span made this snap
+                                                    // every stored SubRX1 frequency onto VFO A, which is the recentring
+                                                    // the user saw on a restart. Only judge when the span is actually
+                                                    // known; until then leave the sub alone and let the settled passes
+                                                    // aim its oscillator.
+                                                    bool sub_env_known = !initializing &&
+                                                        Display.RXDisplayHigh > Display.RXDisplayLow;
                                                     double half_span = Math.Abs(Display.RXDisplayHigh - Display.RXDisplayLow) / 2.0;
-                                                    if (Math.Abs(VFOASubFreq - VFOAFreq) * 1e6 > half_span)
+                                                    BandLog("vfoa update: sub=" + VFOASubFreq + " vfoa=" + VFOAFreq + " osc=" + rx2_osc + " half_span=" + half_span + " init=" + initializing);
+                                                    if (!sub_env_known)
+                                                    {
+                                                        BandLog("vfoa update: env not known - sub kept");
+                                                    }
+                                                    else if (Math.Abs(VFOASubFreq - VFOAFreq) * 1e6 > half_span)
                                                     {
                                                         VFOASubFreq = VFOAFreq;
                                                     }
@@ -37335,14 +37350,17 @@ namespace Thetis
                 // VFO A - which is why SubRX1's frequency did not survive a restart.
                 bool sub_span_known = !initializing && sub_span_hz > 0 &&
                                       Display.RXDisplayHigh > Display.RXDisplayLow;
+                BandLog("sub1 enable: m=" + m_dVFOASubFreq + " vfoa=" + VFOAFreq + " span=" + sub_span_hz + " init=" + initializing);
                 if (m_dVFOASubFreq <= 0.0)
                 {
+                    BandLog("sub1 enable: snap to VFOA (nothing stored)");
                     m_dVFOASubFreq = VFOAFreq;
                     saved_vfoa_sub_freq = VFOAFreq;
                 }
                 else if (sub_span_known &&
                     Math.Abs(m_dVFOASubFreq - VFOAFreq) * 1e6 > sub_span_hz)
                 {
+                    BandLog("sub1 enable: snap to VFOA (out of span)");
                     m_dVFOASubFreq = VFOAFreq;
                     saved_vfoa_sub_freq = VFOAFreq;
                 }
