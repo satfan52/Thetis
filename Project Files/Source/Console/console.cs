@@ -18508,6 +18508,7 @@ namespace Thetis
             m_dVFOASubFreq = Math.Round(freq, 6);// MW0LGE_21d rounded to 6
             txtVFOABand.Text = freq.ToString("f6");
             txtVFOABand_LostFocus(this, EventArgs.Empty);
+            recordSubMemory(1); // H1: the sub's frequency joins the band memory
 
             //MW0LGE [2.9.0.7] also in UpdateVFOASub
             double old_vfoa_sub_freq_rounded = Math.Round(dOldVFOASubFreq, 6);
@@ -18591,6 +18592,7 @@ namespace Thetis
             m_dVFOBSubFreq = Math.Round(freq, 6);
             txtVFOBSub.Text = freq.ToString("f6");
             txtVFOBSub_LostFocus(this, EventArgs.Empty);
+            recordSubMemory(2); // H1: the sub's frequency joins the band memory
         }
 
         public bool VFOBSubInUse
@@ -34046,6 +34048,37 @@ namespace Thetis
         // H1: apply a filter to a sub receiver. The sub keeps its own passband once
         // dragged; the same values go to the display so the drawn window is always the
         // sub's own width. 1 = SubRX1, 2 = SubRX2.
+        // H1: the sub receivers' working state joins the band memory. Recorded into the
+        // owning receiver's current band filter, from which entries are built.
+        private void recordSubMemory(int rx)
+        {
+            try
+            {
+                if (!BandStackManager.Ready) return;
+                if (rx == 1)
+                {
+                    if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
+                    BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, 1, false);
+                    if (bsf == null) return;
+                    bsf.LastVisited.SubVFOFreq = VFOASubFreq;
+                    bsf.LastVisited.SubFilterLow = Display.SubRX1FilterLow;
+                    bsf.LastVisited.SubFilterHigh = Display.SubRX1FilterHigh;
+                    BandLog("record rx1 band=" + rx1_band + " sub=" + VFOASubFreq + " fl=" + Display.SubRX1FilterLow + " fh=" + Display.SubRX1FilterHigh);
+                }
+                else
+                {
+                    if (!chkEnableMultiRX2.Checked || VFOBSubFreq <= 0) return;
+                    BandStackFilter bsf = BandStackManager.GetFilter(RX2Band, 2, false);
+                    if (bsf == null) return;
+                    bsf.LastVisited.SubVFOFreq = VFOBSubFreq;
+                    bsf.LastVisited.SubFilterLow = Display.SubRX2FilterLow;
+                    bsf.LastVisited.SubFilterHigh = Display.SubRX2FilterHigh;
+                    BandLog("record rx2 band=" + RX2Band + " sub=" + VFOBSubFreq + " fl=" + Display.SubRX2FilterLow + " fh=" + Display.SubRX2FilterHigh);
+                }
+            }
+            catch { }
+        }
+
         private void ApplySubRXFilter(int sub, int low, int high)
         {
             if (sub == 1)
@@ -34055,6 +34088,7 @@ namespace Thetis
                 radio.GetDSPRX(0, 1).SetRXFilter(low, high);
                 Display.SubRX1FilterLow = low;
                 Display.SubRX1FilterHigh = high;
+                recordSubMemory(1);
             }
             else
             {
@@ -34063,6 +34097,7 @@ namespace Thetis
                 radio.GetDSPRX(1, 1).SetRXFilter(low, high);
                 Display.SubRX2FilterLow = low;
                 Display.SubRX2FilterHigh = high;
+                recordSubMemory(2);
             }
         }
 
@@ -37358,6 +37393,19 @@ namespace Thetis
         // demodulate, so the button is disabled and the SubVFOB row keeps showing
         // the stored frequency.
         // ==================================================================
+        // H1: temporary trace of the band-change path - one line per event in
+        // %TEMP%\band_trace.log, read while the user changes bands. Remove once the
+        // band memory is accepted.
+        public static void BandLog(string s)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(System.IO.Path.GetTempPath() + "band_trace.log",
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + s + Environment.NewLine);
+            }
+            catch { }
+        }
+
         private bool _sub_rx2_enabled = false;
         public bool SubRX2Enabled
         {
@@ -47195,6 +47243,16 @@ private void incrementMutliMeterDisplayModeRX2()
             UpdateWaterfallLevelValues();
             updateDisplayGridLevelValues();
             UpdateDiversityValues();
+            // H1: the sub's memory for this band comes back with the entry - its own
+            // frequency and its own passband. A band the sub has never been used on
+            // keeps the existing bring-along behaviour.
+            if (chkEnableMultiRX.Checked)
+            {
+                if (bse.SubVFOFreq > 0) VFOASubFreq = bse.SubVFOFreq;
+                if (bse.SubFilterHigh > bse.SubFilterLow)
+                    ApplySubRXFilter(1, bse.SubFilterLow, bse.SubFilterHigh);
+            }
+            BandLog("apply rx1 band=" + bse.Band + " mode=" + bse.Mode + " filter=" + bse.Filter + " freq=" + bse.Frequency + " sub=" + bse.SubVFOFreq + "/" + bse.SubFilterLow + "/" + bse.SubFilterHigh);
             NetworkIO.SendHighPriority(1);
         }
 
@@ -47207,6 +47265,14 @@ private void incrementMutliMeterDisplayModeRX2()
             if (bse == null) return;
 
             SetBandRX2(bse.Mode.ToString(), bse.Filter.ToString(), bse.Frequency, bse.CTUNEnabled, bse.ZoomSlider, bse.CentreFrequency);
+            // H1: the SubRX2 memory for this band comes back with the entry.
+            if (rx2_enabled && chkEnableMultiRX2.Checked)
+            {
+                if (bse.SubVFOFreq > 0) VFOBSubFreq = bse.SubVFOFreq;
+                if (bse.SubFilterHigh > bse.SubFilterLow)
+                    ApplySubRXFilter(2, bse.SubFilterLow, bse.SubFilterHigh);
+            }
+            BandLog("apply rx2 band=" + bse.Band + " mode=" + bse.Mode + " filter=" + bse.Filter + " freq=" + bse.Frequency + " sub=" + bse.SubVFOFreq + "/" + bse.SubFilterLow + "/" + bse.SubFilterHigh);
         }
         // H1: RX2's band stack entry for a band, ready to apply, gathered the way preBandSelect
         // gathers RX1's. RX2's stacks carry no entries yet - entries arrive with the window
@@ -47284,6 +47350,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
             if (rx == 2)
             {
+                BandLog("OnBandChange rx2 " + oldBand + "->" + newBand);
                 // H1: RX2 keeps its own band stack. Its events are recorded here into the RX2
                 // filters; applying them on a band change, and letting the shared window follow
                 // the receiver in use, come in the next build. Recording alone changes nothing
@@ -47304,6 +47371,7 @@ private void incrementMutliMeterDisplayModeRX2()
             if (bsf != null)
             {
                 bsf.LastVisited.Band = newBand;
+                BandLog("OnBandChange rx1 " + oldBand + "->" + newBand);
                 BandStack2Form.InitBandStackFilter(bsf, false);
                 bsf.SelectInitial();
                 BandStack2Form.UpdateSelected();

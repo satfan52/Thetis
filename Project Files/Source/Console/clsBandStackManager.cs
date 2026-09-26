@@ -1,4 +1,4 @@
-/*  clsBandStackManager.cs
+﻿/*  clsBandStackManager.cs
 
 This file is part of a program that implements a Software-Defined Radio.
 
@@ -141,6 +141,15 @@ namespace Thetis
         public int ZoomSlider { get => zoomSlider; set { zoomSlider = value; } }
         public bool Locked { get => locked; set => locked = value; }
         public string Description { get => description; set => description = value; }
+
+        // H1: the sub receiver's memory for this entry - its frequency and its own
+        // passband. On an RX1 entry this is SubVFOA, on an RX2 entry SubVFOB.
+        private double subVFOFreq;
+        private int subFilterLow;
+        private int subFilterHigh;
+        public double SubVFOFreq { get => subVFOFreq; set { subVFOFreq = value; } }
+        public int SubFilterLow { get => subFilterLow; set { subFilterLow = value; } }
+        public int SubFilterHigh { get => subFilterHigh; set { subFilterHigh = value; } }
         // not stored, used for display rendering, and calculated on the fly
         public int LowFilter { get => lowFilter; set => lowFilter = value; }
         public int HighFilter { get => highFilter; set => highFilter = value; }
@@ -191,6 +200,9 @@ namespace Thetis
                 Locked = this.Locked,
                 Description = this.Description,
                 GUID = this.GUID,
+                SubVFOFreq = this.SubVFOFreq,
+                SubFilterLow = this.SubFilterLow,
+                SubFilterHigh = this.SubFilterHigh,
             };
             if (bNewGUID) bse.GUID = Guid.NewGuid().ToString();
 
@@ -400,6 +412,9 @@ namespace Thetis
             bse.SubMode = m_lastVisited.SubMode;
             bse.ZoomFactor = m_lastVisited.ZoomFactor;
             bse.ZoomSlider = m_lastVisited.ZoomSlider;
+            bse.SubVFOFreq = m_lastVisited.SubVFOFreq;
+            bse.SubFilterLow = m_lastVisited.SubFilterLow;
+            bse.SubFilterHigh = m_lastVisited.SubFilterHigh;
 
             // remove from main list
             int n = BandStackManager.IndexFromGUID(bse.GUID);
