@@ -37421,6 +37421,9 @@ namespace Thetis
         }
 
         private bool _sub_rx2_enabled = false;
+        // H1: the user's SubRX2 choice while RX2 runs. The RX2 off path untangles the
+        // sub by force, so the choice is remembered here and put back when RX2 returns.
+        private bool _sub_rx2_remembered_on = false;
         public bool SubRX2Enabled
         {
             get { return _sub_rx2_enabled; }
@@ -37428,6 +37431,11 @@ namespace Thetis
 
         unsafe private void chkEnableMultiRX2_CheckedChanged(object sender, System.EventArgs e)
         {
+            // H1: while RX2 is on, a change of this button is the user's choice - remember
+            // it. The forced untick when RX2 goes off happens after rx2_enabled is already
+            // false, so it cannot overwrite the memory.
+            if (rx2_enabled) _sub_rx2_remembered_on = chkEnableMultiRX2.Checked;
+
             if (!initializing) radio.GetDSPRX(1, 1).Active = chkEnableMultiRX2.Checked;
 
             if (chkEnableMultiRX2.Checked)
@@ -38268,6 +38276,12 @@ namespace Thetis
                             catch { }
                         });
                     }
+
+                    // H1: put the sub's remembered state back - the RX2 off path unticked
+                    // it by force, and without this the button was off after every cycle.
+                    // The tick runs the sub's full bring-up, the same as a manual click.
+                    if (_sub_rx2_remembered_on && !chkEnableMultiRX2.Checked)
+                        chkEnableMultiRX2.Checked = true;
 
                     if (chkEnableMultiRX.Checked)
                         txtVFOABand_LostFocus(this, EventArgs.Empty);
