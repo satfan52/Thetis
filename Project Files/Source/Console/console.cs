@@ -1,4 +1,4 @@
-//=================================================================
+﻿//=================================================================
 // console.cs
 //=================================================================
 // Thetis is a C# implementation of a Software Defined Radio.
@@ -36363,20 +36363,13 @@ namespace Thetis
                     chkVFOATX.Checked = true;
                     if (chkPower.Checked)
                     {
-                        if (chkEnableMultiRX.Checked)
-                        {
-                            txtVFOBFreq.ForeColor = vfo_text_light_color;
-                            txtVFOBMSD.ForeColor = vfo_text_light_color;
-                            txtVFOBLSD.ForeColor = small_vfo_color;
-                            txtVFOBBand.ForeColor = band_text_light_color;
-                        }
-                        else
-                        {
-                            txtVFOBFreq.ForeColor = vfo_text_dark_color;
-                            txtVFOBMSD.ForeColor = vfo_text_dark_color;
-                            txtVFOBLSD.ForeColor = vfo_text_dark_color;
-                            txtVFOBBand.ForeColor = band_text_dark_color;
-                        }
+                        // H1: with RX2 off VFO B has no role, so releasing SPLIT cannot
+                        // light it up again, whether or not the RX1 sub receiver runs
+                        txtVFOBFreq.ForeColor = vfo_text_dark_color;
+                        txtVFOBMSD.ForeColor = vfo_text_dark_color;
+                        txtVFOBLSD.ForeColor = vfo_text_dark_color;
+                        txtVFOBBand.ForeColor = band_text_dark_color;
+                        txtRX2Meter.ForeColor = SystemColors.GrayText;
 
                         if (!full_duplex)
                             txtVFOAFreq_LostFocus(this, EventArgs.Empty);
@@ -38031,6 +38024,7 @@ namespace Thetis
                         txtVFOBMSD.ForeColor = vfo_text_light_color;
                         txtVFOBLSD.ForeColor = small_vfo_color;
                         txtVFOBBand.ForeColor = band_text_light_color;
+                        txtRX2Meter.ForeColor = meter_digital_text_color;
 
                         if (chkVFOSplit.Checked) chkVFOSplit_CheckedChanged(this, EventArgs.Empty);
                         if (chkEnableMultiRX.Checked) chkEnableMultiRX_CheckedChanged(this, EventArgs.Empty);
@@ -38062,14 +38056,17 @@ namespace Thetis
                     {
                         if (chkVFOSplit.Checked) chkVFOSplit_CheckedChanged(this, EventArgs.Empty);
                         else if (chkEnableMultiRX.Checked) chkEnableMultiRX_CheckedChanged(this, EventArgs.Empty);
-                        else
-                        {
-                            txtVFOBFreq.ForeColor = vfo_text_dark_color;
-                            txtVFOBMSD.ForeColor = vfo_text_dark_color;
-                            txtVFOBLSD.ForeColor = vfo_text_dark_color;
-                            txtVFOBBand.ForeColor = band_text_dark_color;
-                            panelVFOASubHover.Visible = false;
-                        }
+
+                        // H1: with RX2 off VFO B and the RX2 meter have no role, whatever
+                        // SPLIT or the RX1 sub receiver are doing. Grey them here, after the
+                        // handlers above, so no transition path can leave them lit.
+                        txtVFOBFreq.ForeColor = vfo_text_dark_color;
+                        txtVFOBMSD.ForeColor = vfo_text_dark_color;
+                        txtVFOBLSD.ForeColor = vfo_text_dark_color;
+                        txtVFOBBand.ForeColor = band_text_dark_color;
+                        txtRX2Meter.ForeColor = SystemColors.GrayText;
+                        panelVFOASubHover.Visible = false;
+
                         if (chkVFOBTX.Checked && !chkVFOSplit.Checked)
                             chkVFOATX.Checked = true;
                         UpdateVFOASub();
@@ -38620,6 +38617,9 @@ namespace Thetis
                     comboRX2Preamp.Visible = RX2Enabled && _rx2_preamp_present;
                     udRX2StepAttData.Visible = RX2Enabled && _rx2_preamp_present;
                 }
+
+                // H1: the RX2 meter readout greys while RX2 is off, like the VFO B digits
+                txtRX2Meter.ForeColor = RX2Enabled ? meter_digital_text_color : SystemColors.GrayText;
 
                 if (show && sub) UpdateSubControls();
                 if (show && !sub) UpdateRX2SliceControls();

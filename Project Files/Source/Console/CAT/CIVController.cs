@@ -1,4 +1,4 @@
-//=================================================================
+﻿//=================================================================
 // CIVController.cs
 //=================================================================
 // Controller for native Icom CI-V serial communication in Thetis.
@@ -476,6 +476,14 @@ namespace Thetis
             }
         }
 
+        // H1: Thetis VFO B only has a station role while RX2 is enabled or split needs it.
+        // With RX2 off and no split, VFO B must not be queued, sent, or matched against
+        // incoming frequencies - the IC-7100 VFO B stays untouched in that state.
+        private bool VfoBHasRole()
+        {
+            return _console != null && (_console.RX2Enabled || IsSplitRequired());
+        }
+
         private void OnVFOBFrequencyChanged(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider, double offset, int rx)
         {
             if (_suppressOutgoingUpdates || !IsOpen) return;
@@ -486,6 +494,11 @@ namespace Thetis
                 // IC-7100 VFO B holds the VFO A sub-frequency (TX).
                 // Under no circumstances should Thetis VFO B updates overwrite IC-7100 VFO B or _pendingTxFreq!
                 if (_console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX)
+                {
+                    return;
+                }
+
+                if (!VfoBHasRole())
                 {
                     return;
                 }
@@ -1022,7 +1035,7 @@ namespace Thetis
                 SendVfoAFrequency(targetVfoAFreq, force: true);
             }
 
-            if (doVfoB && !doSplit)
+            if (doVfoB && !doSplit && VfoBHasRole())
             {
                 SendVfoBFrequency(targetVfoBFreq);
             }
@@ -2292,7 +2305,7 @@ namespace Thetis
             bool differsFromVfoA = Math.Abs(freqMHz - _console.VFOAFreq) > 0.0000015 &&
                                    Math.Abs(freqMHz - _lastSentVfoAFreq) > 0.0000015;
 
-            if (matchesVfoB && differsFromVfoA)
+            if (VfoBHasRole() && matchesVfoB && differsFromVfoA)
             {
                 Log("[FREQ_IN:SWAP_DETECTED] freq={0:F6} MHz matches VfoB ({1:F6}) and differs from VfoA ({2:F6})",
                     freqMHz, targetVfoBFreq, _console.VFOAFreq);
