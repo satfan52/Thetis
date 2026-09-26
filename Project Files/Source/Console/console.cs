@@ -27706,6 +27706,13 @@ namespace Thetis
                 if (radio.GetDSPRX(1, 1).Active) WDSP.SetChannelState(WDSP.id(2, 1), 1, 1); // H1: SubRX2
 
                 DataFlowing = true;
+                Sub2Log("power up: rx2=" + rx2_enabled);
+                // H1: RX2 can be switched on while the console still counts as
+                // initialising, when its apply above is skipped; catch it up now
+                // that the radio data is up, or it stays degenerate until a mode
+                // touch. Same shape as the enable path, without the thread hop.
+                if (rx2_enabled && _rx2_dsp_mode != DSPMode.FIRST && _rx2_dsp_mode != DSPMode.LAST)
+                    SetRX2Mode(_rx2_dsp_mode);
                 HeadlessSliceManager.Instance.SyncActiveSlices();
                 SetupForm.UpdateGeneraHardware();
                 SetMicGain();
@@ -27719,6 +27726,7 @@ namespace Thetis
             }
             else
             {
+                Sub2Log("power down");
                 DataFlowing = false;
                 SetupForm.TestIMD = false;
 
@@ -38119,22 +38127,29 @@ namespace Thetis
 
                     WDSP.SetChannelState(WDSP.id(2, 0), 1, 0);
 
+                    Sub2Log("RX2 on: power=" + chkPower.Checked + " init=" + initializing + " data=" + DataFlowing + " mode=" + _rx2_dsp_mode);
+
                     // H1: turning the channel on alone leaves RX2 degenerate - no
                     // demodulated audio, no meter data and no tuning window on the
                     // display - until a mode or filter touch re-applies everything,
-                    // which is exactly SetRX2Mode. With the console already powered
-                    // apply that here so RX2 comes up live; at startup the power-on
-                    // sequence does it on its own.
-                    if (chkPower.Checked && !initializing)
+                    // which is exactly SetRX2Mode. Apply that here so RX2 comes up
+                    // live. The initialising test alone proved too narrow: it also
+                    // covers windows where the receiver is switched on while the
+                    // console still counts as initialising but the radio data is
+                    // already flowing, and there the apply was skipped entirely.
+                    if (chkPower.Checked && (!initializing || DataFlowing))
                         SetRX2Mode(_rx2_dsp_mode);
+                    else
+                        Sub2Log("RX2 apply immediate: skipped");
 
                     // H1: the audio path to the VACs only engages on a second channel
                     // stop/start with the receiver's data already flowing - the apply
                     // above fixes the window and the meter immediately, but VAC2 stayed
                     // silent until a manual mode touch. Do that touch automatically,
                     // shortly after the enable.
-                    if (chkPower.Checked && !initializing)
+                    if (chkPower.Checked && (!initializing || DataFlowing))
                     {
+                        Sub2Log("RX2 apply deferred: queued");
                         ThreadPool.QueueUserWorkItem(_ =>
                         {
                             try
@@ -38150,6 +38165,8 @@ namespace Thetis
                             catch { }
                         });
                     }
+                    else
+                        Sub2Log("RX2 apply deferred: not queued (power=" + chkPower.Checked + " init=" + initializing + " data=" + DataFlowing + ")");
 
                     if (chkEnableMultiRX.Checked)
                         txtVFOABand_LostFocus(this, EventArgs.Empty);
