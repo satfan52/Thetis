@@ -7605,6 +7605,9 @@ namespace Thetis
             // send the setting to the display
             Display.RX1FilterLow = low;
             Display.RX1FilterHigh = high;
+            // H1: the sub follows this filter, so its drawn window follows too
+            Display.SubRX1FilterLow = low;
+            Display.SubRX1FilterHigh = high;
 
             if (!from_change_event)// this is required to prevent endless loop from the change event
             {
@@ -7725,6 +7728,9 @@ namespace Thetis
             // send the setting to the display
             Display.RX2FilterLow = low;
             Display.RX2FilterHigh = high;
+            // H1: the sub follows this filter, so its drawn window follows too
+            Display.SubRX2FilterLow = low;
+            Display.SubRX2FilterHigh = high;
 
             if (!from_change_event) // this is required to prevent endless loop from the change event
             {
@@ -33755,6 +33761,16 @@ namespace Thetis
         private bool rx1_sub_drag = false;
         private bool rx2_sub_drag = false; // H1: dragging the SubRX2 window on the RX2 panadapter
         private double rx2_sub_drag_start_freq = 0.0;
+        // H1: dragging a sub window's filter edge changes that sub's passband, exactly
+        // as the receiver windows' edges do
+        private bool rx1_sub_low_filter_drag = false;
+        private bool rx1_sub_high_filter_drag = false;
+        private bool rx2_sub_low_filter_drag = false;
+        private bool rx2_sub_high_filter_drag = false;
+        private int rx1_sub_filter_start_low = 0;
+        private int rx1_sub_filter_start_high = 0;
+        private int rx2_sub_filter_start_low = 0;
+        private int rx2_sub_filter_start_high = 0;
         private bool rx1_spectrum_drag = false;
 
         private bool rx2_low_filter_drag = false;
@@ -34029,6 +34045,29 @@ namespace Thetis
                 }
             }
         }
+        // H1: apply a filter to a sub receiver. The sub keeps its own passband once
+        // dragged; the same values go to the display so the drawn window is always the
+        // sub's own width. 1 = SubRX1, 2 = SubRX2.
+        private void ApplySubRXFilter(int sub, int low, int high)
+        {
+            if (sub == 1)
+            {
+                ConstrainFilter(ref low, ref high, 1);
+                if (low == high) return;
+                radio.GetDSPRX(0, 1).SetRXFilter(low, high);
+                Display.SubRX1FilterLow = low;
+                Display.SubRX1FilterHigh = high;
+            }
+            else
+            {
+                ConstrainFilter(ref low, ref high, 2);
+                if (low == high) return;
+                radio.GetDSPRX(1, 1).SetRXFilter(low, high);
+                Display.SubRX2FilterLow = low;
+                Display.SubRX2FilterHigh = high;
+            }
+        }
+
         private void dragWholeFilter(MouseEventArgs e)
         {
             whole_filter_start_x = e.X;
@@ -37265,6 +37304,9 @@ namespace Thetis
                 radio.GetDSPRX(0, 1).SetRXFilter(
                     radio.GetDSPRX(0, 0).RXFilterLow,
                     radio.GetDSPRX(0, 0).RXFilterHigh);
+                // H1: give the display the sub's passband, so its window draws at the sub's width
+                Display.SubRX1FilterLow = radio.GetDSPRX(0, 0).RXFilterLow;
+                Display.SubRX1FilterHigh = radio.GetDSPRX(0, 0).RXFilterHigh;
             }
             else
             {
@@ -37350,6 +37392,9 @@ namespace Thetis
                 RadioDSPRX sub_rx2 = radio.GetDSPRX(1, 1);
                 sub_rx2.DSPMode = main_rx2.DSPMode;
                 sub_rx2.SetRXFilter(main_rx2.RXFilterLow, main_rx2.RXFilterHigh);
+                // H1: give the display the sub's passband, so its window draws at the sub's width
+                Display.SubRX2FilterLow = main_rx2.RXFilterLow;
+                Display.SubRX2FilterHigh = main_rx2.RXFilterHigh;
                 sub_rx2.RXAGCMode = main_rx2.RXAGCMode;
                 sub_rx2.RXAGCHang = main_rx2.RXAGCHang;
                 sub_rx2.RXAGCDecay = main_rx2.RXAGCDecay;
@@ -38627,6 +38672,8 @@ namespace Thetis
             if (high > _max_filter_shift) high = _max_filter_shift;
 
             radio.GetDSPRX(0, 1).SetRXFilter(low, high);
+            Display.SubRX1FilterLow = low; // H1: the drawn sub window follows this filter
+            Display.SubRX1FilterHigh = high;
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
         }
@@ -51349,6 +51396,42 @@ private void incrementMutliMeterDisplayModeRX2()
                                     dragWholeFilter(e);
                                 }
                                 else if (chkEnableMultiRX.Checked && !_mox &&
+                                    (!rx2_enabled || e.Y <= pnlDisplay.Height / 2) &&
+                                    Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                                    Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
+                                {
+                                    // H1: SubRX1 window's left edge - drag to change the sub's passband
+                                    sub_drag_last_x = e.X;
+                                    rx1_sub_filter_start_low = radio.GetDSPRX(0, 1).RXFilterLow;
+                                    rx1_sub_low_filter_drag = true;
+                                }
+                                else if (chkEnableMultiRX.Checked && !_mox &&
+                                    (!rx2_enabled || e.Y <= pnlDisplay.Height / 2) &&
+                                    Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                                    Math.Abs(e.X - Display.VFOASubWindowRight) < 3)
+                                {
+                                    sub_drag_last_x = e.X;
+                                    rx1_sub_filter_start_high = radio.GetDSPRX(0, 1).RXFilterHigh;
+                                    rx1_sub_high_filter_drag = true;
+                                }
+                                else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
+                                    e.Y > pnlDisplay.Height / 2 &&
+                                    vfob_sub_high_x > vfob_sub_low_x && Math.Abs(e.X - vfob_sub_low_x) < 3)
+                                {
+                                    // H1: SubRX2 window's left edge - drag to change the sub's passband
+                                    sub_drag_last_x = e.X;
+                                    rx2_sub_filter_start_low = radio.GetDSPRX(1, 1).RXFilterLow;
+                                    rx2_sub_low_filter_drag = true;
+                                }
+                                else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
+                                    e.Y > pnlDisplay.Height / 2 &&
+                                    vfob_sub_high_x > vfob_sub_low_x && Math.Abs(e.X - vfob_sub_high_x) < 3)
+                                {
+                                    sub_drag_last_x = e.X;
+                                    rx2_sub_filter_start_high = radio.GetDSPRX(1, 1).RXFilterHigh;
+                                    rx2_sub_high_filter_drag = true;
+                                }
+                                else if (chkEnableMultiRX.Checked && !_mox &&
                                     (e.X > vfoa_sub_low_x - 3 && e.X < vfoa_sub_high_x + 3))
                                 {
                                     sub_drag_last_x = e.X;
@@ -51620,6 +51703,12 @@ private void incrementMutliMeterDisplayModeRX2()
                     vfob_high_x = RX2diff + (HzToPixel(radio.GetDSPRX(1, 0).RXFilterHigh, 2) - HzToPixel(0.0f, 2));
                 }
 
+                // H1: the drawn bounds of the two sub windows, for the edge cursors and drags
+                int sub1_win_l = chkEnableMultiRX.Checked ? Display.VFOASubWindowLeft : -1;
+                int sub1_win_r = chkEnableMultiRX.Checked ? Display.VFOASubWindowRight : -1;
+                int sub2_win_l = (rx2_enabled && chkEnableMultiRX2.Checked) ? Display.VFOBSubWindowLeft : -1;
+                int sub2_win_r = (rx2_enabled && chkEnableMultiRX2.Checked) ? Display.VFOBSubWindowRight : -1;
+
                 rx1_grid_adjust = false;
                 rx2_grid_adjust = false;
 
@@ -51628,7 +51717,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 #region Notches
                 //NOTCH MW0LGE
                 bool bDraggingAFilter = rx1_high_filter_drag || rx1_low_filter_drag || rx2_high_filter_drag || rx2_low_filter_drag ||
-                    rx1_sub_drag || rx2_sub_drag || rx1_whole_filter_drag || rx2_whole_filter_drag || tx_low_filter_drag || tx_high_filter_drag || tx_whole_filter_drag ||
+                    rx1_sub_drag || rx2_sub_drag || rx1_sub_low_filter_drag || rx1_sub_high_filter_drag || rx2_sub_low_filter_drag || rx2_sub_high_filter_drag || rx1_whole_filter_drag || rx2_whole_filter_drag || tx_low_filter_drag || tx_high_filter_drag || tx_whole_filter_drag ||
                     rx1_click_tune_drag || rx2_click_tune_drag;
 
                 if (!SetupForm.NotchAdminBusy && !m_frmNotchPopup.Visible & !bDraggingAFilter) // only highlight/select if we are not actively adding/edditing via setup form, or the popup is hidden
@@ -52275,7 +52364,14 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int highlightRX1 = 0;
                                 int highlightRX2 = 0;
 
-                                if (bLowEdge || bHighEdge)
+                                bool bSubEdge = (chkEnableMultiRX.Checked && !_mox && sub1_win_r > sub1_win_l && sub1_win_l >= 0 &&
+                                                 (!rx2_enabled || e.Y <= pnlDisplay.Height / 2) &&
+                                                 (Math.Abs(e.X - sub1_win_l) < 3 || Math.Abs(e.X - sub1_win_r) < 3)) ||
+                                                (rx2_enabled && chkEnableMultiRX2.Checked && !_mox && sub2_win_r > sub2_win_l && sub2_win_l >= 0 &&
+                                                 e.Y > pnlDisplay.Height / 2 &&
+                                                 (Math.Abs(e.X - sub2_win_l) < 3 || Math.Abs(e.X - sub2_win_r) < 3));
+
+                                if (bLowEdge || bHighEdge || bSubEdge)
                                 {
                                     next_cursor = Cursors.SizeWE;
 
@@ -52393,6 +52489,30 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int nHigh = whole_filter_start_high + diff;
                                 ConstrainFilter(ref nLow, ref nHigh, 1, true);
                                 UpdateRX1Filters(nLow, nHigh);
+                            }
+                            else if (rx1_sub_low_filter_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
+                                ApplySubRXFilter(1, Math.Min(rx1_sub_filter_start_low + diff, radio.GetDSPRX(0, 1).RXFilterHigh - 10), radio.GetDSPRX(0, 1).RXFilterHigh);
+                                Display.OtherData2CursorDisplay = radio.GetDSPRX(0, 1).RXFilterLow.ToString();
+                            }
+                            else if (rx1_sub_high_filter_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
+                                ApplySubRXFilter(1, radio.GetDSPRX(0, 1).RXFilterLow, Math.Max(rx1_sub_filter_start_high + diff, radio.GetDSPRX(0, 1).RXFilterLow + 10));
+                                Display.OtherData2CursorDisplay = radio.GetDSPRX(0, 1).RXFilterHigh.ToString();
+                            }
+                            else if (rx2_sub_low_filter_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X, 2) - PixelToHz(sub_drag_last_x, 2));
+                                ApplySubRXFilter(2, Math.Min(rx2_sub_filter_start_low + diff, radio.GetDSPRX(1, 1).RXFilterHigh - 10), radio.GetDSPRX(1, 1).RXFilterHigh);
+                                Display.OtherData2CursorDisplay = radio.GetDSPRX(1, 1).RXFilterLow.ToString();
+                            }
+                            else if (rx2_sub_high_filter_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X, 2) - PixelToHz(sub_drag_last_x, 2));
+                                ApplySubRXFilter(2, radio.GetDSPRX(1, 1).RXFilterLow, Math.Max(rx2_sub_filter_start_high + diff, radio.GetDSPRX(1, 1).RXFilterLow + 10));
+                                Display.OtherData2CursorDisplay = radio.GetDSPRX(1, 1).RXFilterHigh.ToString();
                             }
                             else if (rx1_sub_drag)
                             {
@@ -52802,6 +52922,10 @@ private void incrementMutliMeterDisplayModeRX2()
                         rx1_low_filter_drag = false;
                         rx1_high_filter_drag = false;
                         rx1_whole_filter_drag = false;
+                        rx1_sub_low_filter_drag = false;
+                        rx1_sub_high_filter_drag = false;
+                        rx2_sub_low_filter_drag = false;
+                        rx2_sub_high_filter_drag = false;
                         rx2_low_filter_drag = false;
                         rx2_high_filter_drag = false;
                         rx2_whole_filter_drag = false;

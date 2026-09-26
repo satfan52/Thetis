@@ -586,6 +586,34 @@ namespace Thetis
             set { rx2_filter_high = value; }
         }
 
+        private static int sub_rx1_filter_low;
+        public static int SubRX1FilterLow
+        {
+            get { return sub_rx1_filter_low; }
+            set { sub_rx1_filter_low = value; }
+        }
+
+        private static int sub_rx1_filter_high;
+        public static int SubRX1FilterHigh
+        {
+            get { return sub_rx1_filter_high; }
+            set { sub_rx1_filter_high = value; }
+        }
+
+        private static int sub_rx2_filter_low;
+        public static int SubRX2FilterLow
+        {
+            get { return sub_rx2_filter_low; }
+            set { sub_rx2_filter_low = value; }
+        }
+
+        private static int sub_rx2_filter_high;
+        public static int SubRX2FilterHigh
+        {
+            get { return sub_rx2_filter_high; }
+            set { sub_rx2_filter_high = value; }
+        }
+
         private static int tx_filter_low;
         public static int TXFilterLow
         {
@@ -9042,8 +9070,8 @@ namespace Thetis
                 {
                     // draw Sub RX filter
                     // get filter screen coordinates
-                    int filter_left_x = (int)((float)(filter_low - Low + localSubDiff + localRit) / width * W);
-                    int filter_right_x = (int)((float)(filter_high - Low + localSubDiff + localRit) / width * W);
+                    int filter_left_x = (int)((float)(SubRX1FilterLow - Low + localSubDiff + localRit) / width * W);
+                    int filter_right_x = (int)((float)(SubRX1FilterHigh - Low + localSubDiff + localRit) / width * W);
 
                     // H1: record the drawn bounds, so the console's wheel hit test works on
                     // exactly the window that is on screen
@@ -9076,8 +9104,8 @@ namespace Thetis
                     // offset from the display reference is exactly (sub - Display.VFOB), which is
                     // localSub2Diff. Adding the offset as well displaced the window by VFO B's
                     // tuning, which is why it appeared to follow the RX2 window.
-                    int sub2_left_x = (int)((float)(filter_low - Low + localSub2Diff) / width * W);
-                    int sub2_right_x = (int)((float)(filter_high - Low + localSub2Diff) / width * W);
+                    int sub2_left_x = (int)((float)(SubRX2FilterLow - Low + localSub2Diff) / width * W);
+                    int sub2_right_x = (int)((float)(SubRX2FilterHigh - Low + localSub2Diff) / width * W);
 
                     vfob_sub_win_left = Math.Min(sub2_left_x, sub2_right_x);
                     vfob_sub_win_right = Math.Max(sub2_left_x, sub2_right_x);
