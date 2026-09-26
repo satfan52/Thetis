@@ -37304,6 +37304,18 @@ namespace Thetis
         // demodulate, so the button is disabled and the SubVFOB row keeps showing
         // the stored frequency.
         // ==================================================================
+        // H1: temporary diagnostic for the SubRX2 audio bring-up - one line per
+        // event in %TEMP%\subrx2_audio.log, read while the user tests live.
+        public static void Sub2Log(string s)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(System.IO.Path.GetTempPath() + "subrx2_audio.log",
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + s + Environment.NewLine);
+            }
+            catch { }
+        }
+
         private bool _sub_rx2_enabled = false;
         public bool SubRX2Enabled
         {
@@ -37331,10 +37343,12 @@ namespace Thetis
                 sub_rx2.RXOutputGain = main_rx2.RXOutputGain;
 
                 if (!_mox) WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
+                Sub2Log("sub2 enable: start (1,0)");
 
-                // H1: same late nudge as RX2's own enable - the sub's audio path only
-                // engages once its data is flowing, so stop/start its channel again
-                // shortly after, the way a mode touch would.
+                // H1: same late nudge as RX2's own enable, but in the shape of a mode
+                // touch: stop WITH the reset, state the audio mixer switch again, then
+                // start. The bare stop/start this used to be killed already working
+                // audio a second or two after the button went on.
                 ThreadPool.QueueUserWorkItem(_ =>
                 {
                     try
@@ -37345,7 +37359,10 @@ namespace Thetis
                         {
                             if (chkEnableMultiRX2.Checked && rx2_enabled && chkPower.Checked && !_mox)
                             {
-                                WDSP.SetChannelState(WDSP.id(2, 1), 0, 0);
+                                Sub2Log("sub2 nudge: stop (0,1)");
+                                WDSP.SetChannelState(WDSP.id(2, 1), 0, 1);
+                                Sub2Log("sub2 nudge: What=true, start (1,0)");
+                                cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), !Audio.MuteRX2);
                                 WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
                             }
                         }));
@@ -37366,6 +37383,7 @@ namespace Thetis
             {
                 WDSP.SetChannelState(WDSP.id(2, 1), 0, 0);
                 cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), false);
+                Sub2Log("sub2 disable: stop + What=false");
 
                 chkEnableMultiRX2.BackColor = SystemColors.Control;
             }
@@ -38789,12 +38807,16 @@ namespace Thetis
         {
             if (new_mode == DSPMode.FIRST || new_mode == DSPMode.LAST) return;
 
+            Sub2Log("SetRX2Mode(" + new_mode + ") rx2=" + rx2_enabled + " subActive=" + radio.GetDSPRX(1, 1).Active);
+
             Band oldBand = RX2Band; //MW0LGE_21d
             DSPMode old_mode = _rx2_dsp_mode;
 
             WDSP.SetChannelState(WDSP.id(2, 0), 0, 1);              // turn OFF the DSP channel
             if (radio.GetDSPRX(1, 1).Active)                        // H1: and its sub receiver, if it runs
-                WDSP.SetChannelState(WDSP.id(2, 1), 0, 0);
+                WDSP.SetChannelState(WDSP.id(2, 1), 0, 1);
+
+            Sub2Log("SetRX2Mode: ch3 stop (0,1)");
 
             if (new_mode == DSPMode.FM)                             // set DSP samplerate
             {
@@ -39281,7 +39303,14 @@ namespace Thetis
             if (rx2_enabled)
                 WDSP.SetChannelState(WDSP.id(2, 0), 1, 0);              // turn ON the DSP channel
             if (rx2_enabled && radio.GetDSPRX(1, 1).Active)             // H1: and its sub receiver, if it runs
+            {
                 WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
+                // H1: state the sub's audio mixer switch again after the restart - a
+                // channel that was stopped and started must be told again, or the sub
+                // sits silent while RX2 keeps playing.
+                unsafe { cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), !Audio.MuteRX2); }
+                Sub2Log("SetRX2Mode: ch3 restart (1,0), What re-stated");
+            }
 
             //MW0LGE_21b
             if (old_mode != new_mode) ModeChangeHandlers?.Invoke(2, old_mode, new_mode, oldBand, RX2Band);
