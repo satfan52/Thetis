@@ -38442,6 +38442,17 @@ namespace Thetis
         {
             if (!SecondSliceIsSub || _sub_console_updating) return;
 
+            // H1: the second-slice boxes, radios and dropdowns ARE RX2's own controls.
+            // Writing the sub's mode, passband, AGC and gain into them is what broke
+            // RX2 from commit e3c84e6 onwards: RX2 came up holding the sub's values,
+            // gave no audio and no meter, and its tuning window collapsed to a line.
+            // Proven by bisect, build f894fdc8a3a9bbd6 brought RX2 back with this
+            // mirroring disabled, so the mirroring stays off. With RX2 off the
+            // second-slice controls still DRIVE the sub, because that path writes
+            // only the sub's own DSP channel; they simply do not display the sub's
+            // state. Give the sub a dedicated readout if that display is wanted.
+            return;
+
             _sub_console_updating = true;
             try
             {
