@@ -908,8 +908,8 @@ namespace Thetis
             string sFilterName = b.ToString();
             return GetFilter(sFilterName, bIncludeUserDefined);
         }
-        // H1: receiver aware lookup. rx 1 is RX1, rx 2 is RX2. Nothing calls this yet: step
-        // two adds the store only, so the console behaves exactly as before.
+        // H1: receiver aware lookup. rx 1 is RX1, rx 2 is RX2. The console uses this for
+        // RX2's own band stack, beside the plain lookups RX1 keeps using.
         public static BandStackFilter GetFilter(Band b, int rx, bool bIncludeUserDefined = true)
         {
             if (rx == 2) return GetFilter(BandStackFilterNameRX2(b), bIncludeUserDefined);
