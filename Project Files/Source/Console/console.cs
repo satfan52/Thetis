@@ -2814,6 +2814,8 @@ namespace Thetis
 
             a.Add("VFOASubFreq/" + m_dVFOASubFreq);
             a.Add("VFOBSubFreq/" + m_dVFOBSubFreq); // H1: SubVFOB, RX2's sub receiver
+            a.Add("VFOASubFreqByBand/" + SubFreqByBandToString(vfoa_sub_freq_by_band)); // H1: per-band sub memory
+            a.Add("VFOBSubFreqByBand/" + SubFreqByBandToString(vfob_sub_freq_by_band));
 
             a.Add("CentreRX2Frequency/" + CentreRX2Frequency);
             a.Add("diversity_gain_160m/" + diversity_gain_160m);
@@ -4175,6 +4177,12 @@ namespace Thetis
                         VFOBSubFreq = double.Parse(val);
                         _force_vfo_update = false;
                         saved_vfob_sub_freq = m_dVFOBSubFreq;
+                        break;
+                    case "VFOASubFreqByBand": // H1: per-band sub memory
+                        SubFreqByBandFromString(vfoa_sub_freq_by_band, val);
+                        break;
+                    case "VFOBSubFreqByBand":
+                        SubFreqByBandFromString(vfob_sub_freq_by_band, val);
                         break;
                     case "CentreRX2Frequency":
                         dRX2_centre_freq = double.Parse(val);
@@ -6440,6 +6448,20 @@ namespace Thetis
             Band old_band = rx1_band;
             RX1Band = b;
 
+            // H1: per-band memory for the RX1 sub. Remember where it sat on the band we are
+            // leaving, then move it to the new band's remembered position. With no entry the
+            // span rule below centres it on VFO A.
+            if (old_band != b && vfoa_sub_freq_by_band != null && (int)old_band < vfoa_sub_freq_by_band.Length)
+            {
+                vfoa_sub_freq_by_band[(int)old_band] = m_dVFOASubFreq;
+
+                if (chkEnableMultiRX != null && chkEnableMultiRX.Checked && (int)b < vfoa_sub_freq_by_band.Length)
+                {
+                    double remembered = vfoa_sub_freq_by_band[(int)b];
+                    if (remembered > 0.0) VFOASubFreq = remembered;
+                }
+            }
+
             if (old_band != b)
             {
                 UpdateBandButtonColors();
@@ -6462,6 +6484,19 @@ namespace Thetis
         {
             Band old_band = rx2_band;
             RX2Band = b;
+
+            // H1: the same per-band memory for RX2's sub.
+            if (old_band != b && vfob_sub_freq_by_band != null && (int)old_band < vfob_sub_freq_by_band.Length)
+            {
+                vfob_sub_freq_by_band[(int)old_band] = m_dVFOBSubFreq;
+
+                if (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked && rx2_enabled && (int)b < vfob_sub_freq_by_band.Length)
+                {
+                    double remembered = vfob_sub_freq_by_band[(int)b];
+                    if (remembered > 0.0) VFOBSubFreq = remembered;
+                }
+            }
+
             if (old_band != b)
             {
                 UpdateBandButtonColors();
@@ -18492,6 +18527,33 @@ namespace Thetis
             get { return chkEnableMultiRX.Checked || chkVFOSplit.Checked; }
         }
         private double m_dVFOASubFreq = 0;
+        // H1: per-band memory for the two sub receivers, so a band change does not lose where
+        // the sub sat on the band being left. Zero means no entry for that band.
+        private double[] vfoa_sub_freq_by_band = new double[(int)Band.LAST + 1];
+        private double[] vfob_sub_freq_by_band = new double[(int)Band.LAST + 1];
+
+        private static string SubFreqByBandToString(double[] table)
+        {
+            if (table == null) return "";
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = 0; i < table.Length; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(table[i].ToString());
+            }
+            return sb.ToString();
+        }
+
+        private static void SubFreqByBandFromString(double[] table, string val)
+        {
+            if (table == null || string.IsNullOrEmpty(val)) return;
+            string[] parts = val.Split(',');
+            for (int i = 0; i < table.Length && i < parts.Length; i++)
+            {
+                double d;
+                if (double.TryParse(parts[i], out d)) table[i] = d;
+            }
+        }
         public double VFOASubFreq //rx2
         {
             get
