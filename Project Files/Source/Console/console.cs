@@ -11343,9 +11343,9 @@ namespace Thetis
 
                 if (!rx2_enabled)
                 {
-                    if (chkVFOBTX.Checked)
-                        tx_freq = VFOBFreq;
-                    else if (chkVFOSplit.Checked)
+                    // H1: VFO B is RX2's slice, so with RX2 off it has no transmit role at all.
+                    // The transmit frequency is VFO A, or SubVFOA when SPLIT is on.
+                    if (chkVFOSplit.Checked)
                         tx_freq = VFOASubFreq; // H1: SPLIT transmits on SubVFOA, RX2 on or off
                     else
                         tx_freq = VFOAFreq;
@@ -11367,9 +11367,8 @@ namespace Thetis
             {
                 if (!rx2_enabled)
                 {
-                    if (chkVFOBTX.Checked)
-                        VFOBFreq = value;
-                    else if (chkVFOSplit.Checked)
+                    // H1: with RX2 off VFO B is not a transmit slice, so it is never written here
+                    if (chkVFOSplit.Checked)
                         VFOASubFreq = value; // H1: SPLIT transmits on SubVFOA, RX2 on or off
                     else
                         VFOAFreq = value;
@@ -38071,6 +38070,14 @@ namespace Thetis
             if (oldRX2Enabled != chkRX2.Checked) RX2EnabledPreChangedHandlers?.Invoke(chkRX2.Checked);
 
             RX2Enabled = chkRX2.Checked;
+
+            // H1: VFO B is RX2's slice. With RX2 off its transmit tick is greyed and cannot arm,
+            // because the transmit frequency then comes from VFO A, or SubVFOA under SPLIT.
+            if (chkVFOBTX != null)
+            {
+                if (!chkRX2.Checked && chkVFOBTX.Checked) chkVFOBTX.Checked = false;
+                chkVFOBTX.Enabled = chkRX2.Checked;
+            }
 
             // H1: with RX2 off the second-slice controls serve the sub, with RX2 on
             // they serve receiver 2 again - their own job
