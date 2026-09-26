@@ -50,12 +50,6 @@
         private System.Windows.Forms.TextBoxTS txtWheelTune;
         private System.Windows.Forms.CheckBoxTS chkBIN;
         private System.Windows.Forms.GroupBoxTS grpMultimeter;
-        private System.Windows.Forms.GroupBoxTS grpSubRX1Meter;
-        private System.Windows.Forms.GroupBoxTS grpSubRX2Meter;
-        private System.Windows.Forms.TextBoxTS txtSubRX1Meter;
-        private System.Windows.Forms.TextBoxTS txtSubRX2Meter;
-        private System.Windows.Forms.PictureBox picSubRX1Meter;
-        private System.Windows.Forms.PictureBox picSubRX2Meter;
         private System.Windows.Forms.ButtonTS btnVFOSwap;
         private System.Windows.Forms.ButtonTS btnVFOBtoA;
         private System.Windows.Forms.ButtonTS btnVFOAtoB;
@@ -213,9 +207,6 @@
         private System.Windows.Forms.CheckBoxTS chkVFOSync;
         private System.Windows.Forms.CheckBoxTS chkVFOATX;
         private System.Windows.Forms.CheckBoxTS chkVFOBTX;
-        // H1: the two sub receivers get their own transmit ticks, exclusive with the main ones
-        private System.Windows.Forms.CheckBoxTS chkSubVFOATX;
-        private System.Windows.Forms.CheckBoxTS chkSubVFOBTX;
         private PanelTS panelBandHF;
         private PanelTS panelBandVHF;
         private PanelTS panelMode;
@@ -651,8 +642,6 @@
             this.chkVFOATX = new System.Windows.Forms.CheckBoxTS();
             this.txtWheelTune = new System.Windows.Forms.TextBoxTS();
             this.chkVFOBTX = new System.Windows.Forms.CheckBoxTS();
-            this.chkSubVFOATX = new System.Windows.Forms.CheckBoxTS();
-            this.chkSubVFOBTX = new System.Windows.Forms.CheckBoxTS();
             this.comboMeterTXMode = new System.Windows.Forms.ComboBoxTS();
             this.comboMeterRXMode = new System.Windows.Forms.ComboBoxTS();
             this.chkSquelch = new System.Windows.Forms.CheckBoxTS();
@@ -958,12 +947,6 @@
             this.pnlResizeMeter = new System.Windows.Forms.PanelTS();
             this.picMultiMeterDigital = new System.Windows.Forms.PictureBox();
             this.txtMultiText = new System.Windows.Forms.TextBoxTS();
-            this.grpSubRX1Meter = new System.Windows.Forms.GroupBoxTS();
-            this.picSubRX1Meter = new System.Windows.Forms.PictureBox();
-            this.txtSubRX1Meter = new System.Windows.Forms.TextBoxTS();
-            this.grpSubRX2Meter = new System.Windows.Forms.GroupBoxTS();
-            this.picSubRX2Meter = new System.Windows.Forms.PictureBox();
-            this.txtSubRX2Meter = new System.Windows.Forms.TextBoxTS();
             this.panelFilter = new System.Windows.Forms.PanelTS();
             this.radFilter1 = new System.Windows.Forms.RadioButtonTS();
             this.lblFilterHigh = new System.Windows.Forms.LabelTS();
@@ -1217,10 +1200,6 @@
             ((System.ComponentModel.ISupportInitialize)(this.nudPwrTemp)).BeginInit();
             this.grpMultimeter.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.picMultiMeterDigital)).BeginInit();
-            this.grpSubRX1Meter.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picSubRX1Meter)).BeginInit();
-            this.grpSubRX2Meter.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picSubRX2Meter)).BeginInit();
             this.panelFilter.SuspendLayout();
             this.panelRX2RF.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.ptbRX2Squelch)).BeginInit();
@@ -2918,28 +2897,6 @@
             this.chkVFOBTX.Name = "chkVFOBTX";
             this.toolTip1.SetToolTip(this.chkVFOBTX, resources.GetString("chkVFOBTX.ToolTip"));
             this.chkVFOBTX.CheckedChanged += new System.EventHandler(this.chkVFOBTX_CheckedChanged);
-            //
-            // chkSubVFOATX
-            //
-            resources.ApplyResources(this.chkSubVFOATX, "chkSubVFOATX");
-            this.chkSubVFOATX.BackColor = System.Drawing.Color.Transparent;
-            this.chkSubVFOATX.FlatAppearance.BorderSize = 0;
-            this.chkSubVFOATX.ForeColor = System.Drawing.SystemColors.ControlLightLight;
-            this.chkSubVFOATX.Name = "chkSubVFOATX";
-            this.toolTip1.SetToolTip(this.chkSubVFOATX, resources.GetString("chkSubVFOATX.ToolTip"));
-            this.chkSubVFOATX.UseVisualStyleBackColor = false;
-            this.chkSubVFOATX.CheckedChanged += new System.EventHandler(this.chkSubVFOATX_CheckedChanged);
-            //
-            // chkSubVFOBTX
-            //
-            resources.ApplyResources(this.chkSubVFOBTX, "chkSubVFOBTX");
-            this.chkSubVFOBTX.BackColor = System.Drawing.Color.Transparent;
-            this.chkSubVFOBTX.FlatAppearance.BorderSize = 0;
-            this.chkSubVFOBTX.ForeColor = System.Drawing.SystemColors.ControlLightLight;
-            this.chkSubVFOBTX.Name = "chkSubVFOBTX";
-            this.toolTip1.SetToolTip(this.chkSubVFOBTX, resources.GetString("chkSubVFOBTX.ToolTip"));
-            this.chkSubVFOBTX.UseVisualStyleBackColor = false;
-            this.chkSubVFOBTX.CheckedChanged += new System.EventHandler(this.chkSubVFOBTX_CheckedChanged);
             // 
             // comboMeterTXMode
             // 
@@ -5750,53 +5707,6 @@
             this.txtMultiText.ReadOnly = true;
             this.txtMultiText.Click += new System.EventHandler(this.txtMultiText_Click);
             this.txtMultiText.GotFocus += new System.EventHandler(this.HideFocus);
-            //
-            // grpSubRX1Meter / grpSubRX2Meter: independent sub receiver meters
-            //
-            this.grpSubRX1Meter.BackColor = System.Drawing.Color.Transparent;
-            this.grpSubRX1Meter.Controls.Add(this.picSubRX1Meter);
-            this.grpSubRX1Meter.Controls.Add(this.txtSubRX1Meter);
-            this.grpSubRX1Meter.ForeColor = System.Drawing.Color.White;
-            resources.ApplyResources(this.grpSubRX1Meter, "grpSubRX1Meter");
-            this.grpSubRX1Meter.Name = "grpSubRX1Meter";
-            this.grpSubRX1Meter.TabStop = false;
-            this.picSubRX1Meter.BackColor = System.Drawing.Color.Black;
-            resources.ApplyResources(this.picSubRX1Meter, "picSubRX1Meter");
-            this.picSubRX1Meter.BorderStyle = System.Windows.Forms.BorderStyle.Fixed3D;
-            this.picSubRX1Meter.Name = "picSubRX1Meter";
-            this.picSubRX1Meter.TabStop = false;
-            this.picSubRX1Meter.Click += new System.EventHandler(this.picSubRX1Meter_Click);
-            this.picSubRX1Meter.Paint += new System.Windows.Forms.PaintEventHandler(this.picSubRX1Meter_Paint);
-            this.txtSubRX1Meter.BackColor = System.Drawing.Color.Black;
-            this.txtSubRX1Meter.Cursor = System.Windows.Forms.Cursors.Default;
-            resources.ApplyResources(this.txtSubRX1Meter, "txtSubRX1Meter");
-            this.txtSubRX1Meter.ForeColor = System.Drawing.Color.Yellow;
-            this.txtSubRX1Meter.Name = "txtSubRX1Meter";
-            this.txtSubRX1Meter.ReadOnly = true;
-            this.txtSubRX1Meter.Click += new System.EventHandler(this.txtSubRX1Meter_Click);
-            this.txtSubRX1Meter.GotFocus += new System.EventHandler(this.HideFocus);
-            this.grpSubRX2Meter.BackColor = System.Drawing.Color.Transparent;
-            this.grpSubRX2Meter.Controls.Add(this.picSubRX2Meter);
-            this.grpSubRX2Meter.Controls.Add(this.txtSubRX2Meter);
-            this.grpSubRX2Meter.ForeColor = System.Drawing.Color.White;
-            resources.ApplyResources(this.grpSubRX2Meter, "grpSubRX2Meter");
-            this.grpSubRX2Meter.Name = "grpSubRX2Meter";
-            this.grpSubRX2Meter.TabStop = false;
-            this.picSubRX2Meter.BackColor = System.Drawing.Color.Black;
-            resources.ApplyResources(this.picSubRX2Meter, "picSubRX2Meter");
-            this.picSubRX2Meter.BorderStyle = System.Windows.Forms.BorderStyle.Fixed3D;
-            this.picSubRX2Meter.Name = "picSubRX2Meter";
-            this.picSubRX2Meter.TabStop = false;
-            this.picSubRX2Meter.Click += new System.EventHandler(this.picSubRX2Meter_Click);
-            this.picSubRX2Meter.Paint += new System.Windows.Forms.PaintEventHandler(this.picSubRX2Meter_Paint);
-            this.txtSubRX2Meter.BackColor = System.Drawing.Color.Black;
-            this.txtSubRX2Meter.Cursor = System.Windows.Forms.Cursors.Default;
-            resources.ApplyResources(this.txtSubRX2Meter, "txtSubRX2Meter");
-            this.txtSubRX2Meter.ForeColor = System.Drawing.Color.Yellow;
-            this.txtSubRX2Meter.Name = "txtSubRX2Meter";
-            this.txtSubRX2Meter.ReadOnly = true;
-            this.txtSubRX2Meter.Click += new System.EventHandler(this.txtSubRX2Meter_Click);
-            this.txtSubRX2Meter.GotFocus += new System.EventHandler(this.HideFocus);
             // 
             // panelFilter
             // 
@@ -7055,7 +6965,6 @@
             this.grpVFOA.Controls.Add(this.txtVFOALSD);
             this.grpVFOA.Controls.Add(this.txtVFOAMSD);
             this.grpVFOA.Controls.Add(this.chkVFOATX);
-            this.grpVFOA.Controls.Add(this.chkSubVFOATX);
             this.grpVFOA.Controls.Add(this.panelVFOASubHover);
             this.grpVFOA.Controls.Add(this.txtVFOABand);
             this.grpVFOA.Controls.Add(this.txtVFOAFreq);
@@ -7157,7 +7066,6 @@
             this.grpVFOB.Controls.Add(this.lblRX2ModeBigLabel);
             this.grpVFOB.Controls.Add(this.lblRX2APF);
             this.grpVFOB.Controls.Add(this.chkVFOBTX);
-            this.grpVFOB.Controls.Add(this.chkSubVFOBTX);
             this.grpVFOB.Controls.Add(this.panelVFOBHover);
             this.grpVFOB.Controls.Add(this.panelVFOBSubHover);
             this.grpVFOB.Controls.Add(this.txtVFOBSub);
@@ -7756,8 +7664,6 @@
             this.Controls.Add(this.nudPwrTemp);
             this.Controls.Add(this.statusStripMain);
             this.Controls.Add(this.grpMultimeter);
-            this.Controls.Add(this.grpSubRX1Meter);
-            this.Controls.Add(this.grpSubRX2Meter);
             this.Controls.Add(this.panelFilter);
             this.Controls.Add(this.panelRX2RF);
             this.Controls.Add(this.chkFullDuplex);
@@ -7876,12 +7782,6 @@
             this.grpMultimeter.ResumeLayout(false);
             this.grpMultimeter.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.picMultiMeterDigital)).EndInit();
-            this.grpSubRX1Meter.ResumeLayout(false);
-            this.grpSubRX1Meter.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picSubRX1Meter)).EndInit();
-            this.grpSubRX2Meter.ResumeLayout(false);
-            this.grpSubRX2Meter.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picSubRX2Meter)).EndInit();
             this.panelFilter.ResumeLayout(false);
             this.panelRX2RF.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.ptbRX2Squelch)).EndInit();
