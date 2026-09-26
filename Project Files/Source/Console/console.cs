@@ -37321,7 +37321,18 @@ namespace Thetis
                 // copy, so an out-of-view sub is brought back to VFO A. Same idea as the RX2
                 // sub's oscillator clamp.
                 double sub_span_hz = Math.Abs(Display.RXDisplayHigh - Display.RXDisplayLow) / 2.0;
-                if (m_dVFOASubFreq <= 0.0 ||
+                // H1: the out-of-view snap only when the span is actually known and the
+                // console has finished restoring. At start-up the span reads zero before
+                // the display is up, and a zero span snapped EVERY stored sub back to
+                // VFO A - which is why SubRX1's frequency did not survive a restart.
+                bool sub_span_known = !initializing && sub_span_hz > 0 &&
+                                      Display.RXDisplayHigh > Display.RXDisplayLow;
+                if (m_dVFOASubFreq <= 0.0)
+                {
+                    m_dVFOASubFreq = VFOAFreq;
+                    saved_vfoa_sub_freq = VFOAFreq;
+                }
+                else if (sub_span_known &&
                     Math.Abs(m_dVFOASubFreq - VFOAFreq) * 1e6 > sub_span_hz)
                 {
                     m_dVFOASubFreq = VFOAFreq;
