@@ -27710,9 +27710,15 @@ namespace Thetis
                 // H1: RX2 can be switched on while the console still counts as
                 // initialising, when its apply above is skipped; catch it up now
                 // that the radio data is up, or it stays degenerate until a mode
-                // touch. Same shape as the enable path, without the thread hop.
-                if (rx2_enabled && _rx2_dsp_mode != DSPMode.FIRST && _rx2_dsp_mode != DSPMode.LAST)
-                    SetRX2Mode(_rx2_dsp_mode);
+                // touch. Same shape as the enable path, without the thread hop,
+                // and with the same resolve-from-buttons fallback for the mode.
+                if (rx2_enabled)
+                {
+                    DSPMode rx2_pwrup_mode = _rx2_dsp_mode;
+                    if (rx2_pwrup_mode == DSPMode.FIRST || rx2_pwrup_mode == DSPMode.LAST)
+                        rx2_pwrup_mode = RX2ModeFromButtons();
+                    SetRX2Mode(rx2_pwrup_mode);
+                }
                 HeadlessSliceManager.Instance.SyncActiveSlices();
                 SetupForm.UpdateGeneraHardware();
                 SetMicGain();
@@ -38129,16 +38135,23 @@ namespace Thetis
 
                     Sub2Log("RX2 on: power=" + chkPower.Checked + " init=" + initializing + " data=" + DataFlowing + " mode=" + _rx2_dsp_mode);
 
+                    // H1: the cached mode can still be unset on a fresh console while
+                    // the mode buttons already carry the wanted mode, so the apply
+                    // below would be handed FIRST and quietly return - which was the
+                    // whole of the "no window, no audio until a mode touch" defect
+                    // after a power cycle. Resolve from the buttons first.
+                    DSPMode rx2_apply_mode = _rx2_dsp_mode;
+                    if (rx2_apply_mode == DSPMode.FIRST || rx2_apply_mode == DSPMode.LAST)
+                        rx2_apply_mode = RX2ModeFromButtons();
+
                     // H1: turning the channel on alone leaves RX2 degenerate - no
                     // demodulated audio, no meter data and no tuning window on the
                     // display - until a mode or filter touch re-applies everything,
                     // which is exactly SetRX2Mode. Apply that here so RX2 comes up
-                    // live. The initialising test alone proved too narrow: it also
-                    // covers windows where the receiver is switched on while the
-                    // console still counts as initialising but the radio data is
-                    // already flowing, and there the apply was skipped entirely.
+                    // live; the initialising test alone proved too narrow, so the
+                    // radio data flowing also opens the gate.
                     if (chkPower.Checked && (!initializing || DataFlowing))
-                        SetRX2Mode(_rx2_dsp_mode);
+                        SetRX2Mode(rx2_apply_mode);
                     else
                         Sub2Log("RX2 apply immediate: skipped");
 
@@ -38159,7 +38172,12 @@ namespace Thetis
                                 BeginInvoke((Action)(() =>
                                 {
                                     if (rx2_enabled && chkPower.Checked && !_mox)
-                                        SetRX2Mode(_rx2_dsp_mode);
+                                    {
+                                        DSPMode rx2_defer_mode = _rx2_dsp_mode;
+                                        if (rx2_defer_mode == DSPMode.FIRST || rx2_defer_mode == DSPMode.LAST)
+                                            rx2_defer_mode = RX2ModeFromButtons();
+                                        SetRX2Mode(rx2_defer_mode);
+                                    }
                                 }));
                             }
                             catch { }
@@ -38818,6 +38836,26 @@ namespace Thetis
             SetSubFilter(rx1_filters[(int)mode].GetLow(f),
                          rx1_filters[(int)mode].GetHigh(f), true);
             UpdateSubControls();
+        }
+
+        // H1: the RX2 mode the interface shows, whichever mode button is set. The
+        // cached mode field is only ever filled in by SetRX2Mode, and the buttons can
+        // be right while that call never ran: on a fresh console the restore finds
+        // the wanted button already checked and raises no event. Resolve from the
+        // buttons so RX2's bring-up always has a real mode to apply.
+        private DSPMode RX2ModeFromButtons()
+        {
+            if (radRX2ModeUSB.Checked) return DSPMode.USB;
+            if (radRX2ModeDSB.Checked) return DSPMode.DSB;
+            if (radRX2ModeCWL.Checked) return DSPMode.CWL;
+            if (radRX2ModeCWU.Checked) return DSPMode.CWU;
+            if (radRX2ModeFMN.Checked) return DSPMode.FM;
+            if (radRX2ModeAM.Checked) return DSPMode.AM;
+            if (radRX2ModeSAM.Checked) return DSPMode.SAM;
+            if (radRX2ModeDIGL.Checked) return DSPMode.DIGL;
+            if (radRX2ModeDIGU.Checked) return DSPMode.DIGU;
+            if (radRX2ModeDRM.Checked) return DSPMode.DRM;
+            return DSPMode.LSB; // includes radRX2ModeLSB, the console's own default
         }
 
         private void SetRX2Mode(DSPMode new_mode)
