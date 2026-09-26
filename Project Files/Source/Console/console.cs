@@ -27726,6 +27726,11 @@ namespace Thetis
                         rx2_pwrup_mode = RX2ModeFromButtons();
                     SetRX2Mode(rx2_pwrup_mode);
                 }
+                // H1: re-state the sub rows' display values once the radio is up - a
+                // startup order that pushed a stale value must not leave a sub window
+                // stranded off screen.
+                if (chkEnableMultiRX.Checked) UpdateVFOASub();
+                if (rx2_enabled && chkEnableMultiRX2.Checked) UpdateVFOBSub();
                 HeadlessSliceManager.Instance.SyncActiveSlices();
                 SetupForm.UpdateGeneraHardware();
                 SetMicGain();
@@ -34050,14 +34055,22 @@ namespace Thetis
         // sub's own width. 1 = SubRX1, 2 = SubRX2.
         // H1: the sub receivers' working state joins the band memory. Recorded into the
         // owning receiver's current band filter, from which entries are built.
+        //
+        // Only a value that could genuinely be a sub position for the receiver's CURRENT
+        // state is recorded. A band change moves the receiver's VFO first and clamps the
+        // sub afterwards, and the trace showed the transition values being recorded: one
+        // band's sub frequency landed in the other band's entry, from where the restore
+        // read it back. Both guards below are what the trace demanded.
         private void recordSubMemory(int rx)
         {
             try
             {
                 if (!BandStackManager.Ready) return;
+                if (m_bSetBandRunning) return; // a band change is in flight - transient values
                 if (rx == 1)
                 {
                     if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
+                    if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
                     BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, 1, false);
                     if (bsf == null) return;
                     bsf.LastVisited.SubVFOFreq = VFOASubFreq;
@@ -34068,6 +34081,7 @@ namespace Thetis
                 else
                 {
                     if (!chkEnableMultiRX2.Checked || VFOBSubFreq <= 0) return;
+                    if (Math.Abs((VFOBSubFreq - VFOBFreq) * 1e6) > (sample_rate_rx2 / 2 - 2)) return; // clamped/transition value
                     BandStackFilter bsf = BandStackManager.GetFilter(RX2Band, 2, false);
                     if (bsf == null) return;
                     bsf.LastVisited.SubVFOFreq = VFOBSubFreq;
@@ -47248,7 +47262,12 @@ private void incrementMutliMeterDisplayModeRX2()
             // keeps the existing bring-along behaviour.
             if (chkEnableMultiRX.Checked)
             {
-                if (bse.SubVFOFreq > 0) VFOASubFreq = bse.SubVFOFreq;
+                // only a value that fits this band's passband can be a real position; an
+                // out-of-range number is a stale entry from before the recording
+                // discipline was tightened and is ignored
+                if (bse.SubVFOFreq > 0 &&
+                    Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
+                    VFOASubFreq = bse.SubVFOFreq;
                 if (bse.SubFilterHigh > bse.SubFilterLow)
                     ApplySubRXFilter(1, bse.SubFilterLow, bse.SubFilterHigh);
             }
@@ -47268,7 +47287,12 @@ private void incrementMutliMeterDisplayModeRX2()
             // H1: the SubRX2 memory for this band comes back with the entry.
             if (rx2_enabled && chkEnableMultiRX2.Checked)
             {
-                if (bse.SubVFOFreq > 0) VFOBSubFreq = bse.SubVFOFreq;
+                // only a value that fits this band's passband can be a real position; an
+                // out-of-range number is a stale entry from before the recording
+                // discipline was tightened and is ignored
+                if (bse.SubVFOFreq > 0 &&
+                    Math.Abs((bse.SubVFOFreq - VFOBFreq) * 1e6) <= (sample_rate_rx2 / 2 - 2))
+                    VFOBSubFreq = bse.SubVFOFreq;
                 if (bse.SubFilterHigh > bse.SubFilterLow)
                     ApplySubRXFilter(2, bse.SubFilterLow, bse.SubFilterHigh);
             }
