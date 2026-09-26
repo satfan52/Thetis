@@ -11357,7 +11357,11 @@ namespace Thetis
                 }
                 else
                 {
-                    if (chkVFOBTX.Checked)
+                    // H1: SubVFOB is RX2's sub receiver, a frequency of its own - it must be
+                    // resolved before VFO B, which is a different receiver.
+                    if (chkSubVFOBTX.Checked)
+                        tx_freq = VFOBSubFreq;
+                    else if (chkVFOBTX.Checked)
                         tx_freq = VFOBFreq;
                     else if (chkVFOSplit.Checked)
                         tx_freq = VFOASubFreq;
@@ -11381,7 +11385,9 @@ namespace Thetis
                 }
                 else
                 {
-                    if (chkVFOBTX.Checked)
+                    if (chkSubVFOBTX.Checked)
+                        VFOBSubFreq = value; // H1: the SubVFOB tick owns RX2's sub receiver
+                    else if (chkVFOBTX.Checked)
                         VFOBFreq = value;
                     else if (chkVFOSplit.Checked)
                         VFOASubFreq = value;
@@ -11736,6 +11742,14 @@ namespace Thetis
         {
             get { return chkVFOBTX.Checked; }
             set { chkVFOBTX.Checked = value; }
+        }
+
+        // H1: transmit on SubVFOB, the sub receiver of RX2. The CAT / CI-V layer has no
+        // name for this choice, so it is exposed here and treated as a split transmit
+        // whose frequency is whatever TXFreq resolves to.
+        public bool TXOnSubVFOB
+        {
+            get { return rx2_enabled && chkSubVFOBTX.Checked; }
         }
 
         private bool vac2_on_split = true;
@@ -36344,7 +36358,8 @@ namespace Thetis
 
             txtVFOBSub.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
             txtVFOBSub.TextAlign = HorizontalAlignment.Right;
-            if (!sub_row_active) txtVFOBSub.ForeColor = band_text_dark_color;
+            if (chkSubVFOBTX.Checked) txtVFOBSub.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed;
+            else if (!sub_row_active) txtVFOBSub.ForeColor = band_text_dark_color;
             else txtVFOBSub.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
             txtVFOBSub.ReadOnly = false;
 
@@ -36357,6 +36372,16 @@ namespace Thetis
         private bool _bOldVFOSplit = false; //MW0LGE_22a
         private void chkVFOSplit_CheckedChanged(object sender, System.EventArgs e)
         {
+            // H1: SPLIT and the SubVFOA transmit tick are one choice, so they follow
+            // each other without re-entering their own handlers.
+            if (!_bUpdatingTxTicks)
+            {
+                _bUpdatingTxTicks = true;
+                chkSubVFOATX.Checked = chkVFOSplit.Checked;
+                _bUpdatingTxTicks = false;
+                chkSubVFOATX.BackColor = chkVFOSplit.Checked ? button_selected_color : SystemColors.Control;
+            }
+
             Display.SplitEnabled = chkVFOSplit.Checked;
             if (chkVFOSplit.Checked)
             {
@@ -38179,6 +38204,18 @@ namespace Thetis
             // RX2 off switches the second sub receiver off and greys its button out
             chkEnableMultiRX2.Enabled = chkRX2.Checked;
             if (!chkRX2.Checked && chkEnableMultiRX2.Checked) chkEnableMultiRX2.Checked = false;
+
+            // H1: SubVFOB is a sub receiver OF RX2, so its transmit tick is greyed while
+            // RX2 is off and releases the transmit choice back to VFO A.
+            chkSubVFOBTX.Enabled = chkRX2.Checked;
+            if (!chkRX2.Checked && chkSubVFOBTX.Checked)
+            {
+                _bUpdatingTxTicks = true;
+                chkSubVFOBTX.Checked = false;
+                _bUpdatingTxTicks = false;
+                chkSubVFOBTX.BackColor = SystemColors.Control;
+                chkVFOATX.Checked = true;
+            }
             UpdateVFOBSub();
 
             //[2.10.3.9]MW0LGE restore VAC on/off state for VAC2 if the TX profile is configured to do so
@@ -40850,6 +40887,72 @@ namespace Thetis
             }
         }
 
+        // H1: the four transmit ticks are exclusive - turning one on turns the other
+        // three off, so exactly one frequency can be the transmit frequency.
+        private bool _bUpdatingTxTicks = false;
+
+        private void chkSubVFOATX_CheckedChanged(object sender, System.EventArgs e)
+        {
+            if (chkSubVFOATX.Focused && !chkSubVFOATX.Checked) chkSubVFOATX.Checked = true;
+            if (_bUpdatingTxTicks) return;
+
+            if (chkSubVFOATX.Checked)
+            {
+                if (chkVFOATX.Checked) chkVFOATX.Checked = false;
+                if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
+                if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
+
+                chkSubVFOATX.BackColor = button_selected_color;
+
+                // SPLIT is the console-level name for transmitting on SubVFOA, so ticking
+                // this box is the same choice as ticking SPLIT.
+                _bUpdatingTxTicks = true;
+                chkVFOSplit.Checked = true;
+                _bUpdatingTxTicks = false;
+
+                txtVFOABand_LostFocus(this, EventArgs.Empty);
+                UpdateVFOASub();
+
+                if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+                    CIVControllerInstance.NotifySplitOrFullDuplexChanged();
+            }
+            else chkSubVFOATX.BackColor = SystemColors.Control;
+        }
+
+        private void chkSubVFOBTX_CheckedChanged(object sender, System.EventArgs e)
+        {
+            if (chkSubVFOBTX.Focused && !chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = true;
+            if (_bUpdatingTxTicks) return;
+
+            if (chkSubVFOBTX.Checked && !rx2_enabled)
+            {
+                chkSubVFOBTX.Checked = false; // SubVFOB cannot exist while RX2 is off
+                return;
+            }
+
+            if (chkSubVFOBTX.Checked)
+            {
+                if (chkVFOATX.Checked) chkVFOATX.Checked = false;
+                if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
+                if (chkSubVFOATX.Checked) chkSubVFOATX.Checked = false;
+
+                chkSubVFOBTX.BackColor = button_selected_color;
+
+                // SubVFOB is not SPLIT-on-SubVFOA, so SPLIT itself stays off; the CAT /
+                // CI-V layer learns of this choice through TXOnSubVFOB.
+                _bUpdatingTxTicks = true;
+                chkVFOSplit.Checked = false;
+                _bUpdatingTxTicks = false;
+
+                txtVFOBSub_LostFocus(this, EventArgs.Empty);
+                UpdateVFOBSub();
+
+                if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+                    CIVControllerInstance.NotifySplitOrFullDuplexChanged();
+            }
+            else chkSubVFOBTX.BackColor = SystemColors.Control;
+        }
+
         private void chkVFOATX_CheckedChanged(object sender, System.EventArgs e)
         {
             if (chkVFOATX.Focused && !chkVFOATX.Checked) chkVFOATX.Checked = true;
@@ -40857,6 +40960,8 @@ namespace Thetis
             {
                 //psform.RXrcvr = 1;
                 if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
+                if (chkSubVFOATX.Checked) chkSubVFOATX.Checked = false;
+                if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
                 swap_vfo_ab_tx = false;
                 cmaster.SetTXVAC(0, 0);
 
@@ -40927,6 +41032,8 @@ namespace Thetis
             if (chkVFOBTX.Checked)
             {
                 if (chkVFOATX.Checked) chkVFOATX.Checked = false;
+                if (chkSubVFOATX.Checked) chkSubVFOATX.Checked = false;
+                if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
                 chkVFOBTX.BackColor = button_selected_color;
 
                 if (VAC2onSplit && VAC2Enabled) cmaster.SetTXVAC(0, 1);

@@ -213,6 +213,9 @@
         private System.Windows.Forms.CheckBoxTS chkVFOSync;
         private System.Windows.Forms.CheckBoxTS chkVFOATX;
         private System.Windows.Forms.CheckBoxTS chkVFOBTX;
+        // H1: the two sub receivers get their own transmit ticks, exclusive with the main ones
+        private System.Windows.Forms.CheckBoxTS chkSubVFOATX;
+        private System.Windows.Forms.CheckBoxTS chkSubVFOBTX;
         private PanelTS panelBandHF;
         private PanelTS panelBandVHF;
         private PanelTS panelMode;
@@ -648,6 +651,8 @@
             this.chkVFOATX = new System.Windows.Forms.CheckBoxTS();
             this.txtWheelTune = new System.Windows.Forms.TextBoxTS();
             this.chkVFOBTX = new System.Windows.Forms.CheckBoxTS();
+            this.chkSubVFOATX = new System.Windows.Forms.CheckBoxTS();
+            this.chkSubVFOBTX = new System.Windows.Forms.CheckBoxTS();
             this.comboMeterTXMode = new System.Windows.Forms.ComboBoxTS();
             this.comboMeterRXMode = new System.Windows.Forms.ComboBoxTS();
             this.chkSquelch = new System.Windows.Forms.CheckBoxTS();
@@ -2913,6 +2918,28 @@
             this.chkVFOBTX.Name = "chkVFOBTX";
             this.toolTip1.SetToolTip(this.chkVFOBTX, resources.GetString("chkVFOBTX.ToolTip"));
             this.chkVFOBTX.CheckedChanged += new System.EventHandler(this.chkVFOBTX_CheckedChanged);
+            //
+            // chkSubVFOATX
+            //
+            resources.ApplyResources(this.chkSubVFOATX, "chkSubVFOATX");
+            this.chkSubVFOATX.BackColor = System.Drawing.Color.Transparent;
+            this.chkSubVFOATX.FlatAppearance.BorderSize = 0;
+            this.chkSubVFOATX.ForeColor = System.Drawing.SystemColors.ControlLightLight;
+            this.chkSubVFOATX.Name = "chkSubVFOATX";
+            this.toolTip1.SetToolTip(this.chkSubVFOATX, resources.GetString("chkSubVFOATX.ToolTip"));
+            this.chkSubVFOATX.UseVisualStyleBackColor = false;
+            this.chkSubVFOATX.CheckedChanged += new System.EventHandler(this.chkSubVFOATX_CheckedChanged);
+            //
+            // chkSubVFOBTX
+            //
+            resources.ApplyResources(this.chkSubVFOBTX, "chkSubVFOBTX");
+            this.chkSubVFOBTX.BackColor = System.Drawing.Color.Transparent;
+            this.chkSubVFOBTX.FlatAppearance.BorderSize = 0;
+            this.chkSubVFOBTX.ForeColor = System.Drawing.SystemColors.ControlLightLight;
+            this.chkSubVFOBTX.Name = "chkSubVFOBTX";
+            this.toolTip1.SetToolTip(this.chkSubVFOBTX, resources.GetString("chkSubVFOBTX.ToolTip"));
+            this.chkSubVFOBTX.UseVisualStyleBackColor = false;
+            this.chkSubVFOBTX.CheckedChanged += new System.EventHandler(this.chkSubVFOBTX_CheckedChanged);
             // 
             // comboMeterTXMode
             // 
@@ -7028,6 +7055,7 @@
             this.grpVFOA.Controls.Add(this.txtVFOALSD);
             this.grpVFOA.Controls.Add(this.txtVFOAMSD);
             this.grpVFOA.Controls.Add(this.chkVFOATX);
+            this.grpVFOA.Controls.Add(this.chkSubVFOATX);
             this.grpVFOA.Controls.Add(this.panelVFOASubHover);
             this.grpVFOA.Controls.Add(this.txtVFOABand);
             this.grpVFOA.Controls.Add(this.txtVFOAFreq);
@@ -7129,6 +7157,7 @@
             this.grpVFOB.Controls.Add(this.lblRX2ModeBigLabel);
             this.grpVFOB.Controls.Add(this.lblRX2APF);
             this.grpVFOB.Controls.Add(this.chkVFOBTX);
+            this.grpVFOB.Controls.Add(this.chkSubVFOBTX);
             this.grpVFOB.Controls.Add(this.panelVFOBHover);
             this.grpVFOB.Controls.Add(this.panelVFOBSubHover);
             this.grpVFOB.Controls.Add(this.txtVFOBSub);
