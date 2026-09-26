@@ -498,7 +498,11 @@ namespace Thetis
                     return;
                 }
 
-                if (!VfoBHasRole())
+                // H1: Thetis VFO B only reaches the rig when it carries the transmit
+                // frequency, signalled by the VFO B TX tick. With RX2 on and the tick
+                // off it is only the second receiver's frequency, and with RX2 off it
+                // has no rig role either - the old RX1 VFO B synchronisation is gone.
+                if (_console == null || !_console.VFOBTX)
                 {
                     return;
                 }
@@ -1035,7 +1039,7 @@ namespace Thetis
                 SendVfoAFrequency(targetVfoAFreq, force: true);
             }
 
-            if (doVfoB && !doSplit && VfoBHasRole())
+            if (doVfoB && !doSplit && _console != null && _console.VFOBTX)
             {
                 SendVfoBFrequency(targetVfoBFreq);
             }
