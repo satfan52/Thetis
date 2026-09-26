@@ -27892,6 +27892,10 @@ namespace Thetis
             int RX2 = 1 << WDSP.id(2, 0);
             int MON = 1 << WDSP.id(1, 0);
             int RX2EN = rx2_enabled ? 1 << WDSP.id(2, 0) : 0;
+            // H1: RX2's sub receiver in the same two lists RX1's sub already occupies -
+            // without its bit here the sub's audio never reaches the VACs. The What
+            // switch for the stream gates it at run time.
+            int RX2S = 1 << WDSP.id(2, 1);
             //if (rx2_enabled)
             //    RX2EN = 1 << WDSP.id(2, 0);
             //else
@@ -27904,8 +27908,8 @@ namespace Thetis
                         // 2-DDC Models
                         case HPSDRModel.ANAN10E:
                         case HPSDRModel.ANAN100B:
-                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, RX1 + RX1S + RX2 + MON);
-                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, RX1 + RX1S + RX2);
+                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, RX1 + RX1S + RX2 + RX2S + MON);
+                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, RX1 + RX1S + RX2 + RX2S);
                             break;
                         // 4 & 5 DDC Models
                         case HPSDRModel.HERMES:
@@ -27918,8 +27922,8 @@ namespace Thetis
                         case HPSDRModel.ANAN7000D:
                         case HPSDRModel.ANAN8000D:
                         case HPSDRModel.REDPITAYA: //DH1KLM
-                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, RX1 + RX1S + RX2 + MON);
-                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, RX1 + RX1S + RX2);
+                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, RX1 + RX1S + RX2 + RX2S + MON);
+                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, RX1 + RX1S + RX2 + RX2S);
                             break;
                     }
                     break;
@@ -27941,13 +27945,13 @@ namespace Thetis
                                     {
                                         if (!psform.PSEnabled)
                                         {
-                                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, RX1 + RX1S + RX2EN + MON);
-                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, RX1 + RX1S + RX2EN);
+                                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, RX1 + RX1S + RX2EN + RX2S + MON);
+                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, RX1 + RX1S + RX2EN + RX2S);
                                         }
                                         else
                                         {
-                                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, RX1 + RX1S + RX2EN + MON);
-                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, RX1 + RX1S + RX2EN);
+                                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, RX1 + RX1S + RX2EN + RX2S + MON);
+                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, RX1 + RX1S + RX2EN + RX2S);
                                         }
                                     }
                                     else
@@ -27970,13 +27974,13 @@ namespace Thetis
                                     {
                                         if (!psform.PSEnabled)
                                         {
-                                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, RX1 + RX1S + RX2EN + MON);
-                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, RX1 + RX1S + RX2EN);
+                                            cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, RX1 + RX1S + RX2EN + RX2S + MON);
+                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, RX1 + RX1S + RX2EN + RX2S);
                                         }
                                         else
                                         {
                                             cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, MON);
-                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, 0);
+                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, 0);
                                         }
                                     }
                                     else
@@ -27989,7 +27993,7 @@ namespace Thetis
                                         else
                                         {
                                             cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, MON);
-                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, 0);
+                                            cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, 0);
                                         }
                                     }
                                 }
@@ -27998,8 +28002,8 @@ namespace Thetis
                             else
                             {
                                 cmaster.MONMixState = false;
-                                cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, 0);
-                                cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, 0);
+                                cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, 0);
+                                cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, 0);
                             }
                             break;
                         // 4-DDC Models
@@ -28017,16 +28021,16 @@ namespace Thetis
                                 // If POWER is ON, we always have data flow for RX1 and RX1-Sub; we have data flow for
                                 // RX2 if 'rx2_enabled'; we always have data flow (MIC samples) for the TX MON.
                                 cmaster.MONMixState = true;
-                                cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, RX1 + RX1S + RX2EN + MON);
-                                cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, RX1 + RX1S + RX2EN);
+                                cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, RX1 + RX1S + RX2EN + RX2S + MON);
+                                cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, RX1 + RX1S + RX2EN + RX2S);
                             }
                             else
                             {
                                 // If POWER is OFF, there is no data flow for anything.
                                 // It's OK to turn something OFF again if it's already OFF.
                                 cmaster.MONMixState = false;
-                                cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + MON, 0);
-                                cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2, 0);
+                                cmaster.SetAAudioMixStates((void*)0, 0, RX1 + RX1S + RX2 + RX2S + MON, 0);
+                                cmaster.SetAntiVOXSourceStates(0, RX1 + RX1S + RX2 + RX2S, 0);
                             }
                             break;
                         default:
