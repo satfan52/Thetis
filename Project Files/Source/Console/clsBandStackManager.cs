@@ -1,4 +1,4 @@
-﻿/*  clsBandStackManager.cs
+/*  clsBandStackManager.cs
 
 This file is part of a program that implements a Software-Defined Radio.
 
@@ -870,8 +870,29 @@ namespace Thetis
                     bsf.FrequenciesToFilterOn.AddRange(bfds);
 
                     internalAddFilter(bsf);
+
+                    // H1: RX2 keeps its own stack, so every band gets a second filter under its
+                    // own name. BandsToFilterOn is deliberately left empty: the band lookups
+                    // that RX1 uses must never find this one. RX2 asks for it by name.
+                    BandStackFilter bsfRX2 = new BandStackFilter();
+                    bsfRX2.FilterName = BandStackFilterNameRX2(b);
+                    bsfRX2.FilterDescription = "";
+                    bsfRX2.FilterOnBands = true;
+                    bsfRX2.FilterOnFrequencies = false;
+                    bsfRX2.FilterOnModes = false;
+                    bsfRX2.UserDefined = false;
+                    internalAddFilter(bsfRX2);
                 }
             }
+        }
+
+        // H1: the band stack is per band and per receiver. RX1 keeps the plain band name,
+        // RX2 uses this suffix, so both stacks live in the same store and neither disturbs
+        // the other, including the stacks already saved.
+        private const string RX2_FILTER_SUFFIX = " RX2";
+        public static string BandStackFilterNameRX2(Band b)
+        {
+            return b.ToString() + RX2_FILTER_SUFFIX;
         }
         public static BandStackFilter GetFilter(string sFilterName, bool bIncludeUserDefined = true)
         {
@@ -886,6 +907,13 @@ namespace Thetis
         {
             string sFilterName = b.ToString();
             return GetFilter(sFilterName, bIncludeUserDefined);
+        }
+        // H1: receiver aware lookup. rx 1 is RX1, rx 2 is RX2. Nothing calls this yet: step
+        // two adds the store only, so the console behaves exactly as before.
+        public static BandStackFilter GetFilter(Band b, int rx, bool bIncludeUserDefined = true)
+        {
+            if (rx == 2) return GetFilter(BandStackFilterNameRX2(b), bIncludeUserDefined);
+            return GetFilter(b, bIncludeUserDefined);
         }
         public static List<BandStackFilter> GetFilters(Band b, bool onlyFirst = false, bool bIncludeUserDefined = true)
         {
