@@ -32261,10 +32261,20 @@ namespace Thetis
                                                 }
                                                 else
                                                 {
-                                                    // H1: hold the sub inside RX1's passband by moving it to the
-                                                    // nearest edge rather than dropping it onto VFO A
-                                                    double dbEdge = (rx2_osc > 0) ? (sample_rate_rx1 / 2 - 1) : (-sample_rate_rx1 / 2 + 1);
-                                                    VFOASubFreq = VFOAFreq + (radio.GetDSPRX(0, 0).RXOsc - dbEdge) * 0.0000010;
+                                                    // H1: a sub that has left the visible span comes along to VFO A.
+                                                    // That is the band-change case, where it otherwise stayed on the old
+                                                    // band's frequency and its window sat outside the span. A sub only
+                                                    // just outside the passband is still parked at the nearest edge.
+                                                    double half_span = Math.Abs(Display.RXDisplayHigh - Display.RXDisplayLow) / 2.0;
+                                                    if (Math.Abs(VFOASubFreq - VFOAFreq) * 1e6 > half_span)
+                                                    {
+                                                        VFOASubFreq = VFOAFreq;
+                                                    }
+                                                    else
+                                                    {
+                                                        double dbEdge = (rx2_osc > 0) ? (sample_rate_rx1 / 2 - 1) : (-sample_rate_rx1 / 2 + 1);
+                                                        VFOASubFreq = VFOAFreq + (radio.GetDSPRX(0, 0).RXOsc - dbEdge) * 0.0000010;
+                                                    }
                                                 }
                     }
 
