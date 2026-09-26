@@ -37328,6 +37328,27 @@ namespace Thetis
 
                 if (!_mox) WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
 
+                // H1: same late nudge as RX2's own enable - the sub's audio path only
+                // engages once its data is flowing, so stop/start its channel again
+                // shortly after, the way a mode touch would.
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Thread.Sleep(2000);
+                        if (!chkEnableMultiRX2.Checked || !rx2_enabled || !chkPower.Checked || _mox) return;
+                        BeginInvoke((Action)(() =>
+                        {
+                            if (chkEnableMultiRX2.Checked && rx2_enabled && chkPower.Checked && !_mox)
+                            {
+                                WDSP.SetChannelState(WDSP.id(2, 1), 0, 0);
+                                WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
+                            }
+                        }));
+                    }
+                    catch { }
+                });
+
                 chkEnableMultiRX2.BackColor = button_selected_color;
 
                 // a sub that has never been tuned sits on VFO B's frequency
@@ -38084,6 +38105,29 @@ namespace Thetis
                     // sequence does it on its own.
                     if (chkPower.Checked && !initializing)
                         SetRX2Mode(_rx2_dsp_mode);
+
+                    // H1: the audio path to the VACs only engages on a second channel
+                    // stop/start with the receiver's data already flowing - the apply
+                    // above fixes the window and the meter immediately, but VAC2 stayed
+                    // silent until a manual mode touch. Do that touch automatically,
+                    // shortly after the enable.
+                    if (chkPower.Checked && !initializing)
+                    {
+                        ThreadPool.QueueUserWorkItem(_ =>
+                        {
+                            try
+                            {
+                                Thread.Sleep(2000);
+                                if (!rx2_enabled || !chkPower.Checked || _mox) return;
+                                BeginInvoke((Action)(() =>
+                                {
+                                    if (rx2_enabled && chkPower.Checked && !_mox)
+                                        SetRX2Mode(_rx2_dsp_mode);
+                                }));
+                            }
+                            catch { }
+                        });
+                    }
 
                     if (chkEnableMultiRX.Checked)
                         txtVFOABand_LostFocus(this, EventArgs.Empty);
