@@ -4165,10 +4165,18 @@ namespace Thetis
                         dVFOBFreq = double.Parse(val); // MW0LGE_21c need to do this at end, as we used center_freq etc
                         break;
                     case "VFOASubFreq": // MW0LGE_21a
-                        _force_vfo_update = true;
-                        VFOASubFreq = double.Parse(val);
-                        _force_vfo_update = false;
+                        // H1: the working copy is set FIRST. The property's setter throws the
+                        // value away while the setup form is not up yet ("IsSetupFormNull"),
+                        // and that discard is how the RX1 sub's frequency was lost on every
+                        // console restart. The RX2 sub's setter has no such guard, which is
+                        // why only RX1 showed the fault. The property call below still runs,
+                        // to push the row and the display once the form is available.
+                        double vfoaSubRestored = double.Parse(val);
+                        m_dVFOASubFreq = Math.Round(vfoaSubRestored, 6);
                         saved_vfoa_sub_freq = m_dVFOASubFreq;  // init the save sub freq (i dont like this, TODO)
+                        _force_vfo_update = true;
+                        VFOASubFreq = vfoaSubRestored;
+                        _force_vfo_update = false;
                         break;
                     case "VFOBSubFreq": // H1: SubVFOB, the sub receiver of RX2
                         _force_vfo_update = true;
