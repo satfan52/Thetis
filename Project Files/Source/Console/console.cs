@@ -46941,6 +46941,21 @@ private void incrementMutliMeterDisplayModeRX2()
 
             if (m_bSetBandRunning) return;
             if (!BandStackManager.Ready) return;
+
+            if (rx == 2)
+            {
+                // H1: RX2 keeps its own band stack. Its events are recorded here into the RX2
+                // filters; applying them on a band change, and letting the shared window follow
+                // the receiver in use, come in the next build. Recording alone changes nothing
+                // on screen because nothing reads these entries yet.
+                BandStackFilter bsfRX2Old = BandStackManager.GetFilter(oldBand, 2, false);
+                if (bsfRX2Old != null) bsfRX2Old.LastVisited.Band = oldBand;
+
+                BandStackFilter bsfRX2New = BandStackManager.GetFilter(newBand, 2, false);
+                if (bsfRX2New != null) bsfRX2New.LastVisited.Band = newBand;
+                return;
+            }
+
             if (rx != 1) return;
 
             BandStackFilter bsf = BandStackManager.GetFilter(oldBand, false);
@@ -46973,8 +46988,21 @@ private void incrementMutliMeterDisplayModeRX2()
             handleVfoSyncMode(rx, newMode);
 
             if (m_bSetBandRunning) return;
-            if (rx != 1) return;
             if (!BandStackManager.Ready) return;
+
+            if (rx == 2)
+            {
+                // H1: record RX2's mode per band the same way, in RX2's own filters. RX2 keeps
+                // its own mode under VFO Sync too: the sync ties frequencies only.
+                BandStackFilter bsfRX2Old = BandStackManager.GetFilter(oldBand, 2, false);
+                if (bsfRX2Old != null) bsfRX2Old.LastVisited.Mode = oldMode;
+
+                BandStackFilter bsfRX2New = BandStackManager.GetFilter(newBand, 2, false);
+                if (bsfRX2New != null) bsfRX2New.LastVisited.Mode = newMode;
+                return;
+            }
+
+            if (rx != 1) return;
 
             BandStackFilter bsf = BandStackManager.GetFilter(oldBand, false);
             if (bsf != null) bsf.LastVisited.Mode = oldMode;
