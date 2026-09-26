@@ -26553,6 +26553,7 @@ namespace Thetis
         private void timer_clock_Tick(object sender, System.EventArgs e)
         {       
             DateTime now = DateTime.Now;
+
             DateTime UTCnow = DateTime.UtcNow;
             toolStripStatusLabel_UTCTime.Text = UTCnow.ToString("HH:mm:ss") + " utc";
             toolStripStatusLabel_LocalTime.Text = now.ToString("HH:mm:ss") + " loc";

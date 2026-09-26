@@ -999,12 +999,33 @@ namespace Thetis
 
         private static void SetupCheckBoxImages(CheckBox ctrl)
         {
+            // H1: the two sub transmit ticks mirror the main transmit ticks. With no skin
+            // files of their own they take the image set of the main tick they belong to,
+            // so they present exactly like it in every state - checked, unchecked and
+            // disabled. Own files win if they are ever added.
+            string skinName = ctrl.Name;
+            bool ownFiles = false;
+            for (int i = 0; i < 8; i++)
+            {
+                if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext) ||
+                    File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext))
+                {
+                    ownFiles = true;
+                    break;
+                }
+            }
+            if (!ownFiles)
+            {
+                if (skinName == "chkSubVFOATX") skinName = "chkVFOATX";
+                else if (skinName == "chkSubVFOBTX") skinName = "chkVFOBTX";
+            }
+
             string skey = "";
             for (int i=0; i<8; i++)
             {
-                string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                 if (!File.Exists(spath))
-                    spath = path + "\\" + "Console" + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                    spath = path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                 if (File.Exists(spath))
                 {
                     Image img = loadImage(spath); // load to cache it
@@ -1028,11 +1049,11 @@ namespace Thetis
                 for (int i = 0; i < 8; i++)
                 {
                     string sstate = ((ImageState)i).ToString();
-                    string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                    string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                     Image img = getImageFromFilePath(spath);
                     if (img == null)
                     {
-                        spath = path + "\\" + "Console" + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                        spath = path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                         img = getImageFromFilePath(spath);
                     }
                     if (img != null && !_shared_image_lists[skey].Images.ContainsKey(sstate))
