@@ -2906,23 +2906,19 @@
             // chkSubVFOATX
             //
             resources.ApplyResources(this.chkSubVFOATX, "chkSubVFOATX");
-            this.chkSubVFOATX.BackColor = System.Drawing.Color.Transparent;
             this.chkSubVFOATX.FlatAppearance.BorderSize = 0;
             this.chkSubVFOATX.ForeColor = System.Drawing.SystemColors.ControlLightLight;
             this.chkSubVFOATX.Name = "chkSubVFOATX";
             this.toolTip1.SetToolTip(this.chkSubVFOATX, resources.GetString("chkSubVFOATX.ToolTip"));
-            this.chkSubVFOATX.UseVisualStyleBackColor = false;
             this.chkSubVFOATX.CheckedChanged += new System.EventHandler(this.chkSubVFOATX_CheckedChanged);
             //
             // chkSubVFOBTX
             //
             resources.ApplyResources(this.chkSubVFOBTX, "chkSubVFOBTX");
-            this.chkSubVFOBTX.BackColor = System.Drawing.Color.Transparent;
             this.chkSubVFOBTX.FlatAppearance.BorderSize = 0;
             this.chkSubVFOBTX.ForeColor = System.Drawing.SystemColors.ControlLightLight;
             this.chkSubVFOBTX.Name = "chkSubVFOBTX";
             this.toolTip1.SetToolTip(this.chkSubVFOBTX, resources.GetString("chkSubVFOBTX.ToolTip"));
-            this.chkSubVFOBTX.UseVisualStyleBackColor = false;
             this.chkSubVFOBTX.CheckedChanged += new System.EventHandler(this.chkSubVFOBTX_CheckedChanged);
             // 
             // comboMeterTXMode

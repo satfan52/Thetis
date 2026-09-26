@@ -607,7 +607,8 @@ namespace Thetis
                 //   • VFOBTX-only split (RX2/WSJT-X, no VFOSplit): TXFreq == VFOAFreq in simplex,
                 //     so use VFOBFreq as the TX frequency.
                 //   • Normal split / all other cases: use TXFreq.
-                bool rx2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                // H1: the SubVFOB tick is a transmit source of its own, not split-on-SubVFOA
+                bool rx2SplitMode = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                 if (rx2SplitMode)
                 {
                     double txFreq = _console.VFOASubFreq > 0 ? _console.VFOASubFreq : _console.TXFreq;
