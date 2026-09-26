@@ -37128,7 +37128,13 @@ namespace Thetis
                 // H1: same rule the RX2 sub uses. A sub that has never been tuned sits on its
                 // own receiver's frequency. Without this the first activation after a power-on
                 // ran the sub at zero and left it outside VFO A's span.
-                if (m_dVFOASubFreq <= 0.0)
+                // H1: the RX1 sub must come up inside VFO A's span. The saved frequency can be
+                // anything at all, and the stored value is loaded straight into the working
+                // copy, so an out-of-view sub is brought back to VFO A. Same idea as the RX2
+                // sub's oscillator clamp.
+                double sub_span_hz = Math.Abs(Display.RXDisplayHigh - Display.RXDisplayLow) / 2.0;
+                if (m_dVFOASubFreq <= 0.0 ||
+                    Math.Abs(m_dVFOASubFreq - VFOAFreq) * 1e6 > sub_span_hz)
                 {
                     m_dVFOASubFreq = VFOAFreq;
                     saved_vfoa_sub_freq = VFOAFreq;
