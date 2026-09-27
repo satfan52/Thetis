@@ -9211,16 +9211,35 @@ namespace Thetis
                         if (!local_mox)
                             localRit = rx == 1 && _rx1ClickDisplayCTUN ? 0 : rx == 2 ? 0 : rit_hz;
 
-                        // H1: the transmit window follows the armed B-side tick. The RX2 frame's
-                        // reference is Display.VFOB, so the SubVFOB tick adds the sub's own offset
-                        // from VFO B and the VFO B tick adds nothing - the SubVFOA term used to
-                        // place the marker at SubVFOA's offset whatever the tick said.
+                        // H1: the transmit window follows the armed B-side tick. The SubVFOB tick
+                        // adds the sub's own offset from the display reference, like its window.
+                        // The VFO B tick transmits on the receiver itself, so its window uses the
+                        // receiver's own expression with f_diff, landing on the receiver under
+                        // click-tune too - the SubVFOA term used to place the marker at SubVFOA's
+                        // offset whatever the tick said.
                         long txDelta = localSubDiff;
+                        bool bTxOnRx2Receiver = false;
                         if (rx == 2)
-                            txDelta = _tx_on_sub_vfob ? (vfob_sub_hz - vfob_hz) : 0;
+                        {
+                            if (_tx_on_sub_vfob)
+                                txDelta = vfob_sub_hz - vfob_hz;
+                            else
+                            {
+                                txDelta = 0;
+                                bTxOnRx2Receiver = true;
+                            }
+                        }
 
-                        filter_left_x = (int)((float)(filter_low_tmp - Low + localXit + txDelta - localRit) / width * W);
-                        filter_right_x = (int)((float)(filter_high_tmp - Low + localXit + txDelta - localRit) / width * W);
+                        if (bTxOnRx2Receiver)
+                        {
+                            filter_left_x = (int)((float)(filter_low_tmp - Low - f_diff + localXit - localRit) / width * W);
+                            filter_right_x = (int)((float)(filter_high_tmp - Low - f_diff + localXit - localRit) / width * W);
+                        }
+                        else
+                        {
+                            filter_left_x = (int)((float)(filter_low_tmp - Low + localXit + txDelta - localRit) / width * W);
+                            filter_right_x = (int)((float)(filter_high_tmp - Low + localXit + txDelta - localRit) / width * W);
+                        }
                     }
 
                     if (local_mox)
@@ -9383,12 +9402,14 @@ namespace Thetis
                         int cw_line_x1;
                         if (!split_enabled)
                             cw_line_x1 = (int)((float)(cwSideToneShiftInverted - Low - f_diff + xit_hz) / width * W);
-                        else
+                        else if (_tx_on_sub_vfob)
                         {
                             // H1: same tick-following term as the passband pair above
-                            long cwTxDelta = _tx_on_sub_vfob ? (vfob_sub_hz - vfob_hz) : 0;
+                            long cwTxDelta = vfob_sub_hz - vfob_hz;
                             cw_line_x1 = (int)((float)(cwSideToneShiftInverted - Low + xit_hz + cwTxDelta) / width * W);
                         }
+                        else
+                            cw_line_x1 = (int)((float)(cwSideToneShiftInverted - Low - f_diff + xit_hz) / width * W);
 
                         drawLineDX2D(m_bDX2_tx_filter_pen, cw_line_x1, nVerticalShift + top, cw_line_x1, nVerticalShift + H, tx_filter_pen.Width);
                     }
