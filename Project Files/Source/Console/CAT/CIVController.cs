@@ -1046,7 +1046,7 @@ namespace Thetis
                 SendVfoAFrequency(targetVfoAFreq, force: true);
             }
 
-            if (doVfoB && !doSplit && _console != null && _console.VFOBTX)
+            if (doVfoB && !doSplit && _console != null && (_console.VFOBTX || _console.TXOnSubVFOB))
             {
                 SendVfoBFrequency(targetVfoBFreq);
             }

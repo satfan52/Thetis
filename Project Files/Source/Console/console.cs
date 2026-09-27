@@ -33219,6 +33219,19 @@ namespace Thetis
                     radio.GetDSPRX(1, 1).RXOsc = sub_osc;
                 }
             }
+
+            // H1: the SubVFOA row reports transmit-frequency moves through the
+            // TXFrequncyChangedHandlers and this row must do the same - the CI-V layer has
+            // no SubVFOB event of its own, and without this the transmitter keeps the
+            // frequency it held when the tick was armed while the sub row tunes on.
+            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+            {
+                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                _old_tx_freq = TXFreq;
+                _old_tx_band = TXBand;
+            }
         }
 
         private void txtVFOBSub_KeyPress(object sender, System.Windows.Forms.KeyPressEventArgs e)
@@ -36800,6 +36813,24 @@ namespace Thetis
             // row's own handler. Switching the sub on used to leave the display holding zero,
             // so the window stayed away until the row was touched once.
             if (sub_row_active) Display.VFOBSub = (long)(m_dVFOBSubFreq * 1e6);
+
+            // H1: re-aim the row through its own handler the way UpdateVFOASub does, so a
+            // direct write of the row text also reaches the transmit side, then report the
+            // transmit-frequency move on the shared handler.
+            if (sub_row_active) txtVFOBSub_LostFocus(this, EventArgs.Empty);
+
+            // H1: the SubVFOA row reports transmit-frequency moves through the
+            // TXFrequncyChangedHandlers and this row must do the same - the CI-V layer has
+            // no SubVFOB event of its own, and without this the transmitter keeps the
+            // frequency it held when the tick was armed while the sub row tunes on.
+            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+            {
+                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                _old_tx_freq = TXFreq;
+                _old_tx_band = TXBand;
+            }
         }
 
         private bool _bOldVFOSplit = false; //MW0LGE_22a
@@ -47954,7 +47985,31 @@ private void incrementMutliMeterDisplayModeRX2()
                 bse.Band = band;
             }
 
-            if (bse.Frequency <= 0) // nothing ever recorded for this band
+            // H1: a recorded frequency is only usable when it really lies inside this
+            // band's own ranges. A record that moved to another band's filter - a 60m
+            // frequency returned for 40m was seen - would otherwise send the receiver to
+            // the wrong band, and the wrong value would then record again.
+            bool bFreqUsable = bse.Frequency > 0;
+            if (bFreqUsable)
+            {
+                List<BandFrequencyData> rangeCheck = BandStackManager.GetFrequencyRangesForBand(band, this.Extended, CurrentRegion);
+                if (rangeCheck.Count > 0)
+                {
+                    bFreqUsable = false;
+                    foreach (BandFrequencyData bfdRange in rangeCheck)
+                    {
+                        if (bse.Frequency >= bfdRange.low && bse.Frequency <= bfdRange.high)
+                        {
+                            bFreqUsable = true;
+                            break;
+                        }
+                    }
+                    if (!bFreqUsable)
+                        BandLog("rx2 band entry rejected: band=" + band + " freq=" + bse.Frequency + " (record belongs to another band)");
+                }
+            }
+
+            if (!bFreqUsable) // nothing recorded for this band, or the record belongs to another band
             {
                 List<BandFrequencyData> bfd = BandStackManager.GetFrequencyRangesForBand(band, this.Extended, CurrentRegion);
                 if (bfd.Count > 0)
