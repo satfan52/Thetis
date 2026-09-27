@@ -32676,7 +32676,7 @@ namespace Thetis
                         int diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
                         if (chkRIT.Checked && !_mox && bRitOk) diff -= (int)udRIT.Value;
                         int rx2_osc = (int)(radio.GetDSPRX(0, 0).RXOsc - diff);
-                        if (rx2_osc > -SubPassbandHalf && rx2_osc < SubPassbandHalf)
+                        if (rx2_osc > SubTuneMin && rx2_osc < SubTuneMax)
                                                 {
                                                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                                                 }
@@ -32701,13 +32701,14 @@ namespace Thetis
                                                     {
                                                         BandLog("vfoa update: env not known - sub kept");
                                                     }
-                                                    else if (Math.Abs(VFOASubFreq - VFOAFreq) * 1e6 > half_span)
+                                                    else if (((VFOASubFreq - VFOAFreq) * 1e6 + Display.SubRX1FilterLow < -half_span) ||
+                                                             ((VFOASubFreq - VFOAFreq) * 1e6 + Display.SubRX1FilterHigh > half_span))
                                                     {
                                                         VFOASubFreq = VFOAFreq;
                                                     }
                                                     else
                                                     {
-                                                        double dbEdge = (rx2_osc > 0) ? (SubPassbandHalf - 1) : (-SubPassbandHalf + 1);
+                                                        double dbEdge = (rx2_osc > 0) ? (SubTuneMax - 1) : (SubTuneMin + 1);
                                                         VFOASubFreq = VFOAFreq + (radio.GetDSPRX(0, 0).RXOsc - dbEdge) * 0.0000010;
                                                     }
                                                 }
@@ -32997,18 +32998,18 @@ namespace Thetis
                 // frequency from it - which the later checks then snapped onto VFO A. The
                 // trace: restore 7.169957, this park made 7.136509, the span check made
                 // VFO A. The clamps stay live for every runtime edit.
-                if (!initializing && sub_osc < -SubPassbandHalf)
+                if (!initializing && sub_osc < SubTuneMin)
                 {
-                    VFOASubFreq = vfoa + (SubPassbandHalf + radio.GetDSPRX(0, 0).RXOsc - 1) * 0.0000010;
+                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubTuneMin - 1) * 0.0000010;
                     return;
                 }
-                else if (!initializing && sub_osc > SubPassbandHalf)
+                else if (!initializing && sub_osc > SubTuneMax)
                 {
-                    VFOASubFreq = vfoa + (-SubPassbandHalf + radio.GetDSPRX(0, 0).RXOsc + 1) * 0.0000010;
+                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubTuneMax + 1) * 0.0000010;
                     return;
                 }
 
-                if (sub_osc > -SubPassbandHalf && sub_osc < SubPassbandHalf)
+                if (sub_osc > SubTuneMin && sub_osc < SubTuneMax)
                 {
                     radio.GetDSPRX(0, 1).RXOsc = sub_osc;
                 }
@@ -33248,18 +33249,18 @@ namespace Thetis
                 // row's clamp. At start-up the VFOs and the RX2 DDS are still mid-restore, the
                 // computed sub_osc is garbage, and the park moved a restored SubVFOB frequency
                 // away from its saved value.
-                if (!initializing && sub_osc < -SubPassbandHalfRX2)
+                if (!initializing && sub_osc < SubTuneMinRX2)
                 {
-                    VFOBSubFreq = vfob + (SubPassbandHalfRX2 + radio.GetDSPRX(1, 0).RXOsc - 1) * 0.0000010;
+                    VFOBSubFreq = vfob + (radio.GetDSPRX(1, 0).RXOsc - SubTuneMinRX2 - 1) * 0.0000010;
                     return;
                 }
-                else if (!initializing && sub_osc > SubPassbandHalfRX2)
+                else if (!initializing && sub_osc > SubTuneMaxRX2)
                 {
-                    VFOBSubFreq = vfob + (-SubPassbandHalfRX2 + radio.GetDSPRX(1, 0).RXOsc + 1) * 0.0000010;
+                    VFOBSubFreq = vfob + (radio.GetDSPRX(1, 0).RXOsc - SubTuneMaxRX2 + 1) * 0.0000010;
                     return;
                 }
 
-                if (sub_osc > -SubPassbandHalfRX2 && sub_osc < SubPassbandHalfRX2)
+                if (sub_osc > SubTuneMinRX2 && sub_osc < SubTuneMaxRX2)
                 {
                     radio.GetDSPRX(1, 1).RXOsc = sub_osc;
                 }
@@ -33530,7 +33531,7 @@ namespace Thetis
 
                 double sub_osc = radio.GetDSPRX(1, 0).RXOsc - sub_diff;
 
-                if (sub_osc > -SubPassbandHalfRX2 && sub_osc < SubPassbandHalfRX2)
+                if (sub_osc > SubTuneMinRX2 && sub_osc < SubTuneMaxRX2)
                 {
                     radio.GetDSPRX(1, 1).RXOsc = sub_osc;
                 }
@@ -34490,6 +34491,23 @@ namespace Thetis
             get { return sample_rate_rx2 * 0.92 / 2; }
         }
 
+        // the subs' tuning points are allowed where their whole passbands, the drawn
+        // windows, stay inside the usable area. A window spans filterLow..filterHigh
+        // around its tuning point, so the point may sit between -(half + low) and
+        // half - high. USB windows sit above the point, LSB below, AM and FM either side.
+        private double SubTuneMin { get { return -(SubPassbandHalf + Display.SubRX1FilterLow); } }
+        private double SubTuneMax { get { return SubPassbandHalf - Display.SubRX1FilterHigh; } }
+        private double SubTuneMinRX2 { get { return -(SubPassbandHalfRX2 + Display.SubRX2FilterLow); } }
+        private double SubTuneMaxRX2 { get { return SubPassbandHalfRX2 - Display.SubRX2FilterHigh; } }
+        private bool SubPositionUsable(double subFreq, double vfoFreq, bool rx2Sub)
+        {
+            double off = (subFreq - vfoFreq) * 1e6;
+            double min = rx2Sub ? SubTuneMinRX2 : SubTuneMin;
+            double max = rx2Sub ? SubTuneMaxRX2 : SubTuneMax;
+            return off >= min + 2 && off <= max - 2;
+        }
+
+
         // H1: the sub receivers' working state joins the band memory. Recorded into the
         // owning receiver's current band filter, from which entries are built.
         //
@@ -34507,7 +34525,7 @@ namespace Thetis
                 if (rx == 1)
                 {
                     if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
-                    if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (SubPassbandHalf - 2)) return; // clamped/transition value
+                    if (!SubPositionUsable(VFOASubFreq, VFOAFreq, false)) return; // clamped/transition value
                     BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, 1, false);
                     if (bsf == null) return;
                     bsf.LastVisited.SubVFOFreq = VFOASubFreq;
@@ -34518,7 +34536,7 @@ namespace Thetis
                 else
                 {
                     if (!chkEnableMultiRX2.Checked || VFOBSubFreq <= 0) return;
-                    if (Math.Abs((VFOBSubFreq - VFOBFreq) * 1e6) > (SubPassbandHalfRX2 - 2)) return; // clamped/transition value
+                    if (!SubPositionUsable(VFOBSubFreq, VFOBFreq, true)) return; // clamped/transition value
                     BandStackFilter bsf = BandStackManager.GetFilter(RX2Band, 2, false);
                     if (bsf == null) return;
                     bsf.LastVisited.SubVFOFreq = VFOBSubFreq;
@@ -48052,7 +48070,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 // out-of-range number is a stale entry from before the recording
                 // discipline was tightened and is ignored
                 if (bse.SubVFOFreq > 0 &&
-                    Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (SubPassbandHalf - 2))
+                    SubPositionUsable(bse.SubVFOFreq, VFOAFreq, false))
                     VFOASubFreq = bse.SubVFOFreq;
                 if (bse.SubFilterHigh > bse.SubFilterLow)
                     ApplySubRXFilter(1, bse.SubFilterLow, bse.SubFilterHigh);
@@ -48077,7 +48095,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 // out-of-range number is a stale entry from before the recording
                 // discipline was tightened and is ignored
                 if (bse.SubVFOFreq > 0 &&
-                    Math.Abs((bse.SubVFOFreq - VFOBFreq) * 1e6) <= (SubPassbandHalfRX2 - 2))
+                    SubPositionUsable(bse.SubVFOFreq, VFOBFreq, true))
                     VFOBSubFreq = bse.SubVFOFreq;
                 if (bse.SubFilterHigh > bse.SubFilterLow)
                     ApplySubRXFilter(2, bse.SubFilterLow, bse.SubFilterHigh);
