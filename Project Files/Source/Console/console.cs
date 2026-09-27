@@ -18364,15 +18364,22 @@ namespace Thetis
 
         // the sub's tuning point is allowed where its whole passband, the drawn window,
         // stays inside the usable area. The window spans filterLow..filterHigh around
-        // the tuning point, so the point may sit between -(half + low) and half - high.
-        // USB windows sit above the point, LSB below, AM and FM either side, and these
-        // bounds follow the filter the sub actually demodulates with.
-        private double SubTuneMin { get { return -(SubPassbandHalf + radio.GetDSPRX(0, 1).RXFilterLow); } }
-        private double SubTuneMax { get { return SubPassbandHalf - radio.GetDSPRX(0, 1).RXFilterHigh; } }
+        // the tuning point, so in frequency terms the point may sit between
+        // -(half + low) and half - high. USB windows sit above the point, LSB below,
+        // AM and FM either side, and the bounds follow the filter the sub demodulates
+        // with. The two oscillator properties carry the same rule for the value the
+        // tuners compare, sub_osc = RXOsc(main) - offset, which is mirrored against
+        // the offset: a high offset is a low oscillator. Get the mirroring backwards
+        // and the asymmetric part of the rule lands on the wrong side - a USB window
+        // then overhangs the upper edge while never reaching the lower one.
+        private double SubOscMin { get { return radio.GetDSPRX(0, 1).RXFilterHigh - SubPassbandHalf; } }
+        private double SubOscMax { get { return SubPassbandHalf + radio.GetDSPRX(0, 1).RXFilterLow; } }
         private bool SubPositionUsable(double subFreq, double vfoFreq)
         {
             double off = (subFreq - vfoFreq) * 1e6;
-            return off >= SubTuneMin + 2 && off <= SubTuneMax - 2;
+            double min = -(SubPassbandHalf + radio.GetDSPRX(0, 1).RXFilterLow);
+            double max = SubPassbandHalf - radio.GetDSPRX(0, 1).RXFilterHigh;
+            return off >= min + 2 && off <= max - 2;
         }
 
 
@@ -31993,7 +32000,7 @@ namespace Thetis
                         else diff = (int)((VFOBFreq - VFOAFreq) * 1e6);
                         if (chkRIT.Checked && !_mox && bRitOk) diff -= (int)udRIT.Value;
                         int rx2_osc = (int)(radio.GetDSPRX(0, 0).RXOsc - diff);
-                        if (rx2_osc > SubTuneMin && rx2_osc < SubTuneMax)
+                        if (rx2_osc > SubOscMin && rx2_osc < SubOscMax)
                         {
                             radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                         }
@@ -32272,18 +32279,18 @@ namespace Thetis
                 // finaliser can run while the receiver's DDS is still mid-restore, and
                 // the park below would synthesise a wrong sub frequency from it. The
                 // clamps stay live for every runtime edit.
-                if (!initializing && sub_osc < SubTuneMin)
+                if (!initializing && sub_osc < SubOscMin)
                 {
-                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubTuneMin - 1) * 0.0000010;
+                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubOscMin - 1) * 0.0000010;
                     return;
                 }
-                else if (!initializing && sub_osc > SubTuneMax)
+                else if (!initializing && sub_osc > SubOscMax)
                 {
-                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubTuneMax + 1) * 0.0000010;
+                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubOscMax + 1) * 0.0000010;
                     return;
                 }
 
-                if (sub_osc > SubTuneMin && sub_osc < SubTuneMax)
+                if (sub_osc > SubOscMin && sub_osc < SubOscMax)
                 {
                     radio.GetDSPRX(0, 1).RXOsc = sub_osc;
                 }
@@ -32595,7 +32602,7 @@ namespace Thetis
 
                 double rx2_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
 
-                if (rx2_osc > SubTuneMin && rx2_osc < SubTuneMax)
+                if (rx2_osc > SubOscMin && rx2_osc < SubOscMax)
                 {
                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                 }
