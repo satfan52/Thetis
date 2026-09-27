@@ -271,8 +271,8 @@ namespace Thetis
         private int vfo_pixel_offset;						// Used to calibrate mousewheel tuning
         private int vfoa_hover_digit;						// Digit for hover display
         private int vfo_sub_pixel_offset;
-        private int vfoa_sub_hover_digit;					// Digit for VFOA sub hover display
-        private int vfob_sub_hover_digit;					// H1: Digit for SubVFOB hover display
+        private int vfoa_sub_hover_digit = -1;					// Digit for VFOA sub hover display, -1 = none
+        private int vfob_sub_hover_digit = -1;					// H1: Digit for SubVFOB hover display, -1 = none
         private int vfob_hover_digit;						// Digit for hover display
 
         private DSPMode quick_save_mode;					// Quick Save Mode
@@ -5829,30 +5829,61 @@ namespace Thetis
             g.Dispose();
         }
 
+        private float vfo_sub_metrics_size = -1f;		// H1: the font size the metrics below were measured from
+
         private void GetVFOSubCharWidth()
+        {
+            GetVFOSubCharWidth(txtVFOABand);
+        }
+
+        private void GetVFOSubCharWidth(Control src)
         {
             // This function calculates the pixel width of the VFO display.
             // This information is used for mouse wheel hover tuning.
+            if (src == null) src = txtVFOABand;
 
-            Graphics g = txtVFOABand.CreateGraphics();
+            Graphics g = src.CreateGraphics();
 
-            SizeF size = measureStringFromCache("0", txtVFOABand.Font, 1000, StringFormat.GenericTypographic, g);
+            SizeF size = measureStringFromCache("0", src.Font, 1000, StringFormat.GenericTypographic, g);
             vfo_sub_char_width = (int)Math.Round(size.Width - 2.0f, 0);	// subtract 2 since measure string includes 1 pixel border on each side
             float float_char_width = size.Width - 2.0f;
 
-            size = measureStringFromCache("00", txtVFOABand.Font, 1000, StringFormat.GenericTypographic, g);
+            size = measureStringFromCache("00", src.Font, 1000, StringFormat.GenericTypographic, g);
             vfo_sub_char_space = (int)Math.Round(size.Width - 2.0f - 2 * float_char_width, 0);
 
-            size = measureStringFromCache(separator, txtVFOABand.Font, 1000, StringFormat.GenericTypographic, g);
+            size = measureStringFromCache(separator, src.Font, 1000, StringFormat.GenericTypographic, g);
             vfo_sub_decimal_width = (int)(size.Width - 2.0f);
 
-            size = measureStringFromCache("0" + separator + "0", txtVFOABand.Font, 1000, StringFormat.GenericTypographic, g);
+            size = measureStringFromCache("0" + separator + "0", src.Font, 1000, StringFormat.GenericTypographic, g);
             vfo_sub_decimal_space = (int)Math.Round(size.Width - 2.0f - 2 * float_char_width, 0);
 
-            size = measureStringFromCache("1234.678901", txtVFOABand.Font, 1000, StringFormat.GenericTypographic, g);
+            size = measureStringFromCache("1234.678901", src.Font, 1000, StringFormat.GenericTypographic, g);
             vfo_sub_pixel_offset = (int)Math.Round(size.Width - 2.0f, 0);
 
+            vfo_sub_metrics_size = src.Font.Size;
+
             g.Dispose();
+        }
+
+        // H1: the two sub rows share these metrics, so before the hover and drag
+        // arithmetic runs, make sure they were measured from the row in front of the
+        // cursor - the rows can sit at different sizes (one live, one idle).
+        private void EnsureSubRowMetrics(Control src)
+        {
+            if (src == null) return;
+            if (vfo_sub_char_width == 0 || Math.Abs(vfo_sub_metrics_size - src.Font.Size) > 0.01f)
+                GetVFOSubCharWidth(src);
+        }
+
+        // H1: one size rule for both sub rows - the SubVFOB digits take the same size
+        // as the SubVFOA row's in the same states - enlarged while the sub is live,
+        // the idle size otherwise - so the two sub rows present identically.
+        private void SetSubRowFont(Control c, float size)
+        {
+            if (c == null) return;
+            if (Math.Abs(c.Font.Size - size) < 0.01f) return;
+            c.Font = new Font("Microsoft Sans Sarif", size, FontStyle.Regular);
+            GetVFOSubCharWidth(c);
         }
         private bool m_bSetBandRunning = false; // so we know if any events raised are caused by SetBand
         public void SetBand(string mode, string filter, double freq, bool CTUN, int zoomFactor, double centerFreq)
@@ -27991,6 +28022,7 @@ namespace Thetis
                 // stranded off screen.
                 if (chkEnableMultiRX.Checked) UpdateVFOASub();
                 if (rx2_enabled && chkEnableMultiRX2.Checked) UpdateVFOBSub();
+                UpdateVFOBRowEnabled(); // H1: grey the B frame at power-up with RX2 off too
                 HeadlessSliceManager.Instance.SyncActiveSlices();
                 SetupForm.UpdateGeneraHardware();
                 SetMicGain();
@@ -36722,7 +36754,7 @@ namespace Thetis
                     txtVFOABand.TextAlign = HorizontalAlignment.Right;
                     txtVFOABand.ReadOnly = false;
                     txtVFOABand_LostFocus(this, EventArgs.Empty);
-                    panelVFOASubHover.Visible = true;
+                    panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
 
                     bIgnore = true;
                 }
@@ -36737,7 +36769,7 @@ namespace Thetis
                     txtVFOABand.TextAlign = HorizontalAlignment.Right;
                     txtVFOABand.ReadOnly = false;
                     txtVFOABand_LostFocus(this, EventArgs.Empty);
-                    panelVFOASubHover.Visible = true;
+                    panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
 
                     bIgnore = true;
                 }
@@ -36759,7 +36791,7 @@ namespace Thetis
                 else txtVFOABand.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
                 txtVFOABand.ReadOnly = false;
                 txtVFOABand.Text = sub_row_freq.ToString("f6");
-                panelVFOASubHover.Visible = true;
+                panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
 
                 // H1: make the sub channel actually sit on the frequency this row shows. The row is
                 // what the user tunes, and on startup the stored frequency arrives after the first
@@ -36788,6 +36820,14 @@ namespace Thetis
             }
         }
 
+        // H1: with RX2 off the VFO B frame has no role - VFO B is RX2's slice. It stays
+        // visible but greyed, the treatment every control of an off receiver gets; the
+        // OS then draws the whole subtree - frame, caption, digits and buttons.
+        private void UpdateVFOBRowEnabled()
+        {
+            if (grpVFOB != null) grpVFOB.Enabled = rx2_enabled;
+        }
+
         // H1: the VFO B lower row is SubVFOB. It shows the sub receiver frequency,
         // dimmed while that sub is idle, and it stays tunable while it is active -
         // the same treatment the SubVFOA row gets in the VFO A frame.
@@ -36797,7 +36837,10 @@ namespace Thetis
 
             bool sub_row_active = rx2_enabled && chkEnableMultiRX2.Checked;
 
-            txtVFOBSub.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
+            // H1: the SubVFOB digits take the same size as the SubVFOA row's in the same
+            // states - enlarged while the sub is live, the idle size otherwise - so the
+            // two sub rows present identically. The digit metrics follow the font.
+            SetSubRowFont(txtVFOBSub, sub_row_active ? 14.0f : 12.0f);
             txtVFOBSub.TextAlign = HorizontalAlignment.Right;
             if (chkSubVFOBTX.Checked) txtVFOBSub.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
             else if (!sub_row_active) txtVFOBSub.ForeColor = band_text_dark_color;
@@ -36807,7 +36850,9 @@ namespace Thetis
             double sub_row_freq = sub_row_active ? m_dVFOBSubFreq : saved_vfob_sub_freq;
             txtVFOBSub.Text = sub_row_freq.ToString("f6");
 
-            if (panelVFOBSubHover != null) panelVFOBSubHover.Visible = sub_row_active;
+            // H1: the panel IS the digit underline - keep its black strip out of the
+            // border's way until a digit is highlighted
+            if (panelVFOBSubHover != null) panelVFOBSubHover.Visible = sub_row_active && vfob_sub_hover_digit >= 0;
 
             // H1: keep the display's copy of the sub's frequency current here, not only in the
             // row's own handler. Switching the sub on used to leave the display holding zero,
@@ -39018,13 +39063,11 @@ namespace Thetis
         private void txtVFOABand_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
         {
             if ((!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) || !chkPower.Checked) return;
-            panelVFOASubHover.Visible = true;
             if (this.ContainsFocus)
             {
                 int old_digit = vfoa_sub_hover_digit;
                 int digit_index = 0;
-                if (vfo_sub_char_width == 0)
-                    GetVFOSubCharWidth();
+                EnsureSubRowMetrics(txtVFOABand);
 
                 int x = txtVFOABand.Width - (vfo_sub_pixel_offset - 5);
                 while (x < e.X)
@@ -39041,6 +39084,9 @@ namespace Thetis
                 if (digit_index < 3) digit_index = -1;
                 if (digit_index > 9) digit_index = 9;
                 vfoa_sub_hover_digit = digit_index;
+                // H1: the panel IS the underline - keep its black strip off the box's
+                // border unless a digit is actually highlighted
+                panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
                 if (vfoa_sub_hover_digit != old_digit)
                     panelVFOASubHover.Invalidate();
             }
@@ -39049,6 +39095,7 @@ namespace Thetis
         private void txtVFOABand_MouseLeave(object sender, System.EventArgs e)
         {
             vfoa_sub_hover_digit = -1;
+            panelVFOASubHover.Visible = false; // H1: aside until a digit is hovered
             panelVFOASubHover.Invalidate();
         }
 
@@ -39084,13 +39131,11 @@ namespace Thetis
         private void txtVFOBSub_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
         {
             if (!rx2_enabled || !chkEnableMultiRX2.Checked || !chkPower.Checked) return;
-            panelVFOBSubHover.Visible = true;
             if (this.ContainsFocus)
             {
                 int old_digit = vfob_sub_hover_digit;
                 int digit_index = 0;
-                if (vfo_sub_char_width == 0)
-                    GetVFOSubCharWidth();
+                EnsureSubRowMetrics(txtVFOBSub);
 
                 int x = txtVFOBSub.Width - (vfo_sub_pixel_offset - 5);
                 while (x < e.X)
@@ -39107,6 +39152,9 @@ namespace Thetis
                 if (digit_index < 3) digit_index = -1;
                 if (digit_index > 9) digit_index = 9;
                 vfob_sub_hover_digit = digit_index;
+                // H1: the panel IS the underline - keep its black strip off the box's
+                // border unless a digit is actually highlighted
+                panelVFOBSubHover.Visible = vfob_sub_hover_digit >= 0;
                 if (vfob_sub_hover_digit != old_digit)
                     panelVFOBSubHover.Invalidate();
             }
@@ -39115,6 +39163,7 @@ namespace Thetis
         private void txtVFOBSub_MouseLeave(object sender, System.EventArgs e)
         {
             vfob_sub_hover_digit = -1;
+            panelVFOBSubHover.Visible = false; // H1: aside until a digit is hovered
             panelVFOBSubHover.Invalidate();
         }
 
@@ -39340,6 +39389,10 @@ namespace Thetis
 
                 if (show && sub) UpdateSubControls();
                 if (show && !sub) UpdateRX2SliceControls();
+
+                // H1: the whole VFO B frame follows RX2 - greyed while RX2 is off, and
+                // in step with an enable that did not come from the checkbox click
+                UpdateVFOBRowEnabled();
             }
             catch { }
         }
