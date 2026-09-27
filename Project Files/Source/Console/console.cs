@@ -12653,7 +12653,7 @@ namespace Thetis
                                 break;
                             default:
                                 picMultiMeterDigital.BackColor = meter_background_color;
-                                picRX2Meter.BackColor = meter_background_color;
+                                if (rx2_enabled) picRX2Meter.BackColor = meter_background_color; // H1: black while RX2 is off
                                 break;
                         }
                         break;
@@ -12662,7 +12662,7 @@ namespace Thetis
                         {
                             case MultiMeterDisplayMode.Edge:
                                 picMultiMeterDigital.BackColor = edge_meter_background_color;
-                                picRX2Meter.BackColor = edge_meter_background_color;
+                                if (rx2_enabled) picRX2Meter.BackColor = edge_meter_background_color; // H1: black while RX2 is off
                                 break;
                         }
                         break;
@@ -12767,9 +12767,13 @@ namespace Thetis
                 {
                     picMultiMeterDigital.BackColor = value;
                     picMultiMeterDigital.Invalidate();
-                    picRX2Meter.BackColor = value;
-                    if (chkRX2.Checked)
+                    // H1: the RX2 meter box stays black while RX2 is off, like the sub
+                    // meters' boxes - the colour is restored when RX2 comes back
+                    if (rx2_enabled)
+                    {
+                        picRX2Meter.BackColor = value;
                         picRX2Meter.Invalidate();
+                    }
                 }
             }
         }
@@ -36834,7 +36838,17 @@ namespace Thetis
             // H1: the RX2 meter is RX2's too - same dim treatment, emptied while RX2 is off
             if (grpRX2Meter != null) grpRX2Meter.Enabled = rx2_enabled;
             if (grpSubRX2Meter != null) grpSubRX2Meter.Enabled = rx2_enabled;
-            if (picRX2Meter != null) picRX2Meter.Invalidate();
+            // H1: in Edge style the meter box shows its own background colour, so it is
+            // blacked out while RX2 is off, exactly like the sub meters' boxes, and the
+            // display mode's colour is put back when RX2 returns
+            if (picRX2Meter != null)
+            {
+                picRX2Meter.BackColor = rx2_enabled
+                    ? (current_meter_display_mode == MultiMeterDisplayMode.Edge
+                        ? edge_meter_background_color : meter_background_color)
+                    : Color.Black;
+                picRX2Meter.Invalidate();
+            }
             if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
 
             // H1: emptied while RX2 is off - the boxes go blank at once, like the sub
