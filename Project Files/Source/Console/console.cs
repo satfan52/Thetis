@@ -5917,6 +5917,57 @@ namespace Thetis
                     oldCentreFreq, CentreFrequency, oldCtun, ClickTuneDisplay, oldZoomSlider, ptbDisplayZoom.Value);
         }
 
+        // RX2's twin of SetBand above, for RX2's own band stack. The same entry fields are
+        // applied to RX2's controls and to VFO B, and the same m_bSetBandRunning guard is set
+        // the same way: applying an entry raises the very handlers that guard exists for, so a
+        // band change cannot compound with them. There is no QSK block here - QSK is RX1's
+        // transmit machinery - and RX2 has no SPEC mode, so only DRM skips its filter.
+        public void SetBandRX2(string mode, string filter, double freq, bool CTUN, int zoomFactor, double centerFreq)
+        {
+            Band oldBand = RX2Band;
+            DSPMode oldMode = RX2DSPMode;
+            Filter oldFilter = RX2Filter;
+            double oldFreq = VFOBFreq;
+            double oldCentreFreq = CentreRX2Frequency;
+            bool oldCtun = ClickTuneRX2Display;
+            int oldZoomSlider = ptbDisplayZoom.Value;
+            m_bSetBandRunning = true;
+
+            // Set mode, filter and frequency according to passed parameters
+            RX2DSPMode = (DSPMode)Enum.Parse(typeof(DSPMode), mode, true);
+
+            if (_rx2_dsp_mode != DSPMode.DRM)
+            {
+                RX2Filter = (Filter)Enum.Parse(typeof(Filter), filter, true);
+            }
+
+            ClickTuneRX2Display = false;                            // Set CTUN off to restore centre frequency - G3OQD
+            chkX2TR.Checked = ClickTuneRX2Display;
+
+            Zoom = zoomFactor;
+
+            //it repositions everything at centre frequency by setting the CF and then setting VFOB to that CF
+            //Lower down VFOBFreq is then assigned to the required frequency
+            if (CTUN)
+            {
+                CentreRX2Frequency = centerFreq;                    // Restore centre frequency if CTUN enabled - G3OQD
+                VFOBFreq = CentreRX2Frequency;
+            }
+
+            ClickTuneRX2Display = CTUN;
+            chkX2TR.Checked = ClickTuneRX2Display;
+            VFOBFreq = freq;                                        // Restore actual receive frequency after CTUN status restored - G3OQD
+
+            m_bSetBandRunning = false;
+
+            if (oldBand != RX2Band ||
+                oldFreq != VFOBFreq || // or if the freq changes
+                oldMode != RX2DSPMode // or if mode changes
+                )
+                SetBandChangeHanders?.Invoke(2, oldBand, RX2Band, oldMode, RX2DSPMode, oldFilter, RX2Filter, oldFreq, VFOBFreq,
+                    oldCentreFreq, CentreRX2Frequency, oldCtun, ClickTuneRX2Display, oldZoomSlider, ptbDisplayZoom.Value);
+        }
+
         private RadioButtonTS getButtonForBand(Band b)
         {
             RadioButtonTS r;
@@ -16390,26 +16441,9 @@ namespace Thetis
                 new_band = previous;
 
 
-            BandStackFilter bsf = BandStackManager.GetFilter(BandStackManager.StringToBand(new_band));
-            if (bsf != null)
-            {
-                BandStackEntry bse = bsf.First();
-
-                //MW0LGE_21h
-                if (bse == null)
-                {
-                    bse = bsf.LastVisited.Copy(); // in case of nothing in the filter (ie deleted everything, or no entries)
-                    // at least set it to the band we want
-                    bse.Band = BandStackManager.StringToBand(new_band);
-                }
-
-                if (bse != null)
-                {
-                    RX2DSPMode = bse.Mode;
-                    RX2Filter = bse.Filter;
-                    VFOBFreq = bse.Frequency;
-                }
-            }
+            // RX2's own stack entry for the new band, applied through the rx2 twin
+            BandStackEntry bse = getRX2BandStackEntry(BandStackManager.StringToBand(new_band));
+            if (bse != null) setRX2BandFromBandStackEntry(bse);
 
             btnHidden.Focus();
         }
@@ -39401,30 +39435,38 @@ namespace Thetis
             if (MOX && is_for_rx1_vfo_b && VFOBTX && !rx2_enabled) return;
             if (MOX && VFOBTX && rx2_enabled) return;
 
+            // an apply of its own entry must not re-enter through the events it raises
+            if (m_bSetBandRunning) return;
+
             //[2.10.3.6]MW0LGE added frequency_only so that it can be used as a way to select a band for rx1, vfob, in the vfo display system
-            //MW0LGE_21d BandStack2 ineresting... applies to rx2
-            BandStackFilter bsf = BandStackManager.GetFilter(BandStackManager.StringToBand(sBand));
-            if (bsf != null)
+            if (is_for_rx1_vfo_b)
             {
-                BandStackEntry bse = bsf.First();
-
-                if (bse == null)
+                // with RX2 off this path moves VFO B for RX1's own use, and keeps reading
+                // RX1's stack exactly as before
+                BandStackFilter bsf = BandStackManager.GetFilter(BandStackManager.StringToBand(sBand));
+                if (bsf != null)
                 {
-                    bse = bsf.LastVisited.Copy(); // in case of nothing in the filter (ie deleted everything, or no entries)
-                    // at least set it to the band we want
-                    bse.Band = BandStackManager.StringToBand(sBand);
-                }
+                    BandStackEntry bse = bsf.First();
 
-                if (bse != null)
-                {
-                    if (!is_for_rx1_vfo_b)
+                    if (bse == null)
                     {
-                        RX2DSPMode = bse.Mode;
-                        RX2Filter = bse.Filter;
+                        bse = bsf.LastVisited.Copy(); // in case of nothing in the filter (ie deleted everything, or no entries)
+                        // at least set it to the band we want
+                        bse.Band = BandStackManager.StringToBand(sBand);
                     }
-                    VFOBFreq = bse.Frequency;
+
+                    if (bse != null)
+                    {
+                        VFOBFreq = bse.Frequency;
+                    }
                 }
+                return;
             }
+
+            // RX2 has its own band stack. Its entry for the band is applied through the
+            // SetBandRX2 twin, the way RX1's entry is applied through SetBand.
+            BandStackEntry bseRX2 = getRX2BandStackEntry(BandStackManager.StringToBand(sBand));
+            if (bseRX2 != null) setRX2BandFromBandStackEntry(bseRX2);
         }
 
         private void comboRX2Band_SelectedIndexChanged(object sender, System.EventArgs e)
@@ -42731,18 +42773,9 @@ namespace Thetis
 
             Band b = BandStackManager.StringToBand(menu_item);
 
-            BandStackFilter bsf = BandStackManager.GetFilter(b);
-            if (bsf != null)
-            {
-                BandStackEntry bse = bsf.First();
-
-                if (bse != null)
-                {
-                    RX2DSPMode = bse.Mode;
-                    RX2Filter = bse.Filter;
-                    VFOBFreq = bse.Frequency;
-                }
-            }
+            // RX2's own stack entry, applied through the rx2 twin
+            BandStackEntry bse = getRX2BandStackEntry(b);
+            if (bse != null) setRX2BandFromBandStackEntry(bse);
 
             toolStripMenuItem2.Checked =
             toolStripMenuItem3.Checked =
@@ -45432,11 +45465,11 @@ namespace Thetis
                 this.Text = BasicTitleBar;
             }
         }
-        private void handleBSFChange(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider)
+        private void handleBSFChange(int rx, Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider)
         {
             if (m_bSetBandRunning) return;
 
-            BandStackFilter bsf = BandStackManager.GetFilter(oldBand);
+            BandStackFilter bsf = BandStackManager.GetFilter(oldBand, rx, false);
 
             // the bands have changed
             if (bsf != null && oldBand != newBand)
@@ -45445,7 +45478,7 @@ namespace Thetis
                 updateLastVisited(bsf, oldBand, oldMode, oldFilter, oldFreq, oldCentreF, oldCTUN, oldZoomSlider);
 
                 // update the new band with where we are going
-                bsf = BandStackManager.GetFilter(newBand);
+                bsf = BandStackManager.GetFilter(newBand, rx, false);
                 if (bsf != null)
                 {
                     //update last visited if moving to the new band
@@ -45454,12 +45487,15 @@ namespace Thetis
             }
 
             // this only happens if bands the same, so we are cycling through the stack, same band
-            bsf = BandStackManager.GetFilter(newBand);
+            bsf = BandStackManager.GetFilter(newBand, rx, false);
             if (bsf != null && oldBand == newBand)
             {
                 //update last visited with this but only if cycling in the same band
                 updateLastVisited(bsf, newBand, newMode, newFilter, newFreq, newCentreF, newCTUN, newZoomSlider);
             }
+
+            // the shared band stack window and the overlay still belong to RX1
+            if (rx != 1) return;
 
             if (bsf != null && newBand != oldBand)
             {
@@ -45486,8 +45522,8 @@ namespace Thetis
         }
         private void OnSetBandChangeHander(int rx, Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider)
         {
-            if (rx != 1) return;
-            handleBSFChange(oldBand, newBand, oldMode, newMode, oldFilter, newFilter, oldFreq, newFreq, oldCentreF, newCentreF, oldCTUN, newCTUN, oldZoomSlider, newZoomSlider);
+            if (rx != 1 && rx != 2) return;
+            handleBSFChange(rx, oldBand, newBand, oldMode, newMode, oldFilter, newFilter, oldFreq, newFreq, oldCentreF, newCentreF, oldCTUN, newCTUN, oldZoomSlider, newZoomSlider);
         }
         private void OnEntryAdd(BandStackFilter bsf)
         {
@@ -45559,6 +45595,14 @@ namespace Thetis
 
             //bandstack
             if (m_bSetBandRunning) return;
+            if (rx == 2)
+            {
+                // RX2 records its own centre per band, in its own stack
+                BandStackFilter bsfRX2 = BandStackManager.GetFilter(band, 2, false);
+                if (bsfRX2 != null) bsfRX2.LastVisited.CentreFrequency = newFreq;
+                return;
+            }
+
             if (rx != 1) return;
             if (!BandStackManager.Ready) return;
             BandStackFilter bsf = BandStackManager.GetFilter(band, false);
@@ -45571,6 +45615,14 @@ namespace Thetis
 
             //bandstack
             if (m_bSetBandRunning) return;
+            if (rx == 2)
+            {
+                // RX2 records its own CTUN state per band, in its own stack
+                BandStackFilter bsfRX2 = BandStackManager.GetFilter(band, 2, false);
+                if (bsfRX2 != null) bsfRX2.LastVisited.CTUNEnabled = newCTUN;
+                return;
+            }
+
             if (rx != 1) return;
             if (!BandStackManager.Ready) return;
             BandStackFilter bsf = BandStackManager.GetFilter(band, false);
@@ -45582,6 +45634,14 @@ namespace Thetis
             handleVfoSyncFilter(rx, newFilter);
 
             if (m_bSetBandRunning) return;
+            if (rx == 2)
+            {
+                // RX2 records its own filter per band, in its own stack
+                BandStackFilter bsfRX2 = BandStackManager.GetFilter(band, 2, false);
+                if (bsfRX2 != null) bsfRX2.LastVisited.Filter = newFilter;
+                return;
+            }
+
             if (rx != 1) return;
             if (!BandStackManager.Ready) return;
             BandStackFilter bsf = BandStackManager.GetFilter(band, false);
@@ -45632,6 +45692,15 @@ namespace Thetis
             {
                 bsf.LastVisited.ZoomFactor = newZoomFactor;
                 bsf.LastVisited.ZoomSlider = sliderValue;
+            }
+
+            // the display zoom is one control, and RX2's stack records it the same way,
+            // against RX2's own band
+            BandStackFilter bsfRX2 = BandStackManager.GetFilter(RX2Band, 2, false);
+            if (bsfRX2 != null)
+            {
+                bsfRX2.LastVisited.ZoomFactor = newZoomFactor;
+                bsfRX2.LastVisited.ZoomSlider = sliderValue;
             }
         }
         private void OnEntryClicked(BandStackFilter bsf, BandStackEntry bse, bool updateLastVisited = true, bool obeyHide = true)
@@ -45823,6 +45892,84 @@ namespace Thetis
             NetworkIO.SendHighPriority(1);            
         }
 
+        // RX2's half of setRX1BandFromBandStackEntry above - the same "no band change on
+        // TX" rule for RX2's transmit VFO, then the twin apply.
+        private void setRX2BandFromBandStackEntry(in BandStackEntry bse)
+        {
+            if (MOX && VFOBTX && rx2_enabled) return;
+
+            if (bse == null) return;
+
+            SetBandRX2(bse.Mode.ToString(), bse.Filter.ToString(), bse.Frequency, bse.CTUNEnabled, bse.ZoomSlider, bse.CentreFrequency);
+        }
+        // RX2's band stack entry for a band, ready to apply, gathered the way preBandSelect
+        // gathers RX1's. A band RX2 has never used is built from the band's own frequency
+        // ranges and the receiver's live settings, so a first visit moves the frequency
+        // without clobbering mode, filter, CTUN or zoom.
+        private BandStackEntry getRX2BandStackEntry(Band band)
+        {
+            BandStackFilter bsf = BandStackManager.GetFilter(band, 2, false);
+            if (bsf == null) return null;
+
+            BandStackEntry bse = bsf.First();
+
+            if (bse == null)
+            {
+                bse = bsf.LastVisited.Copy(); // in case of nothing in the filter (ie deleted everything, or no entries)
+                // at least set it to the band we want
+                bse.Band = band;
+            }
+
+            // a recorded frequency is only usable when it really lies inside this band's
+            // own ranges: a record that moved to another band's filter would otherwise
+            // send the receiver to the wrong band, and the wrong value would record again
+            bool bFreqUsable = bse.Frequency > 0;
+            if (bFreqUsable)
+            {
+                List<BandFrequencyData> rangeCheck = BandStackManager.GetFrequencyRangesForBand(band, this.Extended, CurrentRegion);
+                if (rangeCheck.Count > 0)
+                {
+                    bFreqUsable = false;
+                    foreach (BandFrequencyData bfdRange in rangeCheck)
+                    {
+                        if (bse.Frequency >= bfdRange.low && bse.Frequency <= bfdRange.high)
+                        {
+                            bFreqUsable = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!bFreqUsable) // nothing recorded for this band, or the record belongs to another band
+            {
+                List<BandFrequencyData> bfd = BandStackManager.GetFrequencyRangesForBand(band, this.Extended, CurrentRegion);
+                if (bfd.Count > 0)
+                {
+                    bse.CentreFrequency = bfd.First<BandFrequencyData>().low + ((bfd.First<BandFrequencyData>().high - bfd.First<BandFrequencyData>().low) / 2);
+                    bse.Frequency = bse.CentreFrequency;
+                }
+                else
+                {
+                    if (band >= Band.VHF0 && band <= Band.VHF13)
+                    {
+                        // attempt to get freq ranges from xvtr form
+                        int index = band - Band.VHF0;
+                        bse.CentreFrequency = XVTRForm.GetBegin(index) + ((XVTRForm.GetEnd(index) - XVTRForm.GetBegin(index)) / 2);
+                        bse.Frequency = bse.CentreFrequency;
+                    }
+                }
+                if (bse.Frequency <= 0) bse.Frequency = VFOBFreq; // no frequency data at all: stay where we are
+
+                bse.Mode = RX2DSPMode;
+                bse.Filter = RX2Filter;
+                bse.CTUNEnabled = ClickTuneRX2Display;
+                bse.ZoomSlider = ptbDisplayZoom.Value;
+            }
+
+            return bse;
+        }
+
         private void OnBandChangeHandler(int rx, Band oldBand, Band newBand)
         {
             if (rx == 1)
@@ -45848,6 +45995,17 @@ namespace Thetis
 
             if (m_bSetBandRunning) return;
             if (!BandStackManager.Ready) return;
+            if (rx == 2)
+            {
+                // RX2 keeps its own band stack; its events are recorded into the RX2 filters
+                BandStackFilter bsfRX2Old = BandStackManager.GetFilter(oldBand, 2, false);
+                if (bsfRX2Old != null) bsfRX2Old.LastVisited.Band = oldBand;
+
+                BandStackFilter bsfRX2New = BandStackManager.GetFilter(newBand, 2, false);
+                if (bsfRX2New != null) bsfRX2New.LastVisited.Band = newBand;
+                return;
+            }
+
             if (rx != 1) return;
 
             BandStackFilter bsf = BandStackManager.GetFilter(oldBand, false);
@@ -45880,6 +46038,17 @@ namespace Thetis
             handleVfoSyncMode(rx, newMode);
 
             if (m_bSetBandRunning) return;
+            if (rx == 2)
+            {
+                // RX2 records its mode per band the same way, in RX2's own filters
+                BandStackFilter bsfRX2Old = BandStackManager.GetFilter(oldBand, 2, false);
+                if (bsfRX2Old != null) bsfRX2Old.LastVisited.Mode = oldMode;
+
+                BandStackFilter bsfRX2New = BandStackManager.GetFilter(newBand, 2, false);
+                if (bsfRX2New != null) bsfRX2New.LastVisited.Mode = newMode;
+                return;
+            }
+
             if (rx != 1) return;
             if (!BandStackManager.Ready) return;
 
@@ -45903,7 +46072,7 @@ namespace Thetis
             if (KWAutoInformation)
                 BroadcastFreqChange("A", newFreq);
 
-            handleBSFChange(oldBand, newBand, oldMode, newMode, oldFilter, newFilter, oldFreq, newFreq, oldCentreF, newCentreF, oldCTUN, newCTUN, oldZoomSlider, newZoomSlider);
+            handleBSFChange(rx, oldBand, newBand, oldMode, newMode, oldFilter, newFilter, oldFreq, newFreq, oldCentreF, newCentreF, oldCTUN, newCTUN, oldZoomSlider, newZoomSlider);
 
             //max bin display
             if (_display_max_bin_enabled[rx-1] && rx == 1) setupDisplayMaxBinDetect(rx, false, true);
@@ -45926,6 +46095,10 @@ namespace Thetis
 
             //max bin display
             if (_display_max_bin_enabled[rx - 1] && rx == 2) setupDisplayMaxBinDetect(rx, false, true);
+
+            // RX2's VFO B changes record into RX2's own stack, the way VFO A's record
+            // into RX1's
+            if (rx == 2) handleBSFChange(rx, oldBand, newBand, oldMode, newMode, oldFilter, newFilter, oldFreq, newFreq, oldCentreF, newCentreF, oldCTUN, newCTUN, oldZoomSlider, newZoomSlider);
 
             handleVfoSyncFrequency(rx, true);
         }
