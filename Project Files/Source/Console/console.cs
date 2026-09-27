@@ -12789,6 +12789,15 @@ namespace Thetis
             }
         }
         private SolidBrush high_brush = new SolidBrush(Color.Red);
+
+        // H1: the RX2 meter has no OS disabled state - its bar and scales are custom
+        // drawn - so they are painted in these greys while RX2 is off, like the rest
+        // of its frame; the readout text greys through ForeColor instead.
+        private SolidBrush muted_scale_low_brush = new SolidBrush(Color.FromArgb(150, 150, 150));
+        private SolidBrush muted_scale_high_brush = new SolidBrush(Color.FromArgb(110, 110, 110));
+        private Pen muted_needle_pen = new Pen(Color.FromArgb(130, 130, 130));
+        private Color meter_muted_left_color = Color.FromArgb(85, 85, 85);
+        private Color meter_muted_right_color = Color.FromArgb(140, 140, 140);
         private Color edge_high_color = Color.Red;
         public Color EdgeHighColor
         {
@@ -22597,8 +22606,11 @@ namespace Thetis
             _measureCache[key] = sz;
             return sz;
         }
-        private void getMeterPixelPosAndDrawScales(int rx, Graphics g, int H, int W, double num, out int pixel_x, out int pixel_x_swr, int nStringOffsetY, bool bDrawMarkers)
+        private void getMeterPixelPosAndDrawScales(int rx, Graphics g, int H, int W, double num, out int pixel_x, out int pixel_x_swr, int nStringOffsetY, bool bDrawMarkers, bool bMuted = false)
         {
+            // H1: an off receiver's meter draws its scales in grey
+            SolidBrush wbLow = bMuted ? muted_scale_low_brush : low_brush;
+            SolidBrush wbHigh = bMuted ? muted_scale_high_brush : high_brush;
             //MW0LGE 
             pixel_x = 0;
             pixel_x_swr = 0;
@@ -22625,8 +22637,8 @@ namespace Thetis
                     case MeterRXMode.SIGNAL_AVERAGE:
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.5), 2); // white horizontal line
-                            g.FillRectangle(high_brush, (int)(W * 0.5), H - 4, (int)(W * 0.5) - 4, 2); // red horizontal line
+                            g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.5), 2); // white horizontal line
+                            g.FillRectangle(wbHigh, (int)(W * 0.5), H - 4, (int)(W * 0.5) - 4, 2); // red horizontal line
                         }
                         double spacing = (W * 0.5 - 2.0) / 5.0;
                         double string_height = 0;
@@ -22634,28 +22646,28 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // short tic marks
-                                g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6); // long tic marks
+                                g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // short tic marks
+                                g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6); // long tic marks
                             }
                             SizeF size = measureStringFromCache((-1 + i * 2).ToString(), font7, 1, StringFormat.GenericTypographic, g);
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
 
                             // 1 3 5 7 9
-                            g.DrawString((-1 + i * 2).ToString(), font7, low_brush, (float)((double)i * spacing - string_width + ((double)i / 5)), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString((-1 + i * 2).ToString(), font7, wbLow, (float)((double)i * spacing - string_width + ((double)i / 5)), (float)((double)H - nStringOffsetY - string_height));
                         }
                         spacing = ((double)W * 0.5 - 2.0 - 4.0) / 3.0;
                         for (int i = 1; i < 4; i++)
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)((double)W * 0.5 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // short tic marks
-                                g.FillRectangle(high_brush, (int)((double)W * 0.5 + i * spacing), H - 4 - 6, 2, 6); // long tic marks
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.5 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // short tic marks
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.5 + i * spacing), H - 4 - 6, 2, 6); // long tic marks
                             }
                             SizeF size = measureStringFromCache("+" + (i * 20).ToString(), font7, 3, StringFormat.GenericTypographic, g);
                             double string_width = size.Width - 2.0;
 
-                            g.DrawString("+" + (i * 20).ToString(), font7, high_brush, (float)((double)W * 0.5 + i * spacing - string_width * 3 - (double)i / 3 * 2), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString("+" + (i * 20).ToString(), font7, wbHigh, (float)((double)W * 0.5 + i * spacing - string_width * 3 - (double)i / 3 * 2), (float)((double)H - nStringOffsetY - string_height));
                         }
 
                         if (bAboveS9Frequency)
@@ -22689,13 +22701,13 @@ namespace Thetis
                         spacing = ((double)W - 5.0) / 6.0;
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, 0, H - 4, (int)(W - 3.0 - spacing), 2);
-                            g.FillRectangle(high_brush, (int)(W - 3.0 - spacing), H - 4, (int)spacing, 2);
+                            g.FillRectangle(wbLow, 0, H - 4, (int)(W - 3.0 - spacing), 2);
+                            g.FillRectangle(wbHigh, (int)(W - 3.0 - spacing), H - 4, (int)spacing, 2);
                         }
                         for (int i = 1; i < 7; i++)
                         {
-                            SolidBrush b = low_brush;
-                            if (i == 6) b = high_brush;
+                            SolidBrush b = wbLow;
+                            if (i == 6) b = wbHigh;
                             if (bDrawMarkers)
                             {
                                 g.FillRectangle(b, (int)(i * spacing - spacing / 2), H - 4 - 3, 1, 5);
@@ -22728,8 +22740,8 @@ namespace Thetis
                     case MeterTXMode.ALC:
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.665), 2);
-                            g.FillRectangle(high_brush, (int)(W * 0.665), H - 4, (int)(W * 0.335) - 2, 2);
+                            g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.665), 2);
+                            g.FillRectangle(wbHigh, (int)(W * 0.665), H - 4, (int)(W * 0.335) - 2, 2);
                         }
                         double spacing = (W * 0.665 - 2.0) / 3.0;
                         double string_height = 0;
@@ -22737,8 +22749,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                             }
 
                             string s = (-30 + i * 10).ToString();
@@ -22746,22 +22758,22 @@ namespace Thetis
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
 
-                            g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + 1.0 - ((double)i / 2) + ((double)i / 3)), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + 1.0 - ((double)i / 2) + ((double)i / 3)), (float)((double)H - nStringOffsetY - string_height));
                         }
                         spacing = (W * 0.335 - 2.0 - 3.0) / 3.0;
                         for (int i = 1; i < 4; i++)
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)((double)W * 0.665 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                g.FillRectangle(high_brush, (int)((double)W * 0.665 + i * spacing), H - 4 - 6, 2, 6);
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.665 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.665 + i * spacing), H - 4 - 6, 2, 6);
                             }
                             string s = (i * 4).ToString();
                             SizeF size = measureStringFromCache(s, font7, 3, StringFormat.GenericTypographic, g);
                             double string_width = size.Width - 2.0;
 
                             g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                            g.DrawString(s, font7, high_brush, (float)((double)W * 0.665 + i * spacing - string_width * s.Length), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbHigh, (float)((double)W * 0.665 + i * spacing - string_width * s.Length), (float)((double)H - nStringOffsetY - string_height));
                         }
 
                         if (num > 0.0) // high area
@@ -22777,8 +22789,8 @@ namespace Thetis
                         //MW0LGE combined ALC + ALCcomp display
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.5), 2); // white horizontal line
-                            g.FillRectangle(high_brush, (int)(W * 0.5), H - 4, (int)(W * 0.5) - 4, 2); // red horizontal line
+                            g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.5), 2); // white horizontal line
+                            g.FillRectangle(wbHigh, (int)(W * 0.5), H - 4, (int)(W * 0.5) - 4, 2); // red horizontal line
                                                                                                        // THE ALC section -30 to 0db
                         }
                         spacing = (W * 0.5 - 2.0) / 3.0;
@@ -22787,15 +22799,15 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // short tic marks
-                                g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6); // long tic marks
+                                g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // short tic marks
+                                g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6); // long tic marks
                             }
                             string s = (-30 + i * 10).ToString();
                             SizeF size = measureStringFromCache("0", font7, 100, StringFormat.GenericTypographic, g);
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
 
-                            g.DrawString(s, font7, low_brush, (float)((double)i * spacing - (string_width * s.Length)), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbLow, (float)((double)i * spacing - (string_width * s.Length)), (float)((double)H - nStringOffsetY - string_height));
                         }
                         // THE ALC compression section 0 to +25db
                         spacing = (W * 0.5 - 2.0 - 3.0) / 5.0;
@@ -22805,15 +22817,15 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)((double)W * 0.5 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // long tic marks
-                                g.FillRectangle(high_brush, (int)((double)W * 0.5 + i * spacing), H - 4 - 6, 2, 6); // short tic marks
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.5 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3); // long tic marks
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.5 + i * spacing), H - 4 - 6, 2, 6); // short tic marks
                             }
                             string s = g_list[i - 1];
                             SizeF size = measureStringFromCache("0", font7, 1, StringFormat.GenericTypographic, g);
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
                             if (i == 5) spacing = (W * 0.50 - 2.0 - 6.0) / 5.0; // pull text back in on right edge if
-                            g.DrawString(s, font7, high_brush, (float)((double)W * 0.5 + i * spacing - (string_width * s.Length)), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbHigh, (float)((double)W * 0.5 + i * spacing - (string_width * s.Length)), (float)((double)H - nStringOffsetY - string_height));
                         }
 
                         if (num > 0.0) // high area - alc compression
@@ -22840,8 +22852,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                                g.FillRectangle(high_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
+                                g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
                             }
                             spacing = (W * 0.75 - 2.0) / 4.0;
                             string_height = 0;
@@ -22850,29 +22862,29 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 string s = list[i - 1];
                                 SizeF size = measureStringFromCache("0", font7, 1, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 SizeF size = measureStringFromCache("0", font7, 3, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("240+", font7, high_brush, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - nStringOffsetY - string_height));
+                                g.DrawString("240+", font7, wbHigh, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - nStringOffsetY - string_height));
                             }
 
                             if (num <= 200.0) // low area
@@ -22904,8 +22916,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                                g.FillRectangle(high_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
+                                g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
                             }
                             spacing = (W * 0.75 - 2.0) / 4.0;
                             string_height = 0;
@@ -22914,30 +22926,30 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 string s = list[i - 1];
                                 SizeF size = measureStringFromCache("0", font7, 1, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
                                 }
 
                                 SizeF size = measureStringFromCache("0", font7, 3, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("120+", font7, high_brush, (int)(W * 0.75 + i * spacing - (int)3.5 * string_width), (int)(H - nStringOffsetY - string_height));
+                                g.DrawString("120+", font7, wbHigh, (int)(W * 0.75 + i * spacing - (int)3.5 * string_width), (int)(H - nStringOffsetY - string_height));
                             }
 
                             if (num <= 100.0) // low area
@@ -22966,8 +22978,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                                g.FillRectangle(high_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
+                                g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
                             }
                             spacing = (W * 0.75 - 2.0) / 4.0;
                             string_height = 0;
@@ -22976,8 +22988,8 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 string s = list[i - 1];
 
@@ -22985,21 +22997,21 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 SizeF size = measureStringFromCache("0", font7, 2, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("25+", font7, high_brush, (int)(W * 0.75 + i * spacing - (int)3.5 * string_width), (int)(H - nStringOffsetY - string_height));
+                                g.DrawString("25+", font7, wbHigh, (int)(W * 0.75 + i * spacing - (int)3.5 * string_width), (int)(H - nStringOffsetY - string_height));
                             }
 
                             if (num <= 15.0) // low area
@@ -23027,8 +23039,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                                g.FillRectangle(high_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
+                                g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 10, 2);
                             }
                             spacing = (W * 0.75 - 2.0) / 4.0;
                             string_height = 0;
@@ -23037,8 +23049,8 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 string s = list[i - 1];
 
@@ -23046,21 +23058,21 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 SizeF size = measureStringFromCache("0", font7, 2, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("50+", font7, high_brush, (int)(W * 0.75 + i * spacing - (int)3.5 * string_width), (int)(H - nStringOffsetY - string_height));
+                                g.DrawString("50+", font7, wbHigh, (int)(W * 0.75 + i * spacing - (int)3.5 * string_width), (int)(H - nStringOffsetY - string_height));
                             }
 
                             if (num <= 30.0) // low area
@@ -23089,8 +23101,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                                g.FillRectangle(low_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 9, 2);
+                                g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                                g.FillRectangle(wbLow, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 9, 2);
                             }
                             spacing = (W * 0.75 - 2.0) / 4.0;
                             string_height = 0;
@@ -23099,8 +23111,8 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                                 }
                                 string s = list[i - 1];
 
@@ -23108,21 +23120,21 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + 1.0 + ((double)i / 2) - ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + 1.0 + ((double)i / 2) - ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 9.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
+                                    g.FillRectangle(wbLow, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
                                 }
 
                                 SizeF size = measureStringFromCache("0", font7, 3, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
-                                g.DrawString("1000", font7, low_brush, (int)(W * 0.75 + 2 + i * spacing - (int)4.0 * string_width), (int)(H - nStringOffsetY - string_height));
+                                g.DrawString("1000", font7, wbLow, (int)(W * 0.75 + 2 + i * spacing - (int)4.0 * string_width), (int)(H - nStringOffsetY - string_height));
                             }
 
                             // num *= 1000;
@@ -23154,9 +23166,9 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)(W * 0.75), (H / 2) - 1, (int)(W * 0.25) - 4, 2);
-                                g.FillRectangle(low_brush, 0, (H / 2) - 1, (int)(W * 0.75), 4); // horizontal white line
-                                g.FillRectangle(high_brush, (int)(W * 0.75), (H / 2) + 1, (int)(W * 0.25) - 9, 2); //horizontal red line
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), (H / 2) - 1, (int)(W * 0.25) - 4, 2);
+                                g.FillRectangle(wbLow, 0, (H / 2) - 1, (int)(W * 0.75), 4); // horizontal white line
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), (H / 2) + 1, (int)(W * 0.25) - 9, 2); //horizontal red line
                             }                                                               // SWR stuff first
                             spacing = (W * 0.5) / 10.0;
                             string_height = 0;
@@ -23165,7 +23177,7 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) - 4, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) - 4, 1, 3);
                                 }
                             }
                             for (int i = 1; i < 3; i++)
@@ -23173,7 +23185,7 @@ namespace Thetis
                                 spacing = (W * 0.5) / 2.0;
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) - 7, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) - 7, 2, 6);
                                 }
                                 string s = swrx_list[i - 1];
 
@@ -23181,11 +23193,11 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)(((double)H / 2) - 6/*8*/ - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)(((double)H / 2) - 6/*8*/ - string_height));
                             }
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(W * 0.625), (H / 2) - 4, 1, 3); // small tic 2.5:1
+                                g.FillRectangle(wbLow, (int)(W * 0.625), (H / 2) - 4, 1, 3); // small tic 2.5:1
                             }
 
                             string[] swrx_hi_list = { "3", "4", "5" };
@@ -23195,8 +23207,8 @@ namespace Thetis
                                 spacing = (W * 0.25 - 6.0) / 2.0;
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) - 4, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing), (H / 2) - 7, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) - 4, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing), (H / 2) - 7, 2, 6);
                                 }
 
                                 string s = swrx_hi_list[i - 1];
@@ -23205,7 +23217,7 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, high_brush, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)(((double)H / 2) - 6/*8*/ - string_height));
+                                g.DrawString(s, font7, wbHigh, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)(((double)H / 2) - 6/*8*/ - string_height));
                             }
 
                             if (current_swrmeter_data <= 3.0) // low area
@@ -23239,8 +23251,8 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) + 3, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) + 3, 2, 6);
                                 }
                                 string s = list[i - 1];
 
@@ -23248,22 +23260,22 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - 1 - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - 1 - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), (H / 2) + 3, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), (H / 2) + 3, 2, 6);
                                 }
 
                                 SizeF size = measureStringFromCache("0", font7, 2, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("120+", font7, high_brush, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - 1 - string_height));
+                                g.DrawString("120+", font7, wbHigh, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - 1 - string_height));
                             }
 
                             if (num <= 100.0) // low area
@@ -23293,9 +23305,9 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)(W * 0.75), (H / 2) - 1, (int)(W * 0.25) - 4, 2);
-                                g.FillRectangle(low_brush, 0, (H / 2) - 1, (int)(W * 0.75), 4); // horizontal white line
-                                g.FillRectangle(high_brush, (int)(W * 0.75), (H / 2) + 1, (int)(W * 0.25) - 9, 2); //horizontal red line
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), (H / 2) - 1, (int)(W * 0.25) - 4, 2);
+                                g.FillRectangle(wbLow, 0, (H / 2) - 1, (int)(W * 0.75), 4); // horizontal white line
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), (H / 2) + 1, (int)(W * 0.25) - 9, 2); //horizontal red line
                                                                                                                    // SWR stuff first
                             }
                             spacing = (W * 0.5) / 10.0;
@@ -23305,7 +23317,7 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) - 4, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) - 4, 1, 3);
                                 }
                             }
                             for (int i = 1; i < 3; i++)
@@ -23313,7 +23325,7 @@ namespace Thetis
                                 spacing = (W * 0.5) / 2.0;
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) - 7, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) - 7, 2, 6);
                                 }
                                 string s = swrx_list[i - 1];
 
@@ -23321,11 +23333,11 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)(((double)H / 2) - 9 - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)(((double)H / 2) - 9 - string_height));
                             }
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(W * 0.625), (H / 2) - 4, 1, 3); // small tic 2.5:1
+                                g.FillRectangle(wbLow, (int)(W * 0.625), (H / 2) - 4, 1, 3); // small tic 2.5:1
                             }
 
                             string[] swrx_hi_list = { "3", "4", "5" };
@@ -23335,8 +23347,8 @@ namespace Thetis
                                 spacing = (W * 0.25 - 6.0) / 2.0;
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) - 4, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing), (H / 2) - 7, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) - 4, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing), (H / 2) - 7, 2, 6);
                                 }
 
                                 string s = swrx_hi_list[i - 1];
@@ -23345,7 +23357,7 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, high_brush, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)(((double)H / 2) - 9 - string_height));
+                                g.DrawString(s, font7, wbHigh, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)(((double)H / 2) - 9 - string_height));
                             }
 
 
@@ -23380,8 +23392,8 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) + 3, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) + 3, 2, 6);
                                 }
                                 string s = list[i - 1];
 
@@ -23389,22 +23401,22 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - 1 - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - 1 - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), (H / 2) + 3, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), (H / 2) + 3, 2, 6);
                                 }
 
                                 SizeF size = measureStringFromCache("0", font7, 2, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("25+", font7, high_brush, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - 1 - string_height));
+                                g.DrawString("25+", font7, wbHigh, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - 1 - string_height));
                             }
 
                             if (num <= 15.0) // low area
@@ -23433,9 +23445,9 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)(W * 0.75), (H / 2) - 1, (int)(W * 0.25) - 4, 2);
-                                g.FillRectangle(low_brush, 0, (H / 2) - 1, (int)(W * 0.75), 4); // horizontal white line
-                                g.FillRectangle(high_brush, (int)(W * 0.75), (H / 2) + 1, (int)(W * 0.25) - 9, 2); //horizontal red line
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), (H / 2) - 1, (int)(W * 0.25) - 4, 2);
+                                g.FillRectangle(wbLow, 0, (H / 2) - 1, (int)(W * 0.75), 4); // horizontal white line
+                                g.FillRectangle(wbHigh, (int)(W * 0.75), (H / 2) + 1, (int)(W * 0.25) - 9, 2); //horizontal red line
                                                                                                                    // SWR stuff first
                             }
                             spacing = (W * 0.5) / 10.0;
@@ -23445,7 +23457,7 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) - 4, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) - 4, 1, 3);
                                 }
                             }
                             for (int i = 1; i < 3; i++)
@@ -23453,7 +23465,7 @@ namespace Thetis
                                 spacing = (W * 0.5) / 2.0;
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) - 7, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) - 7, 2, 6);
                                 }
                                 string s = swrx_list[i - 1];
 
@@ -23461,11 +23473,11 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)(((double)H / 2) - 9 - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)(((double)H / 2) - 9 - string_height));
                             }
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(W * 0.625), (H / 2) - 4, 1, 3); // small tic 2.5:1
+                                g.FillRectangle(wbLow, (int)(W * 0.625), (H / 2) - 4, 1, 3); // small tic 2.5:1
                             }
 
                             string[] swrx_hi_list = { "3", "4", "5" };
@@ -23475,8 +23487,8 @@ namespace Thetis
                                 spacing = (W * 0.25 - 6.0) / 2.0;
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) - 4, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing), (H / 2) - 7, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) - 4, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing), (H / 2) - 7, 2, 6);
                                 }
 
                                 string s = swrx_hi_list[i - 1];
@@ -23485,7 +23497,7 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, high_brush, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)(((double)H / 2) - 9 - string_height));
+                                g.DrawString(s, font7, wbHigh, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)(((double)H / 2) - 9 - string_height));
                             }
 
 
@@ -23519,8 +23531,8 @@ namespace Thetis
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
-                                    g.FillRectangle(low_brush, (int)(i * spacing), (H / 2) + 3, 2, 6);
+                                    g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
+                                    g.FillRectangle(wbLow, (int)(i * spacing), (H / 2) + 3, 2, 6);
                                 }
                                 string s = list[i - 1];
 
@@ -23528,22 +23540,22 @@ namespace Thetis
                                 double string_width = size.Width - 2.0;
                                 string_height = size.Height - 2.0;
 
-                                g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - 1 - string_height));
+                                g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3) + ((double)i / 4)), (float)((double)H - 1 - string_height));
                             }
                             spacing = (W * 0.25 - 2.0 - 10.0) / 1.0;
                             for (int i = 1; i < 2; i++)
                             {
                                 if (bDrawMarkers)
                                 {
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
-                                    g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), (H / 2) + 3, 2, 6);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), (H / 2) + 3, 1, 3);
+                                    g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), (H / 2) + 3, 2, 6);
                                 }
 
                                 SizeF size = measureStringFromCache("0", font7, 2, StringFormat.GenericTypographic, g);
                                 double string_width = size.Width - 2.0;
 
                                 g.TextRenderingHint = TextRenderingHint.SystemDefault;
-                                g.DrawString("50+", font7, high_brush, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - 1 - string_height));
+                                g.DrawString("50+", font7, wbHigh, (float)((double)W * 0.75 + i * spacing - 3.5 * string_width), (float)((double)H - 1 - string_height));
                             }
 
                             if (num <= 30.0) // low area
@@ -23571,8 +23583,8 @@ namespace Thetis
                     case MeterTXMode.SWR:
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                            g.FillRectangle(high_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 4, 2);
+                            g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                            g.FillRectangle(wbHigh, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 4, 2);
                         }
 
                         spacing = (W * 0.5) / 10.0;
@@ -23583,7 +23595,7 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 3, 1, 3);
+                                g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 3, 1, 3);
                             }
                         }
                         for (int i = 1; i < 3; i++)
@@ -23591,7 +23603,7 @@ namespace Thetis
                             spacing = (W * 0.5) / 2.0;
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                             }
                             string s = swr_list[i - 1];
 
@@ -23599,11 +23611,11 @@ namespace Thetis
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
 
-                            g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + 2.0 - 1 * ((double)i / 2) + 3 * ((double)i / 4)), (float)((double)H - nStringOffsetY - string_height));
                         }
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, (int)(W * 0.625), H - 4 - 3, 1, 3); // small tic 2.5:1
+                            g.FillRectangle(wbLow, (int)(W * 0.625), H - 4 - 3, 1, 3); // small tic 2.5:1
                         }
 
                         string[] swr_hi_list = { "3", "4", "5" };
@@ -23613,8 +23625,8 @@ namespace Thetis
                             spacing = (W * 0.25 - 6.0) / 2.0;
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing), H - 4 - 6, 2, 6);
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing), H - 4 - 6, 2, 6);
                             }
 
                             string s = swr_hi_list[i - 1];
@@ -23623,7 +23635,7 @@ namespace Thetis
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
 
-                            g.DrawString(s, font7, high_brush, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbHigh, (float)((double)W * 0.75 + i * spacing - spacing - 1.0 * string_width), (float)((double)H - nStringOffsetY - string_height));
                         }
 
                         if (num <= 3.0) // low area
@@ -23654,8 +23666,8 @@ namespace Thetis
                     case MeterTXMode.CFC_G:
                         if (bDrawMarkers)
                         {
-                            g.FillRectangle(low_brush, 0, H - 4, (int)(W * 0.75), 2);
-                            g.FillRectangle(high_brush, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 9, 2);
+                            g.FillRectangle(wbLow, 0, H - 4, (int)(W * 0.75), 2);
+                            g.FillRectangle(wbHigh, (int)(W * 0.75), H - 4, (int)(W * 0.25) - 9, 2);
                         }
                         spacing = (W * 0.75 - 2.0) / 4.0;
                         string_height = 0;
@@ -23664,8 +23676,8 @@ namespace Thetis
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(low_brush, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                g.FillRectangle(low_brush, (int)(i * spacing), H - 4 - 6, 2, 6);
+                                g.FillRectangle(wbLow, (int)(i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                g.FillRectangle(wbLow, (int)(i * spacing), H - 4 - 6, 2, 6);
                             }
 
                             string s = gain_list[i - 1];
@@ -23674,21 +23686,21 @@ namespace Thetis
                             double string_width = size.Width - 2.0;
                             string_height = size.Height - 2.0;
 
-                            g.DrawString(s, font7, low_brush, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3)), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString(s, font7, wbLow, (float)((double)i * spacing - string_width * s.Length + ((double)i / 3)), (float)((double)H - nStringOffsetY - string_height));
                         }
                         spacing = (W * 0.25 - 2.0 - 9.0) / 1.0;
                         for (int i = 1; i < 2; i++)
                         {
                             if (bDrawMarkers)
                             {
-                                g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
-                                g.FillRectangle(high_brush, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing - spacing * 0.5), H - 4 - 3, 1, 3);
+                                g.FillRectangle(wbHigh, (int)((double)W * 0.75 + i * spacing), H - 4 - 6, 2, 6);
                             }
 
                             SizeF size = measureStringFromCache("0", font7, 3, StringFormat.GenericTypographic, g);
                             double string_width = size.Width - 2.0;
 
-                            g.DrawString("25+", font7, high_brush, (float)((double)W * 0.75 + i * spacing - 2.5 * string_width), (float)((double)H - nStringOffsetY - string_height));
+                            g.DrawString("25+", font7, wbHigh, (float)((double)W * 0.75 + i * spacing - 2.5 * string_width), (float)((double)H - nStringOffsetY - string_height));
                         }
 
 
@@ -24095,6 +24107,9 @@ namespace Thetis
             int pixel_x_swr = 0;
             string output = "";
 
+            // H1: with RX2 off the meter is out of service - bar and scales draw greyed
+            bool bRx2MeterMuted = !rx2_enabled;
+
             if (rx2_meter_data_ready)
             {
                 rx2_meter_current_data = rx2_meter_new_data;
@@ -24122,7 +24137,7 @@ namespace Thetis
 
                     if (rx2_meter_mode != MeterRXMode.OFF)
                     {
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, bRx2MeterMuted);
 
                         pixel_x = Math.Max(1, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -24131,14 +24146,15 @@ namespace Thetis
 
                         // MW0LGE reworked size/heights
                         using (LinearGradientBrush brush = new LinearGradientBrush(new Rectangle(0, 0, pixel_x, H - 10),
-                            meter_left_color, meter_right_color, LinearGradientMode.Horizontal))
+                            bRx2MeterMuted ? meter_muted_left_color : meter_left_color,
+                            bRx2MeterMuted ? meter_muted_right_color : meter_right_color, LinearGradientMode.Horizontal))
 
                             g.FillRectangle(brush, 0, 0, pixel_x, H - 10);
 
                         for (int i = 0; i < (W / 8) - 1; i++)
                             g.DrawLine(meter_background_pen, 8 + i * 8, 0, 8 + i * 8, H - 10);
 
-                        g.DrawLine(Pens.Red, pixel_x, 0, pixel_x, H - 10);
+                        g.DrawLine(bRx2MeterMuted ? muted_needle_pen : Pens.Red, pixel_x, 0, pixel_x, H - 10);
                         g.FillRectangle(meter_background_pen.Brush, pixel_x + 1, 0, W - pixel_x, H - 10);
 
                         if (pixel_x >= rx2_meter_peak_value)
@@ -24155,8 +24171,8 @@ namespace Thetis
                             }
                             else
                             {
-                                g.DrawLine(Pens.Red, rx2_meter_peak_value, 0, rx2_meter_peak_value, H - 10);
-                                g.DrawLine(Pens.Red, rx2_meter_peak_value - 1, 0, rx2_meter_peak_value - 1, H - 10);
+                                g.DrawLine(bRx2MeterMuted ? muted_needle_pen : Pens.Red, rx2_meter_peak_value, 0, rx2_meter_peak_value, H - 10);
+                                g.DrawLine(bRx2MeterMuted ? muted_needle_pen : Pens.Red, rx2_meter_peak_value - 1, 0, rx2_meter_peak_value - 1, H - 10);
                             }
                         }
 
@@ -24165,7 +24181,7 @@ namespace Thetis
                             // the history swing
                             float fMin = m_RX2SignalPixels_X.Min() * W;
                             float fMax = m_RX2SignalPixels_X.Max() * W;
-                            g.FillRectangle(m_SignalHistoryColourPen.Brush, fMin, H - 10, fMax - fMin, 10);
+                            g.FillRectangle(bRx2MeterMuted ? (Brush)muted_scale_low_brush : m_SignalHistoryColourPen.Brush, fMin, H - 10, fMax - fMin, 10);
                             //
                         }
                     }
@@ -24179,7 +24195,7 @@ namespace Thetis
                     if (rx2_meter_mode != MeterRXMode.OFF)
                     {
                         //MW0LGE moved all code into common function, used by both edge and original meter
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, bRx2MeterMuted);
                         //-
 
                         pixel_x = Math.Max(0, pixel_x);
@@ -24187,10 +24203,16 @@ namespace Thetis
 
                         if (num != -200) storeRX2SignalPixels_X((float)pixel_x / W);
 
-                        line_dark_pen.Color =
-                            Color.FromArgb((edge_avg_color.R + edge_meter_background_color.R) / 2,
-                            (edge_avg_color.G + edge_meter_background_color.G) / 2,
-                            (edge_avg_color.B + edge_meter_background_color.B) / 2);
+                        if (bRx2MeterMuted)
+                        {
+                            line_dark_pen.Color = Color.FromArgb(96, 96, 96);
+                            line_pen.Color = Color.FromArgb(150, 150, 150);
+                        }
+                        else
+                            line_dark_pen.Color =
+                                Color.FromArgb((edge_avg_color.R + edge_meter_background_color.R) / 2,
+                                (edge_avg_color.G + edge_meter_background_color.G) / 2,
+                                (edge_avg_color.B + edge_meter_background_color.B) / 2);
 
                         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                         g.SmoothingMode = SmoothingMode.HighQuality;
@@ -24200,7 +24222,7 @@ namespace Thetis
                             // the history swing
                             float fMin = m_RX2SignalPixels_X.Min() * W;
                             float fMax = m_RX2SignalPixels_X.Max() * W;
-                            g.FillRectangle(m_SignalHistoryColourPen.Brush, fMin, 0, fMax - fMin, H);
+                            g.FillRectangle(bRx2MeterMuted ? (Brush)muted_scale_low_brush : m_SignalHistoryColourPen.Brush, fMin, 0, fMax - fMin, H);
                             //
                         }
 
@@ -24217,10 +24239,16 @@ namespace Thetis
                         pixel_x = Math.Max(0, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
 
-                        line_dark_pen.Color =
-                            Color.FromArgb((edge_avg_color.R + edge_meter_background_color.R) / 2,
-                            (edge_avg_color.G + edge_meter_background_color.G) / 2,
-                            (edge_avg_color.B + edge_meter_background_color.B) / 2);
+                        if (bRx2MeterMuted)
+                        {
+                            line_dark_pen.Color = Color.FromArgb(96, 96, 96);
+                            line_pen.Color = Color.FromArgb(150, 150, 150);
+                        }
+                        else
+                            line_dark_pen.Color =
+                                Color.FromArgb((edge_avg_color.R + edge_meter_background_color.R) / 2,
+                                (edge_avg_color.G + edge_meter_background_color.G) / 2,
+                                (edge_avg_color.B + edge_meter_background_color.B) / 2);
 
                         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                         g.SmoothingMode = SmoothingMode.HighQuality;
@@ -36826,6 +36854,12 @@ namespace Thetis
         private void UpdateVFOBRowEnabled()
         {
             if (grpVFOB != null) grpVFOB.Enabled = rx2_enabled;
+            // H1: the RX2 meter is RX2's too - its frame greys the same way, and its
+            // custom-drawn bar is repainted immediately so the greys take effect
+            if (grpRX2Meter != null) grpRX2Meter.Enabled = rx2_enabled;
+            if (grpSubRX2Meter != null) grpSubRX2Meter.Enabled = rx2_enabled;
+            if (picRX2Meter != null) picRX2Meter.Invalidate();
+            if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
         }
 
         // H1: the VFO B lower row is SubVFOB. It shows the sub receiver frequency,
