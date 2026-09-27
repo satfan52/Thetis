@@ -67,6 +67,18 @@ namespace Thetis
         private int _pttPollCounter = 0;
         private byte _currentRadioSelectedVfo = CIVProtocol.VFO_A;
         private long _lastTxReleaseTime = 0;
+
+        // H1: PTT verdicts from the transceiver. A PTT state we only wrote to the
+        // port is not a state the rig is in - a lost unkey must be resent, and a
+        // report that raced a fresh command must never flip MOX back on.
+        private long _lastPttKeyTime = 0;
+        private volatile bool _pttVerifyActive = false;
+        private bool _pttVerifyExpectedTx = false;
+        private int _pttVerifyRetries = 0;
+        private long _pttVerifyDeadline = 0;
+        private long _lastVerifyPollTime = 0;
+        private const int PTT_VERIFY_TIMEOUT_MS = 1500;
+        private const int PTT_ECHO_GUARD_MS = 400;
         private volatile bool _isSwappingVfo = false;
         private volatile bool _radioInitiatedSwapInProgress = false;
         private volatile bool _rx2SplitSwapHandled = false;   // set by CMD_SPLIT when it handles the A/B tap in RX2+SPLIT mode
@@ -127,6 +139,32 @@ namespace Thetis
         {
             if (bytes == null) return "<null>";
             return BitConverter.ToString(bytes).Replace("-", " ");
+        }
+
+        /// <summary>
+        /// H1: a small always-on trace for the intermittent stuck-transmit fault.
+        /// The Debug Log is compiled out of release builds and this fault has to be
+        /// caught in the act, so the few PTT events append to civ_ptt.log beside the
+        /// exe. It rotates itself at 200 kB.
+        /// </summary>
+        private static void PttTrace(string format, params object[] args)
+        {
+            try
+            {
+                string text = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}" + Environment.NewLine, DateTime.Now,
+                    (args != null && args.Length > 0) ? string.Format(format, args) : format);
+                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "civ_ptt.log");
+                if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 200 * 1024)
+                {
+                    System.IO.File.Copy(path, path + ".old", true);
+                    System.IO.File.Delete(path);
+                }
+                System.IO.File.AppendAllText(path, text);
+            }
+            catch
+            {
+                // Never crash caller
+            }
         }
 
         #endregion
@@ -568,6 +606,8 @@ namespace Thetis
                 _lastTxReleaseTime = Stopwatch.GetTimestamp();
             }
 
+            PttTrace("MOX {0} rx={1} suppress={2}", newMox ? "ON" : "OFF", rx, _suppressOutgoingUpdates);
+
             if (_suppressOutgoingUpdates)
             {
                 // A suppressed KEY is survivable - the digital-TX steering keys the
@@ -919,6 +959,7 @@ namespace Thetis
             if (!IsOpen || _suppressOutgoingUpdates || _isSwappingVfo || _radioInitiatedSwapInProgress || _isDigitalSliceTxActive) return;
 
             ReconcilePtt();
+            MaybePollForPttVerification();
 
             double targetVfoAFreq = 0.0;
             double targetVfoBFreq = 0.0;
@@ -1367,6 +1408,144 @@ namespace Thetis
         /// release that arrived while outgoing updates were suppressed - cannot
         /// leave the rig transmitting.
         /// </summary>
+        /// <summary>
+        /// H1: arm a verdict for the PTT state just commanded. The rig answers a
+        /// PTT poll with what it is actually doing; if the answer disagrees, the
+        /// command is resent, because a lost unkey leaves the transceiver on the air
+        /// with nothing else left to unkey it.
+        /// </summary>
+        private void ArmPttVerification(bool tx)
+        {
+            _pttVerifyActive = true;
+            _pttVerifyExpectedTx = tx;
+            _pttVerifyRetries = 0;
+            _pttVerifyDeadline = Stopwatch.GetTimestamp() + (long)(PTT_VERIFY_TIMEOUT_MS * (Stopwatch.Frequency / 1000.0));
+            _lastVerifyPollTime = 0;
+            if (tx) _lastPttKeyTime = Stopwatch.GetTimestamp();
+
+            if (!_syncPTT)
+            {
+                // Thetis is PTT master here: no periodic polling runs, so ask now.
+                SendFrame(CIVProtocol.ReadPttFrame(_radioAddr, _hostAddr));
+                _lastVerifyPollTime = Stopwatch.GetTimestamp();
+            }
+        }
+
+        /// <summary>
+        /// H1: top-up polls for an unconfirmed PTT command, from the flood tick.
+        /// With FollowMicPTT on the periodic poll already covers this.
+        /// </summary>
+        private void MaybePollForPttVerification()
+        {
+            if (!_pttVerifyActive) return;
+
+            long now = Stopwatch.GetTimestamp();
+            if (now > _pttVerifyDeadline)
+            {
+                _pttVerifyActive = false;
+                PttTrace("VERIFY gave up - no answer to polls");
+                return;
+            }
+
+            if (_syncPTT) return;
+
+            double msSincePoll = (double)(now - _lastVerifyPollTime) / Stopwatch.Frequency * 1000.0;
+            if (msSincePoll < 150.0) return;
+
+            _lastVerifyPollTime = now;
+            SendFrame(CIVProtocol.ReadPttFrame(_radioAddr, _hostAddr));
+        }
+
+        /// <summary>
+        /// H1: resend a PTT state without touching the recorded state or the
+        /// ordering machinery - only to make the rig obey a command it contradicted.
+        /// </summary>
+        private void ResendPtt(bool tx)
+        {
+            byte[] frame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, tx);
+            bool sent = false;
+            for (int attempt = 0; attempt < 3 && !sent; attempt++)
+            {
+                sent = TrySendFrame(frame);
+                if (!sent)
+                {
+                    Log("[PTT:RETRY] PTT {0} frame not sent (attempt {1}/3)", tx, attempt + 1);
+                    Thread.Sleep(30);
+                }
+            }
+            PttTrace(sent ? "VERIFY resent PTT {0}" : "VERIFY resend of PTT {0} FAILED", tx ? "KEY" : "UNKEY");
+            if (!_syncPTT)
+            {
+                SendFrame(CIVProtocol.ReadPttFrame(_radioAddr, _hostAddr));
+                _lastVerifyPollTime = Stopwatch.GetTimestamp();
+            }
+        }
+
+        /// <summary>
+        /// H1: every PTT verdict that arrives from the transceiver lands here, in
+        /// three steps: check an armed verdict against the state we commanded and
+        /// resend on disagreement; drop reports that raced a fresh command so one
+        /// cannot flip MOX back on and rekey a released transmitter; then, only with
+        /// FollowMicPTT on, let the report drive Thetis MOX.
+        /// </summary>
+        private void HandleRigPttReport(bool tx)
+        {
+            long now = Stopwatch.GetTimestamp();
+
+            if (_pttVerifyActive)
+            {
+                if (tx == _pttVerifyExpectedTx)
+                {
+                    _pttVerifyActive = false;
+                    PttTrace("VERIFY rig confirms {0}", tx ? "TX" : "RX");
+                    return;
+                }
+
+                if (now <= _pttVerifyDeadline)
+                {
+                    if (_pttVerifyRetries < 2)
+                    {
+                        _pttVerifyRetries++;
+                        PttTrace("VERIFY rig says {0}, expected {1} - resending ({2}/2)",
+                            tx ? "TX" : "RX", _pttVerifyExpectedTx ? "TX" : "RX", _pttVerifyRetries);
+                        ResendPtt(_pttVerifyExpectedTx);
+                        return;
+                    }
+                    _pttVerifyActive = false;
+                    PttTrace("VERIFY rig keeps saying {0} after resends - leaving it", tx ? "TX" : "RX");
+                    return;
+                }
+
+                _pttVerifyActive = false;   // too late to be an answer to our command
+            }
+
+            if (_console == null) return;
+
+            if (_lastTxReleaseTime > 0)
+            {
+                double msSinceRelease = (double)(now - _lastTxReleaseTime) / Stopwatch.Frequency * 1000.0;
+                if (tx && msSinceRelease < PTT_ECHO_GUARD_MS)
+                {
+                    PttTrace("ECHO ignored TX report {0:F0} ms after release", msSinceRelease);
+                    return;
+                }
+            }
+            if (_lastPttKeyTime > 0)
+            {
+                double msSinceKey = (double)(now - _lastPttKeyTime) / Stopwatch.Frequency * 1000.0;
+                if (!tx && msSinceKey < PTT_ECHO_GUARD_MS)
+                {
+                    PttTrace("ECHO ignored RX report {0:F0} ms after key", msSinceKey);
+                    return;
+                }
+            }
+
+            if (!_syncPTT) return;   // Thetis is PTT master; reports are diagnostics only
+
+            PttTrace("RIG REPORTS {0} - applying to MOX", tx ? "TX" : "RX");
+            HandleIncomingPtt(tx);
+        }
+
         private void ReconcilePtt()
         {
             if (_console == null) return;
@@ -1376,6 +1555,7 @@ namespace Thetis
 
             Log("[PTT:RECONCILE] rig was {0}, MOX is {1} - resending PTT",
                 _lastSentPtt ? "keyed" : "unkeyed", mox ? "on" : "off");
+            PttTrace("RECONCILE mox={0}, last sent={1}", mox ? "ON" : "OFF", _lastSentPtt ? "KEY" : "UNKEY");
             SendImmediatePtt(mox);
         }
 
@@ -1439,9 +1619,16 @@ namespace Thetis
                 }
 
                 if (sent)
+                {
                     _lastSentPtt = tx;
+                    PttTrace("PTT {0} sent", tx ? "KEY" : "UNKEY");
+                    ArmPttVerification(tx);
+                }
                 else
+                {
                     Log("[PTT:FAIL] PTT {0} could not be sent - reconciliation will retry", tx);
+                    PttTrace("PTT {0} FAILED to send", tx ? "KEY" : "UNKEY");
+                }
             }
         }
 
@@ -1959,10 +2146,10 @@ namespace Thetis
 
                 // PTT Condition (0x1C 0x00)
                 case CIVProtocol.CMD_CONDITION_1C:
-                    if (_syncPTT && frame.Length >= 8 && frame[5] == CIVProtocol.SUBCMD_1C_PTT)
+                    if (frame.Length >= 8 && frame[5] == CIVProtocol.SUBCMD_1C_PTT && frame[3] == _radioAddr)
                     {
                         bool tx = frame[6] == 0x01;
-                        HandleIncomingPtt(tx);
+                        HandleRigPttReport(tx);
                     }
                     break;
 
@@ -2674,6 +2861,7 @@ namespace Thetis
         {
             if (_console == null || tx == _console.MOX) return;
 
+            PttTrace("MOX -> {0} (following rig)", tx ? "ON" : "OFF");
             _suppressOutgoingUpdates = true;
             try
             {
@@ -2776,6 +2964,8 @@ namespace Thetis
                 byte[] pttFrame = CIVProtocol.SetPttFrame(_radioAddr, _hostAddr, true);
                 SendFrame(pttFrame);
                 _lastSentPtt = true;
+                PttTrace("DIGITAL KEY sent");
+                ArmPttVerification(true);
             }
         }
 
@@ -2815,6 +3005,8 @@ namespace Thetis
                 _lastSentPtt = false;
                 _lastTxReleaseTime = Stopwatch.GetTimestamp();
                 _lastVfoSwapTime = Stopwatch.GetTimestamp();
+                PttTrace("DIGITAL UNKEY sent");
+                ArmPttVerification(false);
 
                 // 2. Restore VFO A Frequency and Mode
                 SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
