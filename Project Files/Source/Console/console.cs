@@ -2045,7 +2045,6 @@ namespace Thetis
             //MW0LGE_21d BandStack2
             BandStackManager.Extended = Extended;
             BandStackManager.Region = CurrentRegion;
-
             initializing = false;
             SetupForm.ForceTXProfileUpdate();   // loads previously saved profile
             initializing = true;
@@ -18328,12 +18327,28 @@ namespace Thetis
             try
             {
                 if (!BandStackManager.Ready) return;
+                if (initializing) return; // the state is still settling - nothing real to record
                 if (m_bSetBandRunning) return; // a band change is in flight - transient values
-                if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
-                if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
-                BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, false);
-                if (bsf == null) return;
-                bsf.LastVisited.SubVFOFreq = VFOASubFreq;
+                if (rx2_enabled)
+                {
+                    if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
+                    if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
+                    BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, false);
+                    if (bsf == null) return;
+                    bsf.LastVisited.SubVFOFreq = VFOASubFreq;
+                }
+                else
+                {
+                    // with RX2 off VFO B carries the sub receiver; its position and
+                    // the B-side mode are kept per band the same way
+                    if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
+                    if (VFOBFreq <= 0) return;
+                    if (Math.Abs((VFOBFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
+                    BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, false);
+                    if (bsf == null) return;
+                    bsf.LastVisited.SubVFOFreq = VFOBFreq;
+                    bsf.LastVisited.SubDSPMode = (int)_rx2_dsp_mode;
+                }
             }
             catch { }
         }
@@ -27248,6 +27263,42 @@ namespace Thetis
 
                 //MW0LGE_21k9 these two moved after the audio start
                 //seems to fix issue that was causing multiRX to be silent when starting up and it was switched on
+                // the band memory holds each band's sub receiver position - with RX2
+                // on that is SubVFOA, with RX2 off it is VFO B, which carries the sub
+                // in that mode. It is applied at power-up, after the stored state and
+                // before the enables are re-run, so a sub the band-change bring-along
+                // moved is brought back to where it was tuned instead of where the
+                // band change left it; the enables then push it into the rows.
+                BandStackFilter bsfPu = BandStackManager.Ready ? BandStackManager.GetFilter(RX1Band, false) : null;
+                if (bsfPu != null)
+                {
+                    double dSubMem = bsfPu.LastVisited.SubVFOFreq;
+                    if (dSubMem > 0 &&
+                        Math.Abs((dSubMem - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
+                    {
+                        if (rx2_enabled)
+                        {
+                            if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                            {
+                                m_dVFOASubFreq = Math.Round(dSubMem, 6);
+                                saved_vfoa_sub_freq = m_dVFOASubFreq;
+                            }
+                        }
+                        else
+                        {
+                            if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                            {
+                                m_dVFOBFreq = Math.Round(dSubMem, 6);
+                                saved_vfob_freq = m_dVFOBFreq;
+                                if (bsfPu.LastVisited.SubDSPMode > (int)DSPMode.FIRST &&
+                                    bsfPu.LastVisited.SubDSPMode < (int)DSPMode.LAST &&
+                                    (DSPMode)bsfPu.LastVisited.SubDSPMode != _rx2_dsp_mode)
+                                    SelectRX2ModeButton((DSPMode)bsfPu.LastVisited.SubDSPMode);
+                            }
+                        }
+                    }
+                }
+
                 if (chkEnableMultiRX.Checked) chkEnableMultiRX_CheckedChanged(this, EventArgs.Empty);
                 if (chkVFOSplit.Checked) chkVFOSplit_CheckedChanged(this, EventArgs.Empty);
 
@@ -32676,6 +32727,7 @@ namespace Thetis
             }
 
             saved_vfob_freq = freq;
+            recordSubMemory(); // VFO B joins the band memory while it carries the sub
 
             if (chkVFOBTX.Checked) goto set_tx_freq;
             if (chkVFOATX.Checked) goto set_rx2_freq;
@@ -37609,6 +37661,26 @@ namespace Thetis
             panelVFOASubHover.Invalidate();
         }
 
+        // the B-side mode kept in the band memory is restored by selecting the mode
+        // button, the same path a manual mode change takes
+        private void SelectRX2ModeButton(DSPMode m)
+        {
+            switch (m)
+            {
+                case DSPMode.LSB: radRX2ModeLSB.Checked = true; break;
+                case DSPMode.USB: radRX2ModeUSB.Checked = true; break;
+                case DSPMode.DSB: radRX2ModeDSB.Checked = true; break;
+                case DSPMode.CWL: radRX2ModeCWL.Checked = true; break;
+                case DSPMode.CWU: radRX2ModeCWU.Checked = true; break;
+                case DSPMode.FM: radRX2ModeFMN.Checked = true; break;
+                case DSPMode.AM: radRX2ModeAM.Checked = true; break;
+                case DSPMode.SAM: radRX2ModeSAM.Checked = true; break;
+                case DSPMode.DIGL: radRX2ModeDIGL.Checked = true; break;
+                case DSPMode.DIGU: radRX2ModeDIGU.Checked = true; break;
+                case DSPMode.DRM: radRX2ModeDRM.Checked = true; break;
+            }
+        }
+
         private void SetRX2Mode(DSPMode new_mode)
         {
             if (new_mode == DSPMode.FIRST || new_mode == DSPMode.LAST) return;
@@ -38093,6 +38165,8 @@ namespace Thetis
 
             //MW0LGE_21b
             if (old_mode != new_mode) ModeChangeHandlers?.Invoke(2, old_mode, new_mode, oldBand, RX2Band);
+
+            recordSubMemory(); // the B-side mode is kept with its frequency in the band memory
         }
 
         private void radRX2ModeButton_CheckedChanged(object sender, System.EventArgs e)
@@ -45721,11 +45795,30 @@ namespace Thetis
             // the sub's frequency for this band comes back with the entry; only a
             // value that fits the receiver's passband can be a real position, an
             // out-of-range number is a stale entry and is ignored
-            if (chkEnableMultiRX.Checked)
+            if (bse.SubVFOFreq > 0 &&
+                Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
             {
-                if (bse.SubVFOFreq > 0 &&
-                    Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
-                    VFOASubFreq = bse.SubVFOFreq;
+                if (rx2_enabled)
+                {
+                    if (chkEnableMultiRX.Checked)
+                        VFOASubFreq = bse.SubVFOFreq;
+                }
+                else
+                {
+                    // with RX2 off VFO B carries the sub; the working copy is set
+                    // first because the property setter throws the value away while
+                    // the setup form is not up yet, and the saved value follows so
+                    // the later restore pushes keep the remembered position
+                    if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                    {
+                        m_dVFOBFreq = Math.Round(bse.SubVFOFreq, 6);
+                        saved_vfob_freq = m_dVFOBFreq;
+                        VFOBFreq = bse.SubVFOFreq;
+                        if (bse.SubDSPMode > (int)DSPMode.FIRST && bse.SubDSPMode < (int)DSPMode.LAST &&
+                            (DSPMode)bse.SubDSPMode != _rx2_dsp_mode)
+                            SelectRX2ModeButton((DSPMode)bse.SubDSPMode);
+                    }
+                }
             }
             NetworkIO.SendHighPriority(1);            
         }

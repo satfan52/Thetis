@@ -145,7 +145,9 @@ namespace Thetis
         // the sub receiver's memory for this entry - on an RX1 entry this is
         // the frequency of SubVFOA, the RX1 sub receiver
         private double subVFOFreq;
+        private int subDSPMode;
         public double SubVFOFreq { get => subVFOFreq; set { subVFOFreq = value; } }
+        public int SubDSPMode { get => subDSPMode; set { subDSPMode = value; } }
         // not stored, used for display rendering, and calculated on the fly
         public int LowFilter { get => lowFilter; set => lowFilter = value; }
         public int HighFilter { get => highFilter; set => highFilter = value; }
@@ -197,6 +199,7 @@ namespace Thetis
                 Description = this.Description,
                 GUID = this.GUID,
                 SubVFOFreq = this.SubVFOFreq,
+                SubDSPMode = this.SubDSPMode,
             };
             if (bNewGUID) bse.GUID = Guid.NewGuid().ToString();
 
@@ -407,6 +410,7 @@ namespace Thetis
             bse.ZoomFactor = m_lastVisited.ZoomFactor;
             bse.ZoomSlider = m_lastVisited.ZoomSlider;
             bse.SubVFOFreq = m_lastVisited.SubVFOFreq;
+            bse.SubDSPMode = m_lastVisited.SubDSPMode;
 
             // remove from main list
             int n = BandStackManager.IndexFromGUID(bse.GUID);
