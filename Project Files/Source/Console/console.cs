@@ -41605,6 +41605,12 @@ namespace Thetis
             // the two sub rows take their colour from their own ticks
             UpdateVFOASub();
             UpdateVFOBSub();
+
+            // H1: keep the display's transmit-window flags in step with the ticks here as
+            // well, so a programmatic tick change (a sub tick released when its receiver
+            // stops) updates the panafall marker the same way a click does.
+            Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked;
+            Display.TXOnSubVFOB = chkSubVFOBTX.Checked;
         }
 
         // H1: SPLIT mirrors the transmit choice - it is lit whenever a tick other than
@@ -41701,6 +41707,7 @@ namespace Thetis
             updateSplitFromTicks();
             showTxSelection();
             Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked; // H1: transmit marker follows the B-side ticks
+            Display.TXOnSubVFOB = chkSubVFOBTX.Checked; // H1: the RX2 panafall's transmit window follows the sub tick
 
             if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
                 CIVControllerInstance.NotifySplitOrFullDuplexChanged();
@@ -41785,6 +41792,7 @@ namespace Thetis
         {
             if (chkVFOBTX.Focused && !chkVFOBTX.Checked) chkVFOBTX.Checked = true;
             Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked; // H1: the sub B tick also transmits on the B side
+            Display.TXOnSubVFOB = chkSubVFOBTX.Checked; // H1: the RX2 panafall's transmit window follows the sub tick
             if (chkVFOBTX.Checked)
             {
                 if (chkVFOATX.Checked) chkVFOATX.Checked = false;

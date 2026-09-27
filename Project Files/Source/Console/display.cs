@@ -506,6 +506,19 @@ namespace Thetis
             }
         }
 
+        // H1: which B-side tick carries the transmit frequency - the SubVFOB tick names the
+        // sub receiver itself, the VFO B tick the main receiver. The transmit window on the
+        // RX2 panadapter follows whichever is armed.
+        private static bool _tx_on_sub_vfob = false;
+        public static bool TXOnSubVFOB
+        {
+            get { return _tx_on_sub_vfob; }
+            set
+            {
+                _tx_on_sub_vfob = value;
+            }
+        }
+
         private static bool display_duplex = false;
         public static bool DisplayDuplex
         {
@@ -9197,8 +9210,17 @@ namespace Thetis
                     {
                         if (!local_mox)
                             localRit = rx == 1 && _rx1ClickDisplayCTUN ? 0 : rx == 2 ? 0 : rit_hz;
-                        filter_left_x = (int)((float)(filter_low_tmp - Low + localXit + (localSubDiff) - localRit) / width * W);
-                        filter_right_x = (int)((float)(filter_high_tmp - Low + localXit + (localSubDiff) - localRit) / width * W);
+
+                        // H1: the transmit window follows the armed B-side tick. The RX2 frame's
+                        // reference is Display.VFOB, so the SubVFOB tick adds the sub's own offset
+                        // from VFO B and the VFO B tick adds nothing - the SubVFOA term used to
+                        // place the marker at SubVFOA's offset whatever the tick said.
+                        long txDelta = localSubDiff;
+                        if (rx == 2)
+                            txDelta = _tx_on_sub_vfob ? (vfob_sub_hz - vfob_hz) : 0;
+
+                        filter_left_x = (int)((float)(filter_low_tmp - Low + localXit + txDelta - localRit) / width * W);
+                        filter_right_x = (int)((float)(filter_high_tmp - Low + localXit + txDelta - localRit) / width * W);
                     }
 
                     if (local_mox)
@@ -9362,7 +9384,11 @@ namespace Thetis
                         if (!split_enabled)
                             cw_line_x1 = (int)((float)(cwSideToneShiftInverted - Low - f_diff + xit_hz) / width * W);
                         else
-                            cw_line_x1 = (int)((float)(cwSideToneShiftInverted - Low + xit_hz + (localSubDiff)) / width * W);
+                        {
+                            // H1: same tick-following term as the passband pair above
+                            long cwTxDelta = _tx_on_sub_vfob ? (vfob_sub_hz - vfob_hz) : 0;
+                            cw_line_x1 = (int)((float)(cwSideToneShiftInverted - Low + xit_hz + cwTxDelta) / width * W);
+                        }
 
                         drawLineDX2D(m_bDX2_tx_filter_pen, cw_line_x1, nVerticalShift + top, cw_line_x1, nVerticalShift + H, tx_filter_pen.Width);
                     }
