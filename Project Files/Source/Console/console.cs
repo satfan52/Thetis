@@ -18430,6 +18430,17 @@ namespace Thetis
             get { return rx2_enabled && (chkEnableMultiRX.Checked || chkVFOSplit.Checked); }
         }
 
+        // The line the sub receiver is held to. The receiver's own tuning limiter already
+        // treats the outer 8 percent of the sample rate as outside the sample area
+        // (sample_rate_rx1 * 0.92 / 2), and the spectrum analyser hides the same strip
+        // because it is the decimation roll-off (CLIP_FRACTION in HPSDR/specHPSDR.cs).
+        // The sub receiver is held to the same line, so it always sits in clean
+        // spectrum and always inside the drawn display.
+        private double SubPassbandHalf
+        {
+            get { return sample_rate_rx1 * 0.92 / 2; }
+        }
+
         // the sub's working state joins the band memory: recorded into the
         // receiver's current band filter, from which entries are built. Only a value
         // that could genuinely be a sub position is recorded - a band change moves
@@ -18445,7 +18456,7 @@ namespace Thetis
                 if (rx2_enabled)
                 {
                     if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
-                    if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
+                    if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (SubPassbandHalf - 2)) return; // clamped/transition value
                     BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, false);
                     if (bsf == null) return;
                     bsf.LastVisited.SubVFOFreq = VFOASubFreq;
@@ -18456,7 +18467,7 @@ namespace Thetis
                     // the B-side mode are kept per band the same way
                     if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
                     if (VFOBFreq <= 0) return;
-                    if (Math.Abs((VFOBFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
+                    if (Math.Abs((VFOBFreq - VFOAFreq) * 1e6) > (SubPassbandHalf - 2)) return; // clamped/transition value
                     BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, false);
                     if (bsf == null) return;
                     bsf.LastVisited.SubVFOFreq = VFOBFreq;
@@ -27402,7 +27413,7 @@ namespace Thetis
                 {
                     double dSubMem = bsfPu.LastVisited.SubVFOFreq;
                     if (dSubMem > 0 &&
-                        Math.Abs((dSubMem - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
+                        Math.Abs((dSubMem - VFOAFreq) * 1e6) <= (SubPassbandHalf - 2))
                     {
                         if (rx2_enabled)
                         {
@@ -32114,7 +32125,7 @@ namespace Thetis
                         else diff = (int)((VFOBFreq - VFOAFreq) * 1e6);
                         if (chkRIT.Checked && !_mox && bRitOk) diff -= (int)udRIT.Value;
                         int rx2_osc = (int)(radio.GetDSPRX(0, 0).RXOsc - diff);
-                        if (rx2_osc > -sample_rate_rx1 / 2 && rx2_osc < sample_rate_rx1 / 2)
+                        if (rx2_osc > -SubPassbandHalf && rx2_osc < SubPassbandHalf)
                         {
                             radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                         }
@@ -32401,18 +32412,18 @@ namespace Thetis
                 // finaliser can run while the receiver's DDS is still mid-restore, and
                 // the park below would synthesise a wrong sub frequency from it. The
                 // clamps stay live for every runtime edit.
-                if (!initializing && sub_osc < -sample_rate_rx1 / 2)
+                if (!initializing && sub_osc < -SubPassbandHalf)
                 {
-                    VFOASubFreq = vfoa + (sample_rate_rx1 / 2 + radio.GetDSPRX(0, 0).RXOsc - 1) * 0.0000010;
+                    VFOASubFreq = vfoa + (SubPassbandHalf + radio.GetDSPRX(0, 0).RXOsc - 1) * 0.0000010;
                     return;
                 }
-                else if (!initializing && sub_osc > sample_rate_rx1 / 2)
+                else if (!initializing && sub_osc > SubPassbandHalf)
                 {
-                    VFOASubFreq = vfoa + (-sample_rate_rx1 / 2 + radio.GetDSPRX(0, 0).RXOsc + 1) * 0.0000010;
+                    VFOASubFreq = vfoa + (-SubPassbandHalf + radio.GetDSPRX(0, 0).RXOsc + 1) * 0.0000010;
                     return;
                 }
 
-                if (sub_osc > -sample_rate_rx1 / 2 && sub_osc < sample_rate_rx1 / 2)
+                if (sub_osc > -SubPassbandHalf && sub_osc < SubPassbandHalf)
                 {
                     radio.GetDSPRX(0, 1).RXOsc = sub_osc;
                 }
@@ -32741,7 +32752,7 @@ namespace Thetis
 
                 double rx2_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
 
-                if (rx2_osc > -sample_rate_rx1 / 2 && rx2_osc < sample_rate_rx1 / 2)
+                if (rx2_osc > -SubPassbandHalf && rx2_osc < SubPassbandHalf)
                 {
                     radio.GetDSPRX(0, 1).RXOsc = rx2_osc;
                 }
@@ -46075,7 +46086,7 @@ namespace Thetis
             // value that fits the receiver's passband can be a real position, an
             // out-of-range number is a stale entry and is ignored
             if (bse.SubVFOFreq > 0 &&
-                Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
+                Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (SubPassbandHalf - 2))
             {
                 if (rx2_enabled)
                 {
