@@ -5011,6 +5011,7 @@ namespace Thetis
                     case var nam when name.StartsWith("chk"):
                         if (ctrls.ContainsKey(name)) ((CheckBoxTS)ctrls[name]).Checked = bool.Parse(val);
                         break;
+                        if (ctrls.ContainsKey(name)) ((CheckBoxTS)ctrls[name]).Checked = bool.Parse(val);
 
                     case var nam when name.StartsWith("combo"):
                         if (ctrls.ContainsKey(name)) ((ComboBoxTS)ctrls[name]).Text = val;
@@ -32964,12 +32965,16 @@ namespace Thetis
                 int diff = (int)((freq - vfob) * 1e6);
                 double sub_osc = radio.GetDSPRX(1, 0).RXOsc - diff;
 
-                if (sub_osc < -sample_rate_rx2 / 2)
+                // H1: never park the sub from an unsettled oscillator, exactly like the SubVFOA
+                // row's clamp. At start-up the VFOs and the RX2 DDS are still mid-restore, the
+                // computed sub_osc is garbage, and the park moved a restored SubVFOB frequency
+                // away from its saved value.
+                if (!initializing && sub_osc < -sample_rate_rx2 / 2)
                 {
                     VFOBSubFreq = vfob + (sample_rate_rx2 / 2 + radio.GetDSPRX(1, 0).RXOsc - 1) * 0.0000010;
                     return;
                 }
-                else if (sub_osc > sample_rate_rx2 / 2)
+                else if (!initializing && sub_osc > sample_rate_rx2 / 2)
                 {
                     VFOBSubFreq = vfob + (-sample_rate_rx2 / 2 + radio.GetDSPRX(1, 0).RXOsc + 1) * 0.0000010;
                     return;
@@ -33237,7 +33242,7 @@ namespace Thetis
                 {
                     radio.GetDSPRX(1, 1).RXOsc = sub_osc;
                 }
-                else VFOBSubFreq = VFOBFreq; // snap to VFO B instead of losing the sub
+                else if (!initializing) VFOBSubFreq = VFOBFreq; // snap to VFO B instead of losing the sub (never while the saved state is settling)
             }
 
             //[2.10.3.7]MW0LGE limits added
@@ -36575,10 +36580,24 @@ namespace Thetis
                 _bUpdatingTxTicks = true;
                 if (chkVFOSplit.Checked)
                 {
-                    if (chkVFOATX.Checked) chkVFOATX.Checked = false;
-                    if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
-                    if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
-                    chkSubVFOATX.Checked = true;
+                    // H1: this handler is re-run WITHOUT a change of state by the power-up
+                    // path and by the RX2 enable, and its checked state is itself restored
+                    // from the database on every launch. Only a real press of SPLIT may move
+                    // the transmit choice; a re-run must never untick the tick that was
+                    // restored - a SubVFOB tick came back as SubVFOA on relaunch because of
+                    // this. When the split state arrives with no tick armed at all - a
+                    // database from before the tick world - supply the classic choice.
+                    if (!initializing && _bOldVFOSplit != chkVFOSplit.Checked)
+                    {
+                        if (chkVFOATX.Checked) chkVFOATX.Checked = false;
+                        if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
+                        if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
+                        chkSubVFOATX.Checked = true;
+                    }
+                    else if (!chkVFOATX.Checked && !chkVFOBTX.Checked && !chkSubVFOATX.Checked && !chkSubVFOBTX.Checked)
+                    {
+                        chkSubVFOATX.Checked = true;
+                    }
                 }
                 else
                 {
@@ -41355,8 +41374,13 @@ namespace Thetis
                 if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
                 if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
 
-                // H1: the sub transmitter drives the transmit oscillator and band now
-                txtVFOABand_LostFocus(this, EventArgs.Empty);
+                // H1: the sub transmitter drives the transmit oscillator and band now.
+                // Never while the console is restoring its state - the row finaliser would
+                // judge the stored sub frequency against start-up values.
+                if (!initializing)
+                {
+                    txtVFOABand_LostFocus(this, EventArgs.Empty);
+                }
             }
 
             updateSplitFromTicks();
@@ -41384,12 +41408,18 @@ namespace Thetis
                 if (chkSubVFOATX.Checked) chkSubVFOATX.Checked = false;
 
                 // H1: the sub transmitter drives the transmit oscillator, its band, and the
-                // RX2 side transmit mode, exactly like the VFO B tick does for VFO B
-                txtVFOBSub_LostFocus(this, EventArgs.Empty);
+                // RX2 side transmit mode, exactly like the VFO B tick does for VFO B. Never
+                // while the console is restoring its state: this runs from the restored tick
+                // while the VFOs still hold their start-up values, and the sub row finaliser
+                // would then clamp the sub's frequency off its saved position.
+                if (!initializing)
+                {
+                    txtVFOBSub_LostFocus(this, EventArgs.Empty);
 
-                Audio.TXDSPMode = _rx2_dsp_mode;
-                radio.GetDSPTX(0).CurrentDSPMode = _rx2_dsp_mode;
-                SetRX2Mode(_rx2_dsp_mode);
+                    Audio.TXDSPMode = _rx2_dsp_mode;
+                    radio.GetDSPTX(0).CurrentDSPMode = _rx2_dsp_mode;
+                    SetRX2Mode(_rx2_dsp_mode);
+                }
             }
 
             updateSplitFromTicks();
