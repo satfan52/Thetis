@@ -30365,7 +30365,12 @@ namespace Thetis
                 }
                 else if (tx)
                 {
-                    if (!VFOATX && VFOBTX)
+                    // H1: the armed sub tick's row drives the transmit chain, like the main rows do
+                    if (!VFOATX && !VFOBTX && chkSubVFOBTX.Checked)
+                        txtVFOBSub_LostFocus(this, EventArgs.Empty);
+                    else if (!VFOATX && !VFOBTX && chkSubVFOATX.Checked)
+                        txtVFOABand_LostFocus(this, EventArgs.Empty);
+                    else if (!VFOATX && VFOBTX)
                         txtVFOBFreq_LostFocus(this, EventArgs.Empty);
                     else if (VFOATX && !VFOBTX)
                         txtVFOAFreq_LostFocus(this, EventArgs.Empty);
@@ -32359,7 +32364,8 @@ namespace Thetis
                 }
                 else
                 {
-                    if (!chkFullDuplex.Checked && !chkVFOBTX.Checked)
+                    if (!chkFullDuplex.Checked && !chkVFOBTX.Checked &&
+                        !chkSubVFOBTX.Checked && !chkSubVFOATX.Checked) // H1: a sub tick never lets VFO A grab transmit
                     {
                         tx_dds_freq_mhz = tx_freq;
                         UpdateTXDDSFreq(); // update tx freq
@@ -32728,7 +32734,7 @@ namespace Thetis
                 }
             }
 
-            if (chkVFOSplit.Checked)
+            if (chkVFOSplit.Checked && chkSubVFOATX.Checked) // H1: only the armed sub A tick transmits from this row
             {
                 tx_xvtr_index = XVTRForm.XVTRFreq(freq);
                 Band old_tx_band = _tx_band;
@@ -32885,6 +32891,73 @@ namespace Thetis
 
             Display.VFOBSub = (long)(freq * 1e6);
             saved_vfob_sub_freq = freq;
+
+            // H1: while the sub transmitter tick is armed this row drives the transmit
+            // oscillator and band, exactly like the SubVFOA row does for its tick
+            if (chkSubVFOBTX.Checked)
+            {
+                tx_xvtr_index = XVTRForm.XVTRFreq(freq);
+                Band old_tx_band_svb = _tx_band;
+                Band b_svb = BandByFreq(freq, tx_xvtr_index, current_region);
+                Band b1_svb = getTXBandWhenExtended(b_svb, freq);
+
+                if (chkVFOSplit.Checked && old_tx_band_svb != b1_svb)
+                    SetTXBand(b1_svb, b_svb != b1_svb);
+
+                if (last_tx_xvtr_index != tx_xvtr_index)
+                {
+                    if (tx_xvtr_index >= 0)
+                        SetupForm.RXOnly = XVTRForm.GetRXOnly(tx_xvtr_index);
+                }
+
+                if (tx_xvtr_index >= 0)
+                    freq = XVTRForm.TranslateFreq(freq);
+
+                if (old_tx_band_svb != _tx_band)
+                {
+                    if (_tx_band == Band.B60M)
+                    {
+                        chkXIT.Enabled = false;
+                        chkXIT.Checked = false;
+                    }
+                    else
+                        chkXIT.Enabled = true;
+                }
+
+                if (chkXIT.Checked)
+                    freq += (int)udXIT.Value * 0.000001;
+
+                if (freq < min_freq) freq = min_freq;
+                else if (freq > max_freq) freq = max_freq;
+
+                switch (radio.GetDSPTX(0).CurrentDSPMode)
+                {
+                    case DSPMode.AM:
+                    case DSPMode.SAM:
+                    case DSPMode.FM:
+                    case DSPMode.USB:
+                    case DSPMode.DIGU:
+                        if (chkTUN.Checked) freq -= (double)cw_pitch * 1e-6;
+                        break;
+                    case DSPMode.LSB:
+                    case DSPMode.DIGL:
+                        if (chkTUN.Checked) freq += (double)cw_pitch * 1e-6;
+                        break;
+                    case DSPMode.CWL:
+                        freq += (double)cw_pitch * 0.0000010;
+                        break;
+                    case DSPMode.CWU:
+                        freq -= (double)cw_pitch * 0.0000010;
+                        break;
+                }
+
+                if (!rx2_sub_drag)
+                {
+                    tx_dds_freq_mhz = freq;
+                    UpdateTXDDSFreq();
+                }
+                last_tx_xvtr_index = tx_xvtr_index;
+            }
 
             if (chkEnableMultiRX2.Checked)
             {
@@ -33359,7 +33432,10 @@ namespace Thetis
 
             if (chkVFOBTX.Checked) goto set_tx_freq;
             if (chkVFOATX.Checked) goto set_rx2_freq;
-            else if (chkVFOSplit.Checked || full_duplex)
+            // H1: only the VFO B side writes the transmit oscillator here. With SubVFOA or
+            // SubVFOB carrying transmit their own rows do it - SPLIT alone no longer means
+            // "transmit on SubVFOA".
+            else if (full_duplex)
                 goto set_tx_freq;
             else goto end;
 
@@ -41278,6 +41354,9 @@ namespace Thetis
                 if (chkVFOATX.Checked) chkVFOATX.Checked = false;
                 if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
                 if (chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = false;
+
+                // H1: the sub transmitter drives the transmit oscillator and band now
+                txtVFOABand_LostFocus(this, EventArgs.Empty);
             }
 
             updateSplitFromTicks();
@@ -41303,10 +41382,14 @@ namespace Thetis
                 if (chkVFOATX.Checked) chkVFOATX.Checked = false;
                 if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
                 if (chkSubVFOATX.Checked) chkSubVFOATX.Checked = false;
+
+                // H1: the sub transmitter drives the transmit oscillator and band now
+                txtVFOBSub_LostFocus(this, EventArgs.Empty);
             }
 
             updateSplitFromTicks();
             showTxSelection();
+            Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked; // H1: transmit marker follows the B-side ticks
 
             if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
                 CIVControllerInstance.NotifySplitOrFullDuplexChanged();
@@ -41390,7 +41473,7 @@ namespace Thetis
         private void chkVFOBTX_CheckedChanged(object sender, System.EventArgs e)
         {
             if (chkVFOBTX.Focused && !chkVFOBTX.Checked) chkVFOBTX.Checked = true;
-            Display.TXOnVFOB = chkVFOBTX.Checked;
+            Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked; // H1: the sub B tick also transmits on the B side
             if (chkVFOBTX.Checked)
             {
                 if (chkVFOATX.Checked) chkVFOATX.Checked = false;

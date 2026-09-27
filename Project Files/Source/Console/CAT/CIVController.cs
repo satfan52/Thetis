@@ -419,7 +419,7 @@ namespace Thetis
                 lock (_stateLock)
                 {
                     _pendingVfoAFreq = _console.VFOAFreq;
-                    bool rx2Split = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                    bool rx2Split = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                     bool vfoBTxSplit = _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
                     if (rx2Split)
                     {
@@ -945,7 +945,7 @@ namespace Thetis
                         _pendingVfoAFreq = _console.VFOAFreq;
                     }
 
-                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                     bool vfoBTxSplit = _console != null && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
                     if (rx2Split)
                     {
@@ -983,7 +983,7 @@ namespace Thetis
                         : 9999.0;
 
                     // Bypass the debounce when VFOBTX is active (RX2/WSJT-X TX scenario) or when in RX2+SPLIT mode:
-                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                     bool urgentVfoBUpdate = splitRequired && _console != null && (_console.VFOBTX || rx2Split);
 
                     if (msSinceTune >= 400.0 || urgentVfoBUpdate)
@@ -1164,7 +1164,7 @@ namespace Thetis
             lock (_vfoSwapLock)
             {
                 if (vfoAFreq <= 0 && _console != null) vfoAFreq = _console.VFOAFreq;
-                bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                 if (rx2Split)
                 {
                     double txFreq = _console.VFOASubFreq > 0 ? _console.VFOASubFreq : _console.TXFreq;
@@ -2373,7 +2373,7 @@ namespace Thetis
                                             lock (_stateLock)
                                             {
                                                 targetA = _console.VFOAFreq;
-                                                bool rx2Split = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                                                bool rx2Split = _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                                                 bool vfoBTx = _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
                                                 if (rx2Split)
                                                     targetB = _console.VFOASubFreq > 0 ? _console.VFOASubFreq : _console.TXFreq;
@@ -2719,7 +2719,7 @@ namespace Thetis
                     _savedDigitalSplit = _actualRadioSplit;
                     _savedDigitalVfoAFreq = _lastSentVfoAFreq > 0 ? _lastSentVfoAFreq : (_console != null ? _console.VFOAFreq : 14.074);
 
-                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
+                    bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
                     bool vfoBTxSplit = _console != null && _console.VFOBTX && !_console.VFOSplit && !_console.FullDuplex;
                     if (rx2Split)
                         _savedDigitalVfoBFreq = _console.VFOASubFreq > 0 ? _console.VFOASubFreq : _console.TXFreq;
