@@ -18665,7 +18665,7 @@ namespace Thetis
         private void VFOBSubUpdate(double freq)
         {
             m_dVFOBSubFreq = Math.Round(freq, 6);
-            txtVFOBSub.Text = freq.ToString("f6");
+            txtVFOBSub.Text = rx2_enabled ? freq.ToString("f6") : ""; // H1: emptied with RX2 off
             txtVFOBSub_LostFocus(this, EventArgs.Empty);
             recordSubMemory(2); // H1: the sub's frequency joins the band memory
         }
@@ -24126,7 +24126,8 @@ namespace Thetis
             {
                 case MultiMeterDisplayMode.Original:
                     #region Original
-                    g.FillRectangle(meter_background_pen.Brush, 0, 0, W, H);
+                    // H1: black box while RX2 is off, like the sub meters
+                    g.FillRectangle(rx2_enabled ? meter_background_pen.Brush : Brushes.Black, 0, 0, W, H);
 
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
@@ -24181,6 +24182,9 @@ namespace Thetis
                 #endregion
                 case MultiMeterDisplayMode.Edge:
                     #region Edge
+                    // H1: the box shows its own background colour in this style, so black
+                    // it out while RX2 is off - same black box as the sub meters
+                    if (!rx2_enabled) g.FillRectangle(Brushes.Black, 0, 0, W, H);
                     g.DrawRectangle(edge_meter_background_pen, 0, 0, W, H);
 
                     // draw meter movement
@@ -33704,7 +33708,11 @@ namespace Thetis
             // H1: the VFO B band line is the SubVFOB row - the band name moves into the
             // frame caption, the row itself always shows the sub receiver frequency
             grpVFOB.Text = "VFO B   " + bandInfo;
-            txtVFOBSub.Text = ((rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq : saved_vfob_sub_freq).ToString("f6");
+            // H1: emptied with RX2 off - this is the band-update writer that kept putting
+            // the saved sub frequency back into the blanked row
+            txtVFOBSub.Text = rx2_enabled
+                ? ((chkEnableMultiRX2.Checked) ? VFOBSubFreq : saved_vfob_sub_freq).ToString("f6")
+                : "";
 
             Band lo_band = Band.FIRST;
             Band lo_banda = Band.FIRST;
@@ -36847,7 +36855,7 @@ namespace Thetis
                     ? (current_meter_display_mode == MultiMeterDisplayMode.Edge
                         ? edge_meter_background_color : meter_background_color)
                     : Color.Black;
-                picRX2Meter.Invalidate();
+                picRX2Meter.Refresh();
             }
             if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
 
