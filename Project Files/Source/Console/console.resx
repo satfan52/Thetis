@@ -16726,6 +16726,169 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
   <data name="&gt;&gt;txtRX2Meter.ZOrder" xml:space="preserve">
     <value>2</value>
   </data>
+
+    <data name="grpSubRX1Meter.Location" type="System.Drawing.Point, System.Drawing">
+    <value>417, 24</value>
+  </data>
+  <data name="grpSubRX1Meter.Size" type="System.Drawing.Size, System.Drawing">
+    <value>88, 88</value>
+  </data>
+  <data name="grpSubRX1Meter.TabIndex" type="System.Int32, mscorlib">
+    <value>91</value>
+  </data>
+  <data name="grpSubRX1Meter.Text" xml:space="preserve">
+    <value>SubRX1 Meter</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX1Meter.Name" xml:space="preserve">
+    <value>grpSubRX1Meter</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX1Meter.Type" xml:space="preserve">
+    <value>System.Windows.Forms.GroupBoxTS, Thetis, Version=2.10.3.14, Culture=neutral, PublicKeyToken=null</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX1Meter.Parent" xml:space="preserve">
+    <value>$this</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX1Meter.ZOrder" xml:space="preserve">
+    <value>34</value>
+  </data>
+    <data name="grpSubRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
+    <value>633, 24</value>
+  </data>
+  <data name="grpSubRX2Meter.Size" type="System.Drawing.Size, System.Drawing">
+    <value>88, 88</value>
+  </data>
+  <data name="grpSubRX2Meter.TabIndex" type="System.Int32, mscorlib">
+    <value>92</value>
+  </data>
+  <data name="grpSubRX2Meter.Text" xml:space="preserve">
+    <value>SubRX2 Meter</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX2Meter.Name" xml:space="preserve">
+    <value>grpSubRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX2Meter.Type" xml:space="preserve">
+    <value>System.Windows.Forms.GroupBoxTS, Thetis, Version=2.10.3.14, Culture=neutral, PublicKeyToken=null</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX2Meter.Parent" xml:space="preserve">
+    <value>$this</value>
+  </data>
+  <data name="&gt;&gt;grpSubRX2Meter.ZOrder" xml:space="preserve">
+    <value>34</value>
+  </data>
+  <data name="picSubRX1Meter.BackgroundImageLayout" type="System.Windows.Forms.ImageLayout, System.Windows.Forms">
+    <value>Stretch</value>
+  </data>
+  <data name="picSubRX1Meter.ImeMode" type="System.Windows.Forms.ImeMode, System.Windows.Forms">
+    <value>Off</value>
+  </data>
+  <data name="picSubRX1Meter.Location" type="System.Drawing.Point, System.Drawing">
+    <value>4, 52</value>
+  </data>
+  <data name="picSubRX1Meter.Size" type="System.Drawing.Size, System.Drawing">
+    <value>80, 30</value>
+  </data>
+  <data name="picSubRX1Meter.SizeMode" type="System.Windows.Forms.PictureBoxSizeMode, System.Windows.Forms">
+    <value>StretchImage</value>
+  </data>
+  <data name="picSubRX1Meter.TabIndex" type="System.Int32, mscorlib">
+    <value>61</value>
+  </data>
+  <data name="&gt;&gt;picSubRX1Meter.Name" xml:space="preserve">
+    <value>picSubRX1Meter</value>
+  </data>
+  <data name="&gt;&gt;picSubRX1Meter.Type" xml:space="preserve">
+    <value>System.Windows.Forms.PictureBox, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="&gt;&gt;picSubRX1Meter.Parent" xml:space="preserve">
+    <value>grpRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;picSubRX1Meter.ZOrder" xml:space="preserve">
+    <value>0</value>
+  </data>
+  <data name="picSubRX2Meter.BackgroundImageLayout" type="System.Windows.Forms.ImageLayout, System.Windows.Forms">
+    <value>Stretch</value>
+  </data>
+  <data name="picSubRX2Meter.ImeMode" type="System.Windows.Forms.ImeMode, System.Windows.Forms">
+    <value>Off</value>
+  </data>
+  <data name="picSubRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
+    <value>4, 52</value>
+  </data>
+  <data name="picSubRX2Meter.Size" type="System.Drawing.Size, System.Drawing">
+    <value>80, 30</value>
+  </data>
+  <data name="picSubRX2Meter.SizeMode" type="System.Windows.Forms.PictureBoxSizeMode, System.Windows.Forms">
+    <value>StretchImage</value>
+  </data>
+  <data name="picSubRX2Meter.TabIndex" type="System.Int32, mscorlib">
+    <value>61</value>
+  </data>
+  <data name="&gt;&gt;picSubRX2Meter.Name" xml:space="preserve">
+    <value>picSubRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;picSubRX2Meter.Type" xml:space="preserve">
+    <value>System.Windows.Forms.PictureBox, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="&gt;&gt;picSubRX2Meter.Parent" xml:space="preserve">
+    <value>grpRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;picSubRX2Meter.ZOrder" xml:space="preserve">
+    <value>0</value>
+  </data>
+  <data name="txtSubRX1Meter.Font" type="System.Drawing.Font, System.Drawing">
+    <value>Microsoft Sans Serif, 18pt</value>
+  </data>
+  <data name="txtSubRX1Meter.Location" type="System.Drawing.Point, System.Drawing">
+    <value>4, 16</value>
+  </data>
+  <data name="txtSubRX1Meter.Size" type="System.Drawing.Size, System.Drawing">
+    <value>80, 34</value>
+  </data>
+  <data name="txtSubRX1Meter.TabIndex" type="System.Int32, mscorlib">
+    <value>1</value>
+  </data>
+  <data name="txtSubRX1Meter.TextAlign" type="System.Windows.Forms.HorizontalAlignment, System.Windows.Forms">
+    <value>Center</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX1Meter.Name" xml:space="preserve">
+    <value>txtSubRX1Meter</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX1Meter.Type" xml:space="preserve">
+    <value>System.Windows.Forms.TextBoxTS, Thetis, Version=2.10.3.14, Culture=neutral, PublicKeyToken=null</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX1Meter.Parent" xml:space="preserve">
+    <value>grpRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX1Meter.ZOrder" xml:space="preserve">
+    <value>2</value>
+  </data>
+  <data name="txtSubRX2Meter.Font" type="System.Drawing.Font, System.Drawing">
+    <value>Microsoft Sans Serif, 18pt</value>
+  </data>
+  <data name="txtSubRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
+    <value>4, 16</value>
+  </data>
+  <data name="txtSubRX2Meter.Size" type="System.Drawing.Size, System.Drawing">
+    <value>80, 34</value>
+  </data>
+  <data name="txtSubRX2Meter.TabIndex" type="System.Int32, mscorlib">
+    <value>1</value>
+  </data>
+  <data name="txtSubRX2Meter.TextAlign" type="System.Windows.Forms.HorizontalAlignment, System.Windows.Forms">
+    <value>Center</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX2Meter.Name" xml:space="preserve">
+    <value>txtSubRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX2Meter.Type" xml:space="preserve">
+    <value>System.Windows.Forms.TextBoxTS, Thetis, Version=2.10.3.14, Culture=neutral, PublicKeyToken=null</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX2Meter.Parent" xml:space="preserve">
+    <value>grpRX2Meter</value>
+  </data>
+  <data name="&gt;&gt;txtSubRX2Meter.ZOrder" xml:space="preserve">
+    <value>2</value>
+  </data>
   <data name="grpRX2Meter.Location" type="System.Drawing.Point, System.Drawing">
     <value>725, 24</value>
   </data>
