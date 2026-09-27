@@ -206,6 +206,12 @@ namespace Thetis
             {
                 AddBandStack2FiltersTable("BandStack2Filters");
             }
+            // the band memory carries the sub receiver as well; the columns are added
+            // to databases written before this build - VerifyColumn is a no-op when
+            // they already exist, and ConvertFromDBVal turns the blank cell of an old
+            // row into a zero.
+            VerifyColumn("BandStack2Entries", "SubVFOFreq", typeof(double));
+            VerifyColumn("BandStack2Filters", "LastVisitedSubVFOFreq", typeof(double));
             if (!ds.Tables.Contains("BandStack2FilterFrequencies"))
             {
                 AddBandStack2FilterFrequenciesTable("BandStack2FilterFrequencies");
@@ -334,6 +340,13 @@ namespace Thetis
 
             //defaults
         }
+
+        private static void VerifyColumn(string sTable, string sColumn, Type t)
+        {
+            if (!ds.Tables.Contains(sTable)) return;
+            if (!ds.Tables[sTable].Columns.Contains(sColumn))
+                ds.Tables[sTable].Columns.Add(sColumn, t);
+        }
         private static void AddBandStack2EntriesTable(string sTableName)
         {
             ds.Tables.Add(sTableName);
@@ -439,6 +452,7 @@ namespace Thetis
             dr["LastVisitedFilter"] = (int)bsf.LastVisited.Filter;
             dr["LastVisitedZoomFactor"] = bsf.LastVisited.ZoomFactor;
             dr["LastVisitedZoomSlider"] = bsf.LastVisited.ZoomSlider;
+            dr["LastVisitedSubVFOFreq"] = bsf.LastVisited.SubVFOFreq;
             t.Rows.Add(dr);
 
             // frequencies
@@ -535,6 +549,7 @@ namespace Thetis
                 dr["LastVisitedFilter"] = (int)Filter.NONE;
                 dr["LastVisitedZoomFactor"] = 0;
                 dr["LastVisitedZoomSlider"] = 0;
+                dr["LastVisitedSubVFOFreq"] = 0;
             }
         }
         public static void RemoveAllBandStack2Entries()
@@ -569,6 +584,7 @@ namespace Thetis
                 dr["LastVisitedFilter"] = (int)Filter.NONE;
                 dr["LastVisitedZoomFactor"] = 0;
                 dr["LastVisitedZoomSlider"] = 0;
+                dr["LastVisitedSubVFOFreq"] = 0;
             }
         }
         public static void AddBandStack2Entry(BandStackEntry bse)
@@ -592,6 +608,7 @@ namespace Thetis
             dr["Filter"] = (int)bse.Filter;
             dr["ZoomFactor"] = bse.ZoomFactor;
             dr["ZoomSlider"] = bse.ZoomSlider;
+            dr["SubVFOFreq"] = Math.Round(bse.SubVFOFreq, 6);
 
             t.Rows.Add(dr);
         }
@@ -625,6 +642,7 @@ namespace Thetis
                 bse.Filter = (Filter)dr["Filter"];
                 bse.ZoomFactor = (double)dr["ZoomFactor"];
                 bse.ZoomSlider = (int)dr["ZoomSlider"];
+                bse.SubVFOFreq = ConvertFromDBVal<double>(dr["SubVFOFreq"]);
 
                 bses.Add(bse);
             }
@@ -671,6 +689,7 @@ namespace Thetis
                 bsf.LastVisited.Filter = (Filter)dr["LastVisitedFilter"];
                 bsf.LastVisited.ZoomFactor = (double)dr["LastVisitedZoomFactor"];
                 bsf.LastVisited.ZoomSlider = (int)dr["LastVisitedZoomSlider"];
+                bsf.LastVisited.SubVFOFreq = ConvertFromDBVal<double>(dr["LastVisitedSubVFOFreq"]);
 
                 string sSelectString = "FilterGUID = '" + bsf.GUID + "'";
                 //add in freqs

@@ -4140,10 +4140,17 @@ namespace Thetis
                         dVFOBFreq = double.Parse(val); // MW0LGE_21c need to do this at end, as we used center_freq etc
                         break;
                     case "VFOASubFreq": // MW0LGE_21a
+                        // the working copy is set first; the property's setter throws the
+                        // value away while the setup form is not up yet ("IsSetupFormNull"),
+                        // and that discard is how the sub's frequency was lost on every
+                        // console restart. The property call still runs, to push the row
+                        // and the display once the form is available.
+                        double vfoaSubRestored = double.Parse(val);
+                        m_dVFOASubFreq = Math.Round(vfoaSubRestored, 6);
+                        saved_vfoa_sub_freq = m_dVFOASubFreq;
                         _force_vfo_update = true;
-                        VFOASubFreq = double.Parse(val);
+                        VFOASubFreq = vfoaSubRestored;
                         _force_vfo_update = false;
-                        saved_vfoa_sub_freq = m_dVFOASubFreq;  // init the save sub freq (i dont like this, TODO)
                         break;
                     case "CentreRX2Frequency":
                         dRX2_centre_freq = double.Parse(val);
@@ -18363,6 +18370,7 @@ namespace Thetis
             m_dVFOASubFreq = Math.Round(freq, 6);// MW0LGE_21d rounded to 6
             txtVFOABand.Text = freq.ToString("f6");
             txtVFOABand_LostFocus(this, EventArgs.Empty);
+            recordSubMemory(); // the sub's frequency joins the band memory
 
             //MW0LGE [2.9.0.7] also in UpdateVFOASub
             double old_vfoa_sub_freq_rounded = Math.Round(dOldVFOASubFreq, 6);
@@ -18387,6 +18395,26 @@ namespace Thetis
         public bool VFOASubInUse
         {
             get { return rx2_enabled && (chkEnableMultiRX.Checked || chkVFOSplit.Checked); }
+        }
+
+        // the sub's working state joins the band memory: recorded into the
+        // receiver's current band filter, from which entries are built. Only a value
+        // that could genuinely be a sub position is recorded - a band change moves
+        // VFO A first and clamps the sub afterwards, and the transition values must
+        // not land in an entry.
+        private void recordSubMemory()
+        {
+            try
+            {
+                if (!BandStackManager.Ready) return;
+                if (m_bSetBandRunning) return; // a band change is in flight - transient values
+                if (!chkEnableMultiRX.Checked || VFOASubFreq <= 0) return;
+                if (Math.Abs((VFOASubFreq - VFOAFreq) * 1e6) > (sample_rate_rx1 / 2 - 2)) return; // clamped/transition value
+                BandStackFilter bsf = BandStackManager.GetFilter(rx1_band, false);
+                if (bsf == null) return;
+                bsf.LastVisited.SubVFOFreq = VFOASubFreq;
+            }
+            catch { }
         }
         private double m_dVFOASubFreq = 0;
         public double VFOASubFreq //rx2
@@ -27481,6 +27509,10 @@ namespace Thetis
                 if (radio.GetDSPRX(1, 0).Active) WDSP.SetChannelState(WDSP.id(2, 0), 1, 1);
 
                 DataFlowing = true;
+                // re-state the sub row's display value once the radio is up - a
+                // startup order that pushed a stale value must not leave the sub
+                // window stranded off screen
+                if (chkEnableMultiRX.Checked) UpdateVFOASub();
                 SetupForm.UpdateGeneraHardware();
                 SetMicGain();
                 chkQSK_CheckStateChanged(this, EventArgs.Empty);
@@ -31986,7 +32018,11 @@ namespace Thetis
                         RX1DDSFreq = dTmpFreq;
                     }
 
-                    if ((chkEnableMultiRX.Checked || (rx2_enabled && chkVFOSplit.Checked)) && !_mox) //MW0LGE [2.7.0.9] range-check also for SPLIT-only — snap VFOASubFreq on band change
+                    // at start-up this block judges the sub against a DDS that is still
+                    // mid-restore and its computed oscillator is garbage - a restored
+                    // sub was snapped onto VFO A on every restart because of it. Only
+                    // judge once the initialisation is finished.
+                    if ((chkEnableMultiRX.Checked || (rx2_enabled && chkVFOSplit.Checked)) && !_mox && !initializing) //MW0LGE [2.7.0.9] range-check also for SPLIT-only — snap VFOASubFreq on band change
                     {
                         int diff;
                         if (rx2_enabled) diff = (int)((VFOASubFreq - VFOAFreq) * 1e6);
@@ -32276,12 +32312,16 @@ namespace Thetis
                 int diff = (int)((freq - vfoa) * 1e6);
                 double sub_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
 
-                if (sub_osc < -sample_rate_rx1 / 2)
+                // never park the sub from an unsettled oscillator: at start-up this
+                // finaliser can run while the receiver's DDS is still mid-restore, and
+                // the park below would synthesise a wrong sub frequency from it. The
+                // clamps stay live for every runtime edit.
+                if (!initializing && sub_osc < -sample_rate_rx1 / 2)
                 {
                     VFOASubFreq = vfoa + (sample_rate_rx1 / 2 + radio.GetDSPRX(0, 0).RXOsc - 1) * 0.0000010;
                     return;
                 }
-                else if (sub_osc > sample_rate_rx1 / 2)
+                else if (!initializing && sub_osc > sample_rate_rx1 / 2)
                 {
                     VFOASubFreq = vfoa + (-sample_rate_rx1 / 2 + radio.GetDSPRX(0, 0).RXOsc + 1) * 0.0000010;
                     return;
@@ -45888,6 +45928,15 @@ namespace Thetis
             UpdateWaterfallLevelValues();
             updateDisplayGridLevelValues();
             UpdateDiversityValues();
+            // the sub's frequency for this band comes back with the entry; only a
+            // value that fits the receiver's passband can be a real position, an
+            // out-of-range number is a stale entry and is ignored
+            if (chkEnableMultiRX.Checked)
+            {
+                if (bse.SubVFOFreq > 0 &&
+                    Math.Abs((bse.SubVFOFreq - VFOAFreq) * 1e6) <= (sample_rate_rx1 / 2 - 2))
+                    VFOASubFreq = bse.SubVFOFreq;
+            }
             NetworkIO.SendHighPriority(1);            
         }
 
