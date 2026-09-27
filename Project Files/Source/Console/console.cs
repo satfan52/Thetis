@@ -41383,8 +41383,13 @@ namespace Thetis
                 if (chkVFOBTX.Checked) chkVFOBTX.Checked = false;
                 if (chkSubVFOATX.Checked) chkSubVFOATX.Checked = false;
 
-                // H1: the sub transmitter drives the transmit oscillator and band now
+                // H1: the sub transmitter drives the transmit oscillator, its band, and the
+                // RX2 side transmit mode, exactly like the VFO B tick does for VFO B
                 txtVFOBSub_LostFocus(this, EventArgs.Empty);
+
+                Audio.TXDSPMode = _rx2_dsp_mode;
+                radio.GetDSPTX(0).CurrentDSPMode = _rx2_dsp_mode;
+                SetRX2Mode(_rx2_dsp_mode);
             }
 
             updateSplitFromTicks();
