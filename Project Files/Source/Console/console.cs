@@ -50990,7 +50990,9 @@ namespace Thetis
                         bool bOkToChangeRX1 = bOverRX1 && rx1_enabled && !rx1_click_tune_drag && !rx1_spectrum_drag && (_rx1_dsp_mode != DSPMode.DRM && _rx1_dsp_mode != DSPMode.SPEC && _rx1_dsp_mode != DSPMode.FM) && !(_mox && (VFOATX || (RX2Enabled && VFOSplit))); //[2.10.1.0] MW0LGE prevent highlight when MOX
                         bool bOkToChangeRX2 = bOverRX2 && rx2_enabled && !rx2_click_tune_drag && !rx2_spectrum_drag && (_rx2_dsp_mode != DSPMode.DRM && _rx2_dsp_mode != DSPMode.SPEC && _rx2_dsp_mode != DSPMode.FM) && !(_mox && RX2Enabled && VFOBTX);
 
-                        if (bOkToChangeRX1 || bOkToChangeRX2)
+                        // a sub window drag moves a receiver's frequency, not a filter edge,
+                        // so it runs in FM, DRM and SPEC as well
+                        if (bOkToChangeRX1 || bOkToChangeRX2 || rx1_sub_drag)
                         {
                             if (!rx1_spectrum_tune_drag && !rx2_spectrum_tune_drag && current_click_tune_mode == ClickTuneMode.Off)
                             {
