@@ -769,6 +769,7 @@ namespace Thetis
 
             InitializeComponent();								// Windows Forms Generated Code
             InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
+            InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
 
             InitialiseAndromedaMenus();
@@ -5979,6 +5980,108 @@ namespace Thetis
             if (row == null || lsd == null) return;
             if (live) row.Visible = true;
             lsd.Visible = live && !row.Focused;
+        }
+
+        // H1: while the console is powered off the panafall dims under one alpha-black
+        // veil. The veil is transparent to the mouse, so the clicks, drags and the
+        // wheel the display area normally takes still land on the displays beneath.
+        private PowerDimOverlay m_powerDimOverlay;
+
+        private class PowerDimOverlay : Control
+        {
+            [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+            private static extern int SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+            private static readonly Color hole_key = Color.Magenta; // the colour key: the power button is punched out
+            private static readonly SolidBrush hole_brush = new SolidBrush(hole_key);
+
+            private readonly Console m_console;
+
+            public PowerDimOverlay(Console console)
+            {
+                m_console = console;
+                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                TabStop = false;
+            }
+
+            protected override CreateParams CreateParams
+            {
+                get
+                {
+                    CreateParams cp = base.CreateParams;
+                    cp.ExStyle |= 0x20;     // WS_EX_TRANSPARENT: the mouse passes through
+                    cp.ExStyle |= 0x80000;  // WS_EX_LAYERED: one uniform alpha over the window
+                    return cp;
+                }
+            }
+
+            protected override void OnHandleCreated(EventArgs e)
+            {
+                base.OnHandleCreated(e);
+                // one alpha over everything, plus the colour key that keeps the power
+                // button fully visible and lit
+                SetLayeredWindowAttributes(this.Handle, (uint)(hole_key.ToArgb() & 0xFFFFFF), 150, 0x3); // LWA_ALPHA | LWA_COLORKEY
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                e.Graphics.Clear(Color.Black);
+                Rectangle r = m_console.PowerButtonBoundsInClient();
+                if (!r.IsEmpty)
+                    e.Graphics.FillEllipse(hole_brush, r);
+            }
+        }
+
+        // H1: the power button stays bright and usable while the rest of the window
+        // is dimmed, so the off state is one coherent veil with the one live control
+        private Rectangle PowerButtonBoundsInClient()
+        {
+            if (chkPower == null || chkPower.Parent == null) return Rectangle.Empty;
+            Point p = chkPower.Parent.PointToScreen(chkPower.Location);
+            p = this.PointToClient(p);
+            return new Rectangle(p, chkPower.Size);
+        }
+
+        private void InitPowerDim()
+        {
+            m_powerDimOverlay = new PowerDimOverlay(this);
+            m_powerDimOverlay.Bounds = ClientRectangle;
+            m_powerDimOverlay.Visible = false;
+            this.Controls.Add(m_powerDimOverlay);
+            this.Resize += (s, ev) => { if (m_powerDimOverlay != null) m_powerDimOverlay.Bounds = ClientRectangle; };
+            chkPower.LocationChanged += (s, ev) => { if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.Invalidate(); };
+            chkPower.CheckedChanged += PowerStateVisualsChanged; // H1: subscribed after the console's own handler, so the settle runs last
+
+            // H1: one late settle after start-up, in case the stored power state
+            // never raised a change event
+            m_powerSettleTimer = new System.Windows.Forms.Timer();
+            m_powerSettleTimer.Interval = 3000;
+            m_powerSettleTimer.Tick += (s, ev) =>
+            {
+                m_powerSettleTimer.Stop();
+                PowerStateVisualsChanged(this, EventArgs.Empty);
+            };
+            m_powerSettleTimer.Start();
+        }
+
+        private System.Windows.Forms.Timer m_powerSettleTimer;
+
+        // H1: one settle pass per power change - the two sub rows take their power
+        // colours (the main rows and the LSD boxes are dimmed by the console's own
+        // power handler, the sub LSD overlays follow those through their events),
+        // and the panafall veil rises while the console is off
+        private void PowerStateVisualsChanged(object sender, EventArgs e)
+        {
+            showTxSelection(); // the ticks, the receiver rows, the LSD boxes and both sub rows
+            if (m_powerDimOverlay != null)
+            {
+                m_powerDimOverlay.Visible = !chkPower.Checked;
+                if (m_powerDimOverlay.Visible)
+                {
+                    m_powerDimOverlay.Bounds = ClientRectangle;
+                    m_powerDimOverlay.BringToFront();
+                }
+            }
         }
         private bool m_bSetBandRunning = false; // so we know if any events raised are caused by SetBand
         public void SetBand(string mode, string filter, double freq, bool CTUN, int zoomFactor, double centerFreq)
@@ -41813,9 +41916,9 @@ namespace Thetis
 
             if (chkVFOATX.Checked)
             {
-                txtVFOAFreq.ForeColor = Color.Red;
-                txtVFOAMSD.ForeColor = Color.Red;
-                txtVFOALSD.ForeColor = Color.Red;
+                txtVFOAFreq.ForeColor = pwr ? Color.Red : Color.DarkRed;
+                txtVFOAMSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
+                txtVFOALSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
             }
             else
             {
@@ -41826,9 +41929,9 @@ namespace Thetis
 
             if (chkVFOBTX.Checked)
             {
-                txtVFOBFreq.ForeColor = Color.Red;
-                txtVFOBMSD.ForeColor = Color.Red;
-                txtVFOBLSD.ForeColor = Color.Red;
+                txtVFOBFreq.ForeColor = pwr ? Color.Red : Color.DarkRed;
+                txtVFOBMSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
+                txtVFOBLSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
             }
             else
             {
@@ -47149,6 +47252,9 @@ private void incrementMutliMeterDisplayModeRX2()
             toolStripStatusLabel_UTCTime.Width = 92;
             toolStripStatusLabel_Date.Width = 104;
             toolStripStatusLabel_LocalTime.Width = 92;
+            // H1: settle the power-dependent displays at startup too - the veil and
+            // the row colours, in case the stored power state never raised a change
+            PowerStateVisualsChanged(this, EventArgs.Empty);
         }
 
         public bool TwoTone
