@@ -7577,6 +7577,9 @@ namespace Thetis
             // send the setting to the display
             Display.RX1FilterLow = low;
             Display.RX1FilterHigh = high;
+            // the sub follows this filter, so its drawn window follows too
+            Display.SubRX1FilterLow = low;
+            Display.SubRX1FilterHigh = high;
 
             if (!from_change_event)// this is required to prevent endless loop from the change event
             {
@@ -33418,6 +33421,12 @@ namespace Thetis
         private bool rx1_high_filter_drag = false;
         private bool rx1_whole_filter_drag = false;
         private bool rx1_sub_drag = false;
+        // dragging a sub window's left or right edge drags that sub's passband,
+        // exactly as the receiver windows' edges do
+        private bool rx1_sub_low_filter_drag = false;
+        private bool rx1_sub_high_filter_drag = false;
+        private int rx1_sub_filter_start_low = 0;
+        private int rx1_sub_filter_start_high = 0;
         private bool rx1_spectrum_drag = false;
 
         private bool rx2_low_filter_drag = false;
@@ -33692,6 +33701,15 @@ namespace Thetis
                 }
             }
         }
+        private void ApplySubRXFilter(int low, int high)
+        {
+            ConstrainFilter(ref low, ref high, 1);
+            if (low == high) return; // not a good idea to have a 0hz width filter
+            radio.GetDSPRX(0, 1).SetRXFilter(low, high);
+            Display.SubRX1FilterLow = low;
+            Display.SubRX1FilterHigh = high;
+        }
+
         private void dragWholeFilter(MouseEventArgs e)
         {
             whole_filter_start_x = e.X;
@@ -49730,6 +49748,48 @@ namespace Thetis
                     }
                     //
 
+                    // Prioritize the RX1 sub window over click-tune (including CTUN). Otherwise
+                    // a drag beginning on the sub window enters the click-tune path.
+                    if (bOverRX1 && chkEnableMultiRX.Checked && !_mox && !gridminmaxadjust && !gridmaxadjust &&
+                        !agc_knee_drag && !agc_hang_drag &&
+                        (Display.CurrentDisplayMode == DisplayMode.PANADAPTER ||
+                         Display.CurrentDisplayMode == DisplayMode.WATERFALL ||
+                         Display.CurrentDisplayMode == DisplayMode.PANAFALL ||
+                         Display.CurrentDisplayMode == DisplayMode.PANASCOPE))
+                    {
+                        // The window's drawn bounds; recomputing them from offsets disagreed
+                        // with the drawn window, which is why edge clicks could fall through
+                        // to the RX1 filter edge drag chain below. Edges first: grabbing one
+                        // drags the sub's passband, exactly like the receiver windows; the
+                        // rest of the window still tunes the sub.
+                        if (Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                            (!rx2_enabled || e.Y <= pnlDisplay.Height / 2))
+                        {
+                            if (Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx1_sub_filter_start_low = radio.GetDSPRX(0, 1).RXFilterLow;
+                                rx1_sub_low_filter_drag = true;
+                                return;
+                            }
+                            if (Math.Abs(e.X - Display.VFOASubWindowRight) < 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                rx1_sub_filter_start_high = radio.GetDSPRX(0, 1).RXFilterHigh;
+                                rx1_sub_high_filter_drag = true;
+                                return;
+                            }
+                            if (e.X > Display.VFOASubWindowLeft - 3 && e.X < Display.VFOASubWindowRight + 3)
+                            {
+                                sub_drag_last_x = e.X;
+                                if (rx2_enabled) sub_drag_start_freq = VFOASubFreq;
+                                else sub_drag_start_freq = VFOBFreq;
+                                rx1_sub_drag = true;
+                                return;
+                            }
+                        }
+                    }
+
                     if (Display.HightlightFilterEdgeRX1 == 0 && Display.HightlightFilterEdgeRX2 == 0 &&
                         !agc_knee_drag &&
                         !agc_hang_drag &&
@@ -50078,6 +50138,26 @@ namespace Thetis
                                     dragWholeFilter(e);
                                 }
                                 else if (chkEnableMultiRX.Checked && !_mox &&
+                                    (!rx2_enabled || e.Y <= pnlDisplay.Height / 2) &&
+                                    Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                                    Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
+                                {
+                                    // SubRX1 window's left edge - drag to change the sub's passband
+                                    sub_drag_last_x = e.X;
+                                    rx1_sub_filter_start_low = radio.GetDSPRX(0, 1).RXFilterLow;
+                                    rx1_sub_low_filter_drag = true;
+                                }
+                                else if (chkEnableMultiRX.Checked && !_mox &&
+                                    (!rx2_enabled || e.Y <= pnlDisplay.Height / 2) &&
+                                    Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                                    Math.Abs(e.X - Display.VFOASubWindowRight) < 3)
+                                {
+                                    // SubRX1 window's right edge - drag to change the sub's passband
+                                    sub_drag_last_x = e.X;
+                                    rx1_sub_filter_start_high = radio.GetDSPRX(0, 1).RXFilterHigh;
+                                    rx1_sub_high_filter_drag = true;
+                                }
+                                else if (chkEnableMultiRX.Checked && !_mox &&
                                     (e.X > vfoa_sub_low_x - 3 && e.X < vfoa_sub_high_x + 3))
                                 {
                                     sub_drag_last_x = e.X;
@@ -50347,6 +50427,10 @@ namespace Thetis
                     vfob_low_x = RX2diff + (HzToPixel(radio.GetDSPRX(1, 0).RXFilterLow, 2) - HzToPixel(0.0f, 2));
                     vfob_high_x = RX2diff + (HzToPixel(radio.GetDSPRX(1, 0).RXFilterHigh, 2) - HzToPixel(0.0f, 2));
                 }
+
+                // the drawn bounds of the SubRX1 window, for the edge cursor and drags
+                int sub1_win_l = chkEnableMultiRX.Checked ? Display.VFOASubWindowLeft : -1;
+                int sub1_win_r = chkEnableMultiRX.Checked ? Display.VFOASubWindowRight : -1;
 
                 rx1_grid_adjust = false;
                 rx2_grid_adjust = false;
@@ -51005,7 +51089,11 @@ namespace Thetis
                                 int highlightRX1 = 0;
                                 int highlightRX2 = 0;
 
-                                if (bLowEdge || bHighEdge)
+                                bool bSubEdge = (chkEnableMultiRX.Checked && !_mox && sub1_win_r > sub1_win_l && sub1_win_l >= 0 &&
+                                                 (!rx2_enabled || e.Y <= pnlDisplay.Height / 2) &&
+                                                 (Math.Abs(e.X - sub1_win_l) < 3 || Math.Abs(e.X - sub1_win_r) < 3));
+
+                                if (bLowEdge || bHighEdge || bSubEdge)
                                 {
                                     next_cursor = Cursors.SizeWE;
 
@@ -51123,6 +51211,18 @@ namespace Thetis
                                 int nHigh = whole_filter_start_high + diff;
                                 ConstrainFilter(ref nLow, ref nHigh, 1, true);
                                 UpdateRX1Filters(nLow, nHigh);
+                            }
+                            else if (rx1_sub_low_filter_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
+                                ApplySubRXFilter(Math.Min(rx1_sub_filter_start_low + diff, radio.GetDSPRX(0, 1).RXFilterHigh - 10), radio.GetDSPRX(0, 1).RXFilterHigh);
+                                Display.OtherData2CursorDisplay = radio.GetDSPRX(0, 1).RXFilterLow.ToString();
+                            }
+                            else if (rx1_sub_high_filter_drag)
+                            {
+                                int diff = (int)(PixelToHz(e.X) - PixelToHz(sub_drag_last_x));
+                                ApplySubRXFilter(radio.GetDSPRX(0, 1).RXFilterLow, Math.Max(rx1_sub_filter_start_high + diff, radio.GetDSPRX(0, 1).RXFilterLow + 10));
+                                Display.OtherData2CursorDisplay = radio.GetDSPRX(0, 1).RXFilterHigh.ToString();
                             }
                             else if (rx1_sub_drag)
                             {
@@ -51529,6 +51629,8 @@ namespace Thetis
                         rx1_low_filter_drag = false;
                         rx1_high_filter_drag = false;
                         rx1_whole_filter_drag = false;
+                        rx1_sub_low_filter_drag = false;
+                        rx1_sub_high_filter_drag = false;
                         rx2_low_filter_drag = false;
                         rx2_high_filter_drag = false;
                         rx2_whole_filter_drag = false;
