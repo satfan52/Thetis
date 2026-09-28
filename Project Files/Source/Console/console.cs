@@ -36788,7 +36788,7 @@ namespace Thetis
             {
                 if (chkVFOSplit.Checked)
                 {
-                    txtVFOABand.Font = new Font("Microsoft Sans Sarif", 14.0f, FontStyle.Regular);
+                    txtVFOABand.Font = new Font("Microsoft Sans Sarif", 20.25f, FontStyle.Regular);
 
                     VFOASubFreq = saved_vfoa_sub_freq;
 
@@ -36815,7 +36815,7 @@ namespace Thetis
                 }
                 else if (chkEnableMultiRX.Checked)
                 {
-                    txtVFOABand.Font = new Font("Microsoft Sans Sarif", 14.0f, FontStyle.Regular);
+                    txtVFOABand.Font = new Font("Microsoft Sans Sarif", 20.25f, FontStyle.Regular);
 
                     VFOASubFreq = saved_vfoa_sub_freq;
 
@@ -36839,7 +36839,7 @@ namespace Thetis
                 // frequency, or the last one used while the sub is idle
                 bool sub_row_active = chkEnableMultiRX.Checked || chkVFOSplit.Checked;
                 double sub_row_freq = sub_row_active ? VFOASubFreq : saved_vfoa_sub_freq;
-                txtVFOABand.Font = new Font("Microsoft Sans Sarif", 12.0f, FontStyle.Regular);
+                txtVFOABand.Font = new Font("Microsoft Sans Sarif", sub_row_active ? 20.25f : 12.0f, FontStyle.Regular);
                 txtVFOABand.TextAlign = HorizontalAlignment.Right;
                 if (chkSubVFOATX.Checked) txtVFOABand.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
                 else if (!sub_row_active) txtVFOABand.ForeColor = band_text_dark_color;
@@ -36917,10 +36917,10 @@ namespace Thetis
 
             bool sub_row_active = rx2_enabled && chkEnableMultiRX2.Checked;
 
-            // H1: the SubVFOB digits take the same size as the SubVFOA row's in the same
-            // states - enlarged while the sub is live, the idle size otherwise - so the
-            // two sub rows present identically. The digit metrics follow the font.
-            SetSubRowFont(txtVFOBSub, sub_row_active ? 14.0f : 12.0f);
+            // H1: the sub rows' digits take the size of the RX digits while the sub is
+            // live, the idle size otherwise, so the two sub rows present identically and
+            // match the receiver rows above them. The digit metrics follow the font.
+            SetSubRowFont(txtVFOBSub, sub_row_active ? 20.25f : 12.0f);
             txtVFOBSub.TextAlign = HorizontalAlignment.Right;
             if (chkSubVFOBTX.Checked) txtVFOBSub.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
             else if (!sub_row_active) txtVFOBSub.ForeColor = band_text_dark_color;
