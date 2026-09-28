@@ -5500,7 +5500,7 @@
     <value>Off</value>
   </data>
   <data name="chkSubVFOATX.Location" type="System.Drawing.Point, System.Drawing">
-    <value>193, 56</value>
+    <value>193, 52</value>
   </data>
   <data name="chkSubVFOATX.Size" type="System.Drawing.Size, System.Drawing">
     <value>27, 26</value>
@@ -5539,7 +5539,7 @@
     <value>Off</value>
   </data>
   <data name="chkSubVFOBTX.Location" type="System.Drawing.Point, System.Drawing">
-    <value>6, 56</value>
+    <value>6, 52</value>
   </data>
   <data name="chkSubVFOBTX.Size" type="System.Drawing.Size, System.Drawing">
     <value>27, 26</value>
@@ -15602,10 +15602,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 20.25pt</value>
   </data>
   <data name="txtVFOAFreq.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 16</value>
+    <value>8, 12</value>
   </data>
   <data name="txtVFOAFreq.Size" type="System.Drawing.Size, System.Drawing">
-    <value>180, 38</value>
+    <value>180, 34</value>
   </data>
   <data name="txtVFOAFreq.TabIndex" type="System.Int32, mscorlib">
     <value>0</value>
@@ -15629,7 +15629,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>11</value>
   </data>
   <data name="panelVFOAHover.Location" type="System.Drawing.Point, System.Drawing">
-    <value>63, 49</value>
+    <value>63, 45</value>
   </data>
   <data name="panelVFOAHover.Size" type="System.Drawing.Size, System.Drawing">
     <value>124, 2</value>
@@ -15848,7 +15848,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 15.75pt</value>
   </data>
   <data name="txtVFOALSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>141, 24</value>
+    <value>141, 20</value>
   </data>
   <data name="txtVFOALSD.Size" type="System.Drawing.Size, System.Drawing">
     <value>44, 24</value>
@@ -15878,10 +15878,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 20.25pt</value>
   </data>
   <data name="txtVFOAMSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 16</value>
+    <value>8, 12</value>
   </data>
   <data name="txtVFOAMSD.Size" type="System.Drawing.Size, System.Drawing">
-    <value>180, 38</value>
+    <value>180, 34</value>
   </data>
   <data name="txtVFOAMSD.TabIndex" type="System.Int32, mscorlib">
     <value>116</value>
@@ -15905,7 +15905,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>7</value>
   </data>
   <data name="panelVFOASubHover.Location" type="System.Drawing.Point, System.Drawing">
-    <value>92, 80</value>
+    <value>92, 78</value>
   </data>
   <data name="panelVFOASubHover.Size" type="System.Drawing.Size, System.Drawing">
     <value>88, 1</value>
@@ -15932,10 +15932,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 12pt</value>
   </data>
   <data name="txtVFOABand.Location" type="System.Drawing.Point, System.Drawing">
-    <value>8, 56</value>
+    <value>8, 48</value>
   </data>
   <data name="txtVFOABand.Size" type="System.Drawing.Size, System.Drawing">
-    <value>180, 26</value>
+    <value>180, 34</value>
   </data>
   <data name="txtVFOABand.TabIndex" type="System.Int32, mscorlib">
     <value>1</value>
@@ -16064,7 +16064,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>1</value>
   </data>
   <data name="panelVFOBHover.Location" type="System.Drawing.Point, System.Drawing">
-    <value>91, 49</value>
+    <value>91, 45</value>
   </data>
   <data name="panelVFOBHover.Size" type="System.Drawing.Size, System.Drawing">
     <value>124, 2</value>
@@ -16118,10 +16118,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 12pt</value>
   </data>
   <data name="txtVFOBSub.Location" type="System.Drawing.Point, System.Drawing">
-    <value>36, 56</value>
+    <value>36, 48</value>
   </data>
   <data name="txtVFOBSub.Size" type="System.Drawing.Size, System.Drawing">
-    <value>180, 26</value>
+    <value>180, 34</value>
   </data>
   <data name="txtVFOBSub.TabIndex" type="System.Int32, mscorlib">
     <value>2</value>
@@ -16145,7 +16145,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>12</value>
   </data>
   <data name="panelVFOBSubHover.Location" type="System.Drawing.Point, System.Drawing">
-    <value>120, 80</value>
+    <value>120, 78</value>
   </data>
   <data name="panelVFOBSubHover.Size" type="System.Drawing.Size, System.Drawing">
     <value>88, 1</value>
@@ -16172,7 +16172,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 15.75pt</value>
   </data>
   <data name="txtVFOBLSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>169, 24</value>
+    <value>169, 20</value>
   </data>
   <data name="txtVFOBLSD.Size" type="System.Drawing.Size, System.Drawing">
     <value>44, 24</value>
@@ -16319,10 +16319,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 20.25pt</value>
   </data>
   <data name="txtVFOBMSD.Location" type="System.Drawing.Point, System.Drawing">
-    <value>36, 16</value>
+    <value>36, 12</value>
   </data>
   <data name="txtVFOBMSD.Size" type="System.Drawing.Size, System.Drawing">
-    <value>180, 38</value>
+    <value>180, 34</value>
   </data>
   <data name="txtVFOBMSD.TabIndex" type="System.Int32, mscorlib">
     <value>117</value>
@@ -16391,10 +16391,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>Microsoft Sans Serif, 20.25pt</value>
   </data>
   <data name="txtVFOBFreq.Location" type="System.Drawing.Point, System.Drawing">
-    <value>36, 16</value>
+    <value>36, 12</value>
   </data>
   <data name="txtVFOBFreq.Size" type="System.Drawing.Size, System.Drawing">
-    <value>180, 38</value>
+    <value>180, 34</value>
   </data>
   <data name="txtVFOBFreq.TabIndex" type="System.Int32, mscorlib">
     <value>0</value>
