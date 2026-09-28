@@ -18672,7 +18672,7 @@ namespace Thetis
             double dOldVFOASubFreq = VFOASubFreq; // can return -999
 
             m_dVFOASubFreq = Math.Round(freq, 6);// MW0LGE_21d rounded to 6
-            txtVFOABand.Text = freq.ToString("f6");
+            txtVFOABand.Text = (chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? freq.ToString("f6") : ""; // H1: empty while the sub is idle
             txtVFOABand_LostFocus(this, EventArgs.Empty);
             recordSubMemory(1); // H1: the sub's frequency joins the band memory
 
@@ -18752,11 +18752,11 @@ namespace Thetis
 
         // H1: SubVFOB - the frequency of RX2's sub receiver. Same storage and same
         // update path as SubVFOA above: the row shows the live frequency while the
-        // sub runs and the last one used while it is idle.
+        // sub runs and is empty while it is idle.
         private void VFOBSubUpdate(double freq)
         {
             m_dVFOBSubFreq = Math.Round(freq, 6);
-            txtVFOBSub.Text = rx2_enabled ? freq.ToString("f6") : ""; // H1: emptied with RX2 off
+            txtVFOBSub.Text = (rx2_enabled && chkEnableMultiRX2.Checked) ? freq.ToString("f6") : ""; // H1: emptied with RX2 off and while the sub is idle
             txtVFOBSub_LostFocus(this, EventArgs.Empty);
             recordSubMemory(2); // H1: the sub's frequency joins the band memory
         }
@@ -32512,9 +32512,10 @@ namespace Thetis
                 txtVFOABand.BackColor = band_background_color;
 
             // H1: the band line is the SubVFOA row - the band name moves into the frame caption,
-            // the row itself always shows the sub receiver frequency
+            // the row shows the sub receiver frequency while the sub runs and is empty while
+            // the sub is idle
             grpVFOA.Text = "VFO A   " + bandInfo;
-            txtVFOABand.Text = ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq).ToString("f6");
+            txtVFOABand.Text = (chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq.ToString("f6") : "";
 
             Band b = BandByFreq(freq, rx1_xvtr_index, current_region);
             if (b != rx1_band)
@@ -33041,7 +33042,7 @@ namespace Thetis
                 }
                 else
                 {
-                    txtVFOABand.Text = ((chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq : saved_vfoa_sub_freq).ToString("f6");
+                    txtVFOABand.Text = (chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq.ToString("f6") : "";
                     return;
                 }
             }
@@ -33253,7 +33254,7 @@ namespace Thetis
                 }
                 else
                 {
-                    txtVFOBSub.Text = ((rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq : saved_vfob_sub_freq).ToString("f6");
+                    txtVFOBSub.Text = (rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq.ToString("f6") : "";
                     return;
                 }
             }
@@ -33800,10 +33801,10 @@ namespace Thetis
             // H1: the VFO B band line is the SubVFOB row - the band name moves into the
             // frame caption, the row itself always shows the sub receiver frequency
             grpVFOB.Text = "VFO B   " + bandInfo;
-            // H1: emptied with RX2 off - this is the band-update writer that kept putting
-            // the saved sub frequency back into the blanked row
-            txtVFOBSub.Text = rx2_enabled
-                ? ((chkEnableMultiRX2.Checked) ? VFOBSubFreq : saved_vfob_sub_freq).ToString("f6")
+            // H1: emptied with RX2 off and while the sub is idle - this is the band-update
+            // writer that kept putting the saved sub frequency back into the blanked row
+            txtVFOBSub.Text = rx2_enabled && chkEnableMultiRX2.Checked
+                ? VFOBSubFreq.ToString("f6")
                 : "";
 
             Band lo_band = Band.FIRST;
@@ -36927,11 +36928,12 @@ namespace Thetis
 
             if (!bIgnore)
             {
-                // H1: this row is SubVFOA - it always shows the sub receiver frequency and stays tunable.
-                // The band name moves into the frame caption so the information is not lost.
+                // H1: this row is SubVFOA. While the sub runs it shows the sub receiver frequency
+                // and stays tunable; while the sub is idle the row is empty. The band name moves
+                // into the frame caption so the information is not lost.
                 txtVFOAFreq_LostFocus(this, EventArgs.Empty); // sets caption and sub row
                 // H1: the row is SubVFOA in both configurations - it shows the sub receiver's own
-                // frequency, or the last one used while the sub is idle
+                // frequency while the sub runs, empty while the sub is idle
                 bool sub_row_active = chkEnableMultiRX.Checked || chkVFOSplit.Checked;
                 double sub_row_freq = sub_row_active ? VFOASubFreq : saved_vfoa_sub_freq;
                 txtVFOABand.Font = new Font("Microsoft Sans Sarif", sub_row_active ? 20.25f : 12.0f, FontStyle.Regular);
@@ -36940,7 +36942,7 @@ namespace Thetis
                 else if (!sub_row_active) txtVFOABand.ForeColor = band_text_dark_color;
                 else txtVFOABand.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
                 txtVFOABand.ReadOnly = false;
-                txtVFOABand.Text = sub_row_freq.ToString("f6");
+                txtVFOABand.Text = sub_row_active ? sub_row_freq.ToString("f6") : "";
                 panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0; SetSubRowLsdVisible(txtVFOABand, txtVFOABandLSD, sub_row_active);
 
                 // H1: make the sub channel actually sit on the frequency this row shows. The row is
@@ -37023,7 +37025,7 @@ namespace Thetis
             txtVFOBSub.ReadOnly = false;
 
             double sub_row_freq = sub_row_active ? m_dVFOBSubFreq : saved_vfob_sub_freq;
-            txtVFOBSub.Text = rx2_enabled ? sub_row_freq.ToString("f6") : ""; // H1: emptied with RX2 off
+            txtVFOBSub.Text = sub_row_active ? sub_row_freq.ToString("f6") : ""; // H1: emptied with RX2 off and while the sub is idle
 
             // H1: the panel IS the digit underline - keep its black strip out of the
             // border's way until a digit is highlighted
