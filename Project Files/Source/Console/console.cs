@@ -7572,14 +7572,12 @@ namespace Thetis
 
             // send the settings to the DSP
             radio.GetDSPRX(0, 0).SetRXFilter(low, high);
-            radio.GetDSPRX(0, 1).SetRXFilter(low, high);
 
             // send the setting to the display
             Display.RX1FilterLow = low;
             Display.RX1FilterHigh = high;
-            // the sub follows this filter, so its drawn window follows too
-            Display.SubRX1FilterLow = low;
-            Display.SubRX1FilterHigh = high;
+            // the sub is NOT given this filter: it keeps its own passband while RX1's
+            // filter changes, and a mode change re-establishes it from RX1's in SetRX1Mode
 
             if (!from_change_event)// this is required to prevent endless loop from the change event
             {
@@ -34799,6 +34797,11 @@ namespace Thetis
                     UpdateRX1Filters(-halfBw, halfBw);
                 }
             }
+            // the sub follows the mode, so a mode change re-establishes its passband from
+            // RX1's - the only receiver-filter change that still moves the sub
+            radio.GetDSPRX(0, 1).SetRXFilter(radio.GetDSPRX(0, 0).RXFilterLow, radio.GetDSPRX(0, 0).RXFilterHigh);
+            Display.SubRX1FilterLow = radio.GetDSPRX(0, 0).RXFilterLow;
+            Display.SubRX1FilterHigh = radio.GetDSPRX(0, 0).RXFilterHigh;
             BINToolStripMenuItem.Enabled = chkBIN.Enabled;
 
             tbFilterWidthScroll_newMode(); // wjt 
@@ -36911,6 +36914,9 @@ namespace Thetis
                 radio.GetDSPRX(0, 1).SetRXFilter(
                     radio.GetDSPRX(0, 0).RXFilterLow,
                     radio.GetDSPRX(0, 0).RXFilterHigh);
+                // give the display the sub's passband, so its window draws at the sub's width
+                Display.SubRX1FilterLow = radio.GetDSPRX(0, 0).RXFilterLow;
+                Display.SubRX1FilterHigh = radio.GetDSPRX(0, 0).RXFilterHigh;
             }
             else
             {
