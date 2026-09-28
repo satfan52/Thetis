@@ -768,6 +768,7 @@ namespace Thetis
             LogTool.AddLogEntry("Initialising components...", "COMP");
 
             InitializeComponent();								// Windows Forms Generated Code
+            InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
             Common.DoubleBufferAll(this, true);
 
             InitialiseAndromedaMenus();
@@ -5884,6 +5885,100 @@ namespace Thetis
             if (Math.Abs(c.Font.Size - size) < 0.01f) return;
             c.Font = new Font("Microsoft Sans Sarif", size, FontStyle.Regular);
             GetVFOSubCharWidth(c);
+        }
+
+        // H1: the sub rows' last three digits are redrawn in the receiver rows' red
+        // and their small size, exactly the treatment txtVFOALSD and txtVFOBLSD give
+        // VFO A and VFO B. The overlays follow the receiver LSDs' look, so a skin,
+        // power or LED-font change carries over, and they forward the mouse, so the
+        // last three digits keep the wheel, the hover underline and click-to-type.
+        private TextBoxTS txtVFOABandLSD;
+        private TextBoxTS txtVFOBSubLSD;
+
+        private void InitSubRowLsd()
+        {
+            txtVFOABandLSD = NewSubRowLsd(grpVFOA, txtVFOALSD, "txtVFOABandLSD", 141, 54);
+            txtVFOBSubLSD = NewSubRowLsd(grpVFOB, txtVFOBLSD, "txtVFOBSubLSD", 169, 54);
+            txtVFOABand.TextChanged += SubRowLsdTextChanged;
+            txtVFOBSub.TextChanged += SubRowLsdTextChanged;
+        }
+
+        private TextBoxTS NewSubRowLsd(Control parent, TextBox source, string name, int x, int y)
+        {
+            TextBoxTS lsd = new TextBoxTS();
+            lsd.Name = name;
+            lsd.BorderStyle = BorderStyle.None;
+            lsd.Cursor = Cursors.Default;
+            lsd.ReadOnly = true;
+            lsd.TabStop = false;
+            lsd.TextAlign = HorizontalAlignment.Right;
+            lsd.Location = new Point(x, y);
+            lsd.Size = new Size(44, 24);
+            lsd.Font = source.Font;
+            lsd.BackColor = source.BackColor;
+            lsd.ForeColor = source.ForeColor;
+            lsd.Visible = false;
+            source.FontChanged += (s, e) => lsd.Font = source.Font;
+            source.BackColorChanged += (s, e) => lsd.BackColor = source.BackColor;
+            source.ForeColorChanged += (s, e) => lsd.ForeColor = source.ForeColor;
+            lsd.MouseDown += SubRowLsdMouseDown;
+            lsd.MouseMove += SubRowLsdMouseMove;
+            lsd.MouseLeave += SubRowLsdMouseLeave;
+            parent.Controls.Add(lsd);
+            lsd.BringToFront();
+            return lsd;
+        }
+
+        private void SubRowLsdMouseDown(object sender, MouseEventArgs e)
+        {
+            Control lsd = (Control)sender;
+            TextBox row = (lsd == txtVFOABandLSD) ? (TextBox)txtVFOABand : (TextBox)txtVFOBSub;
+            lsd.Visible = false;
+            row.Visible = true;
+            row.Focus();
+            row.SelectAll();
+        }
+
+        private void SubRowLsdMouseMove(object sender, MouseEventArgs e)
+        {
+            Control c1 = (Control)sender;
+            Control c2 = (c1 == txtVFOABandLSD) ? (Control)txtVFOABand : (Control)txtVFOBSub;
+            int client_width = (c1.Size.Width - c1.ClientSize.Width) + (c2.Size.Width - c2.ClientSize.Width);
+            int client_height = (c1.Size.Height - c1.ClientSize.Height) + (c2.Size.Height - c2.ClientSize.Height);
+            int x_offset = c1.Left - c2.Left - client_width / 2;
+            int y_offset = c1.Top - c2.Top - client_height / 2;
+            if (c1 == txtVFOABandLSD)
+                txtVFOABand_MouseMove(sender, new MouseEventArgs(e.Button, e.Clicks, e.X + x_offset, e.Y + y_offset, e.Delta));
+            else
+                txtVFOBSub_MouseMove(sender, new MouseEventArgs(e.Button, e.Clicks, e.X + x_offset, e.Y + y_offset, e.Delta));
+        }
+
+        private void SubRowLsdMouseLeave(object sender, EventArgs e)
+        {
+            if ((Control)sender == txtVFOABandLSD)
+                txtVFOABand_MouseLeave(sender, e);
+            else
+                txtVFOBSub_MouseLeave(sender, e);
+        }
+
+        private void SubRowLsdTextChanged(object sender, EventArgs e)
+        {
+            TextBox row = sender as TextBox;
+            if (row == null) return;
+            TextBox lsd = (row == txtVFOABand) ? txtVFOABandLSD : txtVFOBSubLSD;
+            if (lsd == null) return;
+            string text = row.Text;
+            int index = text.IndexOf(separator) + 4;
+            lsd.Text = (index > 0 && index < text.Length) ? text.Remove(0, index) : "";
+        }
+
+        // H1: shown while the row is live and not being edited, so the overlay never
+        // covers the digits the user is typing
+        private void SetSubRowLsdVisible(TextBox row, TextBox lsd, bool live)
+        {
+            if (row == null || lsd == null) return;
+            if (live) row.Visible = true;
+            lsd.Visible = live && !row.Focused;
         }
         private bool m_bSetBandRunning = false; // so we know if any events raised are caused by SetBand
         public void SetBand(string mode, string filter, double freq, bool CTUN, int zoomFactor, double centerFreq)
@@ -36809,7 +36904,7 @@ namespace Thetis
                     txtVFOABand.TextAlign = HorizontalAlignment.Right;
                     txtVFOABand.ReadOnly = false;
                     txtVFOABand_LostFocus(this, EventArgs.Empty);
-                    panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
+                    panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0; SetSubRowLsdVisible(txtVFOABand, txtVFOABandLSD, true);
 
                     bIgnore = true;
                 }
@@ -36824,7 +36919,7 @@ namespace Thetis
                     txtVFOABand.TextAlign = HorizontalAlignment.Right;
                     txtVFOABand.ReadOnly = false;
                     txtVFOABand_LostFocus(this, EventArgs.Empty);
-                    panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
+                    panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0; SetSubRowLsdVisible(txtVFOABand, txtVFOABandLSD, true);
 
                     bIgnore = true;
                 }
@@ -36846,7 +36941,7 @@ namespace Thetis
                 else txtVFOABand.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
                 txtVFOABand.ReadOnly = false;
                 txtVFOABand.Text = sub_row_freq.ToString("f6");
-                panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0;
+                panelVFOASubHover.Visible = vfoa_sub_hover_digit >= 0; SetSubRowLsdVisible(txtVFOABand, txtVFOABandLSD, sub_row_active);
 
                 // H1: make the sub channel actually sit on the frequency this row shows. The row is
                 // what the user tunes, and on startup the stored frequency arrives after the first
@@ -36932,7 +37027,7 @@ namespace Thetis
 
             // H1: the panel IS the digit underline - keep its black strip out of the
             // border's way until a digit is highlighted
-            if (panelVFOBSubHover != null) panelVFOBSubHover.Visible = sub_row_active && vfob_sub_hover_digit >= 0;
+            if (panelVFOBSubHover != null) panelVFOBSubHover.Visible = sub_row_active && vfob_sub_hover_digit >= 0; SetSubRowLsdVisible(txtVFOBSub, txtVFOBSubLSD, sub_row_active);
 
             // H1: keep the display's copy of the sub's frequency current here, not only in the
             // row's own handler. Switching the sub on used to leave the display holding zero,

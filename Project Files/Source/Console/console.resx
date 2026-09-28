@@ -15629,10 +15629,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>11</value>
   </data>
   <data name="panelVFOAHover.Location" type="System.Drawing.Point, System.Drawing">
-    <value>63, 45</value>
+    <value>63, 44</value>
   </data>
   <data name="panelVFOAHover.Size" type="System.Drawing.Size, System.Drawing">
-    <value>124, 2</value>
+    <value>124, 1</value>
   </data>
   <data name="panelVFOAHover.TabIndex" type="System.Int32, mscorlib">
     <value>16</value>
@@ -16064,10 +16064,10 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>1</value>
   </data>
   <data name="panelVFOBHover.Location" type="System.Drawing.Point, System.Drawing">
-    <value>91, 45</value>
+    <value>91, 44</value>
   </data>
   <data name="panelVFOBHover.Size" type="System.Drawing.Size, System.Drawing">
-    <value>124, 2</value>
+    <value>124, 1</value>
   </data>
   <data name="panelVFOBHover.TabIndex" type="System.Int32, mscorlib">
     <value>17</value>
