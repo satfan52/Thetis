@@ -6211,6 +6211,12 @@ namespace Thetis
         private void PowerStateWatchdog()
         {
             if (m_powerDimOverlay == null) return;
+            // H1: the SubRX2 tick renders its checked state from the visual-styles face
+            // and ignores its BackColor (its parent is transparent, unlike the RX1 tick's);
+            // paint it from its own colour like every other button in the console
+            chkEnableMultiRX2.UseVisualStyleBackColor = false;
+            chkEnableMultiRX.BackColor = chkEnableMultiRX.Checked ? button_selected_color : Color.FromArgb(37, 37, 37);
+            chkEnableMultiRX2.BackColor = chkEnableMultiRX2.Checked ? button_selected_color : Color.FromArgb(37, 37, 37);
             bool show = !chkPower.Checked;
             if (m_powerDimOverlay.Visible != show)
             {
