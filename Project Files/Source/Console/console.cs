@@ -38788,10 +38788,10 @@ namespace Thetis
                 picSquelch.Location = new Point(pic_sql_basis.X, pic_sql_basis.Y + (v_delta / 2));
                 ptbSquelch.Location = new Point(tb_sql_basis.X, tb_sql_basis.Y + (v_delta / 2));
                 grpDisplaySplit.Location = new Point(gr_display_split_basis.X + (h_delta / 2), gr_display_split_basis.Y + v_delta);
-                panelRX2Filter.Location = new Point(this.ClientSize.Width - 353, 740); // H1: RX2 filter grid, right column;
-                panelRX2Mode.Location = new Point(this.ClientSize.Width - 177, 740); // H1: RX2 mode grid, right column; // MW0LGE changed to gr_RX2Mode_basis_location
+                panelRX2Filter.Location = new Point(this.ClientSize.Width - 404, 740); // H1: RX2 filter grid, right column;
+                panelRX2Mode.Location = new Point(this.ClientSize.Width - 228, 740); // H1: RX2 mode grid and SubRX2 tick, right column; // MW0LGE changed to gr_RX2Mode_basis_location
                 panelRX2Display.Location = new Point(gr_rx2_display_basis.X + (int)(h_delta * 0.383), gr_rx2_display_basis.Y + v_delta);
-                panelRX2DSP.Location = new Point(this.ClientSize.Width - 177, 852); // H1: RX2 DSP toggles and AGC, right column;
+                panelRX2DSP.Location = new Point(this.ClientSize.Width - 227, 852); // H1: RX2 DSP toggles and AGC, right column;
                 panelRX2RF.Location = new Point(gr_rx2_rf_basis.X + (int)(h_delta * 0.164), gr_rx2_rf_basis.Y + v_delta);
 
                 chkRX2Squelch.Location = new Point(chk_rx2_squelch_basis.X + (int)(h_delta * 0.164), chk_rx2_squelch_basis.Y + v_delta);
@@ -43973,11 +43973,11 @@ namespace Thetis
 
             panelMode.Size = gr_Mode_basis_size;
 
-            panelRX2Mode.Location = new Point(this.ClientSize.Width - 177, 740); // H1: RX2 mode grid, right column
+            panelRX2Mode.Location = new Point(this.ClientSize.Width - 228, 740); // H1: RX2 mode grid and SubRX2 tick, right column
             panelRX2Mode.Size = gr_RX2Mode_basis_size;
 
-            panelRX2Filter.Location = new Point(this.ClientSize.Width - 353, 740); // H1: RX2 filter grid, right column
-            panelRX2DSP.Location = new Point(this.ClientSize.Width - 177, 852); // H1: RX2 DSP toggles and AGC, right column
+            panelRX2Filter.Location = new Point(this.ClientSize.Width - 404, 740); // H1: RX2 filter grid, right column
+            panelRX2DSP.Location = new Point(this.ClientSize.Width - 227, 852); // H1: RX2 DSP toggles and AGC, right column
 
             radModeLSB.Location = rad_mode_lsb_basis;
             radModeUSB.Location = rad_mode_usb_basis;
