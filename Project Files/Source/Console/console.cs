@@ -6128,12 +6128,12 @@ namespace Thetis
 
             // parked, invisible holder: the RX AF sliders duplicate the Vol sliders of the audio
             // groups, and the RX2 band dropdown is replaced by the band buttons
-            foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, lblRX2Band, comboRX2Band })
+            foreach (Control k in new Control[] { lblRX2Band, comboRX2Band })
                 if (k != null && h1BandHolder != null && k.Parent != h1BandHolder) k.Parent = h1BandHolder;
 
             lblRX2AGC.Text = "AGC";
             // flat, transparent captions: no grey boxes
-            foreach (Control k in new Control[] { lblRF, lblAGC, lblPreamp, lblAF, lblPWR, lblTune, lblRX2RF, lblRX2Preamp, lblRX2AGC })
+            foreach (Control k in new Control[] { lblRX1AF, lblRX2AF, lblRF, lblAGC, lblPreamp, lblAF, lblPWR, lblTune, lblRX2RF, lblRX2Preamp, lblRX2AGC })
                 if (k != null) k.BackColor = Color.Transparent;
 
             // ---------- LEFT strip: RX1 only ----------
@@ -6233,9 +6233,11 @@ namespace Thetis
             panelMultiRX.Location = new Point(aL, Y0 + 20);
             H1Put(chkEnableMultiRX, panelMultiRX, 172, 20, 50);
             H1Put(chkPanSwap, panelMultiRX, 172, 46, 50);
-            H1Put(chkSquelch, this, aL + 10, Y0 + 104);
-            H1Put(ptbSquelch, this, aL, Y0 + 128);
-            H1Put(picSquelch, this, aL + 9, Y0 + 149);
+            H1Put(lblRX1AF, this, aL + 12, Y0 + 96);
+            H1Put(ptbRX1AF, this, aL + 8, Y0 + 112, 210);
+            H1Put(chkSquelch, this, aL + 10, Y0 + 142);
+            H1Put(ptbSquelch, this, aL, Y0 + 166);
+            H1Put(picSquelch, this, aL + 9, Y0 + 187);
 
             // ---------- BELOW, right: the mirror ----------
             if (h1RX2BandPanel != null)
@@ -6248,10 +6250,12 @@ namespace Thetis
             panelRX2Mixer.Location = new Point(aR, Y0 + 20);
             H1Put(chkEnableMultiRX2, panelRX2Mixer, 172, 20, 50);
             H1Put(chkRX2PanSwap, panelRX2Mixer, 172, 46, 50);
-            H1Put(chkRX2Squelch, this, aR + 10, Y0 + 104);
-            H1Put(ptbRX2Squelch, this, aR, Y0 + 128);
-            H1Put(picRX2Squelch, this, aR + 9, Y0 + 149);
-            foreach (Control k in new Control[] { chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer })
+            H1Put(lblRX2AF, this, aR + 12, Y0 + 96);
+            H1Put(ptbRX2AF, this, aR + 8, Y0 + 112, 210);
+            H1Put(chkRX2Squelch, this, aR + 10, Y0 + 142);
+            H1Put(ptbRX2Squelch, this, aR, Y0 + 166);
+            H1Put(picRX2Squelch, this, aR + 9, Y0 + 187);
+            foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer })
                 if (k != null) k.BringToFront();
 
             // ---------- BELOW, centre: shared, balanced about the centre line ----------
