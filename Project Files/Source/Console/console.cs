@@ -28397,6 +28397,16 @@ namespace Thetis
                         rx2_pwrup_mode = RX2ModeFromButtons();
                     SetRX2Mode(rx2_pwrup_mode);
                 }
+                // H1: a sub that was already switched on at start-up had its enable handler
+                // run while the console was still initialising, so it never armed its DSP
+                // channel on this boot: after power-on the sub came up silent, with a dead
+                // meter, until a mode touch (SubRX1) or a button toggle (SubRX2). Run the
+                // very button sequence the manual workaround uses, now that the radio data
+                // is up.
+                BandLog("powerup subs: sub1=" + chkEnableMultiRX.Checked + " active1=" + radio.GetDSPRX(0, 1).Active +
+                        " sub2=" + chkEnableMultiRX2.Checked + " active2=" + radio.GetDSPRX(1, 1).Active + " rx2=" + rx2_enabled);
+                if (chkEnableMultiRX.Checked) chkEnableMultiRX_CheckedChanged(this, EventArgs.Empty);
+                if (rx2_enabled && chkEnableMultiRX2.Checked) chkEnableMultiRX2_CheckedChanged(this, EventArgs.Empty);
                 // H1: re-state the sub rows' display values once the radio is up - a
                 // startup order that pushed a stale value must not leave a sub window
                 // stranded off screen.
@@ -38243,6 +38253,42 @@ namespace Thetis
                 if (!_mox) WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
 
                 chkEnableMultiRX.BackColor = button_selected_color;
+
+                // H1: the sub takes RX1's mode and AGC when it is switched on - the
+                // same inheritance SubRX2 gets from RX2. Without the mode the channel
+                // runs with no demodulator set-up, which is why a sub that was already
+                // on before a restart came back silent with a dead meter until a mode
+                // touch re-applied everything through SetRX1Mode.
+                RadioDSPRX main_rx1 = radio.GetDSPRX(0, 0);
+                RadioDSPRX sub_rx1 = radio.GetDSPRX(0, 1);
+                sub_rx1.DSPMode = main_rx1.DSPMode;
+                sub_rx1.RXAGCMode = main_rx1.RXAGCMode;
+                sub_rx1.RXAGCHang = main_rx1.RXAGCHang;
+                sub_rx1.RXAGCDecay = main_rx1.RXAGCDecay;
+                sub_rx1.RXFixedAGC = main_rx1.RXFixedAGC;
+                sub_rx1.RXOutputGain = main_rx1.RXOutputGain;
+
+                // H1: same late nudge as the RX2 sub: stop WITH the reset, state the
+                // audio mixer switch again, then start. The bare start alone left
+                // working audio dead a second or two after the button went on.
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Thread.Sleep(2000);
+                        if (!chkEnableMultiRX.Checked || !chkPower.Checked || _mox) return;
+                        BeginInvoke((Action)(() =>
+                        {
+                            if (chkEnableMultiRX.Checked && chkPower.Checked && !_mox)
+                            {
+                                WDSP.SetChannelState(WDSP.id(0, 1), 0, 1);
+                                cmaster.SetAAudioMixWhat((void*)0, 0, 1, !Audio.MuteRX1);
+                                WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
+                            }
+                        }));
+                    }
+                    catch { }
+                });
 
                 // H1: same rule the RX2 sub uses. A sub that has never been tuned sits on its
                 // own receiver's frequency. Without this the first activation after a power-on
