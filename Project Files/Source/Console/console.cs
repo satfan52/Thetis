@@ -38712,6 +38712,11 @@ namespace Thetis
                 panelBandHF.Location = new Point(gr_BandHF_basis_location.X + h_delta, gr_BandHF_basis_location.Y + (v_delta / 4));
                 panelBandGEN.Location = new Point(gr_BandGEN_basis_location.X + h_delta, gr_BandGEN_basis_location.Y + (v_delta / 4));
                 panelBandVHF.Location = new Point(gr_BandVHF_basis_location.X + h_delta, gr_BandVHF_basis_location.Y + (v_delta / 4));
+                // H1: the band buttons sit over the display's edge - their left column was
+                // eaten by the panadapter, so they ride in front of it
+                panelBandHF.BringToFront();
+                panelBandGEN.BringToFront();
+                panelBandVHF.BringToFront();
 
             panelMode.Location = new Point(2, 700); // H1: RX1 mode grid, left column below the panafall
 
@@ -43953,6 +43958,11 @@ namespace Thetis
 
             panelBandVHF.Location = new Point(gr_BandVHF_basis_location.X + h_delta, gr_BandVHF_basis_location.Y + (v_delta / 4));
             panelBandVHF.Size = gr_BandVHF_basis_size;
+
+            // H1: the band buttons sit over the display's edge, so they ride in front of it
+            panelBandHF.BringToFront();
+            panelBandGEN.BringToFront();
+            panelBandVHF.BringToFront();
             radBandVHF0.Location = rad_bandVHF0_basis;
             radBandVHF1.Location = rad_bandVHF1_basis;
             radBandVHF2.Location = rad_bandVHF2_basis;
