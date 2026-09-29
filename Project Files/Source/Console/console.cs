@@ -773,6 +773,7 @@ namespace Thetis
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
+            H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
             H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
             InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
@@ -2157,6 +2158,7 @@ namespace Thetis
             chkRX2Mute_CheckedChanged(this, EventArgs.Empty);
 
             chkTNF_CheckedChanged(this, EventArgs.Empty);
+            H1ApplyRX2Notch(); // H1: RX2's own notch switch
             radRX1Show_CheckedChanged(this, EventArgs.Empty);
             radRX2Show_CheckedChanged(this, EventArgs.Empty);
             chkRX2SR_CheckedChanged(this, EventArgs.Empty);
@@ -6126,6 +6128,49 @@ namespace Thetis
             if (h1RX2VhfPanel != null) h1RX2VhfPanel.Visible = visible && h1RX2VhfPage;
         }
 
+        // H1: RX2 manual notch filter - the twin of chkTNF and btnTNFAdd. The notch list is shared
+        // (one database), but each receiver switches the notches on for itself.
+        private CheckBoxTS chkRX2TNF;
+        private ButtonTS btnRX2TNFAdd;
+        private void H1CreateRX2Notch()
+        {
+            chkRX2TNF = new CheckBoxTS();
+            chkRX2TNF.Name = "chkRX2TNF";
+            chkRX2TNF.Text = chkTNF.Text;
+            chkRX2TNF.Appearance = chkTNF.Appearance;
+            chkRX2TNF.FlatStyle = chkTNF.FlatStyle;
+            chkRX2TNF.FlatAppearance.BorderSize = 0;
+            chkRX2TNF.Font = chkTNF.Font;
+            chkRX2TNF.ForeColor = chkTNF.ForeColor;
+            chkRX2TNF.BackColor = chkTNF.BackColor;
+            chkRX2TNF.TextAlign = chkTNF.TextAlign;
+            chkRX2TNF.Size = chkTNF.Size;
+            chkRX2TNF.TabStop = false;
+            chkRX2TNF.CheckedChanged += (s, e) => H1ApplyRX2Notch();
+            chkRX2TNF.MouseDown += (s, e) => { if (IsRightButton(e)) SetupForm.ShowSetupTab(Setup.SetupTab.MNF_Tab); };
+            panelRX2DSP.Controls.Add(chkRX2TNF);
+
+            btnRX2TNFAdd = new ButtonTS();
+            btnRX2TNFAdd.Name = "btnRX2TNFAdd";
+            btnRX2TNFAdd.Text = btnTNFAdd.Text;
+            btnRX2TNFAdd.FlatStyle = btnTNFAdd.FlatStyle;
+            btnRX2TNFAdd.FlatAppearance.BorderSize = 0;
+            btnRX2TNFAdd.Font = btnTNFAdd.Font;
+            btnRX2TNFAdd.ForeColor = btnTNFAdd.ForeColor;
+            btnRX2TNFAdd.BackColor = btnTNFAdd.BackColor;
+            btnRX2TNFAdd.Size = btnTNFAdd.Size;
+            btnRX2TNFAdd.TabStop = false;
+            btnRX2TNFAdd.Click += (s, e) => TNFAdd(2);
+            panelRX2DSP.Controls.Add(btnRX2TNFAdd);
+        }
+
+        private void H1ApplyRX2Notch()
+        {
+            if (chkRX2TNF == null) return;
+            WDSP.RXANBPSetNotchesRun(WDSP.id(2, 0), chkRX2TNF.Checked);
+            Display.TNFActive = chkTNF.Checked || chkRX2TNF.Checked;
+        }
+
         // H1: RX2 audio swap - the twin of chkPanSwap: flips the left/right pan of RX2 and SubRX2.
         private CheckBoxTS chkRX2PanSwap;
         private void H1CreateRX2PanSwap()
@@ -6198,6 +6243,36 @@ namespace Thetis
                 H1Put(items[i], panel, (i % cols) * pitch, (i / cols) * rh, bw);
         }
 
+        // H1: the top row centred on the panadapter: the two VFO frames sit the same distance either
+        // side of the panadapter's centre, the four meters follow, and the sync panel is on the centre line.
+        private void H1TopRow()
+        {
+            int pc = (panelDisplay.Left + panelDisplay.Right) / 2;
+            int leftLim = panelPower.Left + chkPower.Right + 6;
+            int rightLim = panelPower.Left + chkRX2.Left - 6;
+            int H = Math.Min(pc - leftLim, rightLim - pc);
+            grpVFOA.Location = new Point(pc - H, gr_VFOA_basis_location.Y);
+            grpVFOB.Location = new Point(pc + H - grpVFOB.Width, gr_VFOB_basis_location.Y);
+            int meter_w = ((grpVFOB.Left - 4) - (grpVFOA.Right + 4) - grpVFOBetween.Width - 24) / 4;
+            if (meter_w < 88) meter_w = 88;
+            if (meter_w > 220) meter_w = 220;
+            grpMultimeter.Location = new Point(grpVFOA.Right + 4, gr_Multimeter_basis_location.Y);
+            grpMultimeter.Size = new Size(meter_w, gr_multi_meter_size_basis.Height);
+            txtMultiText.Size = new Size(meter_w - 8, txt_multi_text_size_basis.Height);
+            picMultiMeterDigital.Size = new Size(meter_w - 8, pic_multi_meter_size_basis.Height);
+            grpRX2Meter.Size = new Size(meter_w, 88);
+            txtRX2Meter.Size = new Size(meter_w - 8, txt_rx2meter_size_basis.Height);
+            picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
+            grpRX2Meter.Location = new Point(grpVFOB.Left - meter_w - 4, gr_rx2_meter_basis.Y);
+            grpVFOBetween.Location = new Point(pc - grpVFOBetween.Width / 2, grpVFOBetween.Location.Y);
+            grpSubRX1Meter.Bounds = new Rectangle(grpMultimeter.Right + 4, grpMultimeter.Top, meter_w, grpMultimeter.Height);
+            txtSubRX1Meter.Size = new Size(meter_w - 8, txtMultiText.Height);
+            picSubRX1Meter.Size = new Size(meter_w - 8, picMultiMeterDigital.Height);
+            grpSubRX2Meter.Bounds = new Rectangle(grpRX2Meter.Left - meter_w - 4, grpRX2Meter.Top, meter_w, grpRX2Meter.Height);
+            txtSubRX2Meter.Size = new Size(meter_w - 8, txtRX2Meter.Height);
+            picSubRX2Meter.Size = new Size(meter_w - 8, picRX2Meter.Height);
+        }
+
         private void H1LayoutV4()
         {
             int W = this.ClientSize.Width;
@@ -6207,7 +6282,7 @@ namespace Thetis
             int lx = 5;
             int rx = W - 5 - sw;
             // group offsets down the strip, about 34 px between groups
-            int oAGC = 0, oCmb = 70, oMode = 146, oDSP = 274, oFlt = 385;
+            int oAGC = 22, oCmb = 96, oMode = 164, oDSP = 292, oFlt = 403;
             int Y0 = 740;                      // top of the zone below the panadapter
 
             // parked, invisible holder: the RX AF sliders duplicate the Vol sliders of the audio
@@ -6220,6 +6295,11 @@ namespace Thetis
             foreach (Control k in new Control[] { lblRX1AF, lblRX2AF, lblRF, lblAGC, lblPreamp, lblAF, lblPWR, lblTune, lblRX2RF, lblRX2Preamp, lblRX2AGC })
                 if (k != null) k.BackColor = Color.Transparent;
 
+            H1TopRow();
+            H1Cap("rx1gain", "AGC GAIN", lx, T, sw);
+            H1Cap("rx2gain", "AGC GAIN", rx, T, sw);
+            H1Cap("rx1agc", "AGC MODE / ATT", lx, T + oCmb - 18, sw);
+            H1Cap("rx2agc", "AGC MODE / ATT", rx, T + oCmb - 18, sw);
             // ---------- LEFT strip: RX1 only ----------
             H1Put(lblRF, this, lx, T + oAGC);
             H1Put(ptbRF, this, lx, T + oAGC + 16);
@@ -6274,7 +6354,7 @@ namespace Thetis
 
             H1Cap("rx2dsp", "NOISE", rx, T + oDSP - 18, sw);
             H1Put(panelRX2DSP, this, rx, T + oDSP, sw, 3 * rh);
-            H1Grid(panelRX2DSP, new Control[] { chkRX2NR, chkRX2ANF, chkRX2NB, chkRX2NB2, chkRX2Mute, chkRX2BIN }, 3, pitch, bw, rh);
+            H1Grid(panelRX2DSP, new Control[] { chkRX2NR, chkRX2ANF, chkRX2NB, chkRX2NB2, chkRX2Mute, chkRX2BIN, chkRX2TNF, btnRX2TNFAdd }, 3, pitch, bw, rh);
 
             H1Cap("rx2flt", "FILTER", rx, T + oFlt - 18, sw);
             H1Put(panelRX2Filter, this, rx, T + oFlt, sw, 182);
@@ -43522,10 +43602,9 @@ namespace Thetis
                 }
                 bool old_tnf = Display.TNFActive;
 
-                Display.TNFActive = value;
+                Display.TNFActive = value || (chkRX2TNF != null && chkRX2TNF.Checked);
                 WDSP.RXANBPSetNotchesRun(WDSP.id(0, 0), value);
                 WDSP.RXANBPSetNotchesRun(WDSP.id(0, 1), value);
-                WDSP.RXANBPSetNotchesRun(WDSP.id(2, 0), value);
 
                 if (old_tnf != value) TNFChangedHandlers?.Invoke(old_tnf, value);
             }

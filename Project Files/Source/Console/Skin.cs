@@ -802,7 +802,7 @@ namespace Thetis
             }
             if (!ownFiles)
             {
-                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF";
+                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2TNFAdd") skinName = "btnTNFAdd"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF";
             }
 
 
@@ -1038,7 +1038,7 @@ namespace Thetis
             {
                 if (skinName == "chkSubVFOATX") skinName = "chkVFOATX";
                 else if (skinName == "chkSubVFOBTX") skinName = "chkVFOBTX";
-                else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX"; else if (skinName == "chkRX2PanSwap") skinName = "chkPanSwap";
+                else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX"; else if (skinName == "chkRX2PanSwap") skinName = "chkPanSwap"; else if (skinName == "chkRX2TNF") skinName = "chkTNF";
                 else if (skinName == "chk2TONE") skinName = "chkTUN";
             }
 
