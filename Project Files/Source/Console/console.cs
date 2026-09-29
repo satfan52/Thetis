@@ -6049,11 +6049,12 @@ namespace Thetis
                         if (!r.IsEmpty)
                         {
                             r.Offset(-Left, -Top);
-                            // the button is redrawn right here at full contrast: the halo,
-                            // then the blue pill and the white power symbol, so the off
-                            // state carries the same design as the reference, unmistakable
-                            FillPill(g, r, 8, Color.FromArgb(70, 55, 70, 91));
-                            FillPill(g, r, 4, Color.FromArgb(140, 113, 138, 170));
+                            // the button is redrawn right here at full contrast: a soft thin
+                            // halo, then the blue pill and the white power symbol, drawn at
+                            // the same size the button has once the console runs
+                            FillPill(g, r, 3, Color.FromArgb(45, 55, 70, 91));
+                            FillPill(g, r, 1, Color.FromArgb(80, 113, 138, 170));
+                            r.Inflate(-1, -2);
                             using (System.Drawing.Drawing2D.GraphicsPath pill = PillPath(r, 0))
                             {
                                 using (System.Drawing.Drawing2D.LinearGradientBrush body =
