@@ -6161,6 +6161,14 @@ namespace Thetis
             {
                 m_powerSettleTimer.Stop();
                 PowerStateVisualsChanged(this, EventArgs.Empty);
+                // H1: a state restored during start-up can be coloured before the
+                // theme's selected colour is loaded (the field default is yellow),
+                // so re-assert the two sub ticks here; repaint both filter rows so
+                // no button keeps a pale default fill
+                chkEnableMultiRX.BackColor = chkEnableMultiRX.Checked ? button_selected_color : SystemColors.Control;
+                chkEnableMultiRX2.BackColor = chkEnableMultiRX2.Checked ? button_selected_color : SystemColors.Control;
+                panelFilter.Invalidate(true);
+                panelRX2Filter.Invalidate(true);
             };
             m_powerSettleTimer.Start();
 
@@ -38709,9 +38717,9 @@ namespace Thetis
             {
             panelFilter.Location = new Point(180, 700); // H1: RX1 filter grid, left column below the panafall
 
-                panelBandHF.Location = new Point(gr_BandHF_basis_location.X + h_delta, gr_BandHF_basis_location.Y + (v_delta / 4));
-                panelBandGEN.Location = new Point(gr_BandGEN_basis_location.X + h_delta, gr_BandGEN_basis_location.Y + (v_delta / 4));
-                panelBandVHF.Location = new Point(gr_BandVHF_basis_location.X + h_delta, gr_BandVHF_basis_location.Y + (v_delta / 4));
+                panelBandHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
+                panelBandGEN.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
+                panelBandVHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
                 // H1: the band buttons sit over the display's edge - their left column was
                 // eaten by the panadapter, so they ride in front of it
                 panelBandHF.BringToFront();
@@ -43920,7 +43928,7 @@ namespace Thetis
             // :NOTE: Force update on zoom control
             Zoom = ptbDisplayZoom.Value;
 
-            panelBandHF.Location = new Point(gr_BandHF_basis_location.X + h_delta, gr_BandHF_basis_location.Y + (v_delta / 4));
+            panelBandHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
             panelBandHF.Size = gr_BandHF_basis_size;
             radBand160.Location = rad_band160_basis;
             radBand80.Location = rad_band80_basis;
@@ -43938,7 +43946,7 @@ namespace Thetis
             radBandGEN.Location = rad_bandgen_basis;
             btnBandVHF.Location = btn_bandVHF_basis;//w3sz
 
-            panelBandGEN.Location = new Point(gr_BandGEN_basis_location.X + h_delta, gr_BandGEN_basis_location.Y + (v_delta / 4));
+            panelBandGEN.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
             panelBandGEN.Size = gr_BandGEN_basis_size;
             radBandGEN0.Location = rad_bandGEN0_basis;
             radBandGEN1.Location = rad_bandGEN1_basis;
@@ -43956,7 +43964,7 @@ namespace Thetis
             radBandGEN13.Location = rad_bandGEN13_basis;
             btnBandHF1.Location = btn_bandHF1_basis;
 
-            panelBandVHF.Location = new Point(gr_BandVHF_basis_location.X + h_delta, gr_BandVHF_basis_location.Y + (v_delta / 4));
+            panelBandVHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
             panelBandVHF.Size = gr_BandVHF_basis_size;
 
             // H1: the band buttons sit over the display's edge, so they ride in front of it
