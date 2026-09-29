@@ -1038,7 +1038,7 @@ namespace Thetis
             {
                 if (skinName == "chkSubVFOATX") skinName = "chkVFOATX";
                 else if (skinName == "chkSubVFOBTX") skinName = "chkVFOBTX";
-                else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX";
+                else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX"; else if (skinName == "chkRX2PanSwap") skinName = "chkPanSwap";
                 else if (skinName == "chk2TONE") skinName = "chkTUN";
             }
 
