@@ -38976,6 +38976,19 @@ namespace Thetis
                 chkRX2Squelch.Location = new Point(1819, 665); // H1: RX2 squelch in the free band right of the zoom row
                 ptbRX2Squelch.Location = new Point(1809, 688); // H1: RX2 squelch slider
                 picRX2Squelch.Location = new Point(1818, 709); // H1: RX2 squelch limit bar
+            // H1: the shared TX buttons regroup into the bottom centre, out of the
+            // top-left corner which is left column space. The rows keep the old
+            // grouping: MON TUN MOX 2TONE first, DUP PS-A quick record second.
+            chkMON.Location = new Point(712, 908);
+            chkTUN.Location = new Point(763, 908);
+            chkMOX.Location = new Point(814, 908);
+            chk2TONE.Location = new Point(865, 908);
+            chkRX2SR.Location = new Point(712, 934);
+            chkFWCATUBypass.Location = new Point(763, 934);
+            ckQuickRec.Location = new Point(814, 934);
+            ckQuickPlay.Location = new Point(865, 934);
+            chkExternalPA.Location = new Point(916, 934);
+            comboTuneMode.Location = new Point(916, 908);
 
                 panelRX2Mixer.Location = new Point(973, 828); // H1: the right vol/pan strip, mirror of panelMultiRX with the SubRX2 pair
                 ShapeRX2MixerStrip();
@@ -44024,6 +44037,19 @@ namespace Thetis
             ptbRX2RF.Parent = panelSoundControls;
             ptbRX2RF.Location = tb_rx2_rf_basis;
 
+            // H1: the TX option buttons leave panelOptions for the form, so the
+            // bottom-centre layout cannot be clipped by the panel's bounds.
+            chkMON.Parent = this;
+            chkTUN.Parent = this;
+            chkMOX.Parent = this;
+            chk2TONE.Parent = this;
+            chkRX2SR.Parent = this;
+            chkFWCATUBypass.Parent = this;
+            ckQuickRec.Parent = this;
+            ckQuickPlay.Parent = this;
+            chkExternalPA.Parent = this;
+            comboTuneMode.Parent = this;
+
             comboAGC.Parent = panelSoundControls;
             comboAGC.Location = combo_agc_basis;
             comboRX2AGC.Parent = panelRX2DSP;
@@ -44169,6 +44195,19 @@ namespace Thetis
             ptbRX2Squelch.Location = new Point(1809, 688); // H1: RX2 squelch slider
             ptbSquelch.Location = new Point(113, 929); // H1: RX1 squelch slider
             picRX2Squelch.Location = new Point(1818, 709); // H1: RX2 squelch limit bar
+            // H1: the shared TX buttons regroup into the bottom centre, out of the
+            // top-left corner which is left column space. The rows keep the old
+            // grouping: MON TUN MOX 2TONE first, DUP PS-A quick record second.
+            chkMON.Location = new Point(712, 908);
+            chkTUN.Location = new Point(763, 908);
+            chkMOX.Location = new Point(814, 908);
+            chk2TONE.Location = new Point(865, 908);
+            chkRX2SR.Location = new Point(712, 934);
+            chkFWCATUBypass.Location = new Point(763, 934);
+            ckQuickRec.Location = new Point(814, 934);
+            ckQuickPlay.Location = new Point(865, 934);
+            chkExternalPA.Location = new Point(916, 934);
+            comboTuneMode.Location = new Point(916, 908);
             picSquelch.Location = new Point(122, 950); // H1: RX1 squelch limit bar
             panelRX2Mixer.Location = new Point(973, 828); // H1: the right vol/pan strip, mirror of panelMultiRX
             ShapeRX2MixerStrip();
