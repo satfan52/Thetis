@@ -1750,15 +1750,34 @@ namespace Thetis
         private static void SetupPrettyTrackBarImages(PrettyTrackBar ctrl)
         {
             // load images
+            // H1: the SubRX2 sliders mirror the SubRX1 pair. With no skin files of
+            // their own they take the SubRX1 pair's images, so both strips render
+            // identically. Own files win if they are ever added.
+            string skinName = ctrl.Name;
+            bool ownFiles = false;
+            for (int i = 0; i < 8; i++)
+            {
+                if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext) ||
+                    File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext))
+                {
+                    ownFiles = true;
+                    break;
+                }
+            }
+            if (!ownFiles)
+            {
+                if (skinName == "ptbRX2SubGain") skinName = "ptbRX1Gain";
+                else if (skinName == "ptbRX2SubPan") skinName = "ptbPanSubRX";
+            }
            // string s = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-";
 
-            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "back" + pic_file_ext))
+            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "back" + pic_file_ext))
             {
-                ctrl.BackgroundImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "back" + pic_file_ext);
+                ctrl.BackgroundImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "back" + pic_file_ext);
             }
-            else if (File.Exists(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "back" + pic_file_ext))
+            else if (File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + "back" + pic_file_ext))
             {
-                ctrl.BackgroundImage = loadImage(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "back" + pic_file_ext);
+                ctrl.BackgroundImage = loadImage(path + "\\" + "Console" + "\\" + skinName + "-" + "back" + pic_file_ext);
             }
             else ctrl.BackgroundImage = null;
 
@@ -1766,13 +1785,13 @@ namespace Thetis
             //                 ctrl.BackgroundImage = /*Image.FromFile*/loadImage(s + "back" + pic_file_ext);
             //             else ctrl.BackgroundImage = null;
 
-            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "head" + pic_file_ext))
+            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "head" + pic_file_ext))
             {
-                ctrl.HeadImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "head" + pic_file_ext);
+                ctrl.HeadImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "head" + pic_file_ext);
             }
-            else if (File.Exists(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "head" + pic_file_ext))
+            else if (File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + "head" + pic_file_ext))
             {             
-                ctrl.HeadImage = loadImage(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "head" + pic_file_ext);
+                ctrl.HeadImage = loadImage(path + "\\" + "Console" + "\\" + skinName + "-" + "head" + pic_file_ext);
             }
             else ctrl.HeadImage = null;
 

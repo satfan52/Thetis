@@ -769,6 +769,7 @@ namespace Thetis
 
             InitializeComponent();								// Windows Forms Generated Code
             InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
+            InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
             InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
 
@@ -5902,6 +5903,98 @@ namespace Thetis
             txtVFOBSubLSD = NewSubRowLsd(grpVFOB, txtVFOBLSD, "txtVFOBSubLSD", 169, 54);
             txtVFOABand.TextChanged += SubRowLsdTextChanged;
             txtVFOBSub.TextChanged += SubRowLsdTextChanged;
+        }
+
+        private PrettyTrackBar ptbRX2SubGain;
+        private PrettyTrackBar ptbRX2SubPan;
+        private System.Windows.Forms.Label lblRX2SubVol;
+
+        // H1: the SubRX2 volume and pan sliders - the mirror of the SubRX1 pair that
+        // lives in panelMultiRX. Created in code right after InitializeComponent, so
+        // the state restore and the state save both see them by name. The panelRX2Mixer
+        // strip is re-shaped to the left strip's geometry by ShapeRX2MixerStrip.
+        private void InitRX2MixerSubSliders()
+        {
+            ptbRX2SubGain = new PrettyTrackBar();
+            ptbRX2SubGain.Name = "ptbRX2SubGain";
+            ptbRX2SubGain.Minimum = 0;
+            ptbRX2SubGain.Maximum = 100;
+            ptbRX2SubGain.SmallChange = 1;
+            ptbRX2SubGain.LargeChange = 1;
+            ptbRX2SubGain.GreenThumb = false;
+            ptbRX2SubGain.Orientation = Orientation.Vertical;
+            ptbRX2SubGain.TabStop = false;
+            ptbRX2SubGain.Value = 100;
+            ptbRX2SubGain.Scroll += new PrettyTrackBar.ScrollHandler(ptbRX2SubGain_Scroll);
+            ptbRX2SubGain.Location = new Point(140, 19);
+            ptbRX2SubGain.Size = new Size(24, 52);
+            panelRX2Mixer.Controls.Add(ptbRX2SubGain);
+
+            lblRX2SubVol = new System.Windows.Forms.Label();
+            lblRX2SubVol.Name = "lblRX2SubVol";
+            lblRX2SubVol.Text = "Vol";
+            lblRX2SubVol.ForeColor = SystemColors.ControlLightLight;
+            lblRX2SubVol.BackColor = Color.Transparent;
+            lblRX2SubVol.Location = new Point(142, 3);
+            lblRX2SubVol.Size = new Size(21, 16);
+            panelRX2Mixer.Controls.Add(lblRX2SubVol);
+
+            ptbRX2SubPan = new PrettyTrackBar();
+            ptbRX2SubPan.Name = "ptbRX2SubPan";
+            ptbRX2SubPan.Minimum = 0;
+            ptbRX2SubPan.Maximum = 100;
+            ptbRX2SubPan.SmallChange = 1;
+            ptbRX2SubPan.LargeChange = 1;
+            ptbRX2SubPan.GreenThumb = false;
+            ptbRX2SubPan.Orientation = Orientation.Horizontal;
+            ptbRX2SubPan.TabStop = false;
+            ptbRX2SubPan.Value = 50;
+            ptbRX2SubPan.Scroll += new PrettyTrackBar.ScrollHandler(ptbRX2SubPan_Scroll);
+            ptbRX2SubPan.Location = new Point(40, 46);
+            ptbRX2SubPan.Size = new Size(96, 24);
+            panelRX2Mixer.Controls.Add(ptbRX2SubPan);
+        }
+
+        // H1: shape the right-side vol/pan strip as the mirror of the left's
+        // panelMultiRX - the RX2 pair at the left pair's geometry, the SubRX2 pair
+        // beside them, so the two strips read as twins.
+        private void ShapeRX2MixerStrip()
+        {
+            panelRX2Mixer.Size = new Size(232, 72);
+            ptbRX2Gain.Location = new Point(12, 19);
+            ptbRX2Gain.Size = new Size(24, 52);
+            ptbRX2Pan.Location = new Point(40, 19);
+            ptbRX2Pan.Size = new Size(96, 24);
+            lblRX2Vol.Location = new Point(14, 3);
+            lblRX2Vol.Size = new Size(50, 16);
+            lblRX2Pan.Location = new Point(78, 3);
+            lblRX2Pan.Size = new Size(21, 16);
+            if (ptbRX2SubGain != null) ptbRX2SubGain.Location = new Point(140, 19);
+            if (ptbRX2SubPan != null) ptbRX2SubPan.Location = new Point(40, 46);
+            if (lblRX2SubVol != null) lblRX2SubVol.Location = new Point(142, 3);
+        }
+
+        // H1: the SubRX2 volume - the RX2 sub channel, WDSP 1,1. The mirror of
+        // ptbRX1Gain_Scroll, including the mute interplay with the RX2 mute tick.
+        private void ptbRX2SubGain_Scroll(object sender, System.EventArgs e)
+        {
+            if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkRX2Mute.Checked) chkRX2Mute.Checked = false;
+
+            if (chkRX2Mute.Checked && m_bMuteWillMuteVAC2)
+            {
+                radio.GetDSPRX(1, 1).RXOutputGain = 0.0;
+            }
+            else
+            {
+                radio.GetDSPRX(1, 1).RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+            }
+        }
+
+        // H1: the SubRX2 pan - the RX2 sub channel, WDSP 1,1. The mirror of
+        // ptbPanSubRX_Scroll; the RX2 sub has no swap tick, so no flip here.
+        private void ptbRX2SubPan_Scroll(object sender, System.EventArgs e)
+        {
+            radio.GetDSPRX(1, 1).Pan = (int)ptbRX2SubPan.Value / 100.0f;
         }
 
         private TextBoxTS NewSubRowLsd(Control parent, TextBox source, string name, int x, int y)
@@ -38876,15 +38969,16 @@ namespace Thetis
                 grpDisplaySplit.Location = new Point(gr_display_split_basis.X + (h_delta / 2), gr_display_split_basis.Y + v_delta);
                 panelRX2Filter.Location = new Point(this.ClientSize.Width - 404, 740); // H1: RX2 filter grid, right column;
                 panelRX2Mode.Location = new Point(this.ClientSize.Width - 228, 740); // H1: RX2 mode grid and SubRX2 tick, right column; // MW0LGE changed to gr_RX2Mode_basis_location
-                panelRX2Display.Location = new Point(gr_rx2_display_basis.X + (int)(h_delta * 0.383), gr_rx2_display_basis.Y + v_delta);
+                panelRX2Display.Location = new Point(979, 733); // H1: RX2 display cluster, mirror of the RX1 cluster's column
                 panelRX2DSP.Location = new Point(this.ClientSize.Width - 227, 852); // H1: RX2 DSP toggles and AGC, right column;
                 panelRX2RF.Location = new Point(gr_rx2_rf_basis.X + (int)(h_delta * 0.164), gr_rx2_rf_basis.Y + v_delta);
 
-                chkRX2Squelch.Location = new Point(chk_rx2_squelch_basis.X + (int)(h_delta * 0.164), chk_rx2_squelch_basis.Y + v_delta);
-                ptbRX2Squelch.Location = new Point(tb_rx2_squelch_basis.X + (int)(h_delta * 0.164), tb_rx2_squelch_basis.Y + v_delta);
-                picRX2Squelch.Location = new Point(pic_rx2_squelch_basis.X + (int)(h_delta * 0.164), pic_rx2_squelch_basis.Y + v_delta);
+                chkRX2Squelch.Location = new Point(1803, 745); // H1: RX2 squelch above the RX2 mode grid, mirror of the RX1 squelch row
+                ptbRX2Squelch.Location = new Point(1793, 768); // H1: RX2 squelch slider
+                picRX2Squelch.Location = new Point(1801, 789); // H1: RX2 squelch limit bar
 
-                panelRX2Mixer.Location = new Point(gr_rx2_mixer_basis.X + (int)(h_delta * 0.078), gr_rx2_mixer_basis.Y + v_delta);
+                panelRX2Mixer.Location = new Point(973, 828); // H1: the right vol/pan strip, mirror of panelMultiRX with the SubRX2 pair
+                ShapeRX2MixerStrip();
 
                 MeterManager.SetPositionOfDockedMeters();
             }
@@ -44069,6 +44163,15 @@ namespace Thetis
 
             panelRX2Filter.Location = new Point(this.ClientSize.Width - 404, 740); // H1: RX2 filter grid, right column
             panelRX2DSP.Location = new Point(this.ClientSize.Width - 227, 852); // H1: RX2 DSP toggles and AGC, right column
+            panelRX2Display.Location = new Point(979, 733); // H1: RX2 display cluster, mirror of the RX1 cluster's column
+            chkRX2Squelch.Location = new Point(1803, 745); // H1: RX2 squelch above the RX2 mode grid
+            ptbRX2Squelch.Location = new Point(1793, 768); // H1: RX2 squelch slider
+            picRX2Squelch.Location = new Point(1801, 789); // H1: RX2 squelch limit bar
+            panelRX2Mixer.Location = new Point(973, 828); // H1: the right vol/pan strip, mirror of panelMultiRX
+            ShapeRX2MixerStrip();
+            // H1: arm the RX2 sub channel from the restored SubRX2 volume and pan values
+            ptbRX2SubGain_Scroll(this, EventArgs.Empty);
+            ptbRX2SubPan_Scroll(this, EventArgs.Empty);
 
             radModeLSB.Location = rad_mode_lsb_basis;
             radModeUSB.Location = rad_mode_usb_basis;
