@@ -6165,8 +6165,29 @@ namespace Thetis
                 // theme's selected colour is loaded (the field default is yellow),
                 // so re-assert the two sub ticks here; repaint both filter rows so
                 // no button keeps a pale default fill
-                chkEnableMultiRX.BackColor = chkEnableMultiRX.Checked ? button_selected_color : SystemColors.Control;
-                chkEnableMultiRX2.BackColor = chkEnableMultiRX2.Checked ? button_selected_color : SystemColors.Control;
+                chkEnableMultiRX.BackColor = chkEnableMultiRX.Checked ? button_selected_color : Color.FromArgb(37, 37, 37);
+                chkEnableMultiRX2.BackColor = chkEnableMultiRX2.Checked ? button_selected_color : Color.FromArgb(37, 37, 37);
+                // H1: an FM or DRM episode can leave some of the RX2 filter buttons
+                // disabled, which renders them in the flat system grey; mirror the
+                // RX1 row's enabled state onto the RX2 row so the grids always agree
+                foreach (Control c in panelRX2Filter.Controls)
+                {
+                    if (c is RadioButtonTS b)
+                    {
+                        string twin = "radFilter" + c.Name.Substring("radRX2Filter".Length);
+                        foreach (Control d in panelFilter.Controls)
+                        {
+                            if (d.Name == twin)
+                            {
+                                c.Enabled = d.Enabled;
+                                break;
+                            }
+                        }
+                        // H1: give the RX2 row the same fill the working row shows, so
+                        // no button keeps the pale system grey whatever set it
+                        if (!b.Checked) b.BackColor = Color.FromArgb(37, 37, 37);
+                    }
+                }
                 panelFilter.Invalidate(true);
                 panelRX2Filter.Invalidate(true);
             };
@@ -20959,7 +20980,7 @@ namespace Thetis
             }
         }
 
-        private Color button_selected_color = Color.Yellow;
+        private Color button_selected_color = Color.FromArgb(50, 108, 183); // H1: was Color.Yellow (the stock default), matches the selected look
         public Color ButtonSelectedColor
         {
             get { return button_selected_color; }
@@ -36207,42 +36228,42 @@ namespace Thetis
             switch (rx1_filter)
             {
                 case Filter.F1:
-                    radFilter1.BackColor = SystemColors.Control;
+                    radFilter1.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F2:
-                    radFilter2.BackColor = SystemColors.Control;
+                    radFilter2.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F3:
-                    radFilter3.BackColor = SystemColors.Control;
+                    radFilter3.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F4:
-                    radFilter4.BackColor = SystemColors.Control;
+                    radFilter4.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F5:
-                    radFilter5.BackColor = SystemColors.Control;
+                    radFilter5.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F6:
-                    radFilter6.BackColor = SystemColors.Control;
+                    radFilter6.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F7:
-                    radFilter7.BackColor = SystemColors.Control;
+                    radFilter7.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F8:
-                    radFilter8.BackColor = SystemColors.Control;
+                    radFilter8.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F9:
-                    radFilter9.BackColor = SystemColors.Control;
+                    radFilter9.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.F10:
-                    radFilter10.BackColor = SystemColors.Control;
+                    radFilter10.BackColor = Color.Transparent; // H1: back to the inherited look
                     break;
                 case Filter.VAR1:
-                    radFilterVar1.BackColor = SystemColors.Control;
+                    radFilterVar1.BackColor = Color.Transparent; // H1: back to the inherited look
                     udFilterLow.Enabled = false;
                     udFilterHigh.Enabled = false;
                     break;
                 case Filter.VAR2:
-                    radFilterVar2.BackColor = SystemColors.Control;
+                    radFilterVar2.BackColor = Color.Transparent; // H1: back to the inherited look
                     udFilterLow.Enabled = false;
                     udFilterHigh.Enabled = false;
                     break;
@@ -36303,8 +36324,8 @@ namespace Thetis
                         {
                             ((RadioButtonTS)c).Checked = false;
 
-                            if (c.BackColor != SystemColors.Control)
-                                ((RadioButtonTS)c).BackColor = SystemColors.Control;
+                            if (c.BackColor != Color.Transparent)
+                                ((RadioButtonTS)c).BackColor = Color.Transparent; // H1: back to the inherited look
                         }
                     }
                     return;
@@ -38717,9 +38738,9 @@ namespace Thetis
             {
             panelFilter.Location = new Point(180, 700); // H1: RX1 filter grid, left column below the panafall
 
-                panelBandHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
-                panelBandGEN.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
-                panelBandVHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
+                panelBandHF.Location = new Point(528, 790); // H1: band block in the open space below the panadapter
+                panelBandGEN.Location = new Point(528, 790); // H1: band block in the open space below the panadapter
+                panelBandVHF.Location = new Point(528, 790); // H1: band block in the open space below the panadapter
                 // H1: the band buttons sit over the display's edge - their left column was
                 // eaten by the panadapter, so they ride in front of it
                 panelBandHF.BringToFront();
@@ -40598,34 +40619,34 @@ namespace Thetis
             switch (rx2_filter)
             {
                 case Filter.F1:
-                    radRX2Filter1.BackColor = SystemColors.Control;
+                    radRX2Filter1.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F2:
-                    radRX2Filter2.BackColor = SystemColors.Control;
+                    radRX2Filter2.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F3:
-                    radRX2Filter3.BackColor = SystemColors.Control;
+                    radRX2Filter3.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F4:
-                    radRX2Filter4.BackColor = SystemColors.Control;
+                    radRX2Filter4.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F5:
-                    radRX2Filter5.BackColor = SystemColors.Control;
+                    radRX2Filter5.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F6:
-                    radRX2Filter6.BackColor = SystemColors.Control;
+                    radRX2Filter6.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F7:
-                    radRX2Filter7.BackColor = SystemColors.Control;
+                    radRX2Filter7.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F8:
-                    radRX2Filter8.BackColor = SystemColors.Control;
+                    radRX2Filter8.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F9:
-                    radRX2Filter9.BackColor = SystemColors.Control;
+                    radRX2Filter9.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.F10:
-                    radRX2Filter10.BackColor = SystemColors.Control;
+                    radRX2Filter10.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
                     break;
                 case Filter.VAR1:
                     udRX2FilterLow.Enabled = false;
@@ -40692,8 +40713,8 @@ namespace Thetis
                         {
                             ((RadioButtonTS)c).Checked = false;
 
-                            if (c.BackColor != SystemColors.Control)
-                                ((RadioButtonTS)c).BackColor = SystemColors.Control;
+                            if (c.BackColor != Color.Transparent)
+                                ((RadioButtonTS)c).BackColor = Color.Transparent; // H1: back to the inherited look
                         }
                     }
                     return;
@@ -43928,7 +43949,7 @@ namespace Thetis
             // :NOTE: Force update on zoom control
             Zoom = ptbDisplayZoom.Value;
 
-            panelBandHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
+            panelBandHF.Location = new Point(528, 790); // H1: band block in the open space below the panadapter
             panelBandHF.Size = gr_BandHF_basis_size;
             radBand160.Location = rad_band160_basis;
             radBand80.Location = rad_band80_basis;
@@ -43946,7 +43967,7 @@ namespace Thetis
             radBandGEN.Location = rad_bandgen_basis;
             btnBandVHF.Location = btn_bandVHF_basis;//w3sz
 
-            panelBandGEN.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
+            panelBandGEN.Location = new Point(528, 790); // H1: band block in the open space below the panadapter
             panelBandGEN.Size = gr_BandGEN_basis_size;
             radBandGEN0.Location = rad_bandGEN0_basis;
             radBandGEN1.Location = rad_bandGEN1_basis;
@@ -43964,7 +43985,7 @@ namespace Thetis
             radBandGEN13.Location = rad_bandGEN13_basis;
             btnBandHF1.Location = btn_bandHF1_basis;
 
-            panelBandVHF.Location = new Point(this.ClientSize.Width - 404, 878); // H1: band block below the panadapter
+            panelBandVHF.Location = new Point(528, 790); // H1: band block in the open space below the panadapter
             panelBandVHF.Size = gr_BandVHF_basis_size;
 
             // H1: the band buttons sit over the display's edge, so they ride in front of it
