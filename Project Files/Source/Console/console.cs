@@ -38724,7 +38724,7 @@ namespace Thetis
                 {
                     moveModeSpecificPanels();// [2.10.3.4]MW0LGE  SelectModeDependentPanel will deal with this when collapsed
 
-                    grpVFOB.Location = new Point(this.ClientSize.Width - grpVFOB.Width - 5, gr_VFOB_basis_location.Y); // H1: right edge
+                    grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
                     grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
 
                     setupHiddenButton();//grpVFOA);
@@ -38772,6 +38772,12 @@ namespace Thetis
                     panelDSP.Location = new Point(gr_dsp_basis.X + (h_delta / 2), gr_dsp_basis.Y + v_delta);
 
                     panelPower.Location = new Point(gr_power_basis.X, gr_power_basis.Y + (v_delta / 8));
+                    // H1: the power group spans to the right edge; the RX2 button rides at
+                    // its right end, over open background, and the strip stays behind the
+                    // top row so its clear areas never paint over the frames or meters
+                    panelPower.Width = this.ClientSize.Width - panelPower.Left;
+                    chkRX2.Location = new Point(panelPower.Width - chkRX2.Width - 5, chk_rx2_enable_basis.Y);
+                    panelPower.SendToBack();
                     panelRX2Power.Location = new Point(gr_rx2_enable_basis.X, gr_rx2_enable_basis.Y + v_delta);
                     panelOptions.Location = new Point(gr_options_basis.X, gr_options_basis.Y + (v_delta / 4));
                 }
@@ -43728,7 +43734,7 @@ namespace Thetis
             int v_delta = Math.Max(this.Height - console_basis_size.Height, 0);
 
             grpVFOA.Location = new Point(gr_VFOA_basis_location.X, gr_VFOA_basis_location.Y); // H1: stays next to the left column
-            grpVFOB.Location = new Point(this.ClientSize.Width - grpVFOB.Width - 5, gr_VFOB_basis_location.Y); // H1: right edge
+            grpVFOB.Location = new Point(this.ClientSize.Width - chkRX2.Width - 9 - grpVFOB.Width, gr_VFOB_basis_location.Y); // H1: right edge, RX2 button beyond
 
             picMultiMeterDigital.Parent = grpMultimeter;
 
@@ -43787,6 +43793,11 @@ namespace Thetis
             chkPower.Location = chk_power_basis;
             chkRX2.Parent = panelPower;// panelRX2Power;
             chkRX2.Location = chk_rx2_enable_basis;
+            // H1: the power group spans to the right edge; the RX2 button rides at its
+            // right end, and the strip stays behind the top row
+            panelPower.Width = this.ClientSize.Width - panelPower.Left;
+            chkRX2.Location = new Point(panelPower.Width - chkRX2.Width - 5, chk_rx2_enable_basis.Y);
+            panelPower.SendToBack();
             chkMON.Parent = panelOptions;
             chkMON.Location = chk_mon_basis;
             chkMUT.Parent = panelDSP;
