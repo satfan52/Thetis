@@ -770,6 +770,7 @@ namespace Thetis
             InitializeComponent();								// Windows Forms Generated Code
             InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
+            H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
 
@@ -8263,6 +8264,13 @@ namespace Thetis
                 {
                     udRX2FilterHigh.Value = high;
                 }
+            }
+
+            // H1: keep the RX2 filter sliders in step with every filter change
+            if (ptbRX2FilterWidth != null)
+            {
+                ptbRX2FilterWidth_Update(low, high);
+                ptbRX2FilterShift_Update(low, high);
             }
 
             if (filterRX2Form != null && !filterRX2Form.IsDisposed)
@@ -36904,6 +36912,309 @@ namespace Thetis
             btnFilterShiftReset.BackColor = SystemColors.Control;	// make button grey
         }
 
+        // H1: the RX2 filter width and shift sliders and their reset. They are the
+        // direct twins of the RX1 set above, driving RX2's filter through the same
+        // paths the RX2 filter buttons and low/high spinners use, and they keep
+        // their own position when any of those changes.
+        private Thetis.PrettyTrackBar ptbRX2FilterWidth;
+        private Thetis.PrettyTrackBar ptbRX2FilterShift;
+        private System.Windows.Forms.ButtonTS btnRX2FilterShiftReset;
+        private System.Windows.Forms.LabelTS lblRX2FilterWidth;
+        private System.Windows.Forms.LabelTS lblRX2FilterShift;
+
+        private void H1CreateRX2FilterSliders()
+        {
+            lblRX2FilterWidth = new System.Windows.Forms.LabelTS();
+            lblRX2FilterWidth.Name = "lblRX2FilterWidth";
+            lblRX2FilterWidth.Text = "Width:";
+            lblRX2FilterWidth.Size = lblFilterWidth.Size;
+            lblRX2FilterWidth.Font = lblFilterWidth.Font;
+            lblRX2FilterWidth.ForeColor = lblFilterWidth.ForeColor;
+            lblRX2FilterWidth.BackColor = lblFilterWidth.BackColor;
+            this.Controls.Add(lblRX2FilterWidth);
+
+            ptbRX2FilterWidth = new Thetis.PrettyTrackBar();
+            ptbRX2FilterWidth.Name = "ptbRX2FilterWidth";
+            ptbRX2FilterWidth.Size = ptbFilterWidth.Size;
+            ptbRX2FilterWidth.Minimum = ptbFilterWidth.Minimum;
+            ptbRX2FilterWidth.Maximum = ptbFilterWidth.Maximum;
+            ptbRX2FilterWidth.LargeChange = 1;
+            ptbRX2FilterWidth.SmallChange = 1;
+            ptbRX2FilterWidth.GreenThumb = false;
+            ptbRX2FilterWidth.HeadImage = null;
+            ptbRX2FilterWidth.LimitBarColor = System.Drawing.Color.Red;
+            ptbRX2FilterWidth.LimitEnabled = false;
+            ptbRX2FilterWidth.LimitValue = 0;
+            ptbRX2FilterWidth.TabStop = false;
+            ptbRX2FilterWidth.BackColor = ptbFilterWidth.BackColor;
+            ptbRX2FilterWidth.Value = ptbFilterWidth.Value;
+            ptbRX2FilterWidth.Scroll += new Thetis.PrettyTrackBar.ScrollHandler(this.ptbRX2FilterWidth_Scroll);
+            this.Controls.Add(ptbRX2FilterWidth);
+
+            lblRX2FilterShift = new System.Windows.Forms.LabelTS();
+            lblRX2FilterShift.Name = "lblRX2FilterShift";
+            lblRX2FilterShift.Text = "Shift:";
+            lblRX2FilterShift.Size = lblFilterShift.Size;
+            lblRX2FilterShift.Font = lblFilterShift.Font;
+            lblRX2FilterShift.ForeColor = lblFilterShift.ForeColor;
+            lblRX2FilterShift.BackColor = lblFilterShift.BackColor;
+            this.Controls.Add(lblRX2FilterShift);
+
+            ptbRX2FilterShift = new Thetis.PrettyTrackBar();
+            ptbRX2FilterShift.Name = "ptbRX2FilterShift";
+            ptbRX2FilterShift.Size = ptbFilterShift.Size;
+            ptbRX2FilterShift.Minimum = ptbFilterShift.Minimum;
+            ptbRX2FilterShift.Maximum = ptbFilterShift.Maximum;
+            ptbRX2FilterShift.LargeChange = 1;
+            ptbRX2FilterShift.SmallChange = 1;
+            ptbRX2FilterShift.GreenThumb = false;
+            ptbRX2FilterShift.HeadImage = null;
+            ptbRX2FilterShift.LimitBarColor = System.Drawing.Color.Red;
+            ptbRX2FilterShift.LimitEnabled = false;
+            ptbRX2FilterShift.LimitValue = 0;
+            ptbRX2FilterShift.TabStop = false;
+            ptbRX2FilterShift.BackColor = ptbFilterShift.BackColor;
+            ptbRX2FilterShift.Value = 0;
+            ptbRX2FilterShift.Scroll += new Thetis.PrettyTrackBar.ScrollHandler(this.ptbRX2FilterShift_Scroll);
+            this.Controls.Add(ptbRX2FilterShift);
+
+            btnRX2FilterShiftReset = new System.Windows.Forms.ButtonTS();
+            btnRX2FilterShiftReset.Name = "btnRX2FilterShiftReset";
+            btnRX2FilterShiftReset.Text = "Reset";
+            btnRX2FilterShiftReset.Size = btnFilterShiftReset.Size;
+            btnRX2FilterShiftReset.Font = btnFilterShiftReset.Font;
+            btnRX2FilterShiftReset.ForeColor = btnFilterShiftReset.ForeColor;
+            btnRX2FilterShiftReset.BackColor = SystemColors.Control;
+            btnRX2FilterShiftReset.FlatAppearance.BorderSize = 0;
+            btnRX2FilterShiftReset.Selectable = true;
+            btnRX2FilterShiftReset.Tag = "Reset Filter Shift";
+            btnRX2FilterShiftReset.Click += new System.EventHandler(this.btnRX2FilterShiftReset_Click);
+            this.Controls.Add(btnRX2FilterShiftReset);
+        }
+
+        private void ptbRX2FilterWidth_Update(int low, int high)
+        {
+            int bw = high - low;
+            switch (_rx2_dsp_mode)
+            {
+                case DSPMode.AM:
+                case DSPMode.SAM:
+                case DSPMode.FM:
+                case DSPMode.DSB:
+                    bw /= 2;
+                    break;
+            }
+            int range = ptbRX2FilterWidth.Maximum - ptbRX2FilterWidth.Minimum;
+            int new_val = 0;
+            switch (current_filter_width_mode)
+            {
+                case FilterWidthMode.Linear:
+                    new_val = ptbRX2FilterWidth.Minimum + (int)((float)bw / _max_filter_width * range);
+                    break;
+                case FilterWidthMode.Log:
+                    double max_log = Math.Log(ptbRX2FilterWidth.Maximum);
+                    double temp = max_log - (float)bw / _max_filter_width * max_log;
+                    new_val = ptbRX2FilterWidth.Maximum - (int)Math.Pow(Math.E, temp);
+                    break;
+                case FilterWidthMode.Log10:
+                    max_log = Math.Log10(ptbRX2FilterWidth.Maximum);
+                    temp = max_log - (float)bw / _max_filter_width * max_log;
+                    new_val = ptbRX2FilterWidth.Maximum - (int)Math.Pow(10, temp);
+                    break;
+            }
+            if (new_val > ptbRX2FilterWidth.Maximum) new_val = ptbRX2FilterWidth.Maximum;
+            if (new_val < ptbRX2FilterWidth.Minimum) new_val = ptbRX2FilterWidth.Minimum;
+            ptbRX2FilterWidth.Value = new_val;
+        }
+
+        private void ptbRX2FilterWidth_Scroll(object sender, System.EventArgs e)
+        {
+            if (_rx2_dsp_mode == DSPMode.DRM || _rx2_dsp_mode == DSPMode.SPEC || _rx2_dsp_mode == DSPMode.FM) return; // unable to shift in these modes
+            SelectRX2VarFilter(false, _filter_width_update_from_cat);
+            int range = ptbRX2FilterWidth.Maximum - ptbRX2FilterWidth.Minimum;
+            int new_bw;
+            double tmp = 0;
+            switch (current_filter_width_mode)
+            {
+                case FilterWidthMode.Linear:
+                    tmp = (float)(ptbRX2FilterWidth.Value - ptbRX2FilterWidth.Minimum) / range * _max_filter_width;
+                    break;
+                case FilterWidthMode.Log:
+                    double max_log = Math.Log(ptbRX2FilterWidth.Maximum);
+                    double temp = Math.Log(Math.Max((ptbRX2FilterWidth.Maximum - ptbRX2FilterWidth.Value), 1.0));
+                    temp = max_log - temp;
+                    tmp = (float)(temp / max_log * _max_filter_width);
+                    break;
+                case FilterWidthMode.Log10:
+                    max_log = Math.Log10(ptbRX2FilterWidth.Maximum);
+                    temp = Math.Log10(Math.Max((ptbRX2FilterWidth.Maximum - ptbRX2FilterWidth.Value), 1.0));
+                    temp = max_log - temp;
+                    tmp = (float)(temp / max_log * _max_filter_width);
+                    break;
+            }
+            MouseEventArgs mouseEvent = e as MouseEventArgs;
+            bool bScrollUp = mouseEvent != null ? mouseEvent.Delta >= 0 : false;
+            tmp = bScrollUp ? Math.Ceiling(tmp + 0.5f) : Math.Ceiling(tmp - 0.5);
+            new_bw = (int)tmp;
+            new_bw = Math.Max(new_bw, 10); //10 step minimum
+            int current_center = ((int)udRX2FilterLow.Value + (int)udRX2FilterHigh.Value) / 2;
+            int low = 0, high = 0;
+            switch (_rx2_dsp_mode)
+            {
+                case DSPMode.AM:
+                case DSPMode.SAM:
+                case DSPMode.FM:
+                case DSPMode.DSB:
+                    low = current_center - new_bw;
+                    high = current_center + new_bw;
+                    break;
+                case DSPMode.LSB:
+                    high = -default_low_cut;
+                    low = high - new_bw;
+                    break;
+                case DSPMode.CWL:
+                case DSPMode.DIGL:
+                    low = current_center - new_bw / 2;
+                    high = current_center + new_bw / 2;
+                    break;
+                case DSPMode.USB:
+                    low = default_low_cut;
+                    high = low + new_bw;
+                    break;
+                case DSPMode.CWU:
+                case DSPMode.DIGU:
+                    low = current_center - new_bw / 2;
+                    high = current_center + new_bw / 2;
+                    break;
+            }
+            ConstrainFilter(ref low, ref high, 2, true);
+            if (sender.GetType() == typeof(PrettyTrackBar))
+            {
+                ptbRX2FilterWidth.Focus();
+            }
+            UpdateRX2Filters(low, high);
+        }
+
+        private void ptbRX2FilterShift_Update(int low, int high)
+        {
+            int bw = (int)udRX2FilterHigh.Value - (int)udRX2FilterLow.Value;
+            int default_center = 0;
+            int current_center = (low + high) / 2;
+            switch (_rx2_dsp_mode)
+            {
+                case DSPMode.USB:
+                    default_center = default_low_cut + bw / 2;
+                    break;
+                case DSPMode.LSB:
+                    default_center = -default_low_cut - bw / 2;
+                    break;
+                case DSPMode.CWU:
+                    default_center = cw_pitch;
+                    break;
+                case DSPMode.CWL:
+                    default_center = -cw_pitch;
+                    break;
+                case DSPMode.DIGU:
+                    default_center = digu_click_tune_offset;
+                    break;
+                case DSPMode.DIGL:
+                    default_center = -digl_click_tune_offset;
+                    break;
+            }
+            int adjusted_max = _max_filter_shift;
+            if (default_center > 0)
+            {
+                if (current_center > default_center)
+                {
+                    adjusted_max = Math.Min(_max_filter_shift, _max_filter_shift - (Math.Abs(default_center) + bw / 2));
+                }
+            }
+            else if (default_center < 0)
+            {
+                if (current_center < default_center)
+                {
+                    adjusted_max = Math.Min(_max_filter_shift, _max_filter_shift - (Math.Abs(default_center) + bw / 2));
+                }
+            }
+            else //default_center == 0
+            {
+                adjusted_max = Math.Min(_max_filter_shift, _max_filter_shift - bw / 2);
+            }
+            int range = ptbRX2FilterShift.Maximum - ptbRX2FilterShift.Minimum;
+            int delta = current_center - default_center;
+            int new_val = (int)((float)delta / adjusted_max * (range / 2));
+            if (new_val > ptbRX2FilterShift.Maximum) new_val = ptbRX2FilterShift.Maximum;
+            if (new_val < ptbRX2FilterShift.Minimum) new_val = ptbRX2FilterShift.Minimum;
+            ptbRX2FilterShift.Value = new_val;
+        }
+
+        private void ptbRX2FilterShift_Scroll(object sender, System.EventArgs e)
+        {
+            if (_rx2_dsp_mode == DSPMode.DRM || _rx2_dsp_mode == DSPMode.SPEC || _rx2_dsp_mode == DSPMode.FM) return; // unable to shift in these modes
+            SelectRX2VarFilter();
+            int bw = (int)udRX2FilterHigh.Value - (int)udRX2FilterLow.Value;
+            int default_center = 0;
+            switch (_rx2_dsp_mode)
+            {
+                case DSPMode.USB:
+                    default_center = default_low_cut + bw / 2;
+                    break;
+                case DSPMode.LSB:
+                    default_center = -default_low_cut - bw / 2;
+                    break;
+                case DSPMode.CWU:
+                    default_center = cw_pitch;
+                    break;
+                case DSPMode.CWL:
+                    default_center = -cw_pitch;
+                    break;
+                case DSPMode.DIGU:
+                    default_center = digu_click_tune_offset;
+                    break;
+                case DSPMode.DIGL:
+                    default_center = -digl_click_tune_offset;
+                    break;
+            }
+            int adjusted_max = _max_filter_shift;
+            if (default_center > 0)
+            {
+                if (ptbRX2FilterShift.Value > 0)
+                {
+                    adjusted_max = Math.Min(_max_filter_shift, _max_filter_shift - (Math.Abs(default_center) + bw / 2));
+                }
+            }
+            else if (default_center < 0)
+            {
+                if (ptbRX2FilterShift.Value < 0)
+                {
+                    adjusted_max = Math.Min(_max_filter_shift, _max_filter_shift - (Math.Abs(default_center) + bw / 2));
+                }
+            }
+            else //default_center == 0
+            {
+                adjusted_max = Math.Min(_max_filter_shift, _max_filter_shift - bw / 2);
+            }
+            int range = ptbRX2FilterShift.Maximum - ptbRX2FilterShift.Minimum;
+            int new_center = default_center + (int)((float)ptbRX2FilterShift.Value / (range / 2) * adjusted_max);
+            int nNewLow = new_center - bw / 2;
+            int nNewHigh = new_center + bw / 2;
+            ConstrainFilter(ref nNewLow, ref nNewHigh, 2, true);
+            if (sender.GetType() == typeof(PrettyTrackBar))
+            {
+                ptbRX2FilterShift.Focus();
+            }
+            UpdateRX2Filters(nNewLow, nNewHigh);
+            btnRX2FilterShiftReset.BackColor = button_selected_color;
+        }
+
+        private void btnRX2FilterShiftReset_Click(object sender, System.EventArgs e)
+        {
+            if (_rx2_dsp_mode == DSPMode.DRM || _rx2_dsp_mode == DSPMode.SPEC || _rx2_dsp_mode == DSPMode.FM) return; // unable to shift in these modes
+            ptbRX2FilterShift.Value = 0;
+            ptbRX2FilterShift_Scroll(this, EventArgs.Empty);
+            btnRX2FilterShiftReset.BackColor = SystemColors.Control;	// make button grey
+        }
+
         private FilterWidthMode current_filter_width_mode = FilterWidthMode.Linear;
         public FilterWidthMode CurrentFilterWidthMode
         {
@@ -38989,6 +39300,15 @@ namespace Thetis
             ckQuickPlay.Location = new Point(865, 934);
             chkExternalPA.Location = new Point(916, 934);
             comboTuneMode.Location = new Point(916, 908);
+            // H1: the RX2 filter width, shift and reset sit under the RX2 filter grid
+            if (ptbRX2FilterWidth != null)
+            {
+                lblRX2FilterWidth.Location = new Point(1447, 888);
+                ptbRX2FilterWidth.Location = new Point(1487, 883);
+                lblRX2FilterShift.Location = new Point(1446, 918);
+                ptbRX2FilterShift.Location = new Point(1477, 913);
+                btnRX2FilterShiftReset.Location = new Point(1556, 915);
+            }
 
                 panelRX2Mixer.Location = new Point(973, 828); // H1: the right vol/pan strip, mirror of panelMultiRX with the SubRX2 pair
                 ShapeRX2MixerStrip();
@@ -40810,10 +41130,22 @@ namespace Thetis
                 case Filter.VAR1:
                     udRX2FilterLow.Enabled = false;
                     udRX2FilterHigh.Enabled = false;
+                    if (ptbRX2FilterWidth != null)
+                    {
+                        ptbRX2FilterWidth.Enabled = false;
+                        ptbRX2FilterShift.Enabled = false;
+                        btnRX2FilterShiftReset.Enabled = false;
+                    }
                     break;
                 case Filter.VAR2:
                     udRX2FilterLow.Enabled = false;
                     udRX2FilterHigh.Enabled = false;
+                    if (ptbRX2FilterWidth != null)
+                    {
+                        ptbRX2FilterWidth.Enabled = false;
+                        ptbRX2FilterShift.Enabled = false;
+                        btnRX2FilterShiftReset.Enabled = false;
+                    }
                     break;
             }
 
@@ -40860,10 +41192,22 @@ namespace Thetis
                 case Filter.VAR1:
                     udRX2FilterLow.Enabled = true;
                     udRX2FilterHigh.Enabled = true;
+                    if (ptbRX2FilterWidth != null)
+                    {
+                        ptbRX2FilterWidth.Enabled = true;
+                        ptbRX2FilterShift.Enabled = true;
+                        btnRX2FilterShiftReset.Enabled = true;
+                    }
                     break;
                 case Filter.VAR2:
                     udRX2FilterLow.Enabled = true;
                     udRX2FilterHigh.Enabled = true;
+                    if (ptbRX2FilterWidth != null)
+                    {
+                        ptbRX2FilterWidth.Enabled = true;
+                        ptbRX2FilterShift.Enabled = true;
+                        btnRX2FilterShiftReset.Enabled = true;
+                    }
                     break;
                 case Filter.NONE:
                     foreach (Control c in panelRX2Filter.Controls)
@@ -44208,6 +44552,15 @@ namespace Thetis
             ckQuickPlay.Location = new Point(865, 934);
             chkExternalPA.Location = new Point(916, 934);
             comboTuneMode.Location = new Point(916, 908);
+            // H1: the RX2 filter width, shift and reset sit under the RX2 filter grid
+            if (ptbRX2FilterWidth != null)
+            {
+                lblRX2FilterWidth.Location = new Point(1447, 888);
+                ptbRX2FilterWidth.Location = new Point(1487, 883);
+                lblRX2FilterShift.Location = new Point(1446, 918);
+                ptbRX2FilterShift.Location = new Point(1477, 913);
+                btnRX2FilterShiftReset.Location = new Point(1556, 915);
+            }
             picSquelch.Location = new Point(122, 950); // H1: RX1 squelch limit bar
             panelRX2Mixer.Location = new Point(973, 828); // H1: the right vol/pan strip, mirror of panelMultiRX
             ShapeRX2MixerStrip();
@@ -52142,6 +52495,11 @@ private void incrementMutliMeterDisplayModeRX2()
                 udRX2FilterLow.Maximum = use_lowHigh ? high : MaxFilterWidth;
                 udRX2FilterHigh.Minimum = use_lowHigh ? low : -MaxFilterWidth;
                 udRX2FilterHigh.Maximum = use_lowHigh ? high : MaxFilterWidth;
+                if (ptbRX2FilterWidth != null)
+                {
+                    ptbRX2FilterWidth.Minimum = use_lowHigh ? low : -MaxFilterWidth;
+                    ptbRX2FilterWidth.Maximum = use_lowHigh ? high : MaxFilterWidth;
+                }
                 _ignore_rx2_filter_update = old_state;
             }
         }
@@ -52155,6 +52513,17 @@ private void incrementMutliMeterDisplayModeRX2()
                 ptbFilterShift.Minimum = -MaxFilterShift;
                 ptbFilterShift.Maximum = MaxFilterShift;
                 _ignore_rx1_filter_update = old_state;
+            }
+            else if (rx == 2)
+            {
+                old_state = _ignore_rx2_filter_update;
+                _ignore_rx2_filter_update = true;
+                if (ptbRX2FilterShift != null)
+                {
+                    ptbRX2FilterShift.Minimum = -MaxFilterShift;
+                    ptbRX2FilterShift.Maximum = MaxFilterShift;
+                }
+                _ignore_rx2_filter_update = old_state;
             }
         }
 

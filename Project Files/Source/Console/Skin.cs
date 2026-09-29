@@ -786,12 +786,32 @@ namespace Thetis
         private static Dictionary<string, ImageList> _shared_image_lists = new Dictionary<string, ImageList>();
         private static void SetupButtonImages(Button ctrl)
         {
+            // H1: the RX2 filter reset mirrors the RX1 reset. With no skin files of
+            // its own it takes the RX1 button images, so both render identically.
+            // Own files win if they are ever added.
+            string skinName = ctrl.Name;
+            bool ownFiles = false;
+            for (int i = 0; i < 8; i++)
+            {
+                if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext) ||
+                    File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext))
+                {
+                    ownFiles = true;
+                    break;
+                }
+            }
+            if (!ownFiles)
+            {
+                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset";
+            }
+
+
             string skey = "";
             for (int i = 0; i < 8; i++)
             {
-                string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                 if(!File.Exists(spath))
-                    spath = path + "\\" + "Console" + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                    spath = path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                 if (File.Exists(spath))
                 {
                     Image img = loadImage(spath); // load to cache it                
@@ -815,11 +835,11 @@ namespace Thetis
                 for (int i = 0; i < 8; i++)
                 {
                     string sstate = ((ImageState)i).ToString();
-                    string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                    string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                     Image img = getImageFromFilePath(spath);
                     if (img == null)
                     {
-                        spath = path + "\\" + "Console" + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                        spath = path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                         img = getImageFromFilePath(spath);
                     }
 
@@ -1019,6 +1039,7 @@ namespace Thetis
                 if (skinName == "chkSubVFOATX") skinName = "chkVFOATX";
                 else if (skinName == "chkSubVFOBTX") skinName = "chkVFOBTX";
                 else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX";
+                else if (skinName == "chk2TONE") skinName = "chkTUN";
             }
 
             string skey = "";
@@ -1768,6 +1789,8 @@ namespace Thetis
             {
                 if (skinName == "ptbRX2SubGain") skinName = "ptbRX1Gain";
                 else if (skinName == "ptbRX2SubPan") skinName = "ptbPanSubRX";
+                else if (skinName == "ptbRX2FilterWidth") skinName = "ptbFilterWidth";
+                else if (skinName == "ptbRX2FilterShift") skinName = "ptbFilterShift";
             }
            // string s = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-";
 
