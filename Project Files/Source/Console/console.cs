@@ -5989,18 +5989,37 @@ namespace Thetis
 
         private class PowerDimOverlay : Control
         {
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            private static extern IntPtr GetDC(IntPtr hwnd);
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
             [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
-            private static extern int SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+            private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize,
+                IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
+            [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+            private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+            [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+            private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hObject);
+            [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+            private static extern bool DeleteDC(IntPtr hdc);
+            [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+            private static extern bool DeleteObject(IntPtr hObject);
 
-            private static readonly Color hole_key = Color.Magenta; // the colour key: the power button is punched out
-            private static readonly SolidBrush hole_brush = new SolidBrush(hole_key);
+            [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+            private struct POINT { public int x; public int y; }
+            [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+            private struct SIZE { public int cx; public int cy; }
+            [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 1)]
+            private struct BLENDFUNCTION { public byte BlendOp; public byte BlendFlags; public byte SourceConstantAlpha; public byte AlphaFormat; }
+
+            private static readonly Color dim_colour = Color.FromArgb(150, 0, 0, 0);
+            private static readonly Color glow_colour = Color.FromArgb(0, 235, 40); // the power button, lit
 
             private readonly Console m_console;
 
             public PowerDimOverlay(Console console)
             {
                 m_console = console;
-                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
                 TabStop = false;
             }
 
@@ -6010,25 +6029,76 @@ namespace Thetis
                 {
                     CreateParams cp = base.CreateParams;
                     cp.ExStyle |= 0x20;     // WS_EX_TRANSPARENT: the mouse passes through
-                    cp.ExStyle |= 0x80000;  // WS_EX_LAYERED: one uniform alpha over the window
+                    cp.ExStyle |= 0x80000;  // WS_EX_LAYERED
                     return cp;
                 }
             }
 
-            protected override void OnHandleCreated(EventArgs e)
+            // H1: one push composes the whole veil: the dim, the halo and the lit
+            // power button. Called on show, on window resize and when the button moves.
+            public void Push()
             {
-                base.OnHandleCreated(e);
-                // one alpha over everything, plus the colour key that keeps the power
-                // button fully visible and lit
-                SetLayeredWindowAttributes(this.Handle, (uint)(hole_key.ToArgb() & 0xFFFFFF), 150, 0x3); // LWA_ALPHA | LWA_COLORKEY
+                if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
+
+                Rectangle r = m_console.PowerButtonBoundsInClient();
+                using (Bitmap bmp = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+                {
+                    using (Graphics g = Graphics.FromImage(bmp))
+                    {
+                        g.Clear(dim_colour);
+
+                        if (!r.IsEmpty)
+                        {
+                            r.Offset(-Left, -Top);
+                            FillPill(g, r, 8, Color.FromArgb(55, glow_colour));
+                            FillPill(g, r, 4, Color.FromArgb(120, glow_colour));
+                            FillPill(g, r, 0, Color.FromArgb(235, glow_colour));
+                        }
+                    }
+
+                    IntPtr screen_dc = GetDC(IntPtr.Zero);
+                    IntPtr mem_dc = CreateCompatibleDC(screen_dc);
+                    IntPtr hbmp = IntPtr.Zero;
+                    IntPtr old_bmp = IntPtr.Zero;
+                    try
+                    {
+                        hbmp = bmp.GetHbitmap(Color.FromArgb(0));
+                        old_bmp = SelectObject(mem_dc, hbmp);
+
+                        POINT src = new POINT();
+                        // a child layered window takes pptDst relative to its parent
+                        POINT dst = new POINT(); dst.x = Left; dst.y = Top;
+                        SIZE size = new SIZE(); size.cx = Width; size.cy = Height;
+                        BLENDFUNCTION blend = new BLENDFUNCTION();
+                        blend.BlendOp = 0;     // AC_SRC_OVER
+                        blend.SourceConstantAlpha = 255;
+                        blend.AlphaFormat = 1; // AC_SRC_ALPHA
+
+                        UpdateLayeredWindow(this.Handle, screen_dc, ref dst, ref size, mem_dc, ref src, 0, ref blend, 2); // ULW_ALPHA
+                    }
+                    finally
+                    {
+                        if (old_bmp != IntPtr.Zero) SelectObject(mem_dc, old_bmp);
+                        if (hbmp != IntPtr.Zero) DeleteObject(hbmp);
+                        DeleteDC(mem_dc);
+                        ReleaseDC(IntPtr.Zero, screen_dc);
+                    }
+                }
             }
 
-            protected override void OnPaint(PaintEventArgs e)
+            private static void FillPill(Graphics g, Rectangle r, int inflate, Color colour)
             {
-                e.Graphics.Clear(Color.Black);
-                Rectangle r = m_console.PowerButtonBoundsInClient();
-                if (!r.IsEmpty)
-                    e.Graphics.FillEllipse(hole_brush, r);
+                Rectangle rr = r;
+                if (inflate != 0) rr.Inflate(inflate, inflate);
+                int rad = rr.Height;
+                using (System.Drawing.Drawing2D.GraphicsPath pill = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    pill.AddArc(rr.X, rr.Y, rad, rad, 90, 180);
+                    pill.AddArc(rr.Right - rad, rr.Y, rad, rad, 270, 180);
+                    pill.CloseFigure();
+                    using (SolidBrush b = new SolidBrush(colour))
+                        g.FillPath(b, pill);
+                }
             }
         }
 
@@ -6048,8 +6118,9 @@ namespace Thetis
             m_powerDimOverlay.Bounds = ClientRectangle;
             m_powerDimOverlay.Visible = false;
             this.Controls.Add(m_powerDimOverlay);
-            this.Resize += (s, ev) => { if (m_powerDimOverlay != null) m_powerDimOverlay.Bounds = ClientRectangle; };
-            chkPower.LocationChanged += (s, ev) => { if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.Invalidate(); };
+            this.Resize += (s, ev) => { if (m_powerDimOverlay != null) { m_powerDimOverlay.Bounds = ClientRectangle; m_powerDimOverlay.Push(); } };
+            chkPower.LocationChanged += (s, ev) => { if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.Push(); };
+            chkPower.SizeChanged += (s, ev) => { if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.Push(); };
             chkPower.CheckedChanged += PowerStateVisualsChanged; // H1: subscribed after the console's own handler, so the settle runs last
 
             // H1: one late settle after start-up, in case the stored power state
@@ -6080,6 +6151,7 @@ namespace Thetis
                 {
                     m_powerDimOverlay.Bounds = ClientRectangle;
                     m_powerDimOverlay.BringToFront();
+                    m_powerDimOverlay.Push();
                 }
             }
         }
