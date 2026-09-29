@@ -39268,15 +39268,24 @@ namespace Thetis
                     panelPower.Width = this.ClientSize.Width - panelPower.Left;
                     chkRX2.Location = new Point(panelPower.Width - chkRX2.Width - 5, chk_rx2_enable_basis.Y);
                     panelPower.SendToBack();
-                    panelRX2Power.Location = new Point(gr_rx2_enable_basis.X, gr_rx2_enable_basis.Y + v_delta);
+                    panelRX2Power.Location = new Point(this.ClientSize.Width - panelRX2Power.Width - 5, gr_rx2_enable_basis.Y + v_delta); // H1: the RX2 slice controls, right column corner
                     panelOptions.Location = new Point(gr_options_basis.X, gr_options_basis.Y + (v_delta / 4));
                 }
 
                 panelMultiRX.Location = new Point(170, 875); // H1: the SubRX1 strip, left column band
                 panelSoundControls.Location = new Point(gr_sound_controls_basis.X, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4));
-                chkSquelch.Location = new Point(185, 940); // H1: RX1 squelch, left column bandners
-                ptbSquelch.Location = new Point(175, 963); // H1: RX1 squelch slider
-                picSquelch.Location = new Point(122, 950); // H1: RX1 squelch limit bar
+                // H1: the RX2 RF chain mirrors into the right column, level with its RX1 twins
+                lblRX2AF.Parent = this;
+                lblRX2AF.Location = new Point(this.ClientSize.Width - 104, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 44);
+                ptbRX2AF.Parent = this;
+                ptbRX2AF.Location = new Point(this.ClientSize.Width - 113, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 61);
+                lblRX2RF.Parent = this;
+                lblRX2RF.Location = new Point(this.ClientSize.Width - 104, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 124);
+                ptbRX2RF.Parent = this;
+                ptbRX2RF.Location = new Point(this.ClientSize.Width - 113, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 141);
+                chkSquelch.Location = new Point(210, 940); // H1: RX1 squelch, left column bandners
+                ptbSquelch.Location = new Point(200, 963); // H1: RX1 squelch slider
+                picSquelch.Location = new Point(209, 984); // H1: RX1 squelch limit bar
                 grpDisplaySplit.Location = new Point(gr_display_split_basis.X + (h_delta / 2), gr_display_split_basis.Y + v_delta);
                 panelRX2Filter.Location = new Point(this.ClientSize.Width - 404, 710); // H1: RX2 filter grid and width/shift, right column;
                 panelRX2Mode.Location = new Point(this.ClientSize.Width - 228, 710); // H1: RX2 mode grid and SubRX2 tick, right column; // MW0LGE changed to gr_RX2Mode_basis_location
@@ -39286,7 +39295,7 @@ namespace Thetis
 
                 chkRX2Squelch.Location = new Point(1693, 925); // H1: RX2 squelch, right column band
                 ptbRX2Squelch.Location = new Point(1683, 948); // H1: RX2 squelch slider
-                picRX2Squelch.Location = new Point(1818, 709); // H1: RX2 squelch limit bar
+                picRX2Squelch.Location = new Point(1692, 969); // H1: RX2 squelch limit bar
             // H1: the shared TX buttons regroup into the bottom centre, out of the
             // top-left corner which is left column space. The rows keep the old
             // grouping: MON TUN MOX 2TONE first, DUP PS-A quick record second.
@@ -39303,14 +39312,14 @@ namespace Thetis
             // H1: the RX2 filter width, shift and reset sit under the RX2 filter grid
             if (ptbRX2FilterWidth != null)
             {
-                lblRX2FilterWidth.Location = new Point(1447, 888);
-                ptbRX2FilterWidth.Location = new Point(1487, 883);
-                lblRX2FilterShift.Location = new Point(1446, 918);
-                ptbRX2FilterShift.Location = new Point(1477, 913);
-                btnRX2FilterShiftReset.Location = new Point(1556, 915);
+                lblRX2FilterWidth.Location = new Point(1447, 858);
+                ptbRX2FilterWidth.Location = new Point(1487, 853);
+                lblRX2FilterShift.Location = new Point(1446, 888);
+                ptbRX2FilterShift.Location = new Point(1477, 883);
+                btnRX2FilterShiftReset.Location = new Point(1556, 885);
             }
 
-                panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 890); // H1: the right vol/pan strip, right column bandSubRX2 pair
+                panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 913); // H1: the right vol/pan strip, right column bandSubRX2 pair
                 ShapeRX2MixerStrip();
 
                 MeterManager.SetPositionOfDockedMeters();
@@ -44251,6 +44260,7 @@ namespace Thetis
             comboRX2Band.Show();
             panelRX2Mixer.Show();
             lblRX2RF.Show();
+            lblRX2AF.Show();
             ptbRX2RF.Show();
             chkRX2Squelch.Show();
             ptbRX2Squelch.Show();
@@ -44318,8 +44328,11 @@ namespace Thetis
             picRX2Meter.Location = pic_rx2meter_basis;
             picRX2Meter.Size = new Size(meter_w - 8, pic_rx2meter_size_basis.Height);
 
-            lblRX2RF.Parent = panelSoundControls;
-            lblRX2RF.Location = lbl_rx2_rf_basis;
+            // H1: the RX2 RF chain mirrors into the right column, level with its RX1 twins
+            lblRX2AF.Parent = this;
+            lblRX2AF.Location = new Point(this.ClientSize.Width - 104, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 44);
+            lblRX2RF.Parent = this;
+            lblRX2RF.Location = new Point(this.ClientSize.Width - 104, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 124);
             txtMultiText.Parent = grpMultimeter;
             txtMultiText.Location = txt_multi_text_basis;
             txtRX2Meter.Parent = grpRX2Meter;
@@ -44371,15 +44384,15 @@ namespace Thetis
             ptbAF.Location = tb_af_basis;
             ptbRX1AF.Parent = panelSoundControls;
             ptbRX1AF.Location = tb_rx1af_basis;
-            ptbRX2AF.Parent = panelSoundControls;
-            ptbRX2AF.Location = tb_rx2af_basis;
+            ptbRX2AF.Parent = this;
+            ptbRX2AF.Location = new Point(this.ClientSize.Width - 113, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 61);
             ptbPWR.Parent = panelSoundControls;
             ptbPWR.Location = tb_pwr_basis;
 
             ptbRF.Parent = panelSoundControls;
             ptbRF.Location = tb_rf_basis;
-            ptbRX2RF.Parent = panelSoundControls;
-            ptbRX2RF.Location = tb_rx2_rf_basis;
+            ptbRX2RF.Parent = this;
+            ptbRX2RF.Location = new Point(this.ClientSize.Width - 113, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 141);
 
             // H1: the TX option buttons leave panelOptions for the form, so the
             // bottom-centre layout cannot be clipped by the panel's bounds.
@@ -44535,10 +44548,11 @@ namespace Thetis
             panelRX2DSP.Location = new Point(this.ClientSize.Width - 227, 815); // H1: RX2 DSP toggles and AGC, right columnmn
             panelRX2Display.Location = new Point(979, 733); // H1: RX2 display cluster, mirror of the RX1 cluster's column
             chkRX2Squelch.Location = new Point(1693, 925); // H1: RX2 squelch, right column band
-            chkSquelch.Location = new Point(185, 940); // H1: RX1 squelch, left column band
+            panelRX2Power.Location = new Point(this.ClientSize.Width - panelRX2Power.Width - 5, gr_rx2_enable_basis.Y + v_delta); // H1: the RX2 slice controls, right column corner
+            chkSquelch.Location = new Point(210, 940); // H1: RX1 squelch, left column band
             ptbRX2Squelch.Location = new Point(1683, 948); // H1: RX2 squelch slider
-            ptbSquelch.Location = new Point(175, 963); // H1: RX1 squelch slider
-            picRX2Squelch.Location = new Point(1818, 709); // H1: RX2 squelch limit bar
+            ptbSquelch.Location = new Point(200, 963); // H1: RX1 squelch slider
+            picRX2Squelch.Location = new Point(1692, 969); // H1: RX2 squelch limit bar
             // H1: the shared TX buttons regroup into the bottom centre, out of the
             // top-left corner which is left column space. The rows keep the old
             // grouping: MON TUN MOX 2TONE first, DUP PS-A quick record second.
@@ -44555,14 +44569,14 @@ namespace Thetis
             // H1: the RX2 filter width, shift and reset sit under the RX2 filter grid
             if (ptbRX2FilterWidth != null)
             {
-                lblRX2FilterWidth.Location = new Point(1447, 888);
-                ptbRX2FilterWidth.Location = new Point(1487, 883);
-                lblRX2FilterShift.Location = new Point(1446, 918);
-                ptbRX2FilterShift.Location = new Point(1477, 913);
-                btnRX2FilterShiftReset.Location = new Point(1556, 915);
+                lblRX2FilterWidth.Location = new Point(1447, 858);
+                ptbRX2FilterWidth.Location = new Point(1487, 853);
+                lblRX2FilterShift.Location = new Point(1446, 888);
+                ptbRX2FilterShift.Location = new Point(1477, 883);
+                btnRX2FilterShiftReset.Location = new Point(1556, 885);
             }
-            picSquelch.Location = new Point(122, 950); // H1: RX1 squelch limit bar
-            panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 890); // H1: the right vol/pan strip, right column band
+            picSquelch.Location = new Point(209, 984); // H1: RX1 squelch limit bar
+            panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 913); // H1: the right vol/pan strip, right column band
             ShapeRX2MixerStrip();
             // H1: arm the RX2 sub channel from the restored SubRX2 volume and pan values
             ptbRX2SubGain_Scroll(this, EventArgs.Empty);
@@ -44786,6 +44800,7 @@ namespace Thetis
             comboRX2Band.Hide();
             panelRX2Mixer.Hide();
             lblRX2RF.Hide();
+            lblRX2AF.Hide();
             chkRX2Squelch.Hide();
             ptbRX2Squelch.Hide();
             picRX2Squelch.Hide();
