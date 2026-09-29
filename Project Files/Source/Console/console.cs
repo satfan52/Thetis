@@ -772,6 +772,7 @@ namespace Thetis
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
+            chkRX2.Size = chkPower.Size; // H1: the RX2 button is the power button's size
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
             H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
             H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
@@ -6248,11 +6249,14 @@ namespace Thetis
         private void H1TopRow()
         {
             int pc = (panelDisplay.Left + panelDisplay.Right) / 2;
-            int leftLim = panelPower.Left + chkPower.Right + 6;
-            int rightLim = panelPower.Left + chkRX2.Left - 6;
-            int H = Math.Min(pc - leftLim, rightLim - pc);
+            int gap = 8;
+            int leftLim = panelPower.Left + chkPower.Right + gap;
+            int H = pc - leftLim;
+            if (pc + H + gap + chkPower.Width > this.ClientSize.Width - 2) H = this.ClientSize.Width - 2 - gap - chkPower.Width - pc;
             grpVFOA.Location = new Point(pc - H, gr_VFOA_basis_location.Y);
             grpVFOB.Location = new Point(pc + H - grpVFOB.Width, gr_VFOB_basis_location.Y);
+            chkRX2.Size = chkPower.Size;
+            chkRX2.Location = new Point(grpVFOB.Right + gap - panelPower.Left, chkPower.Top);
             int meter_w = ((grpVFOB.Left - 4) - (grpVFOA.Right + 4) - grpVFOBetween.Width - 24) / 4;
             if (meter_w < 88) meter_w = 88;
             if (meter_w > 220) meter_w = 220;
@@ -6282,7 +6286,7 @@ namespace Thetis
             int lx = 5;
             int rx = W - 5 - sw;
             // group offsets down the strip, about 34 px between groups
-            int oAGC = 22, oCmb = 96, oMode = 164, oDSP = 292, oFlt = 403;
+            int oAGC = 30, oCmb = 102, oMode = 170, oDSP = 298, oFlt = 409;
             int Y0 = 740;                      // top of the zone below the panadapter
 
             // parked, invisible holder: the RX AF sliders duplicate the Vol sliders of the audio
@@ -6296,8 +6300,8 @@ namespace Thetis
                 if (k != null) k.BackColor = Color.Transparent;
 
             H1TopRow();
-            H1Cap("rx1gain", "AGC GAIN", lx, T, sw);
-            H1Cap("rx2gain", "AGC GAIN", rx, T, sw);
+            H1Cap("rx1gain", "AGC GAIN", lx, T + 8, sw);
+            H1Cap("rx2gain", "AGC GAIN", rx, T + 8, sw);
             H1Cap("rx1agc", "AGC MODE / ATT", lx, T + oCmb - 18, sw);
             H1Cap("rx2agc", "AGC MODE / ATT", rx, T + oCmb - 18, sw);
             // ---------- LEFT strip: RX1 only ----------
