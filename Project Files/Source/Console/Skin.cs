@@ -1550,12 +1550,16 @@ namespace Thetis
 
         private static void SetupRadioButtonImages(RadioButton ctrl)
         {
+            // H1: the RX2 band buttons take the RX1 band tiles (radRX2Band40 -> radBand40)
+            string skinName = ctrl.Name;
+            if (skinName.StartsWith("radRX2Band")) skinName = "radBand" + skinName.Substring(10);
+
             string skey = "";
             for (int i = 0; i < 8; i++)
             {
-                string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                 if (!File.Exists(spath))
-                    spath = path + "\\" + "Console" + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                    spath = path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                 if (File.Exists(spath))
                 {
                     Image img = loadImage(spath); // load to cache it
@@ -1579,11 +1583,11 @@ namespace Thetis
                 for (int i = 0; i < 8; i++)
                 {
                     string sstate = ((ImageState)i).ToString();
-                    string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                    string spath = path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                     Image img = getImageFromFilePath(spath);
                     if (img == null)
                     {
-                        spath = path + "\\" + "Console" + "\\" + ctrl.Name + "-" + i.ToString() + pic_file_ext;
+                        spath = path + "\\" + "Console" + "\\" + skinName + "-" + i.ToString() + pic_file_ext;
                         img = getImageFromFilePath(spath);
                     }
                     if (img != null && !_shared_image_lists[skey].Images.ContainsKey(sstate))

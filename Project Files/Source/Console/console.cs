@@ -771,6 +771,7 @@ namespace Thetis
             InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
+            H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
             InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
 
@@ -5956,6 +5957,90 @@ namespace Thetis
             panelRX2Mixer.Controls.Add(ptbRX2SubPan);
         }
 
+        // H1: RX2 band selection with the RX1 structure: a block of radio buttons, one per
+        // band, on the same 3-column grid with the same skin tiles. The dropdown stays as
+        // a hidden data holder because CAT, TCI and the band memory still read its list.
+        private PanelTS h1RX2BandPanel;
+        private RadioButtonTS[] h1RX2BandButtons;
+        private Panel h1BandHolder;
+
+        private void H1CreateRX2BandButtons()
+        {
+            h1BandHolder = new Panel();
+            h1BandHolder.Name = "h1BandHolder";
+            h1BandHolder.Size = new Size(1, 1);
+            h1BandHolder.Visible = false;
+            this.Controls.Add(h1BandHolder);
+
+            h1RX2BandPanel = new PanelTS();
+            h1RX2BandPanel.Name = "panelRX2BandBtns";
+            h1RX2BandPanel.Size = panelBandHF.Size;
+            h1RX2BandPanel.BackColor = panelBandHF.BackColor;
+            this.Controls.Add(h1RX2BandPanel);
+
+            // suffix, caption, band string, twin on the RX1 block, column, row
+            object[][] spec = new object[][] {
+                new object[] { "160", "160", "160m", radBand160, 0, 0 }, new object[] { "80", "80", "80m", radBand80, 1, 0 }, new object[] { "60", "60", "60m", radBand60, 2, 0 },
+                new object[] { "40", "40", "40m", radBand40, 0, 1 }, new object[] { "30", "30", "30m", radBand30, 1, 1 }, new object[] { "20", "20", "20m", radBand20, 2, 1 },
+                new object[] { "17", "17", "17m", radBand17, 0, 2 }, new object[] { "15", "15", "15m", radBand15, 1, 2 }, new object[] { "12", "12", "12m", radBand12, 2, 2 },
+                new object[] { "10", "10", "10m", radBand10, 0, 3 }, new object[] { "6", "6", "6m", radBand6, 1, 3 }, new object[] { "2", "2m", "2m", radBand2, 2, 3 },
+                new object[] { "WWV", "WWV", "WWV", radBandWWV, 1, 4 }, new object[] { "GEN", "SWL", "GEN", radBandGEN, 2, 4 } };
+            h1RX2BandButtons = new RadioButtonTS[spec.Length];
+            for (int i = 0; i < spec.Length; i++)
+            {
+                RadioButtonTS src = (RadioButtonTS)spec[i][3];
+                RadioButtonTS b = new RadioButtonTS();
+                b.Name = "radRX2Band" + (string)spec[i][0];
+                b.Text = (string)spec[i][1];
+                b.Tag = (string)spec[i][2];
+                b.Appearance = src.Appearance;
+                b.FlatStyle = src.FlatStyle;
+                b.FlatAppearance.BorderSize = 0;
+                b.Font = src.Font;
+                b.ForeColor = src.ForeColor;
+                b.BackColor = src.BackColor;
+                b.TextAlign = src.TextAlign;
+                b.Size = src.Size;
+                b.TabStop = false;
+                b.Location = new Point(10 + 51 * (int)spec[i][4], 8 + 23 * (int)spec[i][5]);
+                b.Click += H1RX2BandClick;
+                h1RX2BandPanel.Controls.Add(b);
+                h1RX2BandButtons[i] = b;
+            }
+            H1SyncRX2BandButtons();
+        }
+
+        private void H1RX2BandClick(object sender, EventArgs e)
+        {
+            RadioButtonTS b = sender as RadioButtonTS;
+            if (b == null || b.Tag == null) return;
+            SetupRX2Band((string)b.Tag);
+            H1SyncRX2BandButtons();
+            btnHidden.Focus();
+        }
+
+        private void H1SyncRX2BandButtons()
+        {
+            if (h1RX2BandButtons == null) return;
+            string sb = BandToString(rx2_band);
+            foreach (RadioButtonTS b in h1RX2BandButtons)
+            {
+                bool on = string.Equals((string)b.Tag, sb, StringComparison.Ordinal);
+                if (b.Checked != on) b.Checked = on;
+            }
+        }
+
+        private void H1RX2BandEnable(bool enabled)
+        {
+            if (h1RX2BandButtons == null) return;
+            foreach (RadioButtonTS b in h1RX2BandButtons) b.Enabled = enabled;
+        }
+
+        private void H1RX2BandVis(bool visible)
+        {
+            if (h1RX2BandPanel != null) h1RX2BandPanel.Visible = visible;
+        }
+
         // H1: layout v4. RX1 controls only in the strip left of the panadapter, RX2 controls
         // only in the strip right of it, everything generic below it. Called last by both
         // layout passes so no earlier line can undo it. Panels stay the containers, so the
@@ -5981,121 +6066,133 @@ namespace Thetis
             int lx = 1;
             int rx = Math.Min(panelDisplay.Right + 4, this.ClientSize.Width - 3 * pitch - 2);
             int sw = 3 * pitch;
+            // group offsets down the strip; 12 px of air between groups
+            int oAF = 0, oAGC = 49, oCmb = 98, oMode = 148, oDSP = 254, oFlt = 360, oSql = 552;
+
+            // park the RX2 band dropdown out of sight: the buttons replace it
+            if (h1BandHolder != null)
+            {
+                if (lblRX2Band.Parent != h1BandHolder) lblRX2Band.Parent = h1BandHolder;
+                if (comboRX2Band.Parent != h1BandHolder) comboRX2Band.Parent = h1BandHolder;
+            }
 
             // ---------- LEFT: RX1 ----------
-            H1Put(lblRX1AF, this, lx, T);
-            H1Put(ptbRX1AF, this, lx, T + 16);
-            H1Put(lblRF, this, lx, T + 42);
-            H1Put(ptbRF, this, lx, T + 58);
-            H1Put(lblAGC, this, lx, T + 84);
-            H1Put(comboAGC, this, lx, T + 99, bw);
-            H1Put(lblPreamp, this, lx + pitch, T + 84, bw);
-            H1Put(comboPreamp, this, lx + pitch, T + 99, bw);
-            H1Put(udRX1StepAttData, this, lx + pitch, T + 100, bw);
-            H1Put(pbAutoAttWarningRX1, this, lx + 2 * pitch, T + 99);
+            H1Put(lblRX1AF, this, lx, T + oAF);
+            H1Put(ptbRX1AF, this, lx, T + oAF + 15);
+            H1Put(lblRF, this, lx, T + oAGC);
+            H1Put(ptbRF, this, lx, T + oAGC + 15);
+            H1Put(lblAGC, this, lx, T + oCmb);
+            H1Put(comboAGC, this, lx, T + oCmb + 15, bw);
+            H1Put(lblPreamp, this, lx + pitch, T + oCmb, bw);
+            H1Put(comboPreamp, this, lx + pitch, T + oCmb + 15, bw);
+            H1Put(udRX1StepAttData, this, lx + pitch, T + oCmb + 16, bw);
+            H1Put(pbAutoAttWarningRX1, this, lx + 2 * pitch, T + oCmb + 15);
 
-            H1Put(panelMode, this, lx, T + 124, sw, 4 * rh);
+            H1Put(panelMode, this, lx, T + oMode, sw, 4 * rh);
             H1Grid(panelMode, new Control[] { radModeLSB, radModeUSB, radModeDSB, radModeCWL, radModeCWU, radModeFMN,
                 radModeAM, radModeSAM, radModeSPEC, radModeDIGL, radModeDIGU, radModeDRM }, 3, pitch, bw, rh);
 
-            H1Put(panelDSP, this, lx, T + 219, sw, 4 * rh);
+            H1Put(panelDSP, this, lx, T + oDSP, sw, 4 * rh);
             H1Grid(panelDSP, new Control[] { chkNR, chkANF, chkNB, chkDSPNB2, chkMUT, chkBIN, chkTNF, btnTNFAdd }, 2, pitch, bw, rh);
             H1Put(chkEnableMultiRX, panelDSP, 2 * pitch, 0, bw);
             H1Put(chkPanSwap, panelDSP, 2 * pitch, rh, bw);
 
-            H1Put(panelFilter, this, lx, T + 314, sw, 166);
+            H1Put(panelFilter, this, lx, T + oFlt, sw, 180);
             H1Grid(panelFilter, new Control[] { radFilter1, radFilter2, radFilter3, radFilter4, radFilter5, radFilter6,
                 radFilter7, radFilter8, radFilter9, radFilter10, radFilterVar1, radFilterVar2 }, 3, pitch, bw, rh);
-            H1Put(lblFilterWidth, panelFilter, 0, 98);
-            H1Put(ptbFilterWidth, panelFilter, 36, 94, 104, 24);
-            H1Put(lblFilterShift, panelFilter, 0, 122);
-            H1Put(ptbFilterShift, panelFilter, 30, 118, 64, 24);
-            H1Put(btnFilterShiftReset, panelFilter, 96, 120, 43, 20);
+            H1Put(lblFilterWidth, panelFilter, 0, 104);
+            H1Put(ptbFilterWidth, panelFilter, 36, 100, 104, 24);
+            H1Put(lblFilterShift, panelFilter, 0, 132);
+            H1Put(ptbFilterShift, panelFilter, 30, 128, 64, 24);
+            H1Put(btnFilterShiftReset, panelFilter, 96, 130, 43, 20);
             lblFilterLow.AutoSize = true; lblFilterHigh.AutoSize = true;
-            H1Put(lblFilterLow, panelFilter, 0, 146);
-            H1Put(udFilterLow, panelFilter, 24, 142, 44);
-            H1Put(lblFilterHigh, panelFilter, 70, 146);
-            H1Put(udFilterHigh, panelFilter, 98, 142, 42);
+            H1Put(lblFilterLow, panelFilter, 0, 160);
+            H1Put(udFilterLow, panelFilter, 24, 156, 44);
+            H1Put(lblFilterHigh, panelFilter, 70, 160);
+            H1Put(udFilterHigh, panelFilter, 98, 156, 42);
 
-            H1Put(chkSquelch, this, lx + 10, T + 480);
-            H1Put(ptbSquelch, this, lx, T + 503);
-            H1Put(picSquelch, this, lx + 9, T + 524);
+            H1Put(chkSquelch, this, lx + 10, T + oSql);
+            H1Put(ptbSquelch, this, lx, T + oSql + 23);
+            H1Put(picSquelch, this, lx + 9, T + oSql + 44);
 
             // ---------- RIGHT: RX2 ----------
-            H1Put(lblRX2AF, this, rx, T);
-            H1Put(ptbRX2AF, this, rx, T + 16);
-            H1Put(lblRX2RF, this, rx, T + 42);
-            H1Put(ptbRX2RF, this, rx, T + 58);
-            H1Put(lblRX2Band, this, rx, T + 84, bw);
-            lblRX2Band.Text = "Band";
-            H1Put(comboRX2Band, this, rx, T + 99, bw);
-            H1Put(lblRX2Preamp, this, rx + pitch, T + 84, bw);
-            H1Put(comboRX2Preamp, this, rx + pitch, T + 99, bw);
-            H1Put(udRX2StepAttData, this, rx + pitch, T + 100, bw);
-            H1Put(pbAutoAttWarningRX2, this, rx + 2 * pitch, T + 99);
+            H1Put(lblRX2AF, this, rx, T + oAF);
+            H1Put(ptbRX2AF, this, rx, T + oAF + 15);
+            H1Put(lblRX2RF, this, rx, T + oAGC);
+            H1Put(ptbRX2RF, this, rx, T + oAGC + 15);
+            H1Put(lblRX2Preamp, this, rx, T + oCmb, bw);
+            H1Put(comboRX2Preamp, this, rx, T + oCmb + 15, bw);
+            H1Put(udRX2StepAttData, this, rx, T + oCmb + 16, bw);
+            H1Put(pbAutoAttWarningRX2, this, rx + pitch, T + oCmb + 15);
             panelRX2Power.Size = new Size(1, 1);
             panelRX2Power.Location = new Point(0, 0);
-            panelRX2Power.SendToBack(); // H1: now an empty container
+            panelRX2Power.SendToBack();
 
-            H1Put(panelRX2Mode, this, rx, T + 124, sw, 4 * rh);
+            H1Put(panelRX2Mode, this, rx, T + oMode, sw, 4 * rh);
             H1Grid(panelRX2Mode, new Control[] { radRX2ModeLSB, radRX2ModeUSB, radRX2ModeDSB, radRX2ModeCWL, radRX2ModeCWU, radRX2ModeFMN,
                 radRX2ModeAM, radRX2ModeSAM, radRX2ModeSPEC, radRX2ModeDIGL, radRX2ModeDIGU, radRX2ModeDRM }, 3, pitch, bw, rh);
 
-            H1Put(panelRX2DSP, this, rx, T + 219, sw, 4 * rh);
+            H1Put(panelRX2DSP, this, rx, T + oDSP, sw, 4 * rh);
             H1Grid(panelRX2DSP, new Control[] { chkRX2NR, chkRX2ANF, chkRX2NB, chkRX2NB2, chkRX2Mute, chkRX2BIN }, 2, pitch, bw, rh);
             H1Put(chkEnableMultiRX2, panelRX2DSP, 2 * pitch, 0, bw);
             H1Put(lblRX2AGC, panelRX2DSP, 0, 3 * rh + 4);
             H1Put(comboRX2AGC, panelRX2DSP, 34, 3 * rh + 1, 60);
 
-            H1Put(panelRX2Filter, this, rx, T + 314, sw, 166);
+            H1Put(panelRX2Filter, this, rx, T + oFlt, sw, 180);
             H1Grid(panelRX2Filter, new Control[] { radRX2Filter1, radRX2Filter2, radRX2Filter3, radRX2Filter4, radRX2Filter5, radRX2Filter6,
                 radRX2Filter7, radRX2Filter8, radRX2Filter9, radRX2Filter10, radRX2FilterVar1, radRX2FilterVar2 }, 3, pitch, bw, rh);
             if (ptbRX2FilterWidth != null)
             {
-                H1Put(lblRX2FilterWidth, panelRX2Filter, 0, 98);
-                H1Put(ptbRX2FilterWidth, panelRX2Filter, 36, 94, 104, 24);
-                H1Put(lblRX2FilterShift, panelRX2Filter, 0, 122);
-                H1Put(ptbRX2FilterShift, panelRX2Filter, 30, 118, 64, 24);
-                H1Put(btnRX2FilterShiftReset, panelRX2Filter, 96, 120, 43, 20);
+                H1Put(lblRX2FilterWidth, panelRX2Filter, 0, 104);
+                H1Put(ptbRX2FilterWidth, panelRX2Filter, 36, 100, 104, 24);
+                H1Put(lblRX2FilterShift, panelRX2Filter, 0, 132);
+                H1Put(ptbRX2FilterShift, panelRX2Filter, 30, 128, 64, 24);
+                H1Put(btnRX2FilterShiftReset, panelRX2Filter, 96, 130, 43, 20);
             }
             lblRX2FilterLow.AutoSize = true; lblRX2FilterHigh.AutoSize = true;
-            H1Put(lblRX2FilterLow, panelRX2Filter, 0, 146);
-            H1Put(udRX2FilterLow, panelRX2Filter, 24, 142, 44);
-            H1Put(lblRX2FilterHigh, panelRX2Filter, 70, 146);
-            H1Put(udRX2FilterHigh, panelRX2Filter, 98, 142, 42);
+            H1Put(lblRX2FilterLow, panelRX2Filter, 0, 160);
+            H1Put(udRX2FilterLow, panelRX2Filter, 24, 156, 44);
+            H1Put(lblRX2FilterHigh, panelRX2Filter, 70, 160);
+            H1Put(udRX2FilterHigh, panelRX2Filter, 98, 156, 42);
 
-            H1Put(chkRX2Squelch, this, rx + 10, T + 480);
-            H1Put(ptbRX2Squelch, this, rx, T + 503);
-            H1Put(picRX2Squelch, this, rx + 9, T + 524);
+            H1Put(chkRX2Squelch, this, rx + 10, T + oSql);
+            H1Put(ptbRX2Squelch, this, rx, T + oSql + 23);
+            H1Put(picRX2Squelch, this, rx + 9, T + oSql + 44);
 
             foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRF, ptbRF, lblAGC, comboAGC, lblPreamp, comboPreamp, udRX1StepAttData,
-                lblRX2AF, ptbRX2AF, lblRX2RF, ptbRX2RF, lblRX2Band, comboRX2Band, lblRX2Preamp, comboRX2Preamp, udRX2StepAttData,
+                lblRX2AF, ptbRX2AF, lblRX2RF, ptbRX2RF, lblRX2Preamp, comboRX2Preamp, udRX2StepAttData,
                 panelMode, panelDSP, panelFilter, panelRX2Mode, panelRX2DSP, panelRX2Filter,
                 chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch })
                 if (k != null) k.BringToFront();
+
             // ---------- BELOW, left: RX1 overflow ----------
             panelBandHF.Location = new Point(2, 730);
             panelBandGEN.Location = new Point(2, 730);
             panelBandVHF.Location = new Point(2, 730);
             panelMultiRX.Location = new Point(190, 730);
-            panelDisplay2.Location = new Point(190, 810);
+            panelDisplay2.Location = new Point(190, 830);
 
             // ---------- BELOW, centre: shared ----------
             H1Put(lblAF, this, 445, 730);
             H1Put(ptbAF, this, 445, 746);
-            H1Put(lblPWR, this, 445, 775);
-            H1Put(ptbPWR, this, 445, 791);
-            H1Put(lblTune, this, 445, 820);
-            H1Put(ptbTune, this, 445, 836);
-            H1Put(udTXStepAttData, this, 445, 866);
+            H1Put(lblPWR, this, 445, 780);
+            H1Put(ptbPWR, this, 445, 796);
+            H1Put(lblTune, this, 445, 830);
+            H1Put(ptbTune, this, 445, 846);
+            H1Put(udTXStepAttData, this, 445, 880);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
-            panelSoundControls.SendToBack(); // H1: now an empty container, never above the strip controls
+            panelSoundControls.SendToBack();
             panelVFO.Location = new Point(565, 730);
 
-            // ---------- BELOW, right: RX2 overflow ----------
-            panelRX2Mixer.Location = new Point(this.ClientSize.Width - 400, 730);
-            panelRX2Display.Location = new Point(this.ClientSize.Width - 400, 810);
+            // ---------- BELOW, right: RX2 overflow, the mirror of the left ----------
+            if (h1RX2BandPanel != null)
+            {
+                h1RX2BandPanel.Location = new Point(this.ClientSize.Width - h1RX2BandPanel.Width - 3, 730);
+                h1RX2BandPanel.BringToFront();
+            }
+            panelRX2Mixer.Location = new Point(this.ClientSize.Width - 410, 730);
+            panelRX2Display.Location = new Point(this.ClientSize.Width - 410, 830);
         }
 
         // H1: shape the right-side vol/pan strip as the mirror of the left's
@@ -15998,6 +16095,7 @@ namespace Thetis
                 bool enabled = !_vfoB_lock;
                 txtVFOBFreq.Enabled = enabled;
                 comboRX2Band.Enabled = enabled;
+                H1RX2BandEnable(enabled);
                 btnVFOAtoB.Enabled = enabled;
                 chkVFOSync.Enabled = enabled;
                 radRX2ModeLSB.Enabled = enabled;
@@ -18296,6 +18394,7 @@ namespace Thetis
                 {
                     comboRX2Band.Text = sBand;
                 }
+                H1SyncRX2BandButtons();
 
                 Band lo_band = Band.FIRST;
                 if (rx2_xvtr_index >= 0)
@@ -31610,6 +31709,7 @@ namespace Thetis
                 //rx2
                 lblRX2Band.Visible = false;
                 comboRX2Band.Visible = false;
+                H1RX2BandVis(false);
                 return;
             }
 
@@ -31618,6 +31718,7 @@ namespace Thetis
             //rx2
             lblRX2Band.Visible = !LegacyItemController.HideBands;
             comboRX2Band.Visible = !LegacyItemController.HideBands;
+            H1RX2BandVis(!LegacyItemController.HideBands);
         }
         public void ModePanelVisible(bool visible)
         {
@@ -40466,6 +40567,7 @@ namespace Thetis
                 chkRX2Mute.Visible = show && !sub;
                 lblRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
                 comboRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
+                H1RX2BandVis(show && !sub && !LegacyItemController.HideBands);
 
                 // the RX2 monitor-volume row and the RX2 hardware extras belong to
                 // receiver 2 only: with RX2 off they have no meaning (a source of
@@ -44401,6 +44503,7 @@ namespace Thetis
             chkRX2.Show();
             lblRX2Band.Show();
             comboRX2Band.Show();
+            H1RX2BandVis(true);
             panelRX2Mixer.Show();
             lblRX2RF.Show();
             lblRX2AF.Show();
@@ -44942,6 +45045,7 @@ namespace Thetis
             //RX2 controls
             lblRX2Band.Hide();
             comboRX2Band.Hide();
+            H1RX2BandVis(false);
             panelRX2Mixer.Hide();
             lblRX2RF.Hide();
             lblRX2AF.Hide();
