@@ -6013,7 +6013,6 @@ namespace Thetis
             private struct BLENDFUNCTION { public byte BlendOp; public byte BlendFlags; public byte SourceConstantAlpha; public byte AlphaFormat; }
 
             private static readonly Color dim_colour = Color.FromArgb(150, 0, 0, 0);
-            private static readonly Color glow_colour = Color.FromArgb(0, 235, 40); // the power button, lit
 
             private readonly Console m_console;
 
@@ -6050,9 +6049,13 @@ namespace Thetis
                         if (!r.IsEmpty)
                         {
                             r.Offset(-Left, -Top);
-                            FillPill(g, r, 8, Color.FromArgb(55, glow_colour));
-                            FillPill(g, r, 4, Color.FromArgb(120, glow_colour));
-                            FillPill(g, r, 0, Color.FromArgb(235, glow_colour));
+                            // the button keeps its own design: a soft halo around it and
+                            // the button itself left clear, so it shows at full strength
+                            FillPill(g, r, 8, Color.FromArgb(55, 55, 70, 91));
+                            FillPill(g, r, 4, Color.FromArgb(120, 113, 138, 170));
+                            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                            FillPill(g, r, 0, Color.FromArgb(0, 0, 0, 0));
+                            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
                         }
                     }
 
@@ -6133,9 +6136,42 @@ namespace Thetis
                 PowerStateVisualsChanged(this, EventArgs.Empty);
             };
             m_powerSettleTimer.Start();
+
+            // H1: the off-state veil must survive every layout pass, and some bring
+            // their own panels to the front after the settle; this small watchdog
+            // re-asserts the veil's state, bounds and top position once a second
+            m_powerWatchdog = new System.Windows.Forms.Timer();
+            m_powerWatchdog.Interval = 1000;
+            m_powerWatchdog.Tick += (s, ev) => PowerStateWatchdog();
+            m_powerWatchdog.Start();
         }
 
         private System.Windows.Forms.Timer m_powerSettleTimer;
+        private System.Windows.Forms.Timer m_powerWatchdog;
+
+        private void PowerStateWatchdog()
+        {
+            if (m_powerDimOverlay == null) return;
+            bool show = !chkPower.Checked;
+            if (m_powerDimOverlay.Visible != show)
+            {
+                m_powerDimOverlay.Visible = show;
+                if (show)
+                {
+                    m_powerDimOverlay.Bounds = ClientRectangle;
+                    m_powerDimOverlay.Push();
+                }
+            }
+            if (show)
+            {
+                if (m_powerDimOverlay.Bounds != ClientRectangle)
+                {
+                    m_powerDimOverlay.Bounds = ClientRectangle;
+                    m_powerDimOverlay.Push();
+                }
+                m_powerDimOverlay.BringToFront();
+            }
+        }
 
         // H1: one settle pass per power change - the two sub rows take their power
         // colours (the main rows and the LSD boxes are dimmed by the console's own
@@ -6143,6 +6179,9 @@ namespace Thetis
         // and the panafall veil rises while the console is off
         private void PowerStateVisualsChanged(object sender, EventArgs e)
         {
+            // H1: the power button keeps its own blue face in both states, so the user
+            // always sees the one control that turns the console on - never a grey twin
+            if (chkPower != null) chkPower.BackColor = button_selected_color;
             showTxSelection(); // the ticks, the receiver rows, the LSD boxes and both sub rows
             if (m_powerDimOverlay != null)
             {
