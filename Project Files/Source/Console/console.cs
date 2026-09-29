@@ -6188,6 +6188,9 @@ namespace Thetis
                         if (!b.Checked) b.BackColor = Color.FromArgb(37, 37, 37);
                     }
                 }
+                // H1: the zero-tune button is a plain button and keeps the stock pale fill
+                // while every neighbour renders dark - give it the same dark here
+                btnDisplayZTB.BackColor = Color.FromArgb(37, 37, 37);
                 panelFilter.Invalidate(true);
                 panelRX2Filter.Invalidate(true);
             };

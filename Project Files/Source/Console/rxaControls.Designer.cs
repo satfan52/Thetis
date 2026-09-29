@@ -6527,7 +6527,7 @@
             // clrbtnBtnSel
             // 
             this.clrbtnBtnSel.Automatic = "Automatic";
-            this.clrbtnBtnSel.Color = System.Drawing.Color.Yellow;
+            this.clrbtnBtnSel.Color = System.Drawing.Color.FromArgb(((int)(((byte)(50)))), ((int)(((byte)(108)))), ((int)(((byte)(183))))); // H1: was Color.Yellow - the stale stock default that repainted the sub ticks yellow at every start
             this.clrbtnBtnSel.Image = null;
             this.clrbtnBtnSel.Location = new System.Drawing.Point(88, 101);
             this.clrbtnBtnSel.MoreColors = "More Colors...";
