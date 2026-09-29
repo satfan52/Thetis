@@ -39353,19 +39353,27 @@ namespace Thetis
 
             if (update_rx2_display)
             {
+                // H1: the basis only moves when the window itself moves. Above the minimum
+                // size the height stays put, so adjusting the basis alone shifted every
+                // delta-anchored control down by the strip height - seen when RX2 was
+                // switched off at a maximised window, where the sub strip and display
+                // controls dropped 135 px and were cut at the bottom. Coupled, a large
+                // window is stable and a small window keeps the original grow and shrink.
                 if (chkRX2.Checked)
                 {
                     if (this.Height <= MinimumSize.Height + panelRX2Filter.Height + 8)
+                    {
                         this.Height += (panelRX2Filter.Height + 8);
-
-                    console_basis_size.Height += (panelRX2Filter.Height + 8);
+                        console_basis_size.Height += (panelRX2Filter.Height + 8);
+                    }
                 }
                 else
                 {
                     if (this.Height <= MinimumSize.Height + panelRX2Filter.Height + 8)
+                    {
                         this.Height -= (panelRX2Filter.Height + 8);
-
-                    console_basis_size.Height -= (panelRX2Filter.Height + 8);
+                        console_basis_size.Height -= (panelRX2Filter.Height + 8);
+                    }
                 }
 
                 Console_Resize(this, EventArgs.Empty);
