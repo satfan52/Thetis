@@ -802,7 +802,7 @@ namespace Thetis
             }
             if (!ownFiles)
             {
-                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset";
+                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF";
             }
 
 

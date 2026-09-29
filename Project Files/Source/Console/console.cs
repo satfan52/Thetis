@@ -773,6 +773,7 @@ namespace Thetis
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
+            H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
             InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
 
@@ -6020,15 +6021,96 @@ namespace Thetis
             btnHidden.Focus();
         }
 
+        private RadioButtonTS[] h1RX2VhfButtons;
+        private PanelTS h1RX2VhfPanel;
+        private bool h1RX2VhfPage = false;
+        private bool h1RX2BandShown = true;
+
+        // H1: the RX2 VHF page - the twin of RX1's VHF panel, reached by the VHF+ button
+        private void H1CreateRX2VhfPage()
+        {
+            h1RX2VhfPanel = new PanelTS();
+            h1RX2VhfPanel.Name = "panelRX2BandVhfBtns";
+            h1RX2VhfPanel.Size = panelBandVHF.Size;
+            h1RX2VhfPanel.BackColor = panelBandVHF.BackColor;
+            this.Controls.Add(h1RX2VhfPanel);
+
+            int[][] pos = new int[][] { new int[]{0,0}, new int[]{1,0}, new int[]{2,0}, new int[]{0,1}, new int[]{1,1}, new int[]{2,1},
+                new int[]{0,2}, new int[]{1,2}, new int[]{2,2}, new int[]{0,3}, new int[]{1,3}, new int[]{2,3}, new int[]{1,4}, new int[]{2,4} };
+            RadioButtonTS[] src = new RadioButtonTS[] { radBandVHF0, radBandVHF1, radBandVHF2, radBandVHF3, radBandVHF4, radBandVHF5, radBandVHF6,
+                radBandVHF7, radBandVHF8, radBandVHF9, radBandVHF10, radBandVHF11, radBandVHF12, radBandVHF13 };
+            h1RX2VhfButtons = new RadioButtonTS[14];
+            for (int i = 0; i < 14; i++)
+            {
+                RadioButtonTS b = new RadioButtonTS();
+                b.Name = "radRX2BandVHF" + i.ToString();
+                b.Tag = "VHF" + i.ToString();
+                b.Text = src[i].Text;
+                b.Appearance = src[i].Appearance;
+                b.FlatStyle = src[i].FlatStyle;
+                b.FlatAppearance.BorderSize = 0;
+                b.Font = src[i].Font;
+                b.ForeColor = src[i].ForeColor;
+                b.BackColor = src[i].BackColor;
+                b.TextAlign = src[i].TextAlign;
+                b.Size = src[i].Size;
+                b.TabStop = false;
+                b.Location = new Point(10 + 51 * pos[i][0], 8 + 23 * pos[i][1]);
+                b.Click += H1RX2BandClick;
+                h1RX2VhfPanel.Controls.Add(b);
+                h1RX2VhfButtons[i] = b;
+            }
+            ButtonTS toHf = new ButtonTS();
+            toHf.Name = "btnRX2BandHF";
+            toHf.Text = btnBandHF.Text;
+            toHf.FlatStyle = btnBandHF.FlatStyle;
+            toHf.FlatAppearance.BorderSize = 0;
+            toHf.Font = btnBandHF.Font; toHf.ForeColor = btnBandHF.ForeColor; toHf.BackColor = btnBandHF.BackColor;
+            toHf.Size = btnBandHF.Size; toHf.TabStop = false;
+            toHf.Location = new Point(10, 100);
+            toHf.Click += (s, e) => { h1RX2VhfPage = false; H1SyncRX2BandButtons(); };
+            h1RX2VhfPanel.Controls.Add(toHf);
+
+            ButtonTS toVhf = new ButtonTS();
+            toVhf.Name = "btnRX2BandVHF";
+            toVhf.Text = btnBandVHF.Text;
+            toVhf.FlatStyle = btnBandVHF.FlatStyle;
+            toVhf.FlatAppearance.BorderSize = 0;
+            toVhf.Font = btnBandVHF.Font; toVhf.ForeColor = btnBandVHF.ForeColor; toVhf.BackColor = btnBandVHF.BackColor;
+            toVhf.Size = btnBandVHF.Size; toVhf.TabStop = false;
+            toVhf.Location = new Point(10, 100);
+            toVhf.Click += (s, e) => { h1RX2VhfPage = true; H1SyncRX2BandButtons(); };
+            h1RX2BandPanel.Controls.Add(toVhf);
+            H1SyncRX2BandButtons();
+        }
+
         private void H1SyncRX2BandButtons()
         {
             if (h1RX2BandButtons == null) return;
             string sb = BandToString(rx2_band);
+            if (sb.StartsWith("VHF")) h1RX2VhfPage = true;
+            else foreach (RadioButtonTS b in h1RX2BandButtons) if ((string)b.Tag == sb) { h1RX2VhfPage = false; break; }
             foreach (RadioButtonTS b in h1RX2BandButtons)
             {
                 bool on = string.Equals((string)b.Tag, sb, StringComparison.Ordinal);
                 if (b.Checked != on) b.Checked = on;
             }
+            if (h1RX2VhfButtons != null)
+            {
+                RadioButtonTS[] src = new RadioButtonTS[] { radBandVHF0, radBandVHF1, radBandVHF2, radBandVHF3, radBandVHF4, radBandVHF5, radBandVHF6,
+                    radBandVHF7, radBandVHF8, radBandVHF9, radBandVHF10, radBandVHF11, radBandVHF12, radBandVHF13 };
+                for (int i = 0; i < h1RX2VhfButtons.Length; i++)
+                {
+                    RadioButtonTS b = h1RX2VhfButtons[i];
+                    if (b.Text != src[i].Text) b.Text = src[i].Text;
+                    bool en = false;
+                    try { en = XVTRForm.GetEnabled(i) && !_vfoB_lock; } catch { en = false; } // the form does not exist yet during construction
+                    if (b.Enabled != en) b.Enabled = en;
+                    bool on = string.Equals((string)b.Tag, sb, StringComparison.Ordinal);
+                    if (b.Checked != on) b.Checked = on;
+                }
+            }
+            H1RX2BandVis(h1RX2BandShown);
         }
 
         private void H1RX2BandEnable(bool enabled)
@@ -6039,7 +6121,9 @@ namespace Thetis
 
         private void H1RX2BandVis(bool visible)
         {
-            if (h1RX2BandPanel != null) h1RX2BandPanel.Visible = visible;
+            h1RX2BandShown = visible;
+            if (h1RX2BandPanel != null) h1RX2BandPanel.Visible = visible && !h1RX2VhfPage;
+            if (h1RX2VhfPanel != null) h1RX2VhfPanel.Visible = visible && h1RX2VhfPage;
         }
 
         // H1: RX2 audio swap - the twin of chkPanSwap: flips the left/right pan of RX2 and SubRX2.
@@ -6245,16 +6329,31 @@ namespace Thetis
                 h1RX2BandPanel.Location = new Point(W - h1RX2BandPanel.Width + 1, Y0 + 12);
                 h1RX2BandPanel.BringToFront();
             }
+            if (h1RX2VhfPanel != null)
+            {
+                h1RX2VhfPanel.Location = new Point(W - h1RX2VhfPanel.Width + 1, Y0 + 12);
+                h1RX2VhfPanel.BringToFront();
+            }
             panelRX2Display.Size = new Size(110, 76);
-            panelRX2Display.Location = new Point(W - 122, Y0 + 170);
+            panelRX2Display.Location = new Point(W - 113, Y0 + 170);
+            H1Put(chkX2TR, panelRX2Display, 52, 50);
             panelRX2Mixer.Location = new Point(aR, Y0 + 20);
-            H1Put(chkEnableMultiRX2, panelRX2Mixer, 172, 20, 50);
-            H1Put(chkRX2PanSwap, panelRX2Mixer, 172, 46, 50);
-            H1Put(lblRX2AF, this, aR + 12, Y0 + 96);
-            H1Put(ptbRX2AF, this, aR + 8, Y0 + 112, 210);
-            H1Put(chkRX2Squelch, this, aR + 10, Y0 + 142);
-            H1Put(ptbRX2Squelch, this, aR, Y0 + 166);
-            H1Put(picRX2Squelch, this, aR + 9, Y0 + 187);
+            // the mirror of the RX1 audio group: switches on the outer-left, sub volume next to
+            // them, then pan, then the main volume on the right
+            H1Put(chkEnableMultiRX2, panelRX2Mixer, 2, 20, 50);
+            H1Put(chkRX2PanSwap, panelRX2Mixer, 2, 46, 50);
+            if (ptbRX2SubGain != null) ptbRX2SubGain.Location = new Point(62, 19);
+            if (lblRX2SubVol != null) lblRX2SubVol.Location = new Point(64, 3);
+            ptbRX2Pan.Location = new Point(90, 19);
+            if (ptbRX2SubPan != null) ptbRX2SubPan.Location = new Point(90, 46);
+            lblRX2Pan.Location = new Point(128, 3);
+            ptbRX2Gain.Location = new Point(190, 19);
+            lblRX2Vol.Location = new Point(192, 3);
+            H1Put(lblRX2AF, this, aR + 16, Y0 + 96);
+            H1Put(ptbRX2AF, this, aR + 12, Y0 + 112, 210);
+            H1Put(chkRX2Squelch, this, aR + 232 - 10 - 80, Y0 + 142);
+            H1Put(ptbRX2Squelch, this, aR + 232 - 100, Y0 + 166);
+            H1Put(picRX2Squelch, this, aR + 232 - 9 - 83, Y0 + 187);
             foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer })
                 if (k != null) k.BringToFront();
 
