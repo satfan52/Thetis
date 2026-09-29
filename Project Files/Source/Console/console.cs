@@ -38707,13 +38707,13 @@ namespace Thetis
             }
             else
             {
-                panelFilter.Location = new Point(gr_filter_basis_location.X + h_delta, gr_filter_basis_location.Y + v_delta);
+            panelFilter.Location = new Point(180, 700); // H1: RX1 filter grid, left column below the panafall
 
                 panelBandHF.Location = new Point(gr_BandHF_basis_location.X + h_delta, gr_BandHF_basis_location.Y + (v_delta / 4));
                 panelBandGEN.Location = new Point(gr_BandGEN_basis_location.X + h_delta, gr_BandGEN_basis_location.Y + (v_delta / 4));
                 panelBandVHF.Location = new Point(gr_BandVHF_basis_location.X + h_delta, gr_BandVHF_basis_location.Y + (v_delta / 4));
 
-                panelMode.Location = new Point(gr_Mode_basis_location.X + h_delta, gr_Mode_basis_location.Y + (v_delta / 2));
+            panelMode.Location = new Point(2, 700); // H1: RX1 mode grid, left column below the panafall
 
 
                 panelVFO.Location = new Point(gr_VFO_basis_location.X + (h_delta / 4), gr_VFO_basis_location.Y + v_delta);
@@ -38769,7 +38769,7 @@ namespace Thetis
                     panelDisplay.Size = new Size(w, h);
 
                     panelDisplay2.Location = new Point(gr_display2_basis.X + (h_delta / 2), gr_display2_basis.Y + v_delta);
-                    panelDSP.Location = new Point(gr_dsp_basis.X + (h_delta / 2), gr_dsp_basis.Y + v_delta);
+            panelDSP.Location = new Point(2, 812); // H1: RX1 DSP toggles, left column below the panafall
 
                     panelPower.Location = new Point(gr_power_basis.X, gr_power_basis.Y + (v_delta / 8));
                     // H1: the power group spans to the right edge; the RX2 button rides at
@@ -38959,7 +38959,7 @@ namespace Thetis
 
             tb_rx1af_basis = this.ptbRX1AF.Location;
             tb_rx2af_basis = this.ptbRX2AF.Location;
-            gr_display_basis = this.panelDisplay.Location;
+        gr_display_basis = new Point(this.panelDisplay.Location.X + 26, this.panelDisplay.Location.Y); // H1: panafall to x150
 
             combo_display_mode_basis = this.comboDisplayMode.Location;
             combo_rx2_display_mode_basis = this.comboRX2DisplayMode.Location;
@@ -43889,7 +43889,7 @@ namespace Thetis
                 panelDisplay.Size = new Size(gr_display_size_basis.Width + h_delta, gr_display_size_basis.Height + v_delta);
 
             panelDisplay2.Location = new Point(gr_display2_basis.X + (h_delta / 2), gr_display2_basis.Y + v_delta);
-            panelDSP.Location = new Point(gr_dsp_basis.X + (h_delta / 2), gr_dsp_basis.Y + v_delta);
+                panelDSP.Location = new Point(2, 812); // H1: RX1 DSP toggles, left column below the panafall
 
             //[2.10.3.6]MW0LGE changed the above to cope with legacy control dynamic removal, now based off left of the ztb button
             ptbDisplayZoom.Location = new Point(btnDisplayZTB.Left - tb_display_zoom_size_basis.Width - 4, tb_display_zoom_basis.Y + v_delta);
@@ -43961,7 +43961,7 @@ namespace Thetis
             radBandVHF13.Location = rad_bandVHF13_basis;
             btnBandHF.Location = btn_bandHF_basis;//w3sz
 
-            panelMode.Location = new Point(gr_Mode_basis_location.X + h_delta, gr_Mode_basis_location.Y + (v_delta / 2));
+            panelMode.Location = new Point(2, 700); // H1: RX1 mode grid, left column below the panafall
 
             panelMode.Size = gr_Mode_basis_size;
 
