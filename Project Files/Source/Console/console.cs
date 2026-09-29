@@ -6207,28 +6207,13 @@ namespace Thetis
 
         private System.Windows.Forms.Timer m_powerSettleTimer;
         private System.Windows.Forms.Timer m_powerWatchdog;
-        private bool _h1_tickRecached = false; // H1: one-shot reparent for the SubRX2 tick's cached paint
 
         private void PowerStateWatchdog()
         {
             if (m_powerDimOverlay == null) return;
-            // H1: the SubRX2 tick paints from a cached background (its parent is a
-            // transparent panel, so WinForms caches the parent's render beneath it and
-            // the cache holds a stale yellow fill). Re-parenting it once forces the
-            // cache to rebuild from the panel's current paint, then set the colour.
-            if (!_h1_tickRecached)
-            {
-                _h1_tickRecached = true;
-                Point tickHome = chkEnableMultiRX2.Location;
-                chkEnableMultiRX2.Parent = null;
-                chkEnableMultiRX2.Parent = panelRX2Mode;
-                chkEnableMultiRX2.Location = tickHome;
-            }
-
-            chkEnableMultiRX2.UseVisualStyleBackColor = false;
-            chkEnableMultiRX.BackColor = chkEnableMultiRX.Checked ? button_selected_color : Color.FromArgb(37, 37, 37);
-            chkEnableMultiRX2.BackColor = chkEnableMultiRX2.Checked ? button_selected_color : Color.FromArgb(37, 37, 37);
-            chkEnableMultiRX2.Refresh();
+            // H1: the sub ticks take their look from the skin's image sets (Skin.cs
+            // mirrors the sub ticks onto the main ticks' tiles), so no colour forcing is
+            // needed here any more.
             bool show = !chkPower.Checked;
             if (m_powerDimOverlay.Visible != show)
             {

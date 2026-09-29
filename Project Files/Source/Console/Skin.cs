@@ -999,7 +999,7 @@ namespace Thetis
 
         private static void SetupCheckBoxImages(CheckBox ctrl)
         {
-            // H1: the two sub transmit ticks mirror the main transmit ticks. With no skin
+            // H1: the sub ticks mirror the main tick they belong to. With no skin
             // files of their own they take the image set of the main tick they belong to,
             // so they present exactly like it in every state - checked, unchecked and
             // disabled. Own files win if they are ever added.
@@ -1018,6 +1018,7 @@ namespace Thetis
             {
                 if (skinName == "chkSubVFOATX") skinName = "chkVFOATX";
                 else if (skinName == "chkSubVFOBTX") skinName = "chkVFOBTX";
+                else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX";
             }
 
             string skey = "";
