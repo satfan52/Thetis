@@ -6049,13 +6049,35 @@ namespace Thetis
                         if (!r.IsEmpty)
                         {
                             r.Offset(-Left, -Top);
-                            // the button keeps its own design: a soft halo around it and
-                            // the button itself left clear, so it shows at full strength
-                            FillPill(g, r, 8, Color.FromArgb(55, 55, 70, 91));
-                            FillPill(g, r, 4, Color.FromArgb(120, 113, 138, 170));
-                            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                            FillPill(g, r, 0, Color.FromArgb(0, 0, 0, 0));
-                            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+                            // the button is redrawn right here at full contrast: the halo,
+                            // then the blue pill and the white power symbol, so the off
+                            // state carries the same design as the reference, unmistakable
+                            FillPill(g, r, 8, Color.FromArgb(70, 55, 70, 91));
+                            FillPill(g, r, 4, Color.FromArgb(140, 113, 138, 170));
+                            using (System.Drawing.Drawing2D.GraphicsPath pill = PillPath(r, 0))
+                            {
+                                using (System.Drawing.Drawing2D.LinearGradientBrush body =
+                                    new System.Drawing.Drawing2D.LinearGradientBrush(r, Color.FromArgb(10, 25, 70), Color.FromArgb(45, 100, 190), 90f))
+                                    g.FillPath(body, pill);
+                                using (Pen edge = new Pen(Color.FromArgb(120, 165, 235), 1.6f))
+                                    g.DrawPath(edge, pill);
+                            }
+                            int w = r.Width, h = r.Height;
+                            int dia = (int)(h * 0.60);
+                            Rectangle ring = new Rectangle(r.X + (w - dia) / 2, r.Y + (h - dia) / 2 + 1, dia, dia);
+                            using (Pen glyph = new Pen(Color.White, 3.4f))
+                            {
+                                glyph.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                                glyph.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                                g.DrawArc(glyph, ring, -60, 300);
+                            }
+                            using (Pen bar = new Pen(Color.White, 3.4f))
+                            {
+                                bar.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                                bar.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                                float cx = r.X + w / 2f;
+                                g.DrawLine(bar, cx, r.Y + h * 0.17f, cx, r.Y + h * 0.50f);
+                            }
                         }
                     }
 
@@ -6089,19 +6111,23 @@ namespace Thetis
                 }
             }
 
-            private static void FillPill(Graphics g, Rectangle r, int inflate, Color colour)
+            private static System.Drawing.Drawing2D.GraphicsPath PillPath(Rectangle r, int inflate)
             {
                 Rectangle rr = r;
                 if (inflate != 0) rr.Inflate(inflate, inflate);
                 int rad = rr.Height;
-                using (System.Drawing.Drawing2D.GraphicsPath pill = new System.Drawing.Drawing2D.GraphicsPath())
-                {
-                    pill.AddArc(rr.X, rr.Y, rad, rad, 90, 180);
-                    pill.AddArc(rr.Right - rad, rr.Y, rad, rad, 270, 180);
-                    pill.CloseFigure();
-                    using (SolidBrush b = new SolidBrush(colour))
-                        g.FillPath(b, pill);
-                }
+                System.Drawing.Drawing2D.GraphicsPath pill = new System.Drawing.Drawing2D.GraphicsPath();
+                pill.AddArc(rr.X, rr.Y, rad, rad, 90, 180);
+                pill.AddArc(rr.Right - rad, rr.Y, rad, rad, 270, 180);
+                pill.CloseFigure();
+                return pill;
+            }
+
+            private static void FillPill(Graphics g, Rectangle r, int inflate, Color colour)
+            {
+                using (System.Drawing.Drawing2D.GraphicsPath pill = PillPath(r, inflate))
+                using (SolidBrush b = new SolidBrush(colour))
+                    g.FillPath(b, pill);
             }
         }
 
