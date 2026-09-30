@@ -6174,6 +6174,7 @@ namespace Thetis
                     h1RX2VeilStrip.Visible = veil;
                     h1RX2VeilBelow.Visible = veil;
                     h1RX2VeilTop.Visible = veil;
+                    if (veil) H1VeilTimerStart(); else H1VeilTimerStop();
                 }
                 if (veil)
                 {
@@ -6320,6 +6321,32 @@ namespace Thetis
             catch { }
             frozen = null;
             return false;
+        }
+
+        // H1: the meter faces re-surface above the veil on their own, so the veil re-asserts its
+        // place a few times a second while it is up. A layered window costs nothing to re-front and
+        // the mouse still passes straight through it.
+        private System.Windows.Forms.Timer h1VeilTimer;
+
+        private void H1VeilTimerStart()
+        {
+            try
+            {
+                if (h1VeilTimer == null)
+                {
+                    h1VeilTimer = new System.Windows.Forms.Timer();
+                    h1VeilTimer.Interval = 250;
+                    h1VeilTimer.Tick += (s, e) => H1KeepVeilOnTop();
+                }
+                h1VeilTimer.Start();
+            }
+            catch { }
+        }
+
+        private void H1VeilTimerStop()
+        {
+            try { if (h1VeilTimer != null) h1VeilTimer.Stop(); }
+            catch { }
         }
 
         private void H1KeepVeilOnTop()
@@ -38632,9 +38659,13 @@ namespace Thetis
             {
                 picRX2Meter.BackColor = current_meter_display_mode == MultiMeterDisplayMode.Edge
                     ? edge_meter_background_color : meter_background_color;
+                // H1: the meter canvas is taken out of the way while RX2 is off. Left up it keeps
+                // drawing its face on top of the dim, which is why the readings of the two RX2
+                // meters stayed bright while everything around them was dimmed.
+                picRX2Meter.Visible = rx2_enabled;
                 picRX2Meter.Refresh();
             }
-            if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
+            if (picSubRX2Meter != null) { picSubRX2Meter.Visible = rx2_enabled; picSubRX2Meter.Invalidate(); }
 
             // H1: the meters and the VFO B box now keep their face and their last readings while
             // RX2 is off - they are dimmed by the veil instead of going blank, the same treatment
