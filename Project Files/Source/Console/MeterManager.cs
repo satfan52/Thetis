@@ -5263,28 +5263,7 @@ namespace Thetis
                     clsMeter m = mkvp.Value;
 
                     bool previousMOX = m.MOX;
-                    // H1: a meter with nothing of its own to draw in transmit - the sub meters -
-                    // was switched into TX mode anyway. Every one of its groups is RX-only, so
-                    // drawMeters() fell back to the minimum height and the container shrank, which
-                    // is the bottom half of SubRX1 and SubRX2 disappearing on MOX. A meter that
-                    // has no TX item keeps showing its receive picture instead, and its readings
-                    // stay live, exactly as the RX1 and RX2 meters keep theirs.
-                    bool h1TxItems = false;
-                    try
-                    {
-                        if (m.SortedMeterItemsForZOrder != null)
-                            foreach (clsMeterItem h1mi in m.SortedMeterItemsForZOrder)
-                                if (h1mi.OnlyWhenTX) { h1TxItems = true; break; }
-                    }
-                    catch { }
-                    bool h1SubByName = m.ID != null && m.ID.IndexOf("sub", StringComparison.OrdinalIgnoreCase) >= 0;
-                    bool h1KeepRx = !h1TxItems || h1SubByName;
-                    m.MOX = rx == m.RX && newMox && !h1KeepRx;
-                    if (newMox && !oldMox && h1KeepRx)
-                    {
-                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
-                            DateTime.Now.ToString("HH:mm:ss.fff") + " MOX: '" + m.ID + "' kept in receive (txItems=" + h1TxItems + ", subName=" + h1SubByName + ")\r\n"); } catch { }
-                    }
+                    m.MOX = rx == m.RX && newMox;
 
                     if (newMox && !oldMox) // ignore RX as tx stuff is common
                     {
@@ -32759,7 +32738,7 @@ namespace Thetis
                                 {
                                     clsClickBox cb = (clsClickBox)mi;
 
-                                    if ((!cb.OnlyWhenRX && !cb.OnlyWhenTX) || ((m.MOX && cb.OnlyWhenTX) || (!m.MOX && cb.OnlyWhenRX)) || (H1MeterKeepsRxItems(m) && cb.OnlyWhenRX))
+                                    if ((!cb.OnlyWhenRX && !cb.OnlyWhenTX) || ((m.MOX && cb.OnlyWhenTX) || (!m.MOX && cb.OnlyWhenRX)))
                                     {
                                         float x = (mi.DisplayTopLeft.X / m.XRatio) * rect.Width;
                                         float y = (mi.DisplayTopLeft.Y / m.YRatio) * rect.Height;
@@ -32889,24 +32868,6 @@ namespace Thetis
             }
 
             //            
-            // H1: a meter whose scale is flagged receive-only lost that scale on MOX - the bottom
-            // band went blank - while the RX1 and RX2 scales stayed on screen with only the pointer
-            // falling back. A meter that owns NO transmit-only item has no transmit picture of its
-            // own to show, so its receive items keep drawing while the radio transmits, which is
-            // the treatment the RX meters already get. Keyed on the items, not on any meter name.
-            private static bool H1MeterKeepsRxItems(clsMeter m)
-            {
-                try
-                {
-                    if (m == null || !m.MOX) return false;
-                    if (m.SortedMeterItemsForZOrder != null)
-                        foreach (clsMeterItem mi in m.SortedMeterItemsForZOrder)
-                            if (mi.OnlyWhenTX) return false;
-                    return true;
-                }
-                catch { return false; }
-            }
-
             private int drawMeters(out int height)
             {
                 int nRedrawDelay = int.MaxValue;
@@ -32935,7 +32896,7 @@ namespace Thetis
 
                         foreach (clsMeterItem mi in m.SortedMeterItemsForZOrder)
                         {                          
-                            bool bRender = ((m.MOX && mi.OnlyWhenTX) || (!m.MOX && mi.OnlyWhenRX)) || (!mi.OnlyWhenTX && !mi.OnlyWhenRX) || (H1MeterKeepsRxItems(m) && mi.OnlyWhenRX);
+                            bool bRender = ((m.MOX && mi.OnlyWhenTX) || (!m.MOX && mi.OnlyWhenRX)) || (!mi.OnlyWhenTX && !mi.OnlyWhenRX);
 
                             if (bRender && ((m.DisplayGroup == 0 || mi.DisplayGroup == 0) || (mi.DisplayGroup == m.DisplayGroup)))
                             {
