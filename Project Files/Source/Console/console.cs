@@ -6266,7 +6266,11 @@ namespace Thetis
             }
             if (ttop == 10000) ttop = 48;
             int tx0 = tleft - 8;
-            int tby = Math.Max(30, ttop - 4); // never reach the window chrome
+            // H1: reach well above the three boxes. Their widgets stand a few pixels proud of the
+            // frames, and anything above the dimmer area keeps its full brightness, which is the
+            // undimmed sliver. The chrome guard above and the wide-control guard in the walk keep
+            // the title bar and the furniture out of it.
+            int tby = Math.Max(30, ttop - 26);
             int tby2 = (panelDisplay != null ? panelDisplay.Top : 140);
             h1RX2VeilTop.Bounds = new Rectangle(tx0, tby, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby2 - tby));
 
