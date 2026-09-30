@@ -43790,7 +43790,7 @@ namespace Thetis
                 lab.BackColor = Color.Transparent;
                 lab.UseMnemonic = false;
                 lab.Font = grp.Font;
-                lab.Location = new Point(8 + System.Windows.Forms.TextRenderer.MeasureText(cap, grp.Font).Width + 12, 3);
+                lab.Location = new Point(8 + System.Windows.Forms.TextRenderer.MeasureText(cap, grp.Font).Width + 12, 0);
                 grp.Controls.Add(lab);
                 lab.BringToFront();
                 if (vfoB) h1VFOBandB = lab; else h1VFOBandA = lab;
