@@ -19749,7 +19749,13 @@ namespace Thetis
             get { return comboMeterTXMode.Text; }
             set
             {
-                comboMeterTXMode.Text = value;
+                // H1: this setter is the TX settings parameter path. Changing the value here sets the
+                // default for all four meters; writing the value it already has changes nothing.
+                if (comboMeterTXMode.Text != value)
+                {
+                    comboMeterTXMode.Text = value;
+                    if (_h1MeterTxModesLoaded) H1DistributeMeterTxDefault(CurrentMeterTXMode);
+                }
                 UpdateButtonBarButtons();
             }
         }
@@ -19757,6 +19763,96 @@ namespace Thetis
         private MeterTXMode current_meter_tx_mode = MeterTXMode.FORWARD_POWER;
         // H1: RX2 meter keeps its own transmit value so both meters can differ
         private MeterTXMode current_meter_tx_mode_rx2 = MeterTXMode.FORWARD_POWER;
+
+        // H1: per meter transmit display values. The stock TX settings parameter is the default;
+        // a value the user picks for one meter is remembered on top of it, across restarts.
+        private MeterTXMode _h1MeterTxDefault = MeterTXMode.FORWARD_POWER;
+        private readonly bool[] _h1MeterTxOverride = new bool[4] { false, false, false, false };
+        private bool _h1MeterTxModesLoaded = false;
+
+        private string H1MeterTxModeFile
+        {
+            get { return System.IO.Path.Combine(AppDataPath, "H1_MeterTxModes.txt"); }
+        }
+        private void H1InvalidateMeterTx()
+        {
+            picMultiMeterDigital.Invalidate();
+            picRX2Meter.Invalidate();
+            if (picSubRX1Meter != null) picSubRX1Meter.Invalidate();
+            if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
+            txtMultiText.Invalidate();
+            txtRX2Meter.Invalidate();
+        }
+        private void H1SaveMeterTxModes()
+        {
+            try
+            {
+                string[] v =
+                {
+                    "default=" + (int)_h1MeterTxDefault,
+                    "rx1=" + (_h1MeterTxOverride[0] ? (int)current_meter_tx_mode : -1),
+                    "rx2=" + (_h1MeterTxOverride[1] ? (int)current_meter_tx_mode_rx2 : -1),
+                    "sub1=" + (_h1MeterTxOverride[2] ? (int)sub_meter_tx_modes[0] : -1),
+                    "sub2=" + (_h1MeterTxOverride[3] ? (int)sub_meter_tx_modes[1] : -1)
+                };
+                System.IO.File.WriteAllLines(H1MeterTxModeFile, v);
+            }
+            catch { }
+        }
+        private void H1LoadMeterTxModes()
+        {
+            try
+            {
+                int def = (int)MeterTXMode.FORWARD_POWER;
+                int[] val = { -1, -1, -1, -1 };
+                if (System.IO.File.Exists(H1MeterTxModeFile))
+                {
+                    foreach (string line in System.IO.File.ReadAllLines(H1MeterTxModeFile))
+                    {
+                        int eq = line.IndexOf('=');
+                        if (eq < 1) continue;
+                        string k = line.Substring(0, eq).Trim();
+                        int n;
+                        if (!int.TryParse(line.Substring(eq + 1).Trim(), out n)) continue;
+                        if (k == "default") def = n;
+                        else if (k == "rx1") val[0] = n;
+                        else if (k == "rx2") val[1] = n;
+                        else if (k == "sub1") val[2] = n;
+                        else if (k == "sub2") val[3] = n;
+                    }
+                }
+                if (def <= (int)MeterTXMode.FIRST || def >= (int)MeterTXMode.LAST)
+                    def = (int)MeterTXMode.FORWARD_POWER;
+                _h1MeterTxDefault = (MeterTXMode)def;
+
+                CurrentMeterTXMode = _h1MeterTxDefault; // combo carries the default; the field follows
+                _h1MeterTxModesLoaded = true;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    if (val[i] <= (int)MeterTXMode.FIRST || val[i] >= (int)MeterTXMode.LAST) val[i] = -1;
+                    _h1MeterTxOverride[i] = val[i] >= 0;
+                }
+                current_meter_tx_mode = _h1MeterTxOverride[0] ? (MeterTXMode)val[0] : _h1MeterTxDefault;
+                current_meter_tx_mode_rx2 = _h1MeterTxOverride[1] ? (MeterTXMode)val[1] : _h1MeterTxDefault;
+                sub_meter_tx_modes[0] = _h1MeterTxOverride[2] ? (MeterTXMode)val[2] : _h1MeterTxDefault;
+                sub_meter_tx_modes[1] = _h1MeterTxOverride[3] ? (MeterTXMode)val[3] : _h1MeterTxDefault;
+                H1InvalidateMeterTx();
+            }
+            catch { }
+        }
+        private void H1DistributeMeterTxDefault(MeterTXMode mode)
+        {
+            // H1: a change of the default applies to every meter and forgets their overrides
+            _h1MeterTxDefault = mode;
+            current_meter_tx_mode = mode;
+            current_meter_tx_mode_rx2 = mode;
+            sub_meter_tx_modes[0] = mode;
+            sub_meter_tx_modes[1] = mode;
+            for (int i = 0; i < 4; i++) _h1MeterTxOverride[i] = false;
+            H1SaveMeterTxModes();
+            H1InvalidateMeterTx();
+        }
         public MeterTXMode CurrentMeterTXMode
         {
             get { return current_meter_tx_mode; }
@@ -26345,6 +26441,7 @@ namespace Thetis
         private async void UpdateMultimeter()
         {
             meter_timer.Start();
+            if (!_h1MeterTxModesLoaded) H1LoadMeterTxModes(); // H1: restore the meters' transmit display values
             while (!_hide_legacy_meters && chkPower.Checked)
             {
                 if (!meter_data_ready)
@@ -26859,41 +26956,125 @@ namespace Thetis
             {
                 if (!rx2_meter_data_ready)
                 {
-                    //MW0LGE_21d step atten
-                    MeterRXMode mode = RX2MeterMode;
-
-                    float num;
-                    switch (mode)
+                    if (!_mox || !chkVFOBTX.Checked)
                     {
-                        case MeterRXMode.SIGNAL_STRENGTH:
-                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH);
-                            num += RXOffset(2);
-                            rx2_meter_new_data = num;
-                            break;
-                        case MeterRXMode.SIGNAL_AVERAGE:
-                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.AVG_SIGNAL_STRENGTH);
-                            num += RXOffset(2);
-                            rx2_meter_new_data = num;
-                            break;
-                        case MeterRXMode.ADC_L:
-                            num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_REAL);
-                            rx2_meter_new_data = num;
-                            break;
-                        case MeterRXMode.ADC_R:
-                            num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_IMAG);
-                            rx2_meter_new_data = num;
-                            break;
-                        case MeterRXMode.ADC2_L:
-                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_REAL);
-                            rx2_meter_new_data = num;
-                            break;
-                        case MeterRXMode.ADC2_R:
-                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_IMAG);
-                            rx2_meter_new_data = num;
-                            break;
-                        case MeterRXMode.OFF:
-                            rx2_meter_new_data = -200.0f;
-                            break;
+                        //MW0LGE_21d step atten
+                        MeterRXMode mode = RX2MeterMode;
+
+                        float num;
+                        switch (mode)
+                        {
+                            case MeterRXMode.SIGNAL_STRENGTH:
+                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH);
+                                num += RXOffset(2);
+                                rx2_meter_new_data = num;
+                                break;
+                            case MeterRXMode.SIGNAL_AVERAGE:
+                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.AVG_SIGNAL_STRENGTH);
+                                num += RXOffset(2);
+                                rx2_meter_new_data = num;
+                                break;
+                            case MeterRXMode.ADC_L:
+                                num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_REAL);
+                                rx2_meter_new_data = num;
+                                break;
+                            case MeterRXMode.ADC_R:
+                                num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_IMAG);
+                                rx2_meter_new_data = num;
+                                break;
+                            case MeterRXMode.ADC2_L:
+                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_REAL);
+                                rx2_meter_new_data = num;
+                                break;
+                            case MeterRXMode.ADC2_R:
+                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_IMAG);
+                                rx2_meter_new_data = num;
+                                break;
+                            case MeterRXMode.OFF:
+                                rx2_meter_new_data = -200.0f;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        // H1: while its own transmit tick carries the transmit the RX2 meter takes the
+                        // transmit reading of its transmit display value; with any other tick carrying
+                        // it keeps measuring its own channel, as the sub meters do.
+                        MeterTXMode txmode2 = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
+                        float txnum2;
+                        switch (txmode2)
+                        {
+                            case MeterTXMode.MIC:
+                                txnum2 = (float)Math.Max(-195.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.MIC_PK));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.EQ:
+                                txnum2 = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.EQ_PK));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.LEVELER:
+                                txnum2 = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.LEVELER_PK));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.LVL_G:
+                                txnum2 = (float)Math.Max(0, WDSP.CalculateTXMeter(1, WDSP.MeterType.LVL_G));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.CFC_PK:
+                                txnum2 = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_PK));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.CFC_G:
+                                txnum2 = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_G));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.COMP:
+                                txnum2 = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.ALC:
+                                txnum2 = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.ALC_G:
+                                txnum2 = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.ALC_GROUP:
+                                txnum2 = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)))
+                                    + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G));
+                                rx2_meter_new_data = txnum2;
+                                break;
+                            case MeterTXMode.FORWARD_POWER:
+                            case MeterTXMode.SWR_POWER:
+                                if (alexpresent || apollopresent)
+                                {
+                                    if (HardwareSpecific.Model == HPSDRModel.ANAN8000D)
+                                    {
+                                        if (tx_xvtr_index >= 0)
+                                            rx2_meter_new_data = drivepwr;
+                                        else
+                                            rx2_meter_new_data = calfwdpower;
+                                    }
+                                    else
+                                        rx2_meter_new_data = calfwdpower;
+                                }
+                                else
+                                    rx2_meter_new_data = drivepwr;
+                                break;
+                            case MeterTXMode.REVERSE_POWER:
+                                if (alexpresent || apollopresent)
+                                {
+                                    rx2_meter_new_data = (float)alex_rev;
+                                }
+                                break;
+                            case MeterTXMode.SWR:
+                                rx2_meter_new_data = alex_swr;
+                                break;
+                            case MeterTXMode.OFF:
+                                rx2_meter_new_data = -200.0f;
+                                break;
+                        }
                     }
                     rx2_meter_data_ready = true;
                     picRX2Meter.Invalidate();
@@ -48498,6 +48679,11 @@ namespace Thetis
             tmp++;
             if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
             if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode = tmp;
+            if (!chkTUN.Checked)
+            {
+                _h1MeterTxOverride[0] = current_meter_tx_mode != _h1MeterTxDefault;
+                H1SaveMeterTxModes();
+            }
             picMultiMeterDigital.Invalidate();
             picRX2Meter.Invalidate();
             txtMultiText.Invalidate();
@@ -48511,6 +48697,11 @@ private void incrementMultiMeterTXModeRX2()
             tmp++;
             if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
             if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode_rx2 = tmp;
+            if (!chkTUN.Checked)
+            {
+                _h1MeterTxOverride[1] = current_meter_tx_mode_rx2 != _h1MeterTxDefault;
+                H1SaveMeterTxModes();
+            }
             picRX2Meter.Invalidate();
             txtRX2Meter.Invalidate();
         }
@@ -48551,6 +48742,8 @@ private void incrementMutliMeterDisplayModeRX2()
                     if (mode >= MeterTXMode.LAST) mode = MeterTXMode.FIRST + 1;
                 } while (mode == MeterTXMode.OFF);
                 sub_meter_tx_modes[sub] = mode;
+                _h1MeterTxOverride[2 + sub] = mode != _h1MeterTxDefault;
+                H1SaveMeterTxModes();
             }
             else
             {
