@@ -776,6 +776,9 @@ namespace Thetis
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
             H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
             H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
+            // H1: capture the top row's RX2 furniture before RX2 is switched off
+            RX2EnabledPreChangedHandlers += (bool h1on) => { if (!h1on) H1FreezeRX2Furniture(); };
+
             InitPowerDim();
             H1InitRX2Veil(); // H1: the RX2 side goes grey, not away // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
@@ -6264,6 +6267,43 @@ namespace Thetis
         private readonly System.Collections.Generic.HashSet<string> h1VeilLogged =
             new System.Collections.Generic.HashSet<string>();
 
+        // H1: the top row's RX2 widgets stop drawing the moment RX2 goes off - the meter dials
+        // vanish and the readouts go blank, whatever the readout code does. So their appearance is
+        // captured while RX2 is still on and that picture is what the veil shows, dimmed.
+        private readonly System.Collections.Generic.Dictionary<Control, Bitmap> h1RX2Freeze =
+            new System.Collections.Generic.Dictionary<Control, Bitmap>();
+
+        private void H1FreezeRX2Furniture()
+        {
+            try
+            {
+                foreach (Bitmap b in h1RX2Freeze.Values) { try { b.Dispose(); } catch { } }
+                h1RX2Freeze.Clear();
+                foreach (Control c in new Control[] { grpSubRX2Meter, grpRX2Meter, grpVFOB })
+                {
+                    if (c == null || c.Width <= 1 || c.Height <= 1) continue;
+                    Bitmap b = null;
+                    try
+                    {
+                        b = new Bitmap(c.Width, c.Height);
+                        c.DrawToBitmap(b, new Rectangle(0, 0, c.Width, c.Height));
+                        h1RX2Freeze[c] = b;
+                    }
+                    catch { if (b != null) { try { b.Dispose(); } catch { } } }
+                }
+            }
+            catch { }
+        }
+
+        internal bool H1RX2Frozen(Control c, out Bitmap frozen)
+        {
+            frozen = null;
+            try { if (c != null && h1RX2Freeze.TryGetValue(c, out frozen) && frozen != null) return true; }
+            catch { }
+            frozen = null;
+            return false;
+        }
+
         private void H1KeepVeilOnTop()
         {
             try
@@ -6999,12 +7039,22 @@ namespace Thetis
                     if (c == null || !c.Visible) continue;
                     if (c is PowerDimOverlay) continue;
                     if (c == m_console.chkPower || c == m_console.chkRX2) continue;
-                    if (c.Parent != null && !(c is Panel) && !(c is GroupBox))
+                    // H1: group boxes take part too - a meter or VFO box is one piece of furniture
+                    // whose caption is drawn on its frame, so it is handled as a whole below
+                    if (c.Parent != null && !(c is Panel))
                     {
                         Rectangle r = m_console.RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
                         r.Offset(-Left, -Top);
                         if (r.IntersectsWith(new Rectangle(0, 0, Width, Height)))
                         {
+                            Bitmap frozen;
+                            if (m_console.H1RX2Frozen(c, out frozen))
+                            {
+                                // H1: show what the widget indicated before RX2 was switched off,
+                                // dimmed, and leave its live (now blank) children alone
+                                DrawFrozen(g, frozen, r);
+                                continue;
+                            }
                             // H1: a skinned button must still read as a button. Dullying it with the
                             // film drove its body into the panel it sits on and the shape dissolved,
                             // so a button is instead redrawn as a darker copy of its own self: the
@@ -7023,6 +7073,28 @@ namespace Thetis
                     }
                     if (c.HasChildren) DimCollect(g, dim, c);
                 }
+            }
+
+            // H1: draw a frozen picture of a control, at its own size and dimmed by the same
+            // brightness factor the washed buttons use
+            private void DrawFrozen(Graphics g, Bitmap bmp, Rectangle r)
+            {
+                if (bmp == null) return;
+                try
+                {
+                    float k = 0.60f;
+                    using (System.Drawing.Imaging.ImageAttributes ia = new System.Drawing.Imaging.ImageAttributes())
+                    {
+                        ia.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix(new float[][] {
+                            new float[] { k, 0f, 0f, 0f, 0f },
+                            new float[] { 0f, k, 0f, 0f, 0f },
+                            new float[] { 0f, 0f, k, 0f, 0f },
+                            new float[] { 0f, 0f, 0f, 1f, 0f },
+                            new float[] { 0f, 0f, 0f, 0f, 1f } }), System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+                        g.DrawImage(bmp, r, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, ia);
+                    }
+                }
+                catch { }
             }
 
             private void DrawControlImage(Graphics g, System.Windows.Forms.ButtonBase c)
