@@ -6373,6 +6373,11 @@ namespace Thetis
                     try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
                         DateTime.Now.ToString("HH:mm:ss.fff") + " control '" + above + "' was above the veil, veil re-fronted\r\n"); } catch { }
                 }
+                // H1: the two RX2 meter widgets are put away for as long as the veil is up, on every
+                // tick, so a re-show from the meter side cannot win the race
+                try { MeterManager.H1SetMeterWidgetVisible("rx2", !up); } catch { }
+                try { MeterManager.H1SetMeterWidgetVisible("subrx", !up); } catch { }
+
                 if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.BringToFront();
                 if (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible) h1RX2VeilStrip.BringToFront();
                 if (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible) h1RX2VeilBelow.BringToFront();

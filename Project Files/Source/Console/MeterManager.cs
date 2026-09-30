@@ -2763,6 +2763,26 @@ namespace Thetis
                 }
             }
         }
+        // H1: put the meter's own widget away while RX2 is off. That widget repaints itself on
+        // top of the dim veil many times a second, so the veil can never cover it; taking it out
+        // leaves the dimmed picture of the whole meter - frame, caption and reading - on show.
+        public static void H1SetMeterWidgetVisible(string sId, bool visible)
+        {
+            try
+            {
+                if (_lstUCMeters == null || string.IsNullOrEmpty(sId)) return;
+                if (!_lstUCMeters.ContainsKey(sId)) return;
+                ucMeter uc = _lstUCMeters[sId];
+                if (uc == null) return;
+                if (uc.Visible != visible)
+                {
+                    uc.Visible = visible;
+                    try { uc.Repaint(); } catch { }
+                }
+            }
+            catch { }
+        }
+
         public static void RefreshContainerVisible(string id)
         {
             bool visible = !ContainerIsHidden(id);
