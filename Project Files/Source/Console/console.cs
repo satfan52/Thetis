@@ -6250,11 +6250,22 @@ namespace Thetis
             // H1: start just above the meters themselves and stop at the display. Running this box up
             // to the top of the window made it dim the console's own title bar, which showed up as a
             // black band across the top whenever RX2 was off.
-            int tx0 = (grpSubRX2Meter != null ? grpSubRX2Meter.Left : ClientSize.Width - 760) - 8;
-            // H1: start exactly at the top of the boxes, not above them. Reaching even a few pixels
-            // higher caught the furniture behind the captions, which dimmed the caption band of the
-            // meters and the VFO box into a black strip while their bodies stayed normal.
-            int tby = (grpSubRX2Meter != null && grpSubRX2Meter.Top > 30) ? grpSubRX2Meter.Top : 48;
+            // H1: the box has to start above the HIGHEST of the three, not at one of them. They do
+            // not share a top edge, so starting at one left the top sliver of the others - frame,
+            // caption and all - at full brightness while the rest of the widget was dimmed. The
+            // furniture standing behind the captions cannot be caught by this any more: the walk
+            // skips every control wider than this box.
+            int tleft = grpSubRX2Meter != null ? grpSubRX2Meter.Left : ClientSize.Width - 760;
+            int ttop = 10000;
+            foreach (Control h1b in new Control[] { grpSubRX2Meter, grpRX2Meter, grpVFOB })
+            {
+                if (h1b == null) continue;
+                tleft = Math.Min(tleft, h1b.Left);
+                ttop = Math.Min(ttop, h1b.Top);
+            }
+            if (ttop == 10000) ttop = 48;
+            int tx0 = tleft - 8;
+            int tby = Math.Max(30, ttop - 4); // never reach the window chrome
             int tby2 = (panelDisplay != null ? panelDisplay.Top : 140);
             h1RX2VeilTop.Bounds = new Rectangle(tx0, tby, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby2 - tby));
 
