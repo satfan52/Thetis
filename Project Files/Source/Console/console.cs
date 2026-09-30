@@ -770,6 +770,7 @@ namespace Thetis
             InitializeComponent();								// Windows Forms Generated Code
             InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
+            InitSubRXStrips(); // H1: create the SubRX1 and SubRX2 control strips before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
             chkRX2.Size = chkPower.Size; // H1: the RX2 button is the power button's size
@@ -6767,6 +6768,52 @@ namespace Thetis
             panelVFO.Location = new Point(sx, cY + 20);
             foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
                 if (tp != null) tp.Location = new Point(tx, cY + 20);
+            // H1: the SubRX1 and SubRX2 control strips - one minimalist strip per sub in
+            // the freed flanks: mode and AGC dropdowns, filter width and shift, AGC gain,
+            // and the sub's own noise toggles
+            if (comboSubRX1Mode != null)
+            {
+                int stw = 280;
+                int stx1 = 415;
+                int stx2 = W - 415 - stw;
+                H1Cap("subrx1", "SUBRX1", stx1, 708, stw);
+                H1Cap("subrx2", "SUBRX2", stx2, 708, stw);
+                H1Cap("subrx1noise", "NOISE", stx1, 886, 140);
+                H1Cap("subrx2noise", "NOISE", stx2, 886, 140);
+                H1Put(lblSubRX1Mode, this, stx1, 730);
+                H1Put(comboSubRX1Mode, this, stx1, 746, 130, 21);
+                H1Put(lblSubRX1AGC, this, stx1 + 150, 730);
+                H1Put(comboSubRX1AGC, this, stx1 + 150, 746, 130, 21);
+                H1Put(lblSubRX1Width, this, stx1, 776);
+                H1Put(ptbSubRX1Width, this, stx1, 792, 120, 24);
+                H1Put(lblSubRX1Shift, this, stx1 + 150, 776);
+                H1Put(ptbSubRX1Shift, this, stx1 + 150, 792, 110, 24);
+                H1Put(lblSubRX1Gain, this, stx1, 830);
+                H1Put(ptbSubRX1Gain, this, stx1, 846, 120, 24);
+                H1Put(chkSubRX1NR, this, stx1, 908, 45, 23);
+                H1Put(chkSubRX1ANF, this, stx1 + 48, 908, 45, 23);
+                H1Put(chkSubRX1NB2, this, stx1 + 96, 908, 45, 23);
+                H1Put(chkSubRX1BIN, this, stx1, 934, 45, 23);
+                H1Put(chkSubRX1MUT, this, stx1 + 48, 934, 45, 23);
+                H1Put(lblSubRX2Mode, this, stx2, 730);
+                H1Put(comboSubRX2Mode, this, stx2, 746, 130, 21);
+                H1Put(lblSubRX2AGC, this, stx2 + 150, 730);
+                H1Put(comboSubRX2AGC, this, stx2 + 150, 746, 130, 21);
+                H1Put(lblSubRX2Width, this, stx2, 776);
+                H1Put(ptbSubRX2Width, this, stx2, 792, 120, 24);
+                H1Put(lblSubRX2Shift, this, stx2 + 150, 776);
+                H1Put(ptbSubRX2Shift, this, stx2 + 150, 792, 110, 24);
+                H1Put(lblSubRX2Gain, this, stx2, 830);
+                H1Put(ptbSubRX2Gain, this, stx2, 846, 120, 24);
+                H1Put(chkSubRX2NR, this, stx2, 908, 45, 23);
+                H1Put(chkSubRX2ANF, this, stx2 + 48, 908, 45, 23);
+                H1Put(chkSubRX2NB2, this, stx2 + 96, 908, 45, 23);
+                H1Put(chkSubRX2BIN, this, stx2, 934, 45, 23);
+                H1Put(chkSubRX2MUT, this, stx2 + 48, 934, 45, 23);
+                foreach (Control k in new Control[] { lblSubRX1Mode, comboSubRX1Mode, lblSubRX1AGC, comboSubRX1AGC, lblSubRX1Width, ptbSubRX1Width, lblSubRX1Shift, ptbSubRX1Shift, lblSubRX1Gain, ptbSubRX1Gain, chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT, lblSubRX2Mode, comboSubRX2Mode, lblSubRX2AGC, comboSubRX2AGC, lblSubRX2Width, ptbSubRX2Width, lblSubRX2Shift, ptbSubRX2Shift, lblSubRX2Gain, ptbSubRX2Gain, chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT })
+                    if (k != null) k.BringToFront();
+            }
+
             if (btnHidden != null && this.ActiveControl != null && this.ActiveControl is PrettyTrackBar) btnHidden.Focus(); // H1: no slider keeps the focus highlight
             H1KeepVeilOnTop(); // H1: nothing the layout fronted may end up above the dim veil
         }
@@ -6814,6 +6861,507 @@ namespace Thetis
             if (chkRX2PanSwap != null && chkRX2PanSwap.Checked) sval = 1.0f - sval; // H1: RX2 swap
             radio.GetDSPRX(1, 1).Pan = sval;
         }
+
+
+        #region H1: SubRX1 and SubRX2 control strips
+
+        // H1: the dedicated SubRX controls - the minimalist set agreed with the user:
+        // mode dropdown, AGC dropdown, filter width and shift, AGC gain, and the
+        // sub's own noise toggles. Each control drives its OWN sub channel. The
+        // RX1/RX2 mirrors that used to overwrite the sub are conditioned away, so a
+        // sub can now run a different mode, filter, AGC and noise set from its parent.
+        private ComboBoxTS comboSubRX1Mode, comboSubRX2Mode;
+        private ComboBoxTS comboSubRX1AGC, comboSubRX2AGC;
+        private PrettyTrackBar ptbSubRX1Width, ptbSubRX1Shift, ptbSubRX1Gain;
+        private PrettyTrackBar ptbSubRX2Width, ptbSubRX2Shift, ptbSubRX2Gain;
+        private CheckBoxTS chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT;
+        private CheckBoxTS chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT;
+        private Label lblSubRX1Mode, lblSubRX1AGC, lblSubRX1Width, lblSubRX1Shift, lblSubRX1Gain;
+        private Label lblSubRX2Mode, lblSubRX2AGC, lblSubRX2Width, lblSubRX2Shift, lblSubRX2Gain;
+
+        private bool _sub2_console_updating = false;
+        private int _sub2_agc_gain = 40;
+        private DSPMode _sub2_dsp_mode = DSPMode.USB;
+
+        private void InitSubRXStrips()
+        {
+            for (int sub = 1; sub <= 2; sub++)
+            {
+                bool s1 = sub == 1;
+
+                Label lm = NewSubLabel(s1 ? "lblSubRX1Mode" : "lblSubRX2Mode", "Mode");
+                Label la = NewSubLabel(s1 ? "lblSubRX1AGC" : "lblSubRX2AGC", "AGC");
+                Label lw = NewSubLabel(s1 ? "lblSubRX1Width" : "lblSubRX2Width", "Width");
+                Label ls = NewSubLabel(s1 ? "lblSubRX1Shift" : "lblSubRX2Shift", "Shift");
+                Label lg = NewSubLabel(s1 ? "lblSubRX1Gain" : "lblSubRX2Gain", "AGC Gain");
+                if (s1) { lblSubRX1Mode = lm; lblSubRX1AGC = la; lblSubRX1Width = lw; lblSubRX1Shift = ls; lblSubRX1Gain = lg; }
+                else { lblSubRX2Mode = lm; lblSubRX2AGC = la; lblSubRX2Width = lw; lblSubRX2Shift = ls; lblSubRX2Gain = lg; }
+
+                ComboBoxTS cm = NewSubCombo(s1 ? "comboSubRX1Mode" : "comboSubRX2Mode");
+                for (DSPMode m = DSPMode.LSB; m <= DSPMode.DRM; m++) cm.Items.Add(m.ToString());
+                ComboBoxTS ca = NewSubCombo(s1 ? "comboSubRX1AGC" : "comboSubRX2AGC");
+                for (AGCMode agc = AGCMode.FIRST + 1; agc < AGCMode.LAST; agc++)
+                {
+                    string s = agc.ToString().ToLower();
+                    s = s.Substring(0, 1).ToUpper() + s.Substring(1, s.Length - 1);
+                    ca.Items.Add(s);
+                }
+                if (s1) { comboSubRX1Mode = cm; comboSubRX1AGC = ca; }
+                else { comboSubRX2Mode = cm; comboSubRX2AGC = ca; }
+
+                PrettyTrackBar wp = NewSubSlider(s1 ? "ptbSubRX1Width" : "ptbSubRX2Width", 100, 8000, 2400, 120);
+                PrettyTrackBar sp = NewSubSlider(s1 ? "ptbSubRX1Shift" : "ptbSubRX2Shift", -3000, 3000, 0, 110);
+                PrettyTrackBar gp = NewSubSlider(s1 ? "ptbSubRX1Gain" : "ptbSubRX2Gain", 0, 120, 40, 120);
+                if (s1) { ptbSubRX1Width = wp; ptbSubRX1Shift = sp; ptbSubRX1Gain = gp; }
+                else { ptbSubRX2Width = wp; ptbSubRX2Shift = sp; ptbSubRX2Gain = gp; }
+
+                CheckBoxTS n1 = NewSubPill(s1 ? "chkSubRX1NR" : "chkSubRX2NR", "NR");
+                CheckBoxTS n2 = NewSubPill(s1 ? "chkSubRX1ANF" : "chkSubRX2ANF", "ANF");
+                CheckBoxTS n3 = NewSubPill(s1 ? "chkSubRX1NB2" : "chkSubRX2NB2", "NB2");
+                CheckBoxTS n4 = NewSubPill(s1 ? "chkSubRX1BIN" : "chkSubRX2BIN", "BIN");
+                CheckBoxTS n5 = NewSubPill(s1 ? "chkSubRX1MUT" : "chkSubRX2MUT", "MUT");
+                if (s1) { chkSubRX1NR = n1; chkSubRX1ANF = n2; chkSubRX1NB2 = n3; chkSubRX1BIN = n4; chkSubRX1MUT = n5; }
+                else { chkSubRX2NR = n1; chkSubRX2ANF = n2; chkSubRX2NB2 = n3; chkSubRX2BIN = n4; chkSubRX2MUT = n5; }
+
+                // defaults, set before the handlers are attached
+                bool oldu = _sub_console_updating;
+                _sub_console_updating = true;
+                cm.SelectedIndex = (int)DSPMode.USB;
+                ca.SelectedIndex = comboAGC.SelectedIndex >= 0 ? comboAGC.SelectedIndex : (int)AGCMode.SLOW;
+                _sub_console_updating = oldu;
+
+                if (s1)
+                {
+                    cm.SelectedIndexChanged += comboSubRX1Mode_SelectedIndexChanged;
+                    ca.SelectedIndexChanged += comboSubRX1AGC_SelectedIndexChanged;
+                    wp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX1Width_Scroll);
+                    sp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX1Shift_Scroll);
+                    gp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX1Gain_Scroll);
+                    n1.CheckedChanged += chkSubRX1NR_CheckedChanged;
+                    n2.CheckedChanged += chkSubRX1ANF_CheckedChanged;
+                    n3.CheckedChanged += chkSubRX1NB2_CheckedChanged;
+                    n4.CheckedChanged += chkSubRX1BIN_CheckedChanged;
+                    n5.CheckedChanged += chkSubRX1MUT_CheckedChanged;
+                }
+                else
+                {
+                    cm.SelectedIndexChanged += comboSubRX2Mode_SelectedIndexChanged;
+                    ca.SelectedIndexChanged += comboSubRX2AGC_SelectedIndexChanged;
+                    wp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX2Width_Scroll);
+                    sp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX2Shift_Scroll);
+                    gp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX2Gain_Scroll);
+                    n1.CheckedChanged += chkSubRX2NR_CheckedChanged;
+                    n2.CheckedChanged += chkSubRX2ANF_CheckedChanged;
+                    n3.CheckedChanged += chkSubRX2NB2_CheckedChanged;
+                    n4.CheckedChanged += chkSubRX2BIN_CheckedChanged;
+                    n5.CheckedChanged += chkSubRX2MUT_CheckedChanged;
+                }
+
+                Controls.Add(lm); Controls.Add(la); Controls.Add(lw); Controls.Add(ls); Controls.Add(lg);
+                Controls.Add(cm); Controls.Add(ca);
+                Controls.Add(wp); Controls.Add(sp); Controls.Add(gp);
+                Controls.Add(n1); Controls.Add(n2); Controls.Add(n3); Controls.Add(n4); Controls.Add(n5);
+            }
+        }
+
+        private Label NewSubLabel(string name, string text)
+        {
+            Label l = new Label();
+            l.Name = name;
+            l.Text = text;
+            l.AutoSize = true;
+            l.BackColor = Color.Transparent;
+            l.ForeColor = Color.FromArgb(140, 170, 215);
+            l.Font = new Font("Microsoft Sans Serif", 7.5f, FontStyle.Bold);
+            return l;
+        }
+
+        private ComboBoxTS NewSubCombo(string name)
+        {
+            ComboBoxTS cb = new ComboBoxTS();
+            cb.Name = name;
+            cb.DropDownStyle = ComboBoxStyle.DropDownList;
+            cb.FlatStyle = comboAGC.FlatStyle;
+            cb.BackColor = comboAGC.BackColor;
+            cb.ForeColor = comboAGC.ForeColor;
+            cb.Font = comboAGC.Font;
+            cb.Size = new Size(130, 21);
+            cb.IntegralHeight = false;
+            cb.TabStop = false;
+            return cb;
+        }
+
+        private PrettyTrackBar NewSubSlider(string name, int min, int max, int value, int w)
+        {
+            PrettyTrackBar p = new PrettyTrackBar();
+            p.Name = name;
+            p.Minimum = min;
+            p.Maximum = max;
+            p.SmallChange = 1;
+            p.LargeChange = 1;
+            p.GreenThumb = false;
+            p.Orientation = Orientation.Horizontal;
+            p.TabStop = false;
+            p.Value = value;
+            p.Size = new Size(w, 24);
+            return p;
+        }
+
+        private CheckBoxTS NewSubPill(string name, string text)
+        {
+            CheckBoxTS c = new CheckBoxTS();
+            c.Name = name;
+            c.Text = text;
+            c.Appearance = chkNR.Appearance;
+            c.TextAlign = ContentAlignment.MiddleCenter;
+            c.Font = chkNR.Font;
+            c.ForeColor = chkNR.ForeColor;
+            c.BackColor = SystemColors.Control;
+            c.FlatStyle = chkNR.FlatStyle;
+            c.Size = new Size(45, 23);
+            c.TabStop = false;
+            return c;
+        }
+
+        private DSPMode SubModeFromCombo(ComboBox cb)
+        {
+            int i = cb != null ? cb.SelectedIndex : -1;
+            if (i < 0 || i > (int)DSPMode.DRM) return DSPMode.USB;
+            return (DSPMode)i;
+        }
+
+        // ---- SubRX1 handlers ----
+
+        private void comboSubRX1Mode_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating || initializing) return;
+            SetSubMode(SubModeFromCombo(comboSubRX1Mode));
+            if (comboSubRX1Mode.Focused) btnHidden.Focus();
+        }
+
+        private void comboSubRX1AGC_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating || initializing) return;
+            if (comboSubRX1AGC.SelectedIndex >= 0)
+                SetSubAgcMode((AGCMode)comboSubRX1AGC.SelectedIndex);
+            if (comboSubRX1AGC.Focused) btnHidden.Focus();
+        }
+
+        private void ptbSubRX1Width_Scroll(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            SubFilterFromSliders(1);
+        }
+
+        private void ptbSubRX1Shift_Scroll(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            SubFilterFromSliders(1);
+        }
+
+        private void ptbSubRX1Gain_Scroll(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            SetSubAgcGain(ptbSubRX1Gain.Value);
+        }
+
+        private void chkSubRX1NR_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            SetSubNRRun(1, chkSubRX1NR.Checked);
+            if (chkSubRX1NR.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX1ANF_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            radio.GetDSPRX(0, 1).AutoNotchFilter = chkSubRX1ANF.Checked;
+            if (chkSubRX1ANF.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX1NB2_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            WDSP.SetRXASNBARun(WDSP.id(0, 1), chkSubRX1NB2.Checked);
+            if (chkSubRX1NB2.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX1BIN_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            radio.GetDSPRX(0, 1).BinOn = chkSubRX1BIN.Checked;
+            if (chkSubRX1BIN.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX1MUT_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+            if (chkSubRX1MUT.Focused) btnHidden.Focus();
+        }
+
+        // ---- SubRX2 handlers ----
+
+        private void comboSubRX2Mode_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating || initializing) return;
+            SetSub2Mode(SubModeFromCombo(comboSubRX2Mode));
+            if (comboSubRX2Mode.Focused) btnHidden.Focus();
+        }
+
+        private void comboSubRX2AGC_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating || initializing) return;
+            if (comboSubRX2AGC.SelectedIndex >= 0)
+                SetSub2AgcMode((AGCMode)comboSubRX2AGC.SelectedIndex);
+            if (comboSubRX2AGC.Focused) btnHidden.Focus();
+        }
+
+        private void ptbSubRX2Width_Scroll(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            SubFilterFromSliders(2);
+        }
+
+        private void ptbSubRX2Shift_Scroll(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            SubFilterFromSliders(2);
+        }
+
+        private void ptbSubRX2Gain_Scroll(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            SetSub2AgcGain(ptbSubRX2Gain.Value);
+        }
+
+        private void chkSubRX2NR_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            SetSubNRRun(2, chkSubRX2NR.Checked);
+            if (chkSubRX2NR.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX2ANF_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            radio.GetDSPRX(1, 1).AutoNotchFilter = chkSubRX2ANF.Checked;
+            if (chkSubRX2ANF.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX2NB2_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            WDSP.SetRXASNBARun(WDSP.id(2, 1), chkSubRX2NB2.Checked);
+            if (chkSubRX2NB2.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX2BIN_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            radio.GetDSPRX(1, 1).BinOn = chkSubRX2BIN.Checked;
+            if (chkSubRX2BIN.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX2MUT_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+            if (chkSubRX2MUT.Focused) btnHidden.Focus();
+        }
+
+        /// <summary>The sub NR run state: on = the NR type the receiver currently
+        /// uses, off = all four off. The sub keeps its own run flag set.</summary>
+        private void SetSubNRRun(int rx, bool on)
+        {
+            if (rx < 1 || rx > 2) return;
+            RadioDSPRX rad = radio.GetDSPRX(rx - 1, 1);
+            int nr = 0;
+            if (on) { nr = _nr_selected[rx - 1]; if (nr < 1) nr = 1; }
+            rad.RXANR1Run = (nr == 1) ? 1 : 0;
+            rad.RXANR2Run = (nr == 2) ? 1 : 0;
+            rad.RXANR3Run = (nr == 3) ? 1 : 0;
+            rad.RXANR4Run = (nr == 4) ? 1 : 0;
+        }
+
+        private void SubFilterFromSliders(int sub)
+        {
+            if (sub == 1)
+            {
+                if (ptbSubRX1Width == null || ptbSubRX1Shift == null) return;
+                int width = Math.Max(100, ptbSubRX1Width.Value);
+                int shift = ptbSubRX1Shift.Value;
+                SetSubFilter(-(width / 2) + shift, (width / 2) + shift);
+            }
+            else
+            {
+                if (ptbSubRX2Width == null || ptbSubRX2Shift == null) return;
+                int width = Math.Max(100, ptbSubRX2Width.Value);
+                int shift = ptbSubRX2Shift.Value;
+                SetSub2Filter(-(width / 2) + shift, (width / 2) + shift);
+            }
+        }
+
+        private void SubFilterToSliders(int sub, int low, int high)
+        {
+            bool oldu = _sub_console_updating;
+            _sub_console_updating = true;
+            if (sub == 1)
+            {
+                if (ptbSubRX1Width != null) ptbSubRX1Width.Value = Math.Min(ptbSubRX1Width.Maximum, Math.Max(ptbSubRX1Width.Minimum, high - low));
+                if (ptbSubRX1Shift != null) ptbSubRX1Shift.Value = Math.Min(ptbSubRX1Shift.Maximum, Math.Max(ptbSubRX1Shift.Minimum, (low + high) / 2));
+            }
+            else
+            {
+                if (ptbSubRX2Width != null) ptbSubRX2Width.Value = Math.Min(ptbSubRX2Width.Maximum, Math.Max(ptbSubRX2Width.Minimum, high - low));
+                if (ptbSubRX2Shift != null) ptbSubRX2Shift.Value = Math.Min(ptbSubRX2Shift.Maximum, Math.Max(ptbSubRX2Shift.Minimum, (low + high) / 2));
+            }
+            _sub_console_updating = oldu;
+        }
+
+        private void SyncSubModeCombo(int sub, DSPMode mode)
+        {
+            if (_sub_console_updating) return;
+            ComboBox cb = sub == 1 ? comboSubRX1Mode : comboSubRX2Mode;
+            if (cb == null || cb.SelectedIndex == (int)mode) return;
+            bool oldu = _sub_console_updating;
+            _sub_console_updating = true;
+            cb.SelectedIndex = (int)mode;
+            _sub_console_updating = oldu;
+        }
+
+        private void SyncSubAgcCombo(int sub, AGCMode mode)
+        {
+            if (_sub_console_updating) return;
+            ComboBox cb = sub == 1 ? comboSubRX1AGC : comboSubRX2AGC;
+            if (cb == null || cb.SelectedIndex == (int)mode) return;
+            bool oldu = _sub_console_updating;
+            _sub_console_updating = true;
+            cb.SelectedIndex = (int)mode;
+            _sub_console_updating = oldu;
+        }
+
+        private void SyncSubGainSlider(int sub, int value)
+        {
+            if (_sub_console_updating) return;
+            PrettyTrackBar g = sub == 1 ? ptbSubRX1Gain : ptbSubRX2Gain;
+            if (g == null) return;
+            int v = Math.Min(g.Maximum, Math.Max(g.Minimum, value));
+            if (g.Value == v) return;
+            bool oldu = _sub_console_updating;
+            _sub_console_updating = true;
+            g.Value = v;
+            _sub_console_updating = oldu;
+        }
+
+        /// <summary>Apply the sub strip's current settings to the sub channel. Called
+        /// when a sub is switched on and once at startup, after the state restore.</summary>
+        private void ApplySubOwnSettings(int sub)
+        {
+            if (sub == 1)
+            {
+                if (comboSubRX1Mode == null) return;
+                _sub_dsp_mode = SubModeFromCombo(comboSubRX1Mode);
+                RadioDSPRX s = radio.GetDSPRX(0, 1);
+                WDSP.SetDSPSamplerate(WDSP.id(0, 1), _sub_dsp_mode == DSPMode.FM ? 192000 : 48000);
+                s.DSPMode = _sub_dsp_mode;
+                SubFilterFromSliders(1);
+                if (comboSubRX1AGC != null && comboSubRX1AGC.SelectedIndex >= 0)
+                    SetSubAgcMode((AGCMode)comboSubRX1AGC.SelectedIndex);
+                SetSubAgcGain(ptbSubRX1Gain != null ? ptbSubRX1Gain.Value : _sub_agc_gain);
+                s.AutoNotchFilter = chkSubRX1ANF != null && chkSubRX1ANF.Checked;
+                s.BinOn = chkSubRX1BIN != null && chkSubRX1BIN.Checked;
+                WDSP.SetRXASNBARun(WDSP.id(0, 1), chkSubRX1NB2 != null && chkSubRX1NB2.Checked);
+                SetSubNRRun(1, chkSubRX1NR != null && chkSubRX1NR.Checked);
+                if (chkSubRX1MUT != null && chkSubRX1MUT.Checked) s.RXOutputGain = 0.0;
+                else s.RXOutputGain = (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+            }
+            else
+            {
+                if (comboSubRX2Mode == null) return;
+                _sub2_dsp_mode = SubModeFromCombo(comboSubRX2Mode);
+                RadioDSPRX s = radio.GetDSPRX(1, 1);
+                WDSP.SetDSPSamplerate(WDSP.id(2, 1), _sub2_dsp_mode == DSPMode.FM ? 192000 : 48000);
+                s.DSPMode = _sub2_dsp_mode;
+                SubFilterFromSliders(2);
+                if (comboSubRX2AGC != null && comboSubRX2AGC.SelectedIndex >= 0)
+                    SetSub2AgcMode((AGCMode)comboSubRX2AGC.SelectedIndex);
+                SetSub2AgcGain(ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : _sub2_agc_gain);
+                s.AutoNotchFilter = chkSubRX2ANF != null && chkSubRX2ANF.Checked;
+                s.BinOn = chkSubRX2BIN != null && chkSubRX2BIN.Checked;
+                WDSP.SetRXASNBARun(WDSP.id(2, 1), chkSubRX2NB2 != null && chkSubRX2NB2.Checked);
+                SetSubNRRun(2, chkSubRX2NR != null && chkSubRX2NR.Checked);
+                if (chkSubRX2MUT != null && chkSubRX2MUT.Checked) s.RXOutputGain = 0.0;
+                else s.RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+            }
+        }
+
+        // ---- the SubRX2 methods: twins of the SubRX1 set on the RX2 sub channel ----
+
+        /// <summary>Set the RX2 sub channel's own DSP mode, mirroring SetSubMode.</summary>
+        public void SetSub2Mode(DSPMode new_mode, bool from_console = false)
+        {
+            if (new_mode == DSPMode.FIRST || new_mode == DSPMode.LAST) return;
+
+            RadioDSPRX sub = radio.GetDSPRX(1, 1);
+            bool wasActive = sub.Active;
+            int low = sub.RXFilterLow, high = sub.RXFilterHigh;
+
+            WDSP.SetChannelState(WDSP.id(2, 1), 0, 1);
+            WDSP.SetDSPSamplerate(WDSP.id(2, 1), new_mode == DSPMode.FM ? 192000 : 48000);
+            sub.DSPMode = new_mode;
+            sub.SetRXFilter(low, high);
+            if (wasActive) WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
+
+            _sub2_dsp_mode = new_mode;
+            SyncSubModeCombo(2, new_mode);
+        }
+
+        /// <summary>Set the RX2 sub channel's own passband, mirroring SetSubFilter.</summary>
+        public void SetSub2Filter(int low, int high, bool from_console = false)
+        {
+            if (high <= low) return;
+            if (low < -_max_filter_shift) low = -_max_filter_shift;
+            if (high > _max_filter_shift) high = _max_filter_shift;
+
+            radio.GetDSPRX(1, 1).SetRXFilter(low, high);
+            Display.SubRX2FilterLow = low;
+            Display.SubRX2FilterHigh = high;
+            SubFilterToSliders(2, low, high);
+        }
+
+        /// <summary>Set the RX2 sub channel's own AGC mode, mirroring SetSubAgcMode.</summary>
+        public void SetSub2AgcMode(AGCMode mode, bool from_console = false)
+        {
+            RadioDSPRX sub = radio.GetDSPRX(1, 1);
+            sub.RXAGCMode = mode;
+            SyncSubAgcCombo(2, mode);
+            switch (mode)
+            {
+                case AGCMode.LONG: sub.RXAGCHang = 2000; sub.RXAGCDecay = 2000; break;
+                case AGCMode.SLOW: sub.RXAGCHang = 1000; sub.RXAGCDecay = 500; break;
+                case AGCMode.MED: sub.RXAGCHang = 0; sub.RXAGCDecay = 250; break;
+                case AGCMode.FAST: sub.RXAGCHang = 0; sub.RXAGCDecay = 50; break;
+            }
+        }
+
+        /// <summary>Set the RX2 sub channel's own AGC gain, mirroring SetSubAgcGain.</summary>
+        public void SetSub2AgcGain(int value, bool from_console = false)
+        {
+            value = Math.Max(-20, Math.Min(120, value));
+
+            RadioDSPRX sub = radio.GetDSPRX(1, 1);
+            if (sub.RXAGCMode == AGCMode.FIXD)
+                sub.RXFixedAGC = value;
+            else
+                WDSP.SetRXAAGCTop(WDSP.id(2, 1), (double)value);
+
+            _sub2_agc_gain = value;
+            SyncSubGainSlider(2, value);
+        }
+
+        #endregion
+
 
         private TextBoxTS NewSubRowLsd(Control parent, TextBox source, string name, int x, int y)
         {
@@ -30404,7 +30952,7 @@ namespace Thetis
             if (chkBIN.Checked) chkBIN.BackColor = button_selected_color;
             else chkBIN.BackColor = SystemColors.Control;
             radio.GetDSPRX(0, 0).BinOn = chkBIN.Checked;
-            radio.GetDSPRX(0, 1).BinOn = chkBIN.Checked;
+            // H1: BIN for the sub is the SubRX1 strip's own pill now
             BINToolStripMenuItem.Checked = chkBIN.Checked;
             if(old_state != radio.GetDSPRX(0, 0).BinOn)
             {
@@ -30417,7 +30965,7 @@ namespace Thetis
             if (comboAGC.SelectedIndex < 0) return;
             AGCMode old_mode = radio.GetDSPRX(0, 0).RXAGCMode;
             radio.GetDSPRX(0, 0).RXAGCMode = (AGCMode)comboAGC.SelectedIndex;
-            radio.GetDSPRX(0, 1).RXAGCMode = (AGCMode)comboAGC.SelectedIndex;
+            // H1: the sub keeps its own AGC - the SubRX1 strip dropdown owns it now
             lblAGCLabel.Text = "AGC: " + comboAGC.Text;
 
             m_RX1agcMode = (AGCMode)comboAGC.SelectedIndex; // MW0LGE
@@ -30429,9 +30977,7 @@ namespace Thetis
                     SetupForm.CustomRXAGCEnabled = false;
 
                     radio.GetDSPRX(0, 0).RXAGCHang = 2000;
-                    radio.GetDSPRX(0, 1).RXAGCHang = 2000;
                     radio.GetDSPRX(0, 0).RXAGCDecay = 2000;
-                    radio.GetDSPRX(0, 1).RXAGCDecay = 2000;
 
                     SetupForm.tbDSPAGCHangThreshold.Enabled = true;
                     SetupForm.AGCRX1HangThreshold = SetupForm.tbDSPAGCHangThreshold.Value;
@@ -30442,9 +30988,7 @@ namespace Thetis
                     SetupForm.CustomRXAGCEnabled = false;
 
                     radio.GetDSPRX(0, 0).RXAGCHang = 1000;
-                    radio.GetDSPRX(0, 1).RXAGCHang = 1000;
                     radio.GetDSPRX(0, 0).RXAGCDecay = 500;
-                    radio.GetDSPRX(0, 1).RXAGCDecay = 500;
 
                     SetupForm.tbDSPAGCHangThreshold.Enabled = true;
                     SetupForm.AGCRX1HangThreshold = SetupForm.tbDSPAGCHangThreshold.Value;
@@ -30455,9 +30999,7 @@ namespace Thetis
                     SetupForm.CustomRXAGCEnabled = false;
 
                     radio.GetDSPRX(0, 0).RXAGCHang = 0;
-                    radio.GetDSPRX(0, 1).RXAGCHang = 0;
                     radio.GetDSPRX(0, 0).RXAGCDecay = 250;
-                    radio.GetDSPRX(0, 1).RXAGCDecay = 250;
 
                     WDSP.SetRXAAGCHangThreshold(WDSP.id(0, 0), 100);
 
@@ -30469,9 +31011,7 @@ namespace Thetis
                     SetupForm.CustomRXAGCEnabled = false;
 
                     radio.GetDSPRX(0, 0).RXAGCHang = 0;
-                    radio.GetDSPRX(0, 1).RXAGCHang = 0;
                     radio.GetDSPRX(0, 0).RXAGCDecay = 50;
-                    radio.GetDSPRX(0, 1).RXAGCDecay = 50;
 
                     WDSP.SetRXAAGCHangThreshold(WDSP.id(0, 0), 100);
                     SetupForm.tbDSPAGCHangThreshold.Enabled = false;
@@ -36930,16 +37470,16 @@ namespace Thetis
             if (new_mode == DSPMode.FM)                             // set DSP samplerate
             {
                 WDSP.SetDSPSamplerate(WDSP.id(0, 0), 192000);
-                WDSP.SetDSPSamplerate(WDSP.id(0, 1), 192000);
             }
             else
             {
                 WDSP.SetDSPSamplerate(WDSP.id(0, 0), 48000);
-                WDSP.SetDSPSamplerate(WDSP.id(0, 1), 48000);
             }
+            // H1: the sub keeps its own rate, set from its own mode - the SubRX1 controls own it now
+            WDSP.SetDSPSamplerate(WDSP.id(0, 1), _sub_dsp_mode == DSPMode.FM ? 192000 : 48000);
 
             radio.GetDSPRX(0, 0).DSPMode = new_mode;				// set new DSP mode
-            radio.GetDSPRX(0, 1).DSPMode = new_mode;
+            // H1: the sub keeps its own mode - the SubRX1 dropdown owns it now
 
             if (chkVFOATX.Checked || !rx2_enabled)
             {
@@ -37478,11 +38018,8 @@ namespace Thetis
                     UpdateRX1Filters(-halfBw, halfBw);
                 }
             }
-            // the sub follows the mode, so a mode change re-establishes its passband from
-            // RX1's - the only receiver-filter change that still moves the sub
-            radio.GetDSPRX(0, 1).SetRXFilter(radio.GetDSPRX(0, 0).RXFilterLow, radio.GetDSPRX(0, 0).RXFilterHigh);
-            Display.SubRX1FilterLow = radio.GetDSPRX(0, 0).RXFilterLow;
-            Display.SubRX1FilterHigh = radio.GetDSPRX(0, 0).RXFilterHigh;
+            // H1: the sub keeps its own passband, mode and rate - the SubRX1 controls
+            // own them now, so a mode change on RX1 no longer moves the sub
             BINToolStripMenuItem.Enabled = chkBIN.Enabled;
 
             tbFilterWidthScroll_newMode(); // wjt 
@@ -39772,7 +40309,7 @@ namespace Thetis
                 lblANFLabel.Text = "---";
             }
             radio.GetDSPRX(0, 0).AutoNotchFilter = chkANF.Checked;
-            radio.GetDSPRX(0, 1).AutoNotchFilter = chkANF.Checked;
+            // H1: ANF for the sub is the SubRX1 strip's own pill now
             cat_anf_status = Convert.ToInt32(chkANF.Checked);
             ANFToolStripMenuItem.Checked = chkANF.Checked;
             AndromedaIndicatorCheck(EIndicatorActions.eINANF, true, chkANF.Checked);
@@ -39799,7 +40336,7 @@ namespace Thetis
             }
 
             WDSP.SetRXASNBARun(WDSP.id(0, 0), chkDSPNB2.Checked);
-            WDSP.SetRXASNBARun(WDSP.id(0, 1), chkDSPNB2.Checked);
+            // H1: NB2 for the sub is the SubRX1 strip's own pill now
             cat_snb_status = Convert.ToInt32(chkDSPNB2.Checked);
             SNBtoolStripMenuItem.Checked = chkDSPNB2.Checked;
             SNBtoolStripMenuItem1.Checked = chkRX2NB2.Checked;
@@ -39989,19 +40526,11 @@ namespace Thetis
 
                 chkEnableMultiRX.BackColor = button_selected_color;
 
-                // H1: the sub takes RX1's mode and AGC when it is switched on - the
-                // same inheritance SubRX2 gets from RX2. Without the mode the channel
-                // runs with no demodulator set-up, which is why a sub that was already
-                // on before a restart came back silent with a dead meter until a mode
-                // touch re-applied everything through SetRX1Mode.
-                RadioDSPRX main_rx1 = radio.GetDSPRX(0, 0);
-                RadioDSPRX sub_rx1 = radio.GetDSPRX(0, 1);
-                sub_rx1.DSPMode = main_rx1.DSPMode;
-                sub_rx1.RXAGCMode = main_rx1.RXAGCMode;
-                sub_rx1.RXAGCHang = main_rx1.RXAGCHang;
-                sub_rx1.RXAGCDecay = main_rx1.RXAGCDecay;
-                sub_rx1.RXFixedAGC = main_rx1.RXFixedAGC;
-                sub_rx1.RXOutputGain = main_rx1.RXOutputGain;
+                // H1: the sub runs its OWN mode, filter, AGC, gain and noise settings
+                // now - the same set the SubRX1 strip carries. The old inheritance from
+                // RX1 is gone: the strip is the source of truth, applied here and once
+                // more after the state restore.
+                ApplySubOwnSettings(1);
 
                 // H1: same late nudge as the RX2 sub: stop WITH the reset, state the
                 // audio mixer switch again, then start. The bare start alone left
@@ -40074,12 +40603,7 @@ namespace Thetis
                         UpdateVFOASub(); // H1: light up the SubVFOA row with the sub's own frequency
                     }
                 }
-                radio.GetDSPRX(0, 1).SetRXFilter(
-                    radio.GetDSPRX(0, 0).RXFilterLow,
-                    radio.GetDSPRX(0, 0).RXFilterHigh);
-                // H1: give the display the sub's passband, so its window draws at the sub's width
-                Display.SubRX1FilterLow = radio.GetDSPRX(0, 0).RXFilterLow;
-                Display.SubRX1FilterHigh = radio.GetDSPRX(0, 0).RXFilterHigh;
+                // H1: the sub's own passband was applied above by ApplySubOwnSettings
             }
             else
             {
@@ -40168,20 +40692,10 @@ namespace Thetis
             {
                 cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), !Audio.MuteRX2);
 
-                // the sub takes RX2's mode, filter and AGC when it is switched on -
-                // the same inheritance SubRX1 gets from RX1
-                RadioDSPRX main_rx2 = radio.GetDSPRX(1, 0);
-                RadioDSPRX sub_rx2 = radio.GetDSPRX(1, 1);
-                sub_rx2.DSPMode = main_rx2.DSPMode;
-                sub_rx2.SetRXFilter(main_rx2.RXFilterLow, main_rx2.RXFilterHigh);
-                // H1: give the display the sub's passband, so its window draws at the sub's width
-                Display.SubRX2FilterLow = main_rx2.RXFilterLow;
-                Display.SubRX2FilterHigh = main_rx2.RXFilterHigh;
-                sub_rx2.RXAGCMode = main_rx2.RXAGCMode;
-                sub_rx2.RXAGCHang = main_rx2.RXAGCHang;
-                sub_rx2.RXAGCDecay = main_rx2.RXAGCDecay;
-                sub_rx2.RXFixedAGC = main_rx2.RXFixedAGC;
-                sub_rx2.RXOutputGain = main_rx2.RXOutputGain;
+                // H1: the sub runs its OWN mode, filter, AGC, gain and noise settings
+                // now - the SubRX2 strip is the source of truth, applied here and once
+                // more after the state restore.
+                ApplySubOwnSettings(2);
 
                 if (!_mox) WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
 
@@ -41532,6 +42046,7 @@ namespace Thetis
             if (wasActive) WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
 
             _sub_dsp_mode = new_mode;
+            SyncSubModeCombo(1, new_mode);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
         }
@@ -41545,6 +42060,7 @@ namespace Thetis
             radio.GetDSPRX(0, 1).SetRXFilter(low, high);
             Display.SubRX1FilterLow = low; // H1: the drawn sub window follows this filter
             Display.SubRX1FilterHigh = high;
+            SubFilterToSliders(1, low, high);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
         }
@@ -41553,6 +42069,7 @@ namespace Thetis
         {
             RadioDSPRX sub = radio.GetDSPRX(0, 1);
             sub.RXAGCMode = mode;
+            SyncSubAgcCombo(1, mode);
             switch (mode)
             {
                 case AGCMode.LONG: sub.RXAGCHang = 2000; sub.RXAGCDecay = 2000; break;
@@ -41580,6 +42097,7 @@ namespace Thetis
                 WDSP.SetRXAAGCTop(WDSP.id(0, 1), (double)value);
 
             _sub_agc_gain = value;
+            SyncSubGainSlider(1, value);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
         }
@@ -41804,16 +42322,15 @@ namespace Thetis
             if (new_mode == DSPMode.FM)                             // set DSP samplerate
             {
                 WDSP.SetDSPSamplerate(WDSP.id(2, 0), 192000);
-                WDSP.SetDSPSamplerate(WDSP.id(2, 1), 192000);       // H1: the sub follows the mode
             }
             else
             {
                 WDSP.SetDSPSamplerate(WDSP.id(2, 0), 48000);
-                WDSP.SetDSPSamplerate(WDSP.id(2, 1), 48000);
             }
+            // H1: the sub keeps its own rate, set from its own mode - the SubRX2 controls own it now
+            WDSP.SetDSPSamplerate(WDSP.id(2, 1), _sub2_dsp_mode == DSPMode.FM ? 192000 : 48000);
 
             radio.GetDSPRX(1, 0).DSPMode = new_mode;			    // set new DSP mode
-            radio.GetDSPRX(1, 1).DSPMode = new_mode;                // H1: the sub follows the mode
 
             if (rx2_enabled)
             {
@@ -42265,11 +42782,7 @@ namespace Thetis
             {
                 RX2Filter = Filter.NONE;
             }
-            // the sub follows the mode, so a mode change re-establishes its passband from
-            // RX2's - the only receiver-filter change that still moves the sub
-            radio.GetDSPRX(1, 1).SetRXFilter(radio.GetDSPRX(1, 0).RXFilterLow, radio.GetDSPRX(1, 0).RXFilterHigh);
-            Display.SubRX2FilterLow = radio.GetDSPRX(1, 0).RXFilterLow;
-            Display.SubRX2FilterHigh = radio.GetDSPRX(1, 0).RXFilterHigh;
+            // H1: the sub keeps its own passband - the SubRX2 controls own it now
 
             tbFilterWidthScroll_newMode();
 
@@ -42694,7 +43207,7 @@ namespace Thetis
                 lblRX2ANFLabel.Text = "---";
             }
             radio.GetDSPRX(1, 0).AutoNotchFilter = chkRX2ANF.Checked;
-            radio.GetDSPRX(1, 1).AutoNotchFilter = chkRX2ANF.Checked;
+            // H1: ANF for the RX2 sub is the SubRX2 strip's own pill now
 
             catrx2_anf_status = Convert.ToInt32(chkRX2ANF.Checked);
             aNF2ToolStripMenuItem.Checked = chkRX2ANF.Checked;
@@ -42713,7 +43226,7 @@ namespace Thetis
             if (chkRX2BIN.Checked) chkRX2BIN.BackColor = button_selected_color;
             else chkRX2BIN.BackColor = SystemColors.Control;
             radio.GetDSPRX(1, 0).BinOn = chkRX2BIN.Checked;
-            radio.GetDSPRX(1, 1).BinOn = chkRX2BIN.Checked;
+            // H1: BIN for the RX2 sub is the SubRX2 strip's own pill now
             bIN2ToolStripMenuItem.Checked = chkRX2BIN.Checked;
             if (old_state != radio.GetDSPRX(1, 0).BinOn)
             {
@@ -46015,6 +46528,10 @@ namespace Thetis
             // H1: arm the RX2 sub channel from the restored SubRX2 volume and pan values
             ptbRX2SubGain_Scroll(this, EventArgs.Empty);
             ptbRX2SubPan_Scroll(this, EventArgs.Empty);
+            // H1: arm the sub strips - the state restore fills the controls without firing their
+            // events, so the restored settings are applied to the sub channels here
+            if (chkEnableMultiRX != null && chkEnableMultiRX.Checked) ApplySubOwnSettings(1);
+            if (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked && rx2_enabled) ApplySubOwnSettings(2);
 
             radModeLSB.Location = rad_mode_lsb_basis;
             radModeUSB.Location = rad_mode_usb_basis;
@@ -47925,7 +48442,7 @@ namespace Thetis
             if (_nr_selected[rx - 1] > 4) _nr_selected[rx - 1] = 0;
 
             setupNR(rx, false);
-            setupNR(rx, true);
+            // H1: the sub's own NR pill drives the sub channel now, this cycle no longer does
 
             if (_nr_selected[rx - 1] != old_nr) NRChangedHandlers?.Invoke(rx, old_nr, _nr_selected[rx - 1]);
         }

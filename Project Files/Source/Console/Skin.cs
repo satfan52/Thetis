@@ -1040,6 +1040,16 @@ namespace Thetis
                 else if (skinName == "chkSubVFOBTX") skinName = "chkVFOBTX";
                 else if (skinName == "chkEnableMultiRX2") skinName = "chkEnableMultiRX"; else if (skinName == "chkRX2PanSwap") skinName = "chkPanSwap"; else if (skinName == "chkRX2TNF") skinName = "chkTNF";
                 else if (skinName == "chk2TONE") skinName = "chkTUN";
+                else if (skinName == "chkSubRX1NR") skinName = "chkNR";
+                else if (skinName == "chkSubRX1ANF") skinName = "chkANF";
+                else if (skinName == "chkSubRX1NB2") skinName = "chkDSPNB2";
+                else if (skinName == "chkSubRX1BIN") skinName = "chkBIN";
+                else if (skinName == "chkSubRX1MUT") skinName = "chkMUT";
+                else if (skinName == "chkSubRX2NR") skinName = "chkNR";
+                else if (skinName == "chkSubRX2ANF") skinName = "chkANF";
+                else if (skinName == "chkSubRX2NB2") skinName = "chkDSPNB2";
+                else if (skinName == "chkSubRX2BIN") skinName = "chkBIN";
+                else if (skinName == "chkSubRX2MUT") skinName = "chkMUT";
             }
 
             string skey = "";
@@ -1796,6 +1806,9 @@ namespace Thetis
                 else if (skinName == "ptbRX2FilterWidth") skinName = "ptbFilterWidth";
                 else if (skinName == "ptbRX2FilterShift") skinName = "ptbFilterShift";
                 else if (skinName == "ptbTune") skinName = "ptbPWR"; // H1: the skin ships no images for the Tune slider, it wears the Drive slider set
+                else if (skinName == "ptbSubRX1Width" || skinName == "ptbSubRX2Width") skinName = "ptbFilterWidth";
+                else if (skinName == "ptbSubRX1Shift" || skinName == "ptbSubRX2Shift") skinName = "ptbFilterShift";
+                else if (skinName == "ptbSubRX1Gain" || skinName == "ptbSubRX2Gain") skinName = "ptbRF";
             }
            // string s = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-";
 
