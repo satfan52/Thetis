@@ -6139,7 +6139,8 @@ namespace Thetis
                 chkRX2Mute, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, lblRX2AF, ptbRX2AF,
                 chkRX2PanSwap, chkEnableMultiRX2, ptbRX2SubGain, ptbRX2SubPan,
                 ptbRX2FilterWidth, ptbRX2FilterShift, btnRX2FilterShiftReset,
-                chkRX2TNF, btnRX2TNFAdd, h1RX2BandPanel, h1RX2VhfPanel };
+                chkRX2TNF, btnRX2TNFAdd, h1RX2BandPanel, h1RX2VhfPanel,
+                chkVAC2 }; // VAC2 carries RX2's audio, so it goes inactive with the receiver
         }
 
         private void H1RX2Grey(bool active, bool rx2on)
@@ -6818,15 +6819,12 @@ namespace Thetis
                 {
                     using (Graphics g = Graphics.FromImage(bmp))
                     {
-                        g.Clear(DrawPowerButton ? dim_colour : Color.FromArgb(DimAlpha, 0, 0, 0));
+                        g.Clear(DrawPowerButton ? dim_colour : Color.Transparent);
 
-                        // H1: the VAC pills belong to the console, not to RX2: inside a normal veil
-                        // they are redrawn at full contrast so they look exactly as they do outside it
-                        if (!DrawPowerButton)
-                        {
-                            DrawControlImage(g, m_console.chkVAC1);
-                            DrawControlImage(g, m_console.chkVAC2);
-                        }
+                        // H1: the RX2 veil dims the controls themselves and leaves the console's own
+                        // background exactly as it is. The old whole-box dim darkened the black
+                        // around the controls as well, which changed the console's look.
+                        if (!DrawPowerButton) DimControlsInBox(g);
 
                         if (DrawPowerButton && !r.IsEmpty)
                         {
@@ -6891,6 +6889,31 @@ namespace Thetis
                         DeleteDC(mem_dc);
                         ReleaseDC(IntPtr.Zero, screen_dc);
                     }
+                }
+            }
+
+            // H1: dim every control that sits inside this veil's box, in place. Containers are
+            // walked through but not filled: a container's fill is the console's own background.
+            private void DimControlsInBox(Graphics g)
+            {
+                using (SolidBrush dim = new SolidBrush(Color.FromArgb(DimAlpha, 0, 0, 0)))
+                    DimCollect(g, dim, m_console);
+            }
+
+            private void DimCollect(Graphics g, SolidBrush dim, Control parent)
+            {
+                foreach (Control c in parent.Controls)
+                {
+                    if (c == null || !c.Visible) continue;
+                    if (c is PowerDimOverlay) continue;
+                    if (c == m_console.chkPower || c == m_console.chkRX2) continue;
+                    if (c.Parent != null && !(c is Panel) && !(c is GroupBox))
+                    {
+                        Rectangle r = m_console.RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
+                        r.Offset(-Left, -Top);
+                        if (r.IntersectsWith(new Rectangle(0, 0, Width, Height))) g.FillRectangle(dim, r);
+                    }
+                    if (c.HasChildren) DimCollect(g, dim, c);
                 }
             }
 
