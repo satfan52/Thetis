@@ -776,7 +776,8 @@ namespace Thetis
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
             H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
             H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
-            InitPowerDim(); // H1: the powered-off panafall veil and the power settle pass
+            InitPowerDim();
+            H1InitRX2Veil(); // H1: the RX2 side goes grey, not away // H1: the powered-off panafall veil and the power settle pass
             Common.DoubleBufferAll(this, true);
 
             InitialiseAndromedaMenus();
@@ -6123,6 +6124,97 @@ namespace Thetis
             H1RX2BandVis(h1RX2BandShown);
         }
 
+        // H1: the controls the RX2 side owns. Disabled, not hidden, while nothing is on the
+        // second slice: each one's Enabled is remembered so RX2-on keeps the mode and band logic.
+        private readonly System.Collections.Generic.Dictionary<Control, bool> h1RX2EnableSave =
+            new System.Collections.Generic.Dictionary<Control, bool>();
+
+        private Control[] H1RX2Owned()
+        {
+            return new Control[] {
+                panelRX2Mode, panelRX2Filter, panelRX2DSP, panelRX2Mixer, panelRX2Display,
+                lblRX2RF, ptbRX2RF, lblRX2AGC, comboRX2AGC, lblRX2Preamp, comboRX2Preamp, udRX2StepAttData,
+                chkRX2Mute, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, lblRX2AF, ptbRX2AF,
+                chkRX2PanSwap, chkEnableMultiRX2, ptbRX2SubGain, ptbRX2SubPan,
+                ptbRX2FilterWidth, ptbRX2FilterShift, btnRX2FilterShiftReset,
+                chkRX2TNF, btnRX2TNFAdd, h1RX2BandPanel, h1RX2VhfPanel };
+        }
+
+        private void H1RX2Grey(bool active)
+        {
+            if (h1RX2VeilStrip != null && h1RX2VeilBelow != null)
+            {
+                bool veil = !active;
+                if (h1RX2VeilStrip.Visible != veil)
+                {
+                    h1RX2VeilStrip.Visible = veil;
+                    h1RX2VeilBelow.Visible = veil;
+                }
+                if (veil) { H1PlaceRX2Veil(); h1RX2VeilStrip.Push(); h1RX2VeilBelow.Push(); h1RX2VeilStrip.BringToFront(); h1RX2VeilBelow.BringToFront(); }
+            }
+
+            foreach (Control c in H1RX2Owned())
+            {
+                if (c == null) continue;
+                if (!active)
+                {
+                    if (!h1RX2EnableSave.ContainsKey(c)) h1RX2EnableSave[c] = c.Enabled;
+                    if (c.Enabled) c.Enabled = false;
+                }
+                else if (h1RX2EnableSave.ContainsKey(c))
+                {
+                    c.Enabled = h1RX2EnableSave[c];
+                    h1RX2EnableSave.Remove(c);
+                }
+            }
+        }
+
+        // H1: the RX2 side stays put and is veiled while nothing sits on the second slice:
+        // the same dim the power-off veil uses, over the right strip and the block below it.
+        private PowerDimOverlay h1RX2VeilStrip;
+        private PowerDimOverlay h1RX2VeilBelow;
+
+        private void H1InitRX2Veil()
+        {
+            h1RX2VeilStrip = new PowerDimOverlay(this);
+            h1RX2VeilStrip.Name = "h1RX2VeilStrip"; // named: the state save keys controls by name
+            h1RX2VeilStrip.DrawPowerButton = false;
+            h1RX2VeilStrip.DimAlpha = 115;
+            h1RX2VeilStrip.Visible = false;
+            this.Controls.Add(h1RX2VeilStrip);
+
+            h1RX2VeilBelow = new PowerDimOverlay(this);
+            h1RX2VeilBelow.Name = "h1RX2VeilBelow"; // named: the state save keys controls by name
+            h1RX2VeilBelow.DrawPowerButton = false;
+            h1RX2VeilBelow.DimAlpha = 115;
+            h1RX2VeilBelow.Visible = false;
+            this.Controls.Add(h1RX2VeilBelow);
+        }
+
+        private void H1PlaceRX2Veil()
+        {
+            if (h1RX2VeilStrip == null || h1RX2VeilBelow == null) return;
+            if (panelDisplay == null) return;
+
+            int y0 = panelMultiRX != null ? panelMultiRX.Top - 20 : 740; // the layout's Y0
+            int x0 = panelDisplay.Right + 4;
+            int top = panelDisplay.Top;
+            int stripBot = (panelRX2Filter != null ? panelRX2Filter.Bottom : y0) + 4;
+            h1RX2VeilStrip.Bounds = new Rectangle(x0, top, Math.Max(0, ClientSize.Width - x0), Math.Max(0, stripBot - top));
+
+            int bx = (panelRX2Mixer != null ? panelRX2Mixer.Left : ClientSize.Width - 407) - 8;
+            int by = y0 - 4;
+            h1RX2VeilBelow.Bounds = new Rectangle(bx, by, Math.Max(0, ClientSize.Width - bx), Math.Max(0, ClientSize.Height - 18 - by));
+
+            if (h1RX2VeilStrip.Visible)
+            {
+                h1RX2VeilStrip.Push();
+                h1RX2VeilBelow.Push();
+                h1RX2VeilStrip.BringToFront();
+                h1RX2VeilBelow.BringToFront();
+            }
+        }
+
         private void H1RX2BandEnable(bool enabled)
         {
             if (h1RX2BandButtons == null) return;
@@ -6455,8 +6547,12 @@ namespace Thetis
             H1Put(chkRX2Squelch, this, aR + 232 - 10 - 80, Y0 + 142);
             H1Put(ptbRX2Squelch, this, aR + 232 - 100, Y0 + 166);
             H1Put(picRX2Squelch, this, aR + 232 - 9 - 83, Y0 + 187);
-            foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer })
+            // H1: VAC1 sits beside the RX1 squelch on its own row; VAC2 in the mirrored slot
+            H1Put(chkVAC1, this, aL + 96, Y0 + 142, 50);
+            H1Put(chkVAC2, this, aR + 232 - 90 - 58, Y0 + 142, 50);
+            foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer, chkVAC1, chkVAC2 })
                 if (k != null) k.BringToFront();
+            H1PlaceRX2Veil(); // H1: the RX2 veil follows the layout
 
             // ---------- BELOW, centre: shared, balanced about the centre line ----------
             int cx = W / 2;                                   // 960
@@ -6651,6 +6747,10 @@ namespace Thetis
 
             private static readonly Color dim_colour = Color.FromArgb(150, 0, 0, 0);
 
+            // H1: the same veil, reusable for other regions: no power button, settable darkness
+            public bool DrawPowerButton = true;
+            public int DimAlpha = 150;
+
             private readonly Console m_console;
 
             public PowerDimOverlay(Console console)
@@ -6681,9 +6781,17 @@ namespace Thetis
                 {
                     using (Graphics g = Graphics.FromImage(bmp))
                     {
-                        g.Clear(dim_colour);
+                        g.Clear(DrawPowerButton ? dim_colour : Color.FromArgb(DimAlpha, 0, 0, 0));
 
-                        if (!r.IsEmpty)
+                        // H1: the VAC pills belong to the console, not to RX2: inside a normal veil
+                        // they are redrawn at full contrast so they look exactly as they do outside it
+                        if (!DrawPowerButton)
+                        {
+                            DrawControlImage(g, m_console.chkVAC1);
+                            DrawControlImage(g, m_console.chkVAC2);
+                        }
+
+                        if (DrawPowerButton && !r.IsEmpty)
                         {
                             r.Offset(-Left, -Top);
                             // the button is redrawn right here at full contrast: a soft thin
@@ -6747,6 +6855,25 @@ namespace Thetis
                         ReleaseDC(IntPtr.Zero, screen_dc);
                     }
                 }
+            }
+
+            private void DrawControlImage(Graphics g, System.Windows.Forms.ButtonBase c)
+            {
+                if (c == null || !c.Visible) return;
+                Rectangle r = m_console.RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
+                Image img = null;
+                try
+                {
+                    if (c.ImageList != null && c.ImageList.Images.Count > 0)
+                    {
+                        int idx = c.ImageIndex;
+                        if (idx < 0 || idx >= c.ImageList.Images.Count) idx = 0;
+                        img = c.ImageList.Images[idx];
+                    }
+                }
+                catch { }
+                if (img != null) g.DrawImage(img, r);
+                else if (!string.IsNullOrEmpty(c.Text)) g.DrawString(c.Text, c.Font, Brushes.White, r);
             }
 
             private static System.Drawing.Drawing2D.GraphicsPath PillPath(Rectangle r, int inflate)
@@ -37531,7 +37658,10 @@ namespace Thetis
             btnRX2FilterShiftReset.Size = btnFilterShiftReset.Size;
             btnRX2FilterShiftReset.Font = btnFilterShiftReset.Font;
             btnRX2FilterShiftReset.ForeColor = btnFilterShiftReset.ForeColor;
-            btnRX2FilterShiftReset.BackColor = SystemColors.Control;
+            // H1: take the twin's flat skin style too, otherwise it draws as a bordered box
+            btnRX2FilterShiftReset.FlatStyle = btnFilterShiftReset.FlatStyle;
+            btnRX2FilterShiftReset.BackColor = btnFilterShiftReset.BackColor;
+            btnRX2FilterShiftReset.UseVisualStyleBackColor = btnFilterShiftReset.UseVisualStyleBackColor;
             btnRX2FilterShiftReset.FlatAppearance.BorderSize = 0;
             btnRX2FilterShiftReset.Selectable = true;
             btnRX2FilterShiftReset.Tag = "Reset Filter Shift";
@@ -40862,16 +40992,18 @@ namespace Thetis
                 bool show = SecondSliceActive;
                 bool sub = SecondSliceIsSub;
 
-                panelRX2Mode.Visible = show;
-                panelRX2Filter.Visible = show;
-                panelRX2DSP.Visible = show;
-                lblRX2RF.Visible = show;
-                ptbRX2RF.Visible = show;
+                // H1: the RX2 side stays in place and greys when RX2 is off - the user must see that
+                // the controls exist. Disabling a container greys every control inside it.
+                panelRX2Mode.Visible = true;
+                panelRX2Filter.Visible = true;
+                panelRX2DSP.Visible = true;
+                lblRX2RF.Visible = true;
+                ptbRX2RF.Visible = true;
 
-                chkRX2Mute.Visible = show && !sub;
-                lblRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
-                comboRX2Band.Visible = show && !sub && !LegacyItemController.HideBands;
-                H1RX2BandVis(show && !sub && !LegacyItemController.HideBands);
+                chkRX2Mute.Visible = true;
+                lblRX2Band.Visible = false; // hidden data holders, the buttons replace them
+                comboRX2Band.Visible = false;
+                H1RX2BandVis(!LegacyItemController.HideBands);
 
                 // the RX2 monitor-volume row and the RX2 hardware extras belong to
                 // receiver 2 only: with RX2 off they have no meaning (a source of
@@ -40879,12 +41011,14 @@ namespace Thetis
                 // re-parents and manages these itself - leave it alone there.
                 if (!IsCollapsedView || IsExpandedView)
                 {
-                    lblRX2AF.Visible = RX2Enabled;
-                    ptbRX2AF.Visible = RX2Enabled;
+                    lblRX2AF.Visible = true;
+                    ptbRX2AF.Visible = true;
 
-                    lblRX2Preamp.Visible = RX2Enabled;
-                    comboRX2Preamp.Visible = RX2Enabled && _rx2_preamp_present;
-                    udRX2StepAttData.Visible = RX2Enabled && _rx2_preamp_present;
+                    lblRX2Preamp.Visible = true;
+                    comboRX2Preamp.Visible = _rx2_preamp_present;
+                    udRX2StepAttData.Visible = _rx2_preamp_present;
+
+                    H1RX2Grey(show);
                 }
 
                 // H1: the RX2 meter readout greys while RX2 is off, like the VFO B digits
@@ -42799,7 +42933,22 @@ namespace Thetis
 
             // H1: RX2 has its own band stack. Its entry for the band is applied through the
             // SetBandRX2 twin, the way RX1's entry is applied through SetBand.
-            BandStackEntry bseRX2 = getRX2BandStackEntry(BandStackManager.StringToBand(sBand));
+            Band bSel = BandStackManager.StringToBand(sBand);
+            BandStackEntry bseRX2 = getRX2BandStackEntry(bSel);
+            if (bseRX2 == null)
+            {
+                // H1: RX2 keeps no record for this band - WWV and SWL, or a band RX2 never visited.
+                // Take the frequency RX1 keeps for the same band so RX2's WWV and SWL buttons do
+                // what RX1's do instead of looking dead.
+                BandStackFilter rxF1 = BandStackManager.GetFilter(bSel, 1, false);
+                BandStackEntry rxe1 = rxF1 != null ? rxF1.First() : null;
+                if (rxe1 == null && rxF1 != null) rxe1 = rxF1.LastVisited;
+                if (rxe1 != null)
+                {
+                    bseRX2 = rxe1.Copy();
+                    bseRX2.Band = bSel;
+                }
+            }
             if (bseRX2 != null) setRX2BandFromBandStackEntry(bseRX2);
         }
 
@@ -49675,6 +49824,24 @@ private void incrementMutliMeterDisplayModeRX2()
                     }
                     if (!bFreqUsable)
                         BandLog("rx2 band entry rejected: band=" + band + " freq=" + bse.Frequency + " (record belongs to another band)");
+                }
+            }
+
+            if (!bFreqUsable)
+            {
+                // H1: a band RX2 has never used lands where RX1 lands for the same band. WWV and
+                // SWL are spot bands, and the range build below would put RX2 at a frequency of
+                // its own - which is why those two buttons did not do what RX1's do.
+                BandStackFilter rxF1 = BandStackManager.GetFilter(band, 1, false);
+                BandStackEntry rxe1 = rxF1 != null ? rxF1.First() : null;
+                if (rxe1 == null && rxF1 != null) rxe1 = rxF1.LastVisited;
+                if (rxe1 != null && rxe1.Frequency > 0)
+                {
+                    bse.CentreFrequency = rxe1.CentreFrequency > 0 ? rxe1.CentreFrequency : rxe1.Frequency;
+                    bse.Frequency = rxe1.Frequency;
+                    bse.Mode = rxe1.Mode;
+                    bse.Filter = rxe1.Filter;
+                    bFreqUsable = true;
                 }
             }
 
