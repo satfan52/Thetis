@@ -5263,7 +5263,28 @@ namespace Thetis
                     clsMeter m = mkvp.Value;
 
                     bool previousMOX = m.MOX;
-                    m.MOX = rx == m.RX && newMox;
+                    // H1: a meter with nothing of its own to draw in transmit - the sub meters -
+                    // was switched into TX mode anyway. Every one of its groups is RX-only, so
+                    // drawMeters() fell back to the minimum height and the container shrank, which
+                    // is the bottom half of SubRX1 and SubRX2 disappearing on MOX. A meter that
+                    // has no TX item keeps showing its receive picture instead, and its readings
+                    // stay live, exactly as the RX1 and RX2 meters keep theirs.
+                    bool h1TxItems = false;
+                    try
+                    {
+                        if (m.SortedMeterItemsForZOrder != null)
+                            foreach (clsMeterItem h1mi in m.SortedMeterItemsForZOrder)
+                                if (h1mi.OnlyWhenTX) { h1TxItems = true; break; }
+                    }
+                    catch { }
+                    bool h1SubByName = m.ID != null && m.ID.IndexOf("sub", StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool h1KeepRx = !h1TxItems || h1SubByName;
+                    m.MOX = rx == m.RX && newMox && !h1KeepRx;
+                    if (newMox && !oldMox && h1KeepRx)
+                    {
+                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                            DateTime.Now.ToString("HH:mm:ss.fff") + " MOX: '" + m.ID + "' kept in receive (txItems=" + h1TxItems + ", subName=" + h1SubByName + ")\r\n"); } catch { }
+                    }
 
                     if (newMox && !oldMox) // ignore RX as tx stuff is common
                     {
