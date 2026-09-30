@@ -1806,8 +1806,8 @@ namespace Thetis
                 else if (skinName == "ptbRX2FilterWidth") skinName = "ptbFilterWidth";
                 else if (skinName == "ptbRX2FilterShift") skinName = "ptbFilterShift";
                 else if (skinName == "ptbTune") skinName = "ptbPWR"; // H1: the skin ships no images for the Tune slider, it wears the Drive slider set
-                else if (skinName == "ptbSubRX1Width" || skinName == "ptbSubRX2Width") skinName = "ptbFilterWidth";
-                else if (skinName == "ptbSubRX1Shift" || skinName == "ptbSubRX2Shift") skinName = "ptbFilterShift";
+                else if (skinName == "ptbSubRX1Width" || skinName == "ptbSubRX2Width") skinName = "ptbRF"; // H1: the sub sliders wear the console's standard slider art
+                else if (skinName == "ptbSubRX1Shift" || skinName == "ptbSubRX2Shift") skinName = "ptbRF"; // H1: as the gain above, so the three read as one family
                 else if (skinName == "ptbSubRX1Gain" || skinName == "ptbSubRX2Gain") skinName = "ptbRF";
             }
            // string s = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-";

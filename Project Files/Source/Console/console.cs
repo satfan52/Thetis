@@ -768,7 +768,8 @@ namespace Thetis
             LogTool.AddLogEntry("Initialising components...", "COMP");
 
             InitializeComponent();								// Windows Forms Generated Code
-            InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
+            InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
+
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
             InitSubRXStrips(); // H1: create the SubRX1 and SubRX2 control strips before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
@@ -6773,43 +6774,70 @@ namespace Thetis
             // and the sub's own noise toggles
             if (comboSubRX1Mode != null)
             {
-                int stw = 280;
+                // H1: the strip wears the console's own measures - the dropdowns come down to the
+                // longest entry they must show, the sliders shorten to the column and wear the
+                // standard slider art, the noise pills take the RX1 grid's pitch, and the whole
+                // block rises to the RX1 AUDIO caption line so the two read level
+                int cbw = 0;
+                foreach (ComboBoxTS cb in new ComboBoxTS[] { comboSubRX1Mode, comboSubRX1AGC, comboSubRX2Mode, comboSubRX2AGC })
+                {
+                    if (cb == null) continue;
+                    foreach (object o in cb.Items)
+                    {
+                        int ew = TextRenderer.MeasureText(Convert.ToString(o), cb.Font).Width;
+                        if (ew > cbw) cbw = ew;
+                    }
+                }
+                cbw += SystemInformation.VerticalScrollBarWidth + 12; // + drop-down button + margins
+                int sldw = cbw + 14;                      // shortened slider length
+                int col2 = cbw + 18;                      // second column offset
+                int stw = col2 + sldw;                    // strip width
                 int stx1 = 415;
                 int stx2 = W - 415 - stw;
-                H1Cap("subrx1", "SUBRX1", stx1, 708, stw);
-                H1Cap("subrx2", "SUBRX2", stx2, 708, stw);
-                H1Cap("subrx1noise", "NOISE", stx1, 886, 140);
-                H1Cap("subrx2noise", "NOISE", stx2, 886, 140);
-                H1Put(lblSubRX1Mode, this, stx1, 730);
-                H1Put(comboSubRX1Mode, this, stx1, 746, 130, 21);
-                H1Put(lblSubRX1AGC, this, stx1 + 150, 730);
-                H1Put(comboSubRX1AGC, this, stx1 + 150, 746, 130, 21);
-                H1Put(lblSubRX1Width, this, stx1, 776);
-                H1Put(ptbSubRX1Width, this, stx1, 792, 120, 24);
-                H1Put(lblSubRX1Shift, this, stx1 + 150, 776);
-                H1Put(ptbSubRX1Shift, this, stx1 + 150, 792, 110, 24);
-                H1Put(lblSubRX1Gain, this, stx1, 830);
-                H1Put(ptbSubRX1Gain, this, stx1, 846, 120, 24);
-                H1Put(chkSubRX1NR, this, stx1, 908, 45, 23);
-                H1Put(chkSubRX1ANF, this, stx1 + 48, 908, 45, 23);
-                H1Put(chkSubRX1NB2, this, stx1 + 96, 908, 45, 23);
-                H1Put(chkSubRX1BIN, this, stx1, 934, 45, 23);
-                H1Put(chkSubRX1MUT, this, stx1 + 48, 934, 45, 23);
-                H1Put(lblSubRX2Mode, this, stx2, 730);
-                H1Put(comboSubRX2Mode, this, stx2, 746, 130, 21);
-                H1Put(lblSubRX2AGC, this, stx2 + 150, 730);
-                H1Put(comboSubRX2AGC, this, stx2 + 150, 746, 130, 21);
-                H1Put(lblSubRX2Width, this, stx2, 776);
-                H1Put(ptbSubRX2Width, this, stx2, 792, 120, 24);
-                H1Put(lblSubRX2Shift, this, stx2 + 150, 776);
-                H1Put(ptbSubRX2Shift, this, stx2 + 150, 792, 110, 24);
-                H1Put(lblSubRX2Gain, this, stx2, 830);
-                H1Put(ptbSubRX2Gain, this, stx2, 846, 120, 24);
-                H1Put(chkSubRX2NR, this, stx2, 908, 45, 23);
-                H1Put(chkSubRX2ANF, this, stx2 + 48, 908, 45, 23);
-                H1Put(chkSubRX2NB2, this, stx2 + 96, 908, 45, 23);
-                H1Put(chkSubRX2BIN, this, stx2, 934, 45, 23);
-                H1Put(chkSubRX2MUT, this, stx2 + 48, 934, 45, 23);
+                int sY = 740;                             // caption line, level with RX1 AUDIO
+                int sMod = sY + 22;                       // Mode / AGC labels
+                int sCmb = sMod + 16;                     // dropdowns
+                int sFlt = sCmb + 21 + 9;                 // Width / Shift labels
+                int sSld = sFlt + 16;                     // Width / Shift sliders
+                int sGain = sSld + 24 + 14;               // AGC Gain label
+                int sGsl = sGain + 16;                    // AGC Gain slider
+                int sNoi = sGsl + 24 + 16;                // NOISE caption
+                int sPil = sNoi + 22;                     // noise pills, first row
+                int sPi2 = sPil + 26;                     // noise pills, second row
+                H1Cap("subrx1", "SUBRX1", stx1, sY, stw);
+                H1Cap("subrx2", "SUBRX2", stx2, sY, stw);
+                H1Cap("subrx1noise", "NOISE", stx1, sNoi, 140);
+                H1Cap("subrx2noise", "NOISE", stx2, sNoi, 140);
+                H1Put(lblSubRX1Mode, this, stx1, sMod);
+                H1Put(comboSubRX1Mode, this, stx1, sCmb, cbw, 21);
+                H1Put(lblSubRX1AGC, this, stx1 + col2, sMod);
+                H1Put(comboSubRX1AGC, this, stx1 + col2, sCmb, cbw, 21);
+                H1Put(lblSubRX1Width, this, stx1, sFlt);
+                H1Put(ptbSubRX1Width, this, stx1, sSld, sldw, 24);
+                H1Put(lblSubRX1Shift, this, stx1 + col2, sFlt);
+                H1Put(ptbSubRX1Shift, this, stx1 + col2, sSld, sldw, 24);
+                H1Put(lblSubRX1Gain, this, stx1, sGain);
+                H1Put(ptbSubRX1Gain, this, stx1, sGsl, sldw, 24);
+                H1Put(chkSubRX1NR, this, stx1, sPil, 45, 23);
+                H1Put(chkSubRX1ANF, this, stx1 + 47, sPil, 45, 23);
+                H1Put(chkSubRX1NB2, this, stx1 + 94, sPil, 45, 23);
+                H1Put(chkSubRX1BIN, this, stx1, sPi2, 45, 23);
+                H1Put(chkSubRX1MUT, this, stx1 + 47, sPi2, 45, 23);
+                H1Put(lblSubRX2Mode, this, stx2, sMod);
+                H1Put(comboSubRX2Mode, this, stx2, sCmb, cbw, 21);
+                H1Put(lblSubRX2AGC, this, stx2 + col2, sMod);
+                H1Put(comboSubRX2AGC, this, stx2 + col2, sCmb, cbw, 21);
+                H1Put(lblSubRX2Width, this, stx2, sFlt);
+                H1Put(ptbSubRX2Width, this, stx2, sSld, sldw, 24);
+                H1Put(lblSubRX2Shift, this, stx2 + col2, sFlt);
+                H1Put(ptbSubRX2Shift, this, stx2 + col2, sSld, sldw, 24);
+                H1Put(lblSubRX2Gain, this, stx2, sGain);
+                H1Put(ptbSubRX2Gain, this, stx2, sGsl, sldw, 24);
+                H1Put(chkSubRX2NR, this, stx2, sPil, 45, 23);
+                H1Put(chkSubRX2ANF, this, stx2 + 47, sPil, 45, 23);
+                H1Put(chkSubRX2NB2, this, stx2 + 94, sPil, 45, 23);
+                H1Put(chkSubRX2BIN, this, stx2, sPi2, 45, 23);
+                H1Put(chkSubRX2MUT, this, stx2 + 47, sPi2, 45, 23);
                 foreach (Control k in new Control[] { lblSubRX1Mode, comboSubRX1Mode, lblSubRX1AGC, comboSubRX1AGC, lblSubRX1Width, ptbSubRX1Width, lblSubRX1Shift, ptbSubRX1Shift, lblSubRX1Gain, ptbSubRX1Gain, chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT, lblSubRX2Mode, comboSubRX2Mode, lblSubRX2AGC, comboSubRX2AGC, lblSubRX2Width, ptbSubRX2Width, lblSubRX2Shift, ptbSubRX2Shift, lblSubRX2Gain, ptbSubRX2Gain, chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT })
                     if (k != null) k.BringToFront();
             }
@@ -7016,8 +7044,11 @@ namespace Thetis
             c.TextAlign = ContentAlignment.MiddleCenter;
             c.Font = chkNR.Font;
             c.ForeColor = chkNR.ForeColor;
-            c.BackColor = SystemColors.Control;
+            // H1: wear the RX1 pill's dress - ambient background, no own border ring
+            c.BackColor = Color.Transparent;
             c.FlatStyle = chkNR.FlatStyle;
+            c.FlatAppearance.BorderSize = chkNR.FlatAppearance.BorderSize;
+            c.FlatAppearance.BorderColor = chkNR.FlatAppearance.BorderColor;
             c.Size = new Size(45, 23);
             c.TabStop = false;
             return c;
