@@ -34200,10 +34200,11 @@ namespace Thetis
             double db_freq = freq;
             if (RX1IsIn60m() && current_region == FRSRegion.US) db_freq -= ModeFreqOffset(_rx1_dsp_mode);
 
-            if (!DB.BandText(db_freq, out bandInfo))
-                txtVFOABand.BackColor = out_of_band_color;
-            else
-                txtVFOABand.BackColor = band_background_color;
+            // H1: the SubVFOA row keeps the display background while the frequency is
+            // out of band, the same background the VFO A row above it keeps - the
+            // caption already names the out-of-band state, the row no longer greys out.
+            DB.BandText(db_freq, out bandInfo);
+            txtVFOABand.BackColor = band_background_color;
 
             // H1: the band line is the SubVFOA row - the band name moves into the frame caption,
             // the row shows the sub receiver frequency while the sub runs and is empty while
@@ -35487,10 +35488,11 @@ namespace Thetis
                     db_freq -= ModeFreqOffset(_rx1_dsp_mode);
             }
 
-            if (!DB.BandText(db_freq, out bandInfo))
-                txtVFOBSub.BackColor = Color.DimGray;
-            else
-                txtVFOBSub.BackColor = band_background_color;
+            // H1: the SubVFOB row keeps the display background while the frequency is
+            // out of band, the same background the VFO B row above it keeps - the
+            // caption already names the out-of-band state, the row no longer greys out.
+            DB.BandText(db_freq, out bandInfo);
+            txtVFOBSub.BackColor = band_background_color;
 
             // H1: the VFO B band line is the SubVFOB row - the band name moves into the
             // frame caption, the row itself always shows the sub receiver frequency
