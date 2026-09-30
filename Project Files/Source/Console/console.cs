@@ -768,7 +768,7 @@ namespace Thetis
             LogTool.AddLogEntry("Initialising components...", "COMP");
 
             InitializeComponent();								// Windows Forms Generated Code
-            InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
+            InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
@@ -6142,19 +6142,10 @@ namespace Thetis
                 chkRX2TNF, btnRX2TNFAdd, h1RX2BandPanel, h1RX2VhfPanel };
         }
 
-        private void H1RX2Grey(bool active)
+        private void H1RX2Grey(bool active, bool rx2on)
         {
-            if (h1RX2VeilStrip != null && h1RX2VeilBelow != null)
-            {
-                bool veil = !active;
-                if (h1RX2VeilStrip.Visible != veil)
-                {
-                    h1RX2VeilStrip.Visible = veil;
-                    h1RX2VeilBelow.Visible = veil;
-                }
-                if (veil) { H1PlaceRX2Veil(); h1RX2VeilStrip.Push(); h1RX2VeilBelow.Push(); h1RX2VeilStrip.BringToFront(); h1RX2VeilBelow.BringToFront(); }
-            }
-
+            // H1: the disabling runs first and on its own: the veil below must never be able to
+            // stop it, whatever it does.
             foreach (Control c in H1RX2Owned())
             {
                 if (c == null) continue;
@@ -6168,6 +6159,36 @@ namespace Thetis
                     c.Enabled = h1RX2EnableSave[c];
                     h1RX2EnableSave.Remove(c);
                 }
+            }
+
+            try
+            {
+                if (h1RX2VeilStrip == null || h1RX2VeilBelow == null) return;
+                bool veil = !rx2on;
+                if (h1RX2VeilStrip.Visible != veil)
+                {
+                    h1RX2VeilStrip.Visible = veil;
+                    h1RX2VeilBelow.Visible = veil;
+                }
+                if (veil)
+                {
+                    H1PlaceRX2Veil();
+                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                        DateTime.Now.ToString("HH:mm:ss.fff") + " veil active=" + active + " rx2on=" + rx2on
+                        + " stripVis=" + h1RX2VeilStrip.Visible + " stripBounds=" + h1RX2VeilStrip.Bounds
+                        + " stripHandle=" + h1RX2VeilStrip.IsHandleCreated
+                        + " belowBounds=" + h1RX2VeilBelow.Bounds + " belowHandle=" + h1RX2VeilBelow.IsHandleCreated
+                        + "\r\n"); } catch { }
+                    h1RX2VeilStrip.Push();
+                    h1RX2VeilBelow.Push();
+                    h1RX2VeilStrip.BringToFront();
+                    h1RX2VeilBelow.BringToFront();
+                }
+            }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + ex.ToString() + "\r\n"); } catch { }
             }
         }
 
@@ -6780,6 +6801,16 @@ namespace Thetis
             // power button. Called on show, on window resize and when the button moves.
             public void Push()
             {
+                try { PushInner(); }
+                catch (Exception ex)
+                {
+                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                        DateTime.Now.ToString("HH:mm:ss.fff") + " push: " + ex.ToString() + "\r\n"); } catch { }
+                }
+            }
+
+            private void PushInner()
+            {
                 if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
 
                 Rectangle r = m_console.PowerButtonBoundsInClient();
@@ -6867,6 +6898,7 @@ namespace Thetis
             {
                 if (c == null || !c.Visible) return;
                 Rectangle r = m_console.RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
+                r.Offset(-Left, -Top); // the bitmap is the veil's own box, not the window's
                 Image img = null;
                 try
                 {
@@ -6879,7 +6911,17 @@ namespace Thetis
                 }
                 catch { }
                 if (img != null) g.DrawImage(img, r);
-                else if (!string.IsNullOrEmpty(c.Text)) g.DrawString(c.Text, c.Font, Brushes.White, r);
+                // H1: the skin's pill images carry no caption of their own, so the text has to be
+                // drawn on top as well - otherwise a pill inside the veil came out as a bare frame.
+                if (!string.IsNullOrEmpty(c.Text))
+                {
+                    using (StringFormat sf = new StringFormat())
+                    {
+                        sf.Alignment = StringAlignment.Center;
+                        sf.LineAlignment = StringAlignment.Center;
+                        g.DrawString(c.Text, c.Font, Brushes.White, r, sf);
+                    }
+                }
             }
 
             private static System.Drawing.Drawing2D.GraphicsPath PillPath(Rectangle r, int inflate)
@@ -31090,10 +31132,9 @@ namespace Thetis
                     comboRX2Preamp.Enabled = true;
                     udRX2StepAttData.Enabled = true;
 
-                    //move it to rx1
-                    udTXStepAttData.Location = udRX1StepAttData.Location;
-                    udTXStepAttData.Parent = udRX1StepAttData.Parent;
-                    udTXStepAttData.BringToFront();
+                    // H1: the TX attenuator keeps its own home in the transmit column. Stock code
+                    // dragged it beside the RX1 attenuator while transmitting, which with RX2 off
+                    // meant a transmit control visibly jumped onto the left side.
                     udTXStepAttData.Visible = m_bATTonTX;
                     lblPreamp.Text = m_bATTonTX ? "[S-ATT]" : (_rx1_step_att_enabled ? "S-ATT" : "ATT");
                 }
@@ -31105,10 +31146,7 @@ namespace Thetis
                     comboRX2Preamp.Enabled = false;
                     udRX2StepAttData.Enabled = false;
 
-                    //move it to rx2
-                    udTXStepAttData.Location = udRX2StepAttData.Location;
-                    udTXStepAttData.Parent = udRX2StepAttData.Parent;
-                    udTXStepAttData.BringToFront();
+                    // H1: as above - it stays put while transmitting on RX2 as well
                     udTXStepAttData.Visible = m_bATTonTX;
                     lblRX2Preamp.Text = m_bATTonTX ? "[S-ATT]" : (_rx2_step_att_enabled ? "S-ATT" : "ATT");
                 }
@@ -41024,7 +41062,10 @@ namespace Thetis
                     comboRX2Preamp.Visible = _rx2_preamp_present;
                     udRX2StepAttData.Visible = _rx2_preamp_present;
 
-                    H1RX2Grey(show);
+                    // H1: the controls are only DISABLED when nothing uses the slice, but the veil
+                    // follows RX2 itself: with RX2 off the whole side must read as inactive even
+                    // while a sub of RX1 is borrowing the slice.
+                    H1RX2Grey(show, RX2Enabled);
                 }
 
                 // H1: the RX2 meter readout greys while RX2 is off, like the VFO B digits
