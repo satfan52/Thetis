@@ -6027,6 +6027,7 @@ namespace Thetis
         private RadioButtonTS[] h1RX2VhfButtons;
         private PanelTS h1RX2VhfPanel;
         private bool h1RX2VhfPage = false;
+        private string h1RX2SyncBand; // H1: last band the page was derived from
         private bool h1RX2BandShown = true;
 
         // H1: the RX2 VHF page - the twin of RX1's VHF panel, reached by the VHF+ button
@@ -6034,7 +6035,7 @@ namespace Thetis
         {
             h1RX2VhfPanel = new PanelTS();
             h1RX2VhfPanel.Name = "panelRX2BandVhfBtns";
-            h1RX2VhfPanel.Size = panelBandVHF.Size;
+            h1RX2VhfPanel.Size = panelBandHF.Size; // H1: the grid needs the HF panel's size, the VHF panel has one row
             h1RX2VhfPanel.BackColor = panelBandVHF.BackColor;
             this.Controls.Add(h1RX2VhfPanel);
 
@@ -6071,7 +6072,7 @@ namespace Thetis
             toHf.Font = btnBandHF.Font; toHf.ForeColor = btnBandHF.ForeColor; toHf.BackColor = btnBandHF.BackColor;
             toHf.Size = btnBandHF.Size; toHf.TabStop = false;
             toHf.Location = new Point(10, 100);
-            toHf.Click += (s, e) => { h1RX2VhfPage = false; H1SyncRX2BandButtons(); };
+            toHf.Click += (s, e) => { H1SyncRX2BandButtons(); h1RX2VhfPage = false; H1RX2BandVis(h1RX2BandShown); btnHidden.Focus(); };
             h1RX2VhfPanel.Controls.Add(toHf);
 
             ButtonTS toVhf = new ButtonTS();
@@ -6082,7 +6083,7 @@ namespace Thetis
             toVhf.Font = btnBandVHF.Font; toVhf.ForeColor = btnBandVHF.ForeColor; toVhf.BackColor = btnBandVHF.BackColor;
             toVhf.Size = btnBandVHF.Size; toVhf.TabStop = false;
             toVhf.Location = new Point(10, 100);
-            toVhf.Click += (s, e) => { h1RX2VhfPage = true; H1SyncRX2BandButtons(); };
+            toVhf.Click += (s, e) => { H1SyncRX2BandButtons(); h1RX2VhfPage = true; H1RX2BandVis(h1RX2BandShown); btnHidden.Focus(); };
             h1RX2BandPanel.Controls.Add(toVhf);
             H1SyncRX2BandButtons();
         }
@@ -6091,8 +6092,14 @@ namespace Thetis
         {
             if (h1RX2BandButtons == null) return;
             string sb = BandToString(rx2_band);
-            if (sb.StartsWith("VHF")) h1RX2VhfPage = true;
-            else foreach (RadioButtonTS b in h1RX2BandButtons) if ((string)b.Tag == sb) { h1RX2VhfPage = false; break; }
+            // H1: the page follows the BAND, not every refresh. A stray sync (a focus change, a
+            // phantom click) must not yank the user back to the other page mid-browse.
+            if (h1RX2SyncBand != sb)
+            {
+                h1RX2SyncBand = sb;
+                if (sb.StartsWith("VHF")) h1RX2VhfPage = true;
+                else foreach (RadioButtonTS b in h1RX2BandButtons) if ((string)b.Tag == sb) { h1RX2VhfPage = false; break; }
+            }
             foreach (RadioButtonTS b in h1RX2BandButtons)
             {
                 bool on = string.Equals((string)b.Tag, sb, StringComparison.Ordinal);
@@ -6126,7 +6133,16 @@ namespace Thetis
         {
             h1RX2BandShown = visible;
             if (h1RX2BandPanel != null) h1RX2BandPanel.Visible = visible && !h1RX2VhfPage;
-            if (h1RX2VhfPanel != null) h1RX2VhfPanel.Visible = visible && h1RX2VhfPage;
+            if (h1RX2VhfPanel != null)
+            {
+                h1RX2VhfPanel.Visible = visible && h1RX2VhfPage;
+                if (h1RX2VhfPanel.Visible)
+                {
+                    if (h1RX2BandPanel != null) h1RX2VhfPanel.Size = h1RX2BandPanel.Size;
+                    foreach (Control c in h1RX2VhfPanel.Controls) { c.Visible = true; c.BringToFront(); }
+                    h1RX2VhfPanel.BringToFront();
+                }
+            }
         }
 
         // H1: RX2 manual notch filter - the twin of chkTNF and btnTNFAdd. The notch list is shared
@@ -6415,6 +6431,7 @@ namespace Thetis
             }
             if (h1RX2VhfPanel != null)
             {
+                if (h1RX2BandPanel != null) h1RX2VhfPanel.Size = h1RX2BandPanel.Size; // H1: same box as the HF page
                 h1RX2VhfPanel.Location = new Point(W - h1RX2VhfPanel.Width + 1, Y0 + 12);
                 h1RX2VhfPanel.BringToFront();
             }
@@ -6448,15 +6465,16 @@ namespace Thetis
             int tx = cx + 30;                                 // transmit cluster, right of centre
             H1Cap("mast", "MASTER", mx, Y0, 110);
             H1Cap("split", "VFO", sx, Y0, 130);
-            H1Cap("tx", "TRANSMIT", tx, Y0, 336);
+            H1Cap("tx", "TRANSMIT", tx, Y0, 460);
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
             H1Put(lblAF, this, mx, Y0 + 22);
             H1Put(ptbAF, this, mx, Y0 + 38);
             H1Put(lblPWR, this, mx, Y0 + 72);
             H1Put(ptbPWR, this, mx, Y0 + 88);
-            H1Put(lblTune, this, mx, Y0 + 122);
-            H1Put(ptbTune, this, mx, Y0 + 138);
-            H1Put(udTXStepAttData, this, mx, Y0 + 172);
+            // H1: the Tune slider sits in the transmit group, right of its panel
+            H1Put(lblTune, this, tx + 350, Y0 + 24);
+            H1Put(ptbTune, this, tx + 350, Y0 + 40);
+            H1Put(udTXStepAttData, this, mx, Y0 + 126);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
             panelSoundControls.SendToBack();
