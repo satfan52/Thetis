@@ -26859,125 +26859,41 @@ namespace Thetis
             {
                 if (!rx2_meter_data_ready)
                 {
-                    if (!_mox)
-                    {
-                        //MW0LGE_21d step atten
-                        MeterRXMode mode = RX2MeterMode;
+                    //MW0LGE_21d step atten
+                    MeterRXMode mode = RX2MeterMode;
 
-                        float num;
-                        switch (mode)
-                        {
-                            case MeterRXMode.SIGNAL_STRENGTH:
-                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH);
-                                num += RXOffset(2);
-                                rx2_meter_new_data = num;
-                                break;
-                            case MeterRXMode.SIGNAL_AVERAGE:
-                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.AVG_SIGNAL_STRENGTH);
-                                num += RXOffset(2);
-                                rx2_meter_new_data = num;
-                                break;
-                            case MeterRXMode.ADC_L:
-                                num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_REAL);
-                                rx2_meter_new_data = num;
-                                break;
-                            case MeterRXMode.ADC_R:
-                                num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_IMAG);
-                                rx2_meter_new_data = num;
-                                break;
-                            case MeterRXMode.ADC2_L:
-                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_REAL);
-                                rx2_meter_new_data = num;
-                                break;
-                            case MeterRXMode.ADC2_R:
-                                num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_IMAG);
-                                rx2_meter_new_data = num;
-                                break;
-                            case MeterRXMode.OFF:
-                                rx2_meter_new_data = -200.0f;
-                                break;
-                        }
-                    }
-                    else
+                    float num;
+                    switch (mode)
                     {
-                        // H1: while keyed the RX2 meter carries the transmit reading of its own
-                        // transmit display mode, exactly as the RX1 meter does. Without this the
-                        // bar kept drawing the receive value underneath the transmit scale.
-                        MeterTXMode txmode2 = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
-                        float txnum2;
-                        switch (txmode2)
-                        {
-                            case MeterTXMode.MIC:
-                                txnum2 = (float)Math.Max(-195.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.MIC_PK));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.EQ:
-                                txnum2 = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.EQ_PK));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.LEVELER:
-                                txnum2 = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.LEVELER_PK));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.LVL_G:
-                                txnum2 = (float)Math.Max(0, WDSP.CalculateTXMeter(1, WDSP.MeterType.LVL_G));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.CFC_PK:
-                                txnum2 = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_PK));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.CFC_G:
-                                txnum2 = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_G));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.COMP:
-                                txnum2 = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.ALC:
-                                txnum2 = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.ALC_G:
-                                txnum2 = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.ALC_GROUP:
-                                txnum2 = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)))
-                                    + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G));
-                                rx2_meter_new_data = txnum2;
-                                break;
-                            case MeterTXMode.FORWARD_POWER:
-                            case MeterTXMode.SWR_POWER:
-                                if (alexpresent || apollopresent)
-                                {
-                                    if (HardwareSpecific.Model == HPSDRModel.ANAN8000D)
-                                    {
-                                        if (tx_xvtr_index >= 0)
-                                            rx2_meter_new_data = drivepwr;
-                                        else
-                                            rx2_meter_new_data = calfwdpower;
-                                    }
-                                    else
-                                        rx2_meter_new_data = calfwdpower;
-                                }
-                                else
-                                    rx2_meter_new_data = drivepwr;
-                                break;
-                            case MeterTXMode.REVERSE_POWER:
-                                if (alexpresent || apollopresent)
-                                {
-                                    rx2_meter_new_data = (float)alex_rev;
-                                }
-                                break;
-                            case MeterTXMode.SWR:
-                                rx2_meter_new_data = alex_swr;
-                                break;
-                            case MeterTXMode.OFF:
-                                rx2_meter_new_data = -200.0f;
-                                break;
-                        }
+                        case MeterRXMode.SIGNAL_STRENGTH:
+                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH);
+                            num += RXOffset(2);
+                            rx2_meter_new_data = num;
+                            break;
+                        case MeterRXMode.SIGNAL_AVERAGE:
+                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.AVG_SIGNAL_STRENGTH);
+                            num += RXOffset(2);
+                            rx2_meter_new_data = num;
+                            break;
+                        case MeterRXMode.ADC_L:
+                            num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_REAL);
+                            rx2_meter_new_data = num;
+                            break;
+                        case MeterRXMode.ADC_R:
+                            num = WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.ADC_IMAG);
+                            rx2_meter_new_data = num;
+                            break;
+                        case MeterRXMode.ADC2_L:
+                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_REAL);
+                            rx2_meter_new_data = num;
+                            break;
+                        case MeterRXMode.ADC2_R:
+                            num = WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.ADC_IMAG);
+                            rx2_meter_new_data = num;
+                            break;
+                        case MeterRXMode.OFF:
+                            rx2_meter_new_data = -200.0f;
+                            break;
                     }
                     rx2_meter_data_ready = true;
                     picRX2Meter.Invalidate();
