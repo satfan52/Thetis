@@ -43780,7 +43780,6 @@ namespace Thetis
             GroupBoxTS grp = vfoB ? grpVFOB : grpVFOA;
             if (grp == null) return;
             string cap = vfoB ? "VFO B" : "VFO A";
-            if (grp.Text != cap) grp.Text = cap;
             Label lab = vfoB ? h1VFOBandB : h1VFOBandA;
             if (lab == null)
             {
@@ -43792,11 +43791,19 @@ namespace Thetis
                 lab.Font = grp.Font;
                 lab.Location = new Point(8 + System.Windows.Forms.TextRenderer.MeasureText(cap, grp.Font).Width + 12, 0);
                 grp.Controls.Add(lab);
-                lab.BringToFront();
+                lab.SendToBack(); // H1: stay under the display panels so their white border is not painted over
                 if (vfoB) h1VFOBandB = lab; else h1VFOBandA = lab;
             }
             lab.Text = band;
             lab.ForeColor = chkPower.Checked ? band_text_light_color : band_text_dark_color;
+            // H1: stretch the themed caption bite with trailing spaces so the frame's border line
+            // stops at the caption block instead of running on behind the band text. The spaces
+            // widen only the caption's measured extent; they draw nothing.
+            int wantBite = lab.Left - 8 + System.Windows.Forms.TextRenderer.MeasureText(band, grp.Font).Width + 3;
+            string biteText = cap;
+            for (int i = 0; i < 64 && System.Windows.Forms.TextRenderer.MeasureText(biteText, grp.Font).Width < wantBite; i++)
+                biteText += " ";
+            if (grp.Text != biteText) grp.Text = biteText;
         }
 
         private void H1RefreshVfoDigitColors()
