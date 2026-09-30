@@ -31816,6 +31816,8 @@ namespace Thetis
 
             _pause_DisplayThread = false; //MW0LGE_21k8 re-enable
 
+            H1RefreshVfoDigitColors(); // Apply after actual transmit/receive state and UI updates.
+
             if (bOldMox != tx) MoxChangeHandlers?.Invoke(rx2_enabled && VFOBTX ? 2 : 1, bOldMox, tx); // MW0LGE_21a
         }
         private void chkMOX_Click(object sender, System.EventArgs e)
@@ -38543,7 +38545,7 @@ namespace Thetis
                     TXBand = BandByFreq(VFOASubFreq, tx_xvtr_index, current_region);
                     // H1: red only while SubVFOA actually carries the transmit frequency -
                     // SPLIT can also be lit for the VFO B and SubVFOB ticks
-                    if (chkSubVFOATX.Checked)
+                    if (_mox && chkSubVFOATX.Checked)
                     {
                         if (chkPower.Checked) txtVFOABand.ForeColor = Color.Red;
                         else txtVFOABand.ForeColor = Color.DarkRed;
@@ -38589,7 +38591,7 @@ namespace Thetis
                 double sub_row_freq = sub_row_active ? VFOASubFreq : saved_vfoa_sub_freq;
                 txtVFOABand.Font = new Font("Microsoft Sans Sarif", sub_row_active ? 20.25f : 12.0f, FontStyle.Regular);
                 txtVFOABand.TextAlign = HorizontalAlignment.Right;
-                if (chkSubVFOATX.Checked) txtVFOABand.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
+                if (_mox && chkSubVFOATX.Checked) txtVFOABand.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
                 else if (!sub_row_active) txtVFOABand.ForeColor = band_text_dark_color;
                 else txtVFOABand.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
                 txtVFOABand.ReadOnly = false;
@@ -38662,7 +38664,7 @@ namespace Thetis
             // match the receiver rows above them. The digit metrics follow the font.
             SetSubRowFont(txtVFOBSub, sub_row_active ? 20.25f : 12.0f);
             txtVFOBSub.TextAlign = HorizontalAlignment.Right;
-            if (chkSubVFOBTX.Checked) txtVFOBSub.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
+            if (_mox && chkSubVFOBTX.Checked) txtVFOBSub.ForeColor = chkPower.Checked ? Color.Red : Color.DarkRed; // H1: this row carries the transmit frequency
             else if (!sub_row_active) txtVFOBSub.ForeColor = band_text_dark_color;
             else txtVFOBSub.ForeColor = chkPower.Checked ? vfo_text_light_color : vfo_text_dark_color;
             txtVFOBSub.ReadOnly = false;
@@ -38803,7 +38805,7 @@ namespace Thetis
                     grpVFOB.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Bold);
                     grpVFOB.ForeColor = SystemColors.ControlLightLight;
                     grpVFOA.Font = new Font("Microsoft Sans Serif", 8.25F, FontStyle.Bold);
-                    grpVFOA.ForeColor = Color.Red;
+                    grpVFOA.ForeColor = Color.White;
                     chkVFOATX.Checked = true;
                     if (chkPower.Checked)
                     {
@@ -43590,6 +43592,34 @@ namespace Thetis
         // tick and its frequency row are red; everything else looks plain and unchecked.
         private bool _bUpdatingTxTicks = false;
 
+        // Selecting a TX oscillator does not mean the radio is transmitting.
+        internal static Color H1VfoMainColor(bool powered, bool transmitting, bool selected, bool live,
+            Color receiveColor, Color offColor)
+        {
+            if (!live || !powered) return offColor;
+            return transmitting && selected ? Color.Red : receiveColor;
+        }
+
+        private void H1RefreshVfoDigitColors()
+        {
+            bool powered = chkPower.Checked;
+            grpVFOA.ForeColor = Color.White;
+            grpVFOB.ForeColor = Color.White;
+            Color a = H1VfoMainColor(powered, _mox, chkVFOATX.Checked, true, vfo_text_light_color, vfo_text_dark_color);
+            Color b = H1VfoMainColor(powered, _mox, chkVFOBTX.Checked, true, vfo_text_light_color, vfo_text_dark_color);
+            txtVFOAFreq.ForeColor = a;
+            txtVFOAMSD.ForeColor = a;
+            txtVFOBFreq.ForeColor = b;
+            txtVFOBMSD.ForeColor = b;
+            txtVFOALSD.ForeColor = powered ? small_vfo_color : vfo_text_dark_color;
+            txtVFOBLSD.ForeColor = powered ? small_vfo_color : vfo_text_dark_color;
+            txtVFOABand.ForeColor = H1VfoMainColor(powered, _mox, chkSubVFOATX.Checked,
+                chkEnableMultiRX.Checked || chkVFOSplit.Checked, vfo_text_light_color, vfo_text_dark_color);
+            if (txtVFOBSub != null)
+                txtVFOBSub.ForeColor = H1VfoMainColor(powered, _mox, chkSubVFOBTX.Checked,
+                    rx2_enabled && chkEnableMultiRX2.Checked, vfo_text_light_color, vfo_text_dark_color);
+        }
+
         private void showTxSelection()
         {
             chkVFOATX.BackColor = chkVFOATX.Checked ? Color.Red : SystemColors.Control;
@@ -43597,33 +43627,7 @@ namespace Thetis
             chkVFOBTX.BackColor = chkVFOBTX.Checked ? Color.Red : SystemColors.Control;
             chkSubVFOBTX.BackColor = chkSubVFOBTX.Checked ? Color.Red : SystemColors.Control;
 
-            bool pwr = chkPower.Checked;
-
-            if (chkVFOATX.Checked)
-            {
-                txtVFOAFreq.ForeColor = pwr ? Color.Red : Color.DarkRed;
-                txtVFOAMSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
-                txtVFOALSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
-            }
-            else
-            {
-                txtVFOAFreq.ForeColor = pwr ? vfo_text_light_color : vfo_text_dark_color;
-                txtVFOAMSD.ForeColor = pwr ? vfo_text_light_color : vfo_text_dark_color;
-                txtVFOALSD.ForeColor = pwr ? small_vfo_color : vfo_text_dark_color;
-            }
-
-            if (chkVFOBTX.Checked)
-            {
-                txtVFOBFreq.ForeColor = pwr ? Color.Red : Color.DarkRed;
-                txtVFOBMSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
-                txtVFOBLSD.ForeColor = pwr ? Color.Red : Color.DarkRed;
-            }
-            else
-            {
-                txtVFOBFreq.ForeColor = pwr ? vfo_text_light_color : vfo_text_dark_color;
-                txtVFOBMSD.ForeColor = pwr ? vfo_text_light_color : vfo_text_dark_color;
-                txtVFOBLSD.ForeColor = pwr ? small_vfo_color : vfo_text_dark_color;
-            }
+            H1RefreshVfoDigitColors();
 
             // the two sub rows take their colour from their own ticks
             UpdateVFOASub();
