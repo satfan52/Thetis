@@ -6251,7 +6251,10 @@ namespace Thetis
             // to the top of the window made it dim the console's own title bar, which showed up as a
             // black band across the top whenever RX2 was off.
             int tx0 = (grpSubRX2Meter != null ? grpSubRX2Meter.Left : ClientSize.Width - 760) - 8;
-            int tby = (grpSubRX2Meter != null && grpSubRX2Meter.Top > 30) ? grpSubRX2Meter.Top - 6 : 48;
+            // H1: start exactly at the top of the boxes, not above them. Reaching even a few pixels
+            // higher caught the furniture behind the captions, which dimmed the caption band of the
+            // meters and the VFO box into a black strip while their bodies stayed normal.
+            int tby = (grpSubRX2Meter != null && grpSubRX2Meter.Top > 30) ? grpSubRX2Meter.Top : 48;
             int tby2 = (panelDisplay != null ? panelDisplay.Top : 140);
             h1RX2VeilTop.Bounds = new Rectangle(tx0, tby, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby2 - tby));
 
@@ -7055,6 +7058,11 @@ namespace Thetis
                         r.Offset(-Left, -Top);
                         if (r.IntersectsWith(new Rectangle(0, 0, Width, Height)))
                         {
+                            // H1: a control wider than the veil box itself is background furniture
+                            // that merely passes through the area - dimming it would darken whatever
+                            // happens to lie under it, which is how the caption band went black
+                            if (c.Width > Width + 8) continue;
+
                             Bitmap frozen;
                             if (m_console.H1RX2Frozen(c, out frozen))
                             {
