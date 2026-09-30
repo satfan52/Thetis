@@ -6704,42 +6704,62 @@ namespace Thetis
                 if (k != null) k.BringToFront();
             H1PlaceRX2Veil(); // H1: the RX2 veil follows the layout
 
-            // ---------- BELOW, centre: shared, balanced about the centre line ----------
-            int cx = W / 2;                                   // 960
-            int sx = cx - 30 - 130;                           // split block, left of centre
-            int mx = sx - 24 - 110;                           // master AF / drive / tune, further left
-            int tx = cx + 30;                                 // transmit cluster, right of centre
-            H1Cap("mast", "MASTER", mx, Y0, 110);
-            H1Cap("split", "VFO", sx, Y0, 130);
-            H1Cap("tx", "TRANSMIT", tx, Y0, 460);
+            // ---------- BELOW, centre: shared, balanced about the panadapter centre ----------
+            // H1: the transmit cluster moved to the top of the zone directly under the
+            // panadapter, centred on it and at double surface; the MASTER, VFO and TRANSMIT
+            // groups sit under it, all balanced about the same centre line. The flanks stay
+            // open for the SubRX1 and SubRX2 control groups that come later.
+            int cx = (panelDisplay.Left + panelDisplay.Right) / 2; // panadapter centre
+            int cY = 796;                                     // caption line of the shared groups
+            int cw = 292;                                     // cluster width: 4 buttons of 70 px at 74 px pitch
+            int bx = cx - cw / 2;                             // cluster left, centred on the panadapter
+            // H1: the display panel's own bottom edge crosses this zone at y705 and sits
+            // in front of the form's children, so the cluster starts just below it -
+            // anything placed above that line is half hidden behind the display panel
+            int r1 = 708, r2 = 746;                           // cluster rows, clear of the display's bottom edge
+            foreach (Control cb in new Control[] { chkMON, chkTUN, chkMOX, chk2TONE, chkRX2SR, chkFWCATUBypass, ckQuickRec, ckQuickPlay })
+            {
+                if (cb == null) continue;
+                if (cb.Size != new Size(70, 32)) cb.Size = new Size(70, 32); // H1: double the surface
+                if (Math.Abs(cb.Font.Size - 11.25f) > 0.01f) cb.Font = new Font(cb.Font.FontFamily, 11.25f, FontStyle.Bold);
+                // H1: the skin tile is cached at the control's original size and would tile,
+                // not scale, over the larger button - stretch the one image over the control
+                if (cb.BackgroundImageLayout != ImageLayout.Stretch) cb.BackgroundImageLayout = ImageLayout.Stretch;
+                cb.BringToFront(); // H1: the display panel must not clip the cluster's top row
+            }
+            chkMON.Location = new Point(bx, r1);
+            chkTUN.Location = new Point(bx + 74, r1);
+            chkMOX.Location = new Point(bx + 148, r1);
+            chk2TONE.Location = new Point(bx + 222, r1);
+            chkRX2SR.Location = new Point(bx, r2);
+            chkFWCATUBypass.Location = new Point(bx + 74, r2);
+            ckQuickRec.Location = new Point(bx + 148, r2);
+            ckQuickPlay.Location = new Point(bx + 222, r2);
+            comboTuneMode.Location = new Point(bx + cw + 10, r1);
+            chkExternalPA.Location = new Point(bx + cw + 10, r2);
+
+            int mw = 112, vw = 130, tw = 336, g2 = 24;
+            int mx = cx - (mw + vw + tw + 2 * g2) / 2;        // MASTER
+            int sx = mx + mw + g2;                            // VFO
+            int tx = sx + vw + g2;                            // TRANSMIT
+            H1Cap("mast", "MASTER", mx, cY, 110);
+            H1Cap("split", "VFO", sx, cY, 130);
+            H1Cap("tx", "TRANSMIT", tx, cY, 336);
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
-            H1Put(lblAF, this, mx, Y0 + 22);
-            H1Put(ptbAF, this, mx, Y0 + 38);
-            H1Put(lblPWR, this, mx, Y0 + 72);
-            H1Put(ptbPWR, this, mx, Y0 + 88);
-            // H1: the Tune slider sits in the transmit group, right of its panel
-            H1Put(lblTune, this, tx + 350, Y0 + 24);
-            H1Put(ptbTune, this, tx + 350, Y0 + 40);
-            H1Put(udTXStepAttData, this, mx, Y0 + 126);
+            H1Put(lblAF, this, mx, cY + 22);
+            H1Put(ptbAF, this, mx, cY + 38);
+            H1Put(lblPWR, this, mx, cY + 72);
+            H1Put(ptbPWR, this, mx, cY + 88);
+            // H1: Tune sits under Drive in the MASTER column, in the same row rhythm
+            H1Put(lblTune, this, mx, cY + 122);
+            H1Put(ptbTune, this, mx, cY + 138);
+            H1Put(udTXStepAttData, this, mx, cY + 176);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
             panelSoundControls.SendToBack();
-            panelVFO.Location = new Point(sx, Y0 + 20);
+            panelVFO.Location = new Point(sx, cY + 20);
             foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
-                if (tp != null) tp.Location = new Point(tx, Y0 + 20);
-
-            int bx = cx - 102;                                // MON TUN MOX 2TON centred
-            int r1 = Y0 + 192, r2 = r1 + 26;
-            chkMON.Location = new Point(bx, r1);
-            chkTUN.Location = new Point(bx + 51, r1);
-            chkMOX.Location = new Point(bx + 102, r1);
-            chk2TONE.Location = new Point(bx + 153, r1);
-            chkRX2SR.Location = new Point(bx, r2);
-            chkFWCATUBypass.Location = new Point(bx + 51, r2);
-            ckQuickRec.Location = new Point(bx + 102, r2);
-            ckQuickPlay.Location = new Point(bx + 153, r2);
-            comboTuneMode.Location = new Point(bx + 210, r1);
-            chkExternalPA.Location = new Point(bx + 210, r2);
+                if (tp != null) tp.Location = new Point(tx, cY + 20);
             if (btnHidden != null && this.ActiveControl != null && this.ActiveControl is PrettyTrackBar) btnHidden.Focus(); // H1: no slider keeps the focus highlight
             H1KeepVeilOnTop(); // H1: nothing the layout fronted may end up above the dim veil
         }
