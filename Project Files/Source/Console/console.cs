@@ -3916,14 +3916,16 @@ namespace Thetis
             foreach (Control c in this.Controls)
             {
                 // if control is a groupbox or panel, retrieve all subcontrols
+                // H1: index rather than Add. A duplicate name - a runtime control without a Name,
+                // two controls that share one - used to throw here and kill the console at start.
                 if (c.GetType() == typeof(GroupBoxTS) || c.GetType() == typeof(PanelTS))
                 {
                     foreach (Control c2 in c.Controls)
-                        ctrls.Add(c2.Name, c2);
+                        ctrls[c2.Name] = c2;
                 }
                 else
                 {
-                    ctrls.Add(c.Name, c);
+                    ctrls[c.Name] = c;
                 }
             }
 
