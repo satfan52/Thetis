@@ -32759,7 +32759,7 @@ namespace Thetis
                                 {
                                     clsClickBox cb = (clsClickBox)mi;
 
-                                    if ((!cb.OnlyWhenRX && !cb.OnlyWhenTX) || ((m.MOX && cb.OnlyWhenTX) || (!m.MOX && cb.OnlyWhenRX)) || (H1SubMeterKeepsRxItems(m) && cb.OnlyWhenRX))
+                                    if ((!cb.OnlyWhenRX && !cb.OnlyWhenTX) || ((m.MOX && cb.OnlyWhenTX) || (!m.MOX && cb.OnlyWhenRX)) || (H1MeterKeepsRxItems(m) && cb.OnlyWhenRX))
                                     {
                                         float x = (mi.DisplayTopLeft.X / m.XRatio) * rect.Width;
                                         float y = (mi.DisplayTopLeft.Y / m.YRatio) * rect.Height;
@@ -32889,13 +32889,21 @@ namespace Thetis
             }
 
             //            
-            // H1: the two sub meters' scale is flagged receive-only, so on MOX it stopped being
-            // drawn and their bottom band went blank, while the RX1 and RX2 scales stayed on
-            // screen with only the pointer falling back. The sub meters take the RX meters'
-            // treatment: their receive items keep drawing while the radio transmits.
-            private static bool H1SubMeterKeepsRxItems(clsMeter m)
+            // H1: a meter whose scale is flagged receive-only lost that scale on MOX - the bottom
+            // band went blank - while the RX1 and RX2 scales stayed on screen with only the pointer
+            // falling back. A meter that owns NO transmit-only item has no transmit picture of its
+            // own to show, so its receive items keep drawing while the radio transmits, which is
+            // the treatment the RX meters already get. Keyed on the items, not on any meter name.
+            private static bool H1MeterKeepsRxItems(clsMeter m)
             {
-                try { return m != null && m.MOX && m.ID != null && m.ID.IndexOf("sub", StringComparison.OrdinalIgnoreCase) >= 0; }
+                try
+                {
+                    if (m == null || !m.MOX) return false;
+                    if (m.SortedMeterItemsForZOrder != null)
+                        foreach (clsMeterItem mi in m.SortedMeterItemsForZOrder)
+                            if (mi.OnlyWhenTX) return false;
+                    return true;
+                }
                 catch { return false; }
             }
 
@@ -32927,7 +32935,7 @@ namespace Thetis
 
                         foreach (clsMeterItem mi in m.SortedMeterItemsForZOrder)
                         {                          
-                            bool bRender = ((m.MOX && mi.OnlyWhenTX) || (!m.MOX && mi.OnlyWhenRX)) || (!mi.OnlyWhenTX && !mi.OnlyWhenRX) || (H1SubMeterKeepsRxItems(m) && mi.OnlyWhenRX);
+                            bool bRender = ((m.MOX && mi.OnlyWhenTX) || (!m.MOX && mi.OnlyWhenRX)) || (!mi.OnlyWhenTX && !mi.OnlyWhenRX) || (H1MeterKeepsRxItems(m) && mi.OnlyWhenRX);
 
                             if (bRender && ((m.DisplayGroup == 0 || mi.DisplayGroup == 0) || (mi.DisplayGroup == m.DisplayGroup)))
                             {
