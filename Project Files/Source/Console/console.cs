@@ -6712,11 +6712,14 @@ namespace Thetis
             int cx = (panelDisplay.Left + panelDisplay.Right) / 2; // panadapter centre
             int cY = 796;                                     // caption line of the shared groups
             int cw = 292;                                     // cluster width: 4 buttons of 70 px at 74 px pitch
-            int bx = cx - cw / 2;                             // cluster left, centred on the panadapter
-            // H1: the display panel's own bottom edge crosses this zone at y705 and sits
-            // in front of the form's children, so the cluster starts just below it -
-            // anything placed above that line is half hidden behind the display panel
-            int r1 = 708, r2 = 746;                           // cluster rows, clear of the display's bottom edge
+            int mw = 112;                                     // MASTER column width
+            // H1: the cluster and the MASTER column read as one block and are centred
+            // together over the VFO and TRANSMIT pair below
+            int bx = cx - (cw + 24 + mw) / 2;                 // cluster left, block centred on the panadapter
+            // H1: the display panel's bottom edge crosses this zone at y705; the cluster is
+            // fronted in the loop below, so its rows ride up near that line but stay clear
+            // of the display's black readout band, which ends at y674
+            int r1 = 698, r2 = 736;                           // cluster rows, just under the display
             foreach (Control cb in new Control[] { chkMON, chkTUN, chkMOX, chk2TONE, chkRX2SR, chkFWCATUBypass, ckQuickRec, ckQuickPlay })
             {
                 if (cb == null) continue;
@@ -6744,7 +6747,7 @@ namespace Thetis
             int vw = 130, tw = 336, g2 = 24;
             int sx = cx - (vw + g2 + tw) / 2;                 // VFO
             int tx = sx + vw + g2;                            // TRANSMIT
-            int cYm = 706;                                    // MASTER caption line, level with the cluster
+            int cYm = 696;                                    // MASTER caption line, level with the cluster
             int mx = bx + cw + g2;                            // MASTER, right of the cluster
             H1Cap("mast", "MASTER", mx, cYm, 110);
             H1Cap("split", "VFO", sx, cY, 130);
