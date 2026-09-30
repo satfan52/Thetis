@@ -19785,6 +19785,9 @@ namespace Thetis
         }
         private void H1SaveMeterTxModes()
         {
+            // H1: nothing may write the file before the load has run - the form init paths fire
+            // property writes at startup and would overwrite the user's remembered values.
+            if (!_h1MeterTxModesLoaded) return;
             try
             {
                 string[] v =
@@ -19862,6 +19865,8 @@ namespace Thetis
                 if (rx2u > (int)MultiMeterMeasureMode.FIRST && rx2u < (int)MultiMeterMeasureMode.LAST) m_eMeasureModeRX2 = (MultiMeterMeasureMode)rx2u;
                 if (s1u > (int)MultiMeterMeasureMode.FIRST && s1u < (int)MultiMeterMeasureMode.LAST) sub_meter_units[0] = (MultiMeterMeasureMode)s1u;
                 if (s2u > (int)MultiMeterMeasureMode.FIRST && s2u < (int)MultiMeterMeasureMode.LAST) sub_meter_units[1] = (MultiMeterMeasureMode)s2u;
+                MMMeasureMode = m_eMeasureMode;         // push the loaded values back through the
+                MMMeasureModeRX2 = m_eMeasureModeRX2;   // console properties the setup tab reads
                 H1InvalidateMeterTx();
             }
             catch { }
