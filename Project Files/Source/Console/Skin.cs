@@ -1795,6 +1795,7 @@ namespace Thetis
                 else if (skinName == "ptbRX2SubPan") skinName = "ptbPanSubRX";
                 else if (skinName == "ptbRX2FilterWidth") skinName = "ptbFilterWidth";
                 else if (skinName == "ptbRX2FilterShift") skinName = "ptbFilterShift";
+                else if (skinName == "ptbTune") skinName = "ptbPWR"; // H1: the skin ships no images for the Tune slider, it wears the Drive slider set
             }
            // string s = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-";
 
