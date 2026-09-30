@@ -6239,6 +6239,42 @@ namespace Thetis
             }
         }
 
+        // H1: the dim veil must stay above every control while it is up. Stock code brings the
+        // four attenuator controls to the front, which lifted the two ATT boxes out of the veil:
+        // on power-up they glowed while the rest of the console was still dimmed.
+        private readonly System.Collections.Generic.HashSet<string> h1VeilLogged =
+            new System.Collections.Generic.HashSet<string>();
+
+        private void H1KeepVeilOnTop()
+        {
+            try
+            {
+                bool up = (m_powerDimOverlay != null && m_powerDimOverlay.Visible)
+                       || (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible)
+                       || (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible);
+                if (!up) return;
+
+                string above = null;
+                foreach (Control c in Controls) // index 0 is the front-most child
+                {
+                    if (!c.Visible) continue;
+                    if (c is PowerDimOverlay) break;
+                    above = c.Name;
+                    break;
+                }
+                if (above != null && !h1VeilLogged.Contains(above)) // once per control per session
+                {
+                    h1VeilLogged.Add(above);
+                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                        DateTime.Now.ToString("HH:mm:ss.fff") + " control '" + above + "' was above the veil, veil re-fronted\r\n"); } catch { }
+                }
+                if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.BringToFront();
+                if (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible) h1RX2VeilStrip.BringToFront();
+                if (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible) h1RX2VeilBelow.BringToFront();
+            }
+            catch { }
+        }
+
         private void H1RX2BandEnable(bool enabled)
         {
             if (h1RX2BandButtons == null) return;
@@ -6619,6 +6655,7 @@ namespace Thetis
             comboTuneMode.Location = new Point(bx + 210, r1);
             chkExternalPA.Location = new Point(bx + 210, r2);
             if (btnHidden != null && this.ActiveControl != null && this.ActiveControl is PrettyTrackBar) btnHidden.Focus(); // H1: no slider keeps the focus highlight
+            H1KeepVeilOnTop(); // H1: nothing the layout fronted may end up above the dim veil
         }
 
         // H1: shape the right-side vol/pan strip as the mirror of the left's
@@ -31237,6 +31274,8 @@ namespace Thetis
                 //will cause the combo to be above everything, including meters.
                 MeterManager.BringToFront();
             }
+
+            H1KeepVeilOnTop(); // H1: the ATT boxes and preamp combos were just fronted
         }
 
         private bool _mox = false;
