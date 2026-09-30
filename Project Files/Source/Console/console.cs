@@ -9341,7 +9341,7 @@ namespace Thetis
 
             string temp = freq;
             int index = temp.IndexOf(separator) + 4;
-            txtVFOBLSD.Text = rx2_enabled ? temp.Remove(0, index) : "";
+            txtVFOBLSD.Text = temp.Remove(0, index); // H1: kept on screen, the veil dims it
         }
 
         public void CalcDisplayFreq()
@@ -25636,7 +25636,7 @@ namespace Thetis
                     output = txout;
                 }
                 // H1: with RX2 off the meter is emptied, like the sub meters
-                txtRX2Meter.Text = rx2_enabled ? output : "";
+                txtRX2Meter.Text = output; // H1: kept on screen, the veil dims it
                 rx2_meter_timer.Start();
             }
 

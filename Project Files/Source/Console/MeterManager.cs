@@ -2798,7 +2798,9 @@ namespace Thetis
 
                 //hide if this is for an rx that is not in use, otherwise show it
                 //atm this is only a consideration for rx2
-                bool hide = m.RX == 2 && (!m.RX2Enabled && uc.ContainerHidesWhenRXNotUsed);
+                // H1: the RX2 meters are never hidden when RX2 is switched off. They stay in
+                // place like every other RX2 control and the dim veil is what marks them inactive.
+                bool hide = false;
                 if (hide)
                 {
                     if (uc.Floating)
