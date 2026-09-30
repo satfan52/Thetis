@@ -6892,6 +6892,40 @@ namespace Thetis
                 }
             }
 
+            // H1: redraw one control as a colourless, slightly dimmed copy of itself: the outline,
+            // the body and the contrast against the console background all survive, only the
+            // colour goes. The control is rendered while enabled so a skin without disabled
+            // artwork still yields its normal body.
+            private void WashOut(Graphics g, Control c, Rectangle r)
+            {
+                int w = c.Width, h = c.Height;
+                if (w <= 1 || h <= 1 || w > 512 || h > 256) return;
+                bool was = c.Enabled;
+                try
+                {
+                    using (Bitmap bmp = new Bitmap(w, h))
+                    {
+                        try { c.Enabled = true; } catch { }
+                        c.DrawToBitmap(bmp, new Rectangle(0, 0, w, h));
+                        c.Enabled = was;
+                        // a straight brightness scale: it cannot shift the hue, which a greying
+                        // matrix did - that turned the whole right side olive
+                        float k = 0.60f;
+                        using (System.Drawing.Imaging.ImageAttributes ia = new System.Drawing.Imaging.ImageAttributes())
+                        {
+                            ia.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix(new float[][] {
+                                new float[] { k, 0f, 0f, 0f, 0f },
+                                new float[] { 0f, k, 0f, 0f, 0f },
+                                new float[] { 0f, 0f, k, 0f, 0f },
+                                new float[] { 0f, 0f, 0f, 1f, 0f },
+                                new float[] { 0f, 0f, 0f, 0f, 1f } }), System.Drawing.Imaging.ColorMatrixFlag.Default, System.Drawing.Imaging.ColorAdjustType.Bitmap);
+                            g.DrawImage(bmp, r, 0, 0, w, h, GraphicsUnit.Pixel, ia);
+                        }
+                    }
+                }
+                catch { try { c.Enabled = was; } catch { } }
+            }
+
             // H1: dim every control that sits inside this veil's box, in place. Containers are
             // walked through but not filled: a container's fill is the console's own background.
             private void DimControlsInBox(Graphics g)
@@ -6911,7 +6945,15 @@ namespace Thetis
                     {
                         Rectangle r = m_console.RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
                         r.Offset(-Left, -Top);
-                        if (r.IntersectsWith(new Rectangle(0, 0, Width, Height))) g.FillRectangle(dim, r);
+                        if (r.IntersectsWith(new Rectangle(0, 0, Width, Height)))
+                        {
+                            // H1: a skinned button must still read as a button. Dullying it with the
+                            // film drove its body into the panel it sits on and the shape dissolved,
+                            // so a button is instead redrawn as a darker copy of its own self: the
+                            // outline, the body and the contrast against the panel all survive.
+                            if (c is ButtonBase || c is PictureBox) WashOut(g, c, r);
+                            else g.FillRectangle(dim, r);
+                        }
                     }
                     if (c.HasChildren) DimCollect(g, dim, c);
                 }
