@@ -6174,7 +6174,6 @@ namespace Thetis
                     h1RX2VeilStrip.Visible = veil;
                     h1RX2VeilBelow.Visible = veil;
                     h1RX2VeilTop.Visible = veil;
-                    if (veil) H1VeilTimerStart(); else H1VeilTimerStop();
                 }
                 if (veil)
                 {
@@ -6327,55 +6326,6 @@ namespace Thetis
             return false;
         }
 
-        // H1: the meter faces re-surface above the veil on their own, so the veil re-asserts its
-        // place a few times a second while it is up. A layered window costs nothing to re-front and
-        // the mouse still passes straight through it.
-        private System.Windows.Forms.Timer h1VeilTimer;
-        private bool h1CapSaved;
-        private System.Drawing.Color h1CapRX2, h1CapSubRX2;
-
-        // H1: the meter captions are painted by their boxes above the veil, so no amount of
-        // re-fronting dims the text: the caption colour is dimmed directly instead.
-        private void H1SetRX2CaptionsDim(bool dim)
-        {
-            try
-            {
-                if (!h1CapSaved && grpRX2Meter != null && grpSubRX2Meter != null)
-                {
-                    h1CapRX2 = grpRX2Meter.ForeColor;
-                    h1CapSubRX2 = grpSubRX2Meter.ForeColor;
-                    h1CapSaved = true;
-                }
-                if (!h1CapSaved) return;
-                System.Drawing.Color want = dim ? System.Drawing.Color.FromArgb(95, 95, 100) : h1CapRX2;
-                if (grpRX2Meter != null && grpRX2Meter.ForeColor != want) grpRX2Meter.ForeColor = want;
-                want = dim ? System.Drawing.Color.FromArgb(95, 95, 100) : h1CapSubRX2;
-                if (grpSubRX2Meter != null && grpSubRX2Meter.ForeColor != want) grpSubRX2Meter.ForeColor = want;
-            }
-            catch { }
-        }
-
-        private void H1VeilTimerStart()
-        {
-            try
-            {
-                if (h1VeilTimer == null)
-                {
-                    h1VeilTimer = new System.Windows.Forms.Timer();
-                    h1VeilTimer.Interval = 250;
-                    h1VeilTimer.Tick += (s, e) => H1KeepVeilOnTop();
-                }
-                h1VeilTimer.Start();
-            }
-            catch { }
-        }
-
-        private void H1VeilTimerStop()
-        {
-            try { if (h1VeilTimer != null) h1VeilTimer.Stop(); }
-            catch { }
-        }
-
         private void H1KeepVeilOnTop()
         {
             try
@@ -6400,12 +6350,6 @@ namespace Thetis
                     try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
                         DateTime.Now.ToString("HH:mm:ss.fff") + " control '" + above + "' was above the veil, veil re-fronted\r\n"); } catch { }
                 }
-                // H1: the two RX2 meter widgets are put away for as long as the veil is up, on every
-                // tick, so a re-show from the meter side cannot win the race
-                H1SetRX2CaptionsDim(up);
-                try { MeterManager.H1SetMeterWidgetVisible("rx2", !up); } catch { }
-                try { MeterManager.H1SetMeterWidgetVisible("subrx", !up); } catch { }
-
                 if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.BringToFront();
                 if (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible) h1RX2VeilStrip.BringToFront();
                 if (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible) h1RX2VeilBelow.BringToFront();
@@ -38692,13 +38636,9 @@ namespace Thetis
             {
                 picRX2Meter.BackColor = current_meter_display_mode == MultiMeterDisplayMode.Edge
                     ? edge_meter_background_color : meter_background_color;
-                // H1: the meter canvas is taken out of the way while RX2 is off. Left up it keeps
-                // drawing its face on top of the dim, which is why the readings of the two RX2
-                // meters stayed bright while everything around them was dimmed.
-                picRX2Meter.Visible = rx2_enabled;
                 picRX2Meter.Refresh();
             }
-            if (picSubRX2Meter != null) { picSubRX2Meter.Visible = rx2_enabled; picSubRX2Meter.Invalidate(); }
+            if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
 
             // H1: the meters and the VFO B box now keep their face and their last readings while
             // RX2 is off - they are dimmed by the veil instead of going blank, the same treatment
