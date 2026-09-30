@@ -4171,6 +4171,7 @@ namespace Thetis
             {
                 //[2.10.3.5]MW0LGE we are expanded, so ok to move them always
                 moveModeSpecificPanels();
+                H1TracePanelMoves("selectd");
             }
 
             //MW0LGE_21k9d changed to show/hide as it was causing some unexplained

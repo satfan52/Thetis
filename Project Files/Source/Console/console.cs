@@ -24031,7 +24031,7 @@ namespace Thetis
             _measureCache[key] = sz;
             return sz;
         }
-        private void getMeterPixelPosAndDrawScales(int rx, Graphics g, int H, int W, double num, out int pixel_x, out int pixel_x_swr, int nStringOffsetY, bool bDrawMarkers, MeterTXMode txModeOverride = MeterTXMode.LAST)
+        private void getMeterPixelPosAndDrawScales(int rx, Graphics g, int H, int W, double num, out int pixel_x, out int pixel_x_swr, int nStringOffsetY, bool bDrawMarkers, MeterTXMode txModeOverride = MeterTXMode.LAST, bool bCarriesTx = true)
         {
             //MW0LGE 
             pixel_x = 0;
@@ -24053,7 +24053,9 @@ namespace Thetis
                 bAboveS9Frequency = (VFOBFreq >= S9Frequency); //MW0LGE_21a
             }
 
-            if (!_mox || rx == 2) // rx2 can not tx
+            // H1: the scale follows the meter's own transmit tick, not the receiver index - a
+            // keyed meter whose tick is off shows its usual receive scale, RX2 included.
+            if (!_mox || !bCarriesTx)
             {
                 switch (rxMode)
                 {
@@ -25253,10 +25255,10 @@ namespace Thetis
                     #region Original                    
                     g.FillRectangle(meter_background_pen.Brush, 0, 0, W, H);
 
-                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false);
+                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, MeterTXMode.LAST, chkVFOATX.Checked);
 
                     if ((!_mox && current_meter_rx_mode != MeterRXMode.OFF) ||
-                        (_mox && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
+                        (_mox && chkVFOATX.Checked && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
                         )
                     {
                         pixel_x = Math.Max(1, pixel_x);
@@ -25303,7 +25305,7 @@ namespace Thetis
                             //
                         }
                     }
-                    else if (_mox && txMode == MeterTXMode.SWR_POWER)
+                    else if (_mox && chkVFOATX.Checked && txMode == MeterTXMode.SWR_POWER)
                     {
                         //MW0LGE to do, just draw lines atm
                         pixel_x = Math.Max(1, pixel_x);
@@ -25351,6 +25353,13 @@ namespace Thetis
                             }
                         }
                     }
+                    else if (_mox && !chkVFOATX.Checked)
+                    {
+                        // H1: keyed from another oscillator - the receive scale stays, the bar falls to its minimum
+                        pixel_x = 1;
+                        g.DrawLine(Pens.Red, pixel_x, 0, pixel_x, H - 10);
+                        g.FillRectangle(meter_background_pen.Brush, pixel_x + 1, 0, W - pixel_x, H - 10);
+                    }
                     break;
                 #endregion
                 case MultiMeterDisplayMode.Edge:
@@ -25358,12 +25367,12 @@ namespace Thetis
                     g.DrawRectangle(edge_meter_background_pen, 0, 0, W, H);
 
                     //MW0LGE moved all code into common function, used by both edge and original meter
-                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true);
+                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, MeterTXMode.LAST, chkVFOATX.Checked);
                     //-
 
                     // draw meter movement
                     if ((!_mox && current_meter_rx_mode != MeterRXMode.OFF) ||
-                        (_mox && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
+                        (_mox && chkVFOATX.Checked && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
                         )
                     {
                         pixel_x = Math.Max(0, pixel_x);
@@ -25395,7 +25404,7 @@ namespace Thetis
                         g.InterpolationMode = InterpolationMode.Default;
                         g.SmoothingMode = SmoothingMode.Default;
                     }
-                    else if (_mox && txMode == MeterTXMode.SWR_POWER)
+                    else if (_mox && chkVFOATX.Checked && txMode == MeterTXMode.SWR_POWER)
                     {
                         pixel_x = Math.Max(0, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -25428,6 +25437,14 @@ namespace Thetis
 
                         g.InterpolationMode = InterpolationMode.Default;
                         g.SmoothingMode = SmoothingMode.Default;
+                    }
+                    else if (_mox && !chkVFOATX.Checked)
+                    {
+                        // H1: keyed from another oscillator - the receive scale stays, the needle falls to its minimum
+                        pixel_x = 1;
+                        g.DrawLine(line_dark_pen, pixel_x - 1, 0, pixel_x - 1, H);
+                        g.DrawLine(line_pen, pixel_x, 0, pixel_x, H);
+                        g.DrawLine(line_dark_pen, pixel_x + 1, 0, pixel_x + 1, H);
                     }
                     break;
                 #endregion
@@ -25559,7 +25576,7 @@ namespace Thetis
 
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, chkVFOBTX.Checked);
 
                         pixel_x = Math.Max(1, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -25619,7 +25636,7 @@ namespace Thetis
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
                         //MW0LGE moved all code into common function, used by both edge and original meter
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, chkVFOBTX.Checked);
                         //-
 
                         pixel_x = Math.Max(0, pixel_x);
@@ -26594,8 +26611,13 @@ namespace Thetis
             // behind !bTx, so while transmitting they drew nothing but the background and the band
             // went black. The scales now always go down and only the bar is conditional: SubRX1
             // follows RX1 and takes the transmit reading, SubRX2 follows RX2 and keeps its picture.
-            bool h1DrawBar = subInUse && rxMode != MeterRXMode.OFF && (!bTx || rx == 2);
-            if (bTx && rx == 1) h1DrawBar = sub_meter_tx_modes[sub] != MeterTXMode.OFF && sub_meter_tx_modes[sub] != MeterTXMode.SWR_POWER;
+            // H1: the transmit picture is tied to this row's own transmit tick - while the sub's
+            // tick carries the transmit, the band shows the transmit scale and the bar follows it;
+            // otherwise the usual receive picture stays, keyed or not.
+            bool subCarries = sub == 0 ? chkSubVFOATX.Checked : chkSubVFOBTX.Checked;
+            bool h1TxPicture = bTx && subCarries;
+            bool h1DrawBar = subInUse && rxMode != MeterRXMode.OFF && !h1TxPicture;
+            if (h1TxPicture) h1DrawBar = sub_meter_tx_modes[sub] != MeterTXMode.OFF && sub_meter_tx_modes[sub] != MeterTXMode.SWR_POWER;
 
             switch (current_meter_display_mode)
             {
@@ -26604,7 +26626,7 @@ namespace Thetis
 
                     // H1: scales in both states, as the two main meters draw them; SubRX1 hands in its
                     // own transmit mode so its band matches its readout line while transmitting.
-                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, bTx && rx == 1 ? sub_meter_tx_modes[sub] : MeterTXMode.LAST);
+                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, sub_meter_tx_modes[sub], subCarries);
 
                     if (h1DrawBar)
                     {
@@ -26650,7 +26672,7 @@ namespace Thetis
                             g.FillRectangle(m_SignalHistoryColourPen.Brush, fMin, H - 10, fMax - fMin, 10);
                         }
                     }
-                    else if (bTx && rx == 1 && sub_meter_tx_modes[sub] == MeterTXMode.SWR_POWER)
+                    else if (h1TxPicture && sub_meter_tx_modes[sub] == MeterTXMode.SWR_POWER)
                     {
                         // the same pair of lines the RX1 meter draws in this mode
                         pixel_x = Math.Max(1, pixel_x);
@@ -26702,7 +26724,7 @@ namespace Thetis
                 case MultiMeterDisplayMode.Edge:
                     g.DrawRectangle(edge_meter_background_pen, 0, 0, W, H);
 
-                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, bTx && rx == 1 ? sub_meter_tx_modes[sub] : MeterTXMode.LAST);
+                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, sub_meter_tx_modes[sub], subCarries);
 
                     if (h1DrawBar)
                     {
@@ -26734,7 +26756,7 @@ namespace Thetis
                         g.InterpolationMode = InterpolationMode.Default;
                         g.SmoothingMode = SmoothingMode.Default;
                     }
-                    else if (bTx && rx == 1 && sub_meter_tx_modes[sub] == MeterTXMode.SWR_POWER)
+                    else if (h1TxPicture && sub_meter_tx_modes[sub] == MeterTXMode.SWR_POWER)
                     {
                         // the same line pairs the RX1 meter draws in this mode
                         pixel_x = Math.Max(0, pixel_x);
@@ -26809,9 +26831,10 @@ namespace Thetis
                 if (chkPower.Checked && enabled[sub])
                 {
                     // H1: the feed keeps running through transmit, as the two main meters' feeds do.
-                    // SubRX1 takes the transmit reading (RX1's meter reads transmit while transmitting);
-                    // SubRX2 keeps measuring its own channel (RX2's meter never switches over).
-                    if (!_mox || sub == 1)
+                    // The row whose tick carries the transmit takes the transmit reading; the other
+                    // keeps measuring its own channel.
+                    bool subCarries2 = sub == 0 ? chkSubVFOATX.Checked : chkSubVFOBTX.Checked;
+                    if (!_mox || !subCarries2)
                     {
                         uint thread = sub == 0 ? 0u : 2u;
                         WDSP.MeterType type = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_AVERAGE
@@ -33985,7 +34008,7 @@ namespace Thetis
             // H1: the band line is the SubVFOA row - the band name moves into the frame caption,
             // the row shows the sub receiver frequency while the sub runs and is empty while
             // the sub is idle
-            grpVFOA.Text = "VFO A   " + bandInfo;
+            H1SetBandCaption(false, bandInfo);
             txtVFOABand.Text = (chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq.ToString("f6") : "";
 
             Band b = BandByFreq(freq, rx1_xvtr_index, current_region);
@@ -35271,7 +35294,7 @@ namespace Thetis
 
             // H1: the VFO B band line is the SubVFOB row - the band name moves into the
             // frame caption, the row itself always shows the sub receiver frequency
-            grpVFOB.Text = "VFO B   " + bandInfo;
+            H1SetBandCaption(true, bandInfo);
             // H1: emptied with RX2 off and while the sub is idle - this is the band-update
             // writer that kept putting the saved sub frequency back into the blanked row
             txtVFOBSub.Text = rx2_enabled && chkEnableMultiRX2.Checked
@@ -40248,15 +40271,23 @@ namespace Thetis
         }
         private void moveModeSpecificPanels()
         {
-            panelModeSpecificPhone.Location = new Point(gr_ModePhone_basis_location.X + h_delta - (h_delta / 4), gr_ModePhone_basis_location.Y + v_delta);
-            panelModeSpecificCW.Location = new Point(gr_ModeCW_basis_location.X + h_delta - (h_delta / 4), gr_ModeCW_basis_location.Y + v_delta);
-            panelModeSpecificDigital.Location = new Point(gr_ModeDig_basis_location.X + h_delta - (h_delta / 4), gr_ModeDig_basis_location.Y + v_delta);
-            panelModeSpecificFM.Location = new Point(gr_ModeFM_basis_location.X + h_delta - (h_delta / 4), gr_ModeFM_basis_location.Y + v_delta);
+            H1TracePanelMoves("msp-enter");
+            // H1: the four mode panels live at the transmit cluster position now - H1LayoutV4 puts
+            // them there, so this pass must produce the same spot. The stock basis arithmetic parked
+            // them up and right of the column, and any pass running after the layout (a mode change,
+            // an expand) dropped the whole transmit section away from it until the next relayout.
+            Point h1 = new Point(this.ClientSize.Width / 2 + 30, 740 + 20); // same as H1LayoutV4
+            panelModeSpecificPhone.Location = h1;
+            panelModeSpecificCW.Location = h1;
+            panelModeSpecificDigital.Location = h1;
+            panelModeSpecificFM.Location = h1;
+            H1TracePanelMoves("msp-exit");
         }
         private void ResizeConsole(int h_delta, int v_delta)
         {
             // MW0LGE changes made to this function so that RX1 meter fills space to right of VFOB box, also delay repaint until all controls moved
             SuspendDrawing(this); //MW0LGE
+            H1TracePanelMoves("resize-in " + h_delta + "," + v_delta);
 
             // This routine captures the size and location parameters *after* windows
             // has resized the image, (if the video is set for "120 dpi" in lieu of the
@@ -40401,6 +40432,7 @@ namespace Thetis
                 panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 913); // H1: the right vol/pan strip, right column bandSubRX2 pair
                 ShapeRX2MixerStrip();
                 H1LayoutV4(); // H1: layout v4 places everything last
+                H1TracePanelMoves("resize-out");
 
                 MeterManager.SetPositionOfDockedMeters();
             }
@@ -43724,6 +43756,49 @@ namespace Thetis
             return transmitting && selected ? Color.Red : receiveColor;
         }
 
+        // H1: temporary probe - names the pass that moves the transmit cluster / mode panels.
+        internal void H1TracePanelMoves(string tag)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " MOVER " + tag
+                    + " phone=" + (panelModeSpecificPhone == null ? "-" : panelModeSpecificPhone.Location.ToString())
+                    + " cw=" + (panelModeSpecificCW == null ? "-" : panelModeSpecificCW.Location.ToString())
+                    + " txatt=" + (udTXStepAttData == null ? "-" : udTXStepAttData.Location.ToString())
+                    + "\r\n");
+            }
+            catch { }
+        }
+
+        // H1: the band line of each VFO frame caption - the "40M CW" part takes the band text
+        // green, the "VFO A" / "VFO B" prefix stays the plain white caption.
+        private Label h1VFOBandA;
+        private Label h1VFOBandB;
+        private void H1SetBandCaption(bool vfoB, string band)
+        {
+            GroupBoxTS grp = vfoB ? grpVFOB : grpVFOA;
+            if (grp == null) return;
+            string cap = vfoB ? "VFO B" : "VFO A";
+            if (grp.Text != cap) grp.Text = cap;
+            Label lab = vfoB ? h1VFOBandB : h1VFOBandA;
+            if (lab == null)
+            {
+                lab = new Label();
+                lab.Name = vfoB ? "h1BandB" : "h1BandA";
+                lab.AutoSize = true;
+                lab.BackColor = Color.Transparent;
+                lab.UseMnemonic = false;
+                lab.Font = grp.Font;
+                lab.Location = new Point(8 + System.Windows.Forms.TextRenderer.MeasureText(cap, grp.Font).Width + 12, 3);
+                grp.Controls.Add(lab);
+                lab.BringToFront();
+                if (vfoB) h1VFOBandB = lab; else h1VFOBandA = lab;
+            }
+            lab.Text = band;
+            lab.ForeColor = chkPower.Checked ? band_text_light_color : band_text_dark_color;
+        }
+
         private void H1RefreshVfoDigitColors()
         {
             bool powered = chkPower.Checked;
@@ -43742,6 +43817,9 @@ namespace Thetis
             if (txtVFOBSub != null)
                 txtVFOBSub.ForeColor = H1VfoMainColor(powered, _mox, chkSubVFOBTX.Checked,
                     rx2_enabled && chkEnableMultiRX2.Checked, vfo_text_light_color, vfo_text_dark_color);
+
+            if (h1VFOBandA != null) h1VFOBandA.ForeColor = chkPower.Checked ? band_text_light_color : band_text_dark_color;
+            if (h1VFOBandB != null) h1VFOBandB.ForeColor = chkPower.Checked ? band_text_light_color : band_text_dark_color;
         }
 
         private void showTxSelection()
@@ -43762,6 +43840,8 @@ namespace Thetis
             // stops) updates the panafall marker the same way a click does.
             Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked;
             Display.TXOnSubVFOB = chkSubVFOBTX.Checked;
+
+            H1TracePanelMoves("showTxSelection");
         }
 
         // H1: SPLIT mirrors the transmit choice - it is lit whenever a tick other than
