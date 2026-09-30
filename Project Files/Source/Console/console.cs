@@ -6738,22 +6738,26 @@ namespace Thetis
             comboTuneMode.Location = new Point(bx + cw + 10, r1);
             chkExternalPA.Location = new Point(bx + cw + 10, r2);
 
-            int mw = 112, vw = 130, tw = 336, g2 = 24;
-            int mx = cx - (mw + vw + tw + 2 * g2) / 2;        // MASTER
-            int sx = mx + mw + g2;                            // VFO
+            // H1: MASTER moved out of the group row, to the right of the button cluster in
+            // the dead space beside it; VFO and TRANSMIT close up under the centre line,
+            // widening both flanks for the sub receiver control groups that come later.
+            int vw = 130, tw = 336, g2 = 24;
+            int sx = cx - (vw + g2 + tw) / 2;                 // VFO
             int tx = sx + vw + g2;                            // TRANSMIT
-            H1Cap("mast", "MASTER", mx, cY, 110);
+            int cYm = 706;                                    // MASTER caption line, level with the cluster
+            int mx = bx + cw + g2;                            // MASTER, right of the cluster
+            H1Cap("mast", "MASTER", mx, cYm, 110);
             H1Cap("split", "VFO", sx, cY, 130);
             H1Cap("tx", "TRANSMIT", tx, cY, 336);
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
-            H1Put(lblAF, this, mx, cY + 22);
-            H1Put(ptbAF, this, mx, cY + 38);
-            H1Put(lblPWR, this, mx, cY + 72);
-            H1Put(ptbPWR, this, mx, cY + 88);
+            H1Put(lblAF, this, mx, cYm + 22);
+            H1Put(ptbAF, this, mx, cYm + 38);
+            H1Put(lblPWR, this, mx, cYm + 72);
+            H1Put(ptbPWR, this, mx, cYm + 88);
             // H1: Tune sits under Drive in the MASTER column, in the same row rhythm
-            H1Put(lblTune, this, mx, cY + 122);
-            H1Put(ptbTune, this, mx, cY + 138);
-            H1Put(udTXStepAttData, this, mx, cY + 176);
+            H1Put(lblTune, this, mx, cYm + 122);
+            H1Put(ptbTune, this, mx, cYm + 138);
+            H1Put(udTXStepAttData, this, mx, cYm + 176);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
             panelSoundControls.SendToBack();
