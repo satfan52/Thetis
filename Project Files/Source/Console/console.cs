@@ -6552,6 +6552,10 @@ namespace Thetis
             // H1: VAC1 sits beside the RX1 squelch on its own row; VAC2 in the mirrored slot
             H1Put(chkVAC1, this, aL + 96, Y0 + 142, 50);
             H1Put(chkVAC2, this, aR + 232 - 90 - 58, Y0 + 142, 50);
+            // H1: the VAC pills were drawn with the designer's dark caption colour, which is
+            // unreadable on the dark skin. Take the squelch pill's light text and font.
+            if (chkVAC1 != null) { chkVAC1.ForeColor = chkSquelch.ForeColor; chkVAC1.Font = chkSquelch.Font; }
+            if (chkVAC2 != null) { chkVAC2.ForeColor = chkSquelch.ForeColor; chkVAC2.Font = chkSquelch.Font; }
             foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer, chkVAC1, chkVAC2 })
                 if (k != null) k.BringToFront();
             H1PlaceRX2Veil(); // H1: the RX2 veil follows the layout
