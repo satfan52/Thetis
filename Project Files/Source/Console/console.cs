@@ -6247,9 +6247,13 @@ namespace Thetis
             h1RX2VeilBelow.Bounds = new Rectangle(bx, by, Math.Max(0, ClientSize.Width - bx), Math.Max(0, ClientSize.Height - 18 - by));
 
             // H1: top row, from the RX2 meter pair across to the window edge
+            // H1: start just above the meters themselves and stop at the display. Running this box up
+            // to the top of the window made it dim the console's own title bar, which showed up as a
+            // black band across the top whenever RX2 was off.
             int tx0 = (grpSubRX2Meter != null ? grpSubRX2Meter.Left : ClientSize.Width - 760) - 8;
-            int tby = (panelDisplay != null ? panelDisplay.Top : 140);
-            h1RX2VeilTop.Bounds = new Rectangle(tx0, 0, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby));
+            int tby = (grpSubRX2Meter != null && grpSubRX2Meter.Top > 30) ? grpSubRX2Meter.Top - 6 : 48;
+            int tby2 = (panelDisplay != null ? panelDisplay.Top : 140);
+            h1RX2VeilTop.Bounds = new Rectangle(tx0, tby, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby2 - tby));
 
             if (h1RX2VeilStrip.Visible)
             {
@@ -7039,6 +7043,10 @@ namespace Thetis
                     if (c == null || !c.Visible) continue;
                     if (c is PowerDimOverlay) continue;
                     if (c == m_console.chkPower || c == m_console.chkRX2) continue;
+                    // H1: never touch the window chrome - the console's own title bar row and the
+                    // menu strip are not console controls and must not take the dim
+                    if (c is System.Windows.Forms.MenuStrip || c is System.Windows.Forms.ToolStrip) continue;
+                    if (c.GetType().Name.StartsWith("TitleBar")) continue;
                     // H1: group boxes take part too - a meter or VFO box is one piece of furniture
                     // whose caption is drawn on its frame, so it is handled as a whole below
                     if (c.Parent != null && !(c is Panel))
