@@ -48735,6 +48735,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
             //set it through setupform so that settings are updated
             m_eMeasureModeRX2 = tmp;
+            H1SaveMeterTxModes();
             picRX2Meter.Invalidate();
             txtRX2Meter.Invalidate();
         }
