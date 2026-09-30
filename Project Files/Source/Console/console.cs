@@ -24031,13 +24031,15 @@ namespace Thetis
             _measureCache[key] = sz;
             return sz;
         }
-        private void getMeterPixelPosAndDrawScales(int rx, Graphics g, int H, int W, double num, out int pixel_x, out int pixel_x_swr, int nStringOffsetY, bool bDrawMarkers)
+        private void getMeterPixelPosAndDrawScales(int rx, Graphics g, int H, int W, double num, out int pixel_x, out int pixel_x_swr, int nStringOffsetY, bool bDrawMarkers, MeterTXMode txModeOverride = MeterTXMode.LAST)
         {
             //MW0LGE 
             pixel_x = 0;
             pixel_x_swr = 0;
             MeterRXMode rxMode;
-            MeterTXMode txMode = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode;
+            // H1: the sub meters hand in their own transmit readout mode, so their scale and their
+            // bar answer to the same mode their readout line shows; every other caller keeps the pair.
+            MeterTXMode txMode = txModeOverride != MeterTXMode.LAST ? txModeOverride : (chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode);
 
             bool bAboveS9Frequency;
             if (rx == 1)
@@ -26482,6 +26484,32 @@ namespace Thetis
             }
         }
 
+        // H1: the numeric side of subMeterTxText, so the bar in the sub meters' scale band and the
+        // readout line above it are driven by the same transmit reading.
+        private float subMeterTxValue(int sub)
+        {
+            float txnum = -200.0f;
+            switch (sub_meter_tx_modes[sub])
+            {
+                case MeterTXMode.MIC: txnum = (float)Math.Max(-195.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.MIC_PK)); break;
+                case MeterTXMode.EQ: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.EQ_PK)); break;
+                case MeterTXMode.LEVELER: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.LEVELER_PK)); break;
+                case MeterTXMode.LVL_G: txnum = (float)Math.Max(0, WDSP.CalculateTXMeter(1, WDSP.MeterType.LVL_G)); break;
+                case MeterTXMode.CFC_PK: txnum = (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_PK)); break;
+                case MeterTXMode.CFC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CFC_G)); break;
+                case MeterTXMode.COMP: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.CPDR)); break;
+                case MeterTXMode.ALC: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)); break;
+                case MeterTXMode.ALC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); break;
+                case MeterTXMode.ALC_GROUP: txnum = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC))) + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); break;
+                case MeterTXMode.FORWARD_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; break;
+                case MeterTXMode.SWR_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; break;
+                case MeterTXMode.REVERSE_POWER: txnum = (float)alex_rev; break;
+                case MeterTXMode.SWR: txnum = alex_swr; break;
+                case MeterTXMode.OFF: txnum = -200.0f; break;
+            }
+            return txnum;
+        }
+
         private string subMeterTxText(MeterTXMode tx2)
         {
             string format = meter_detail ? "f1" : "f0";
@@ -26561,14 +26589,25 @@ namespace Thetis
             int rx = sub == 0 ? 1 : 2; // the scale of the parent receiver
             MeterRXMode rxMode = sub_meter_rx_modes[sub];
 
+            // H1: the parents draw their scale band in receive and in transmit alike - RX1 draws its
+            // transmit scales while MOX is on, RX2 never leaves its receive scale. The sub meters sat
+            // behind !bTx, so while transmitting they drew nothing but the background and the band
+            // went black. The scales now always go down and only the bar is conditional: SubRX1
+            // follows RX1 and takes the transmit reading, SubRX2 follows RX2 and keeps its picture.
+            bool h1DrawBar = subInUse && rxMode != MeterRXMode.OFF && (!bTx || rx == 2);
+            if (bTx && rx == 1) h1DrawBar = sub_meter_tx_modes[sub] != MeterTXMode.OFF && sub_meter_tx_modes[sub] != MeterTXMode.SWR_POWER;
+
             switch (current_meter_display_mode)
             {
                 case MultiMeterDisplayMode.Original:
                     g.FillRectangle(meter_background_pen.Brush, 0, 0, W, H);
 
-                    if (!bTx && subInUse && rxMode != MeterRXMode.OFF)
+                    // H1: scales in both states, as the two main meters draw them; SubRX1 hands in its
+                    // own transmit mode so its band matches its readout line while transmitting.
+                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, bTx && rx == 1 ? sub_meter_tx_modes[sub] : MeterTXMode.LAST);
+
+                    if (h1DrawBar)
                     {
-                        getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false);
 
                         pixel_x = Math.Max(1, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -26611,14 +26650,62 @@ namespace Thetis
                             g.FillRectangle(m_SignalHistoryColourPen.Brush, fMin, H - 10, fMax - fMin, 10);
                         }
                     }
+                    else if (bTx && rx == 1 && sub_meter_tx_modes[sub] == MeterTXMode.SWR_POWER)
+                    {
+                        // the same pair of lines the RX1 meter draws in this mode
+                        pixel_x = Math.Max(1, pixel_x);
+                        pixel_x = Math.Min(W - 3, pixel_x);
+                        pixel_x_swr = Math.Max(1, pixel_x_swr);
+                        pixel_x_swr = Math.Min(W - 3, pixel_x_swr);
+
+                        using (LinearGradientBrush brush = new LinearGradientBrush(new Rectangle(0, 0, pixel_x_swr, (H / 2) - 8),
+                            meter_left_color, meter_right_color, LinearGradientMode.Horizontal))
+                            g.FillRectangle(brush, 0, 8, pixel_x_swr, (H / 2) - 8);
+
+                        using (LinearGradientBrush brush = new LinearGradientBrush(new Rectangle(0, 0, pixel_x, (H / 2) - 8),
+                            meter_left_color, meter_right_color, LinearGradientMode.Horizontal))
+                            g.FillRectangle(brush, 0, H / 2, pixel_x, (H / 2) - 8);
+
+                        for (int i = 0; i < (W / 8) - 1; i++)
+                        {
+                            g.DrawLine(meter_background_pen, 8 + i * 8, H / 2, 8 + i * 8, H - 8);
+                            g.DrawLine(meter_background_pen, 8 + i * 8, 10, 8 + i * 8, (H / 2) - 8);
+                        }
+
+                        g.DrawLine(Pens.Red, pixel_x, H / 2, pixel_x, H);
+                        g.DrawLine(Pens.Red, pixel_x_swr, 0, pixel_x_swr, H / 2);
+
+                        g.FillRectangle(meter_background_pen.Brush, pixel_x + 1, H / 2, W - pixel_x, (H / 2) - 8);
+                        g.FillRectangle(meter_background_pen.Brush, pixel_x_swr + 1, 8, W - pixel_x_swr, (H / 2) - 8);
+
+                        if (pixel_x >= sub_meter_peak_value[sub])
+                        {
+                            sub_meter_peak_count[sub] = 0;
+                            sub_meter_peak_value[sub] = pixel_x;
+                        }
+                        else
+                        {
+                            if (sub_meter_peak_count[sub]++ >= multimeter_peak_hold_samples)
+                            {
+                                sub_meter_peak_count[sub] = 0;
+                                sub_meter_peak_value[sub] = pixel_x;
+                            }
+                            else
+                            {
+                                g.DrawLine(Pens.Red, sub_meter_peak_value[sub], H / 2, sub_meter_peak_value[sub], H);
+                                g.DrawLine(Pens.Red, sub_meter_peak_value[sub] - 1, H / 2, sub_meter_peak_value[sub] - 1, H);
+                            }
+                        }
+                    }
                     break;
 
                 case MultiMeterDisplayMode.Edge:
                     g.DrawRectangle(edge_meter_background_pen, 0, 0, W, H);
 
-                    if (!bTx && subInUse && rxMode != MeterRXMode.OFF)
+                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, bTx && rx == 1 ? sub_meter_tx_modes[sub] : MeterTXMode.LAST);
+
+                    if (h1DrawBar)
                     {
-                        getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true);
 
                         pixel_x = Math.Max(0, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -26643,6 +26730,33 @@ namespace Thetis
                         g.DrawLine(line_dark_pen, pixel_x - 1, 0, pixel_x - 1, H);
                         g.DrawLine(line_pen, pixel_x, 0, pixel_x, H);
                         g.DrawLine(line_dark_pen, pixel_x + 1, 0, pixel_x + 1, H);
+
+                        g.InterpolationMode = InterpolationMode.Default;
+                        g.SmoothingMode = SmoothingMode.Default;
+                    }
+                    else if (bTx && rx == 1 && sub_meter_tx_modes[sub] == MeterTXMode.SWR_POWER)
+                    {
+                        // the same line pairs the RX1 meter draws in this mode
+                        pixel_x = Math.Max(0, pixel_x);
+                        pixel_x = Math.Min(W - 3, pixel_x);
+                        pixel_x_swr = Math.Max(0, pixel_x_swr);
+                        pixel_x_swr = Math.Min(W - 3, pixel_x_swr);
+
+                        line_dark_pen.Color =
+                            Color.FromArgb((edge_avg_color.R + edge_meter_background_color.R) / 2,
+                            (edge_avg_color.G + edge_meter_background_color.G) / 2,
+                            (edge_avg_color.B + edge_meter_background_color.B) / 2);
+
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.SmoothingMode = SmoothingMode.HighQuality;
+
+                        g.DrawLine(line_dark_pen, pixel_x - 1, H / 2 + 3, pixel_x - 1, H); // left side
+                        g.DrawLine(line_pen, pixel_x, H / 2 + 3, pixel_x, H); // center line
+                        g.DrawLine(line_dark_pen, pixel_x + 1, H / 2 + 3, pixel_x + 1, H);// right side
+
+                        g.DrawLine(line_dark_pen, pixel_x_swr - 1, 0, pixel_x_swr - 1, H / 2 - 3); // left side
+                        g.DrawLine(line_pen, pixel_x_swr, 0, pixel_x_swr, H / 2 - 3); // center line
+                        g.DrawLine(line_dark_pen, pixel_x_swr + 1, 0, pixel_x_swr + 1, H / 2 - 3);// right side
 
                         g.InterpolationMode = InterpolationMode.Default;
                         g.SmoothingMode = SmoothingMode.Default;
@@ -26692,14 +26806,24 @@ namespace Thetis
             System.Windows.Forms.PictureBox[] bars = { picSubRX1Meter, picSubRX2Meter };
             for (int sub = 0; sub < 2; sub++)
             {
-                if (!_mox && chkPower.Checked && enabled[sub])
+                if (chkPower.Checked && enabled[sub])
                 {
-                    uint thread = sub == 0 ? 0u : 2u;
-                    WDSP.MeterType type = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_AVERAGE
-                        ? WDSP.MeterType.AVG_SIGNAL_STRENGTH : WDSP.MeterType.SIGNAL_STRENGTH;
-                    sub_meter_value[sub] = WDSP.CalculateRXMeter(thread, 1, type) + RXOffset(sub + 1);
+                    // H1: the feed keeps running through transmit, as the two main meters' feeds do.
+                    // SubRX1 takes the transmit reading (RX1's meter reads transmit while transmitting);
+                    // SubRX2 keeps measuring its own channel (RX2's meter never switches over).
+                    if (!_mox || sub == 1)
+                    {
+                        uint thread = sub == 0 ? 0u : 2u;
+                        WDSP.MeterType type = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_AVERAGE
+                            ? WDSP.MeterType.AVG_SIGNAL_STRENGTH : WDSP.MeterType.SIGNAL_STRENGTH;
+                        sub_meter_value[sub] = WDSP.CalculateRXMeter(thread, 1, type) + RXOffset(sub + 1);
+                    }
+                    else
+                    {
+                        sub_meter_value[sub] = subMeterTxValue(sub);
+                    }
                 }
-                else if (!_mox) sub_meter_value[sub] = -200.0f;
+                else sub_meter_value[sub] = -200.0f;
                 bars[sub].Invalidate();
             }
         }
