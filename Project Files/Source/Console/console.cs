@@ -19763,6 +19763,11 @@ namespace Thetis
         private MeterTXMode current_meter_tx_mode = MeterTXMode.FORWARD_POWER;
         // H1: RX2 meter keeps its own transmit value so both meters can differ
         private MeterTXMode current_meter_tx_mode_rx2 = MeterTXMode.FORWARD_POWER;
+        // H1: the RX1 meter's own transmit value. The stock current_meter_tx_mode stays what it
+        // always was - the TX settings parameter and the default - and no longer drives the meter
+        // directly, so the setup and the database cannot overwrite the RX1 meter's remembered
+        // choice the way they overwrote this stock field before.
+        private MeterTXMode current_meter_tx_mode_rx1 = MeterTXMode.FORWARD_POWER;
 
         // H1: per meter transmit display values. The stock TX settings parameter is the default;
         // a value the user picks for one meter is remembered on top of it, across restarts.
@@ -19793,7 +19798,7 @@ namespace Thetis
                 string[] v =
                 {
                     "default=" + (int)_h1MeterTxDefault,
-                    "rx1=" + (_h1MeterTxOverride[0] ? (int)current_meter_tx_mode : -1),
+                    "rx1=" + (_h1MeterTxOverride[0] ? (int)current_meter_tx_mode_rx1 : -1),
                     "rx2=" + (_h1MeterTxOverride[1] ? (int)current_meter_tx_mode_rx2 : -1),
                     "sub1=" + (_h1MeterTxOverride[2] ? (int)sub_meter_tx_modes[0] : -1),
                     "sub2=" + (_h1MeterTxOverride[3] ? (int)sub_meter_tx_modes[1] : -1),
@@ -19853,7 +19858,8 @@ namespace Thetis
                     if (val[i] <= (int)MeterTXMode.FIRST || val[i] >= (int)MeterTXMode.LAST) val[i] = -1;
                     _h1MeterTxOverride[i] = val[i] >= 0;
                 }
-                current_meter_tx_mode = _h1MeterTxOverride[0] ? (MeterTXMode)val[0] : _h1MeterTxDefault;
+                current_meter_tx_mode = _h1MeterTxDefault; // the stock field is the parameter
+                current_meter_tx_mode_rx1 = _h1MeterTxOverride[0] ? (MeterTXMode)val[0] : _h1MeterTxDefault;
                 current_meter_tx_mode_rx2 = _h1MeterTxOverride[1] ? (MeterTXMode)val[1] : _h1MeterTxDefault;
                 sub_meter_tx_modes[0] = _h1MeterTxOverride[2] ? (MeterTXMode)val[2] : _h1MeterTxDefault;
                 sub_meter_tx_modes[1] = _h1MeterTxOverride[3] ? (MeterTXMode)val[3] : _h1MeterTxDefault;
@@ -19876,6 +19882,7 @@ namespace Thetis
             // H1: a change of the default applies to every meter and forgets their overrides
             _h1MeterTxDefault = mode;
             current_meter_tx_mode = mode;
+            current_meter_tx_mode_rx1 = mode;
             current_meter_tx_mode_rx2 = mode;
             sub_meter_tx_modes[0] = mode;
             sub_meter_tx_modes[1] = mode;
@@ -24165,7 +24172,7 @@ namespace Thetis
             MeterRXMode rxMode;
             // H1: the sub meters hand in their own transmit readout mode, so their scale and their
             // bar answer to the same mode their readout line shows; every other caller keeps the pair.
-            MeterTXMode txMode = txModeOverride != MeterTXMode.LAST ? txModeOverride : (chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode);
+            MeterTXMode txMode = txModeOverride != MeterTXMode.LAST ? txModeOverride : (chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1);
 
             bool bAboveS9Frequency;
             if (rx == 1)
@@ -25373,7 +25380,7 @@ namespace Thetis
                     num = avg_num = current_meter_data * 0.2 + avg_num * 0.8; // slow decay
             }
 
-            MeterTXMode txMode = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode;
+            MeterTXMode txMode = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1;
 
             switch (current_meter_display_mode)
             {
@@ -26501,7 +26508,7 @@ namespace Thetis
                     }
                     else
                     {
-                        MeterTXMode mode = CurrentMeterTXMode;
+                        MeterTXMode mode = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1;
                         float num;
 
                         switch (mode)
@@ -26575,7 +26582,7 @@ namespace Thetis
                                 else
                                     new_meter_data = drivepwr;
 
-                                if (current_meter_tx_mode == MeterTXMode.SWR_POWER) new_swrmeter_data = alex_swr;
+                                if (mode == MeterTXMode.SWR_POWER) new_swrmeter_data = alex_swr;
                                 break;
                             case MeterTXMode.REVERSE_POWER:
                                 if (alexpresent || apollopresent)
@@ -48688,13 +48695,13 @@ namespace Thetis
         private void incrementMultiMeterTXMode()
         {
             // H1: cycle the transmit meter values the same way reception cycles its units
-            MeterTXMode tmp = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode;
+            MeterTXMode tmp = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1;
             tmp++;
             if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
-            if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode = tmp;
+            if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode_rx1 = tmp;
             if (!chkTUN.Checked)
             {
-                _h1MeterTxOverride[0] = current_meter_tx_mode != _h1MeterTxDefault;
+                _h1MeterTxOverride[0] = current_meter_tx_mode_rx1 != _h1MeterTxDefault;
                 H1SaveMeterTxModes();
             }
             picMultiMeterDigital.Invalidate();
