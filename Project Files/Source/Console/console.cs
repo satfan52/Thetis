@@ -19793,7 +19793,15 @@ namespace Thetis
                     "rx1=" + (_h1MeterTxOverride[0] ? (int)current_meter_tx_mode : -1),
                     "rx2=" + (_h1MeterTxOverride[1] ? (int)current_meter_tx_mode_rx2 : -1),
                     "sub1=" + (_h1MeterTxOverride[2] ? (int)sub_meter_tx_modes[0] : -1),
-                    "sub2=" + (_h1MeterTxOverride[3] ? (int)sub_meter_tx_modes[1] : -1)
+                    "sub2=" + (_h1MeterTxOverride[3] ? (int)sub_meter_tx_modes[1] : -1),
+                    "rx1mode=" + (int)current_meter_rx_mode,
+                    "rx1unit=" + (int)m_eMeasureMode,
+                    "rx2mode=" + (int)rx2_meter_mode,
+                    "rx2unit=" + (int)m_eMeasureModeRX2,
+                    "sub1mode=" + (int)sub_meter_rx_modes[0],
+                    "sub1unit=" + (int)sub_meter_units[0],
+                    "sub2mode=" + (int)sub_meter_rx_modes[1],
+                    "sub2unit=" + (int)sub_meter_units[1]
                 };
                 System.IO.File.WriteAllLines(H1MeterTxModeFile, v);
             }
@@ -19805,6 +19813,7 @@ namespace Thetis
             {
                 int def = (int)MeterTXMode.FORWARD_POWER;
                 int[] val = { -1, -1, -1, -1 };
+                int rx1m = -1, rx1u = -1, rx2m = -1, rx2u = -1, s1m = -1, s1u = -1, s2m = -1, s2u = -1;
                 if (System.IO.File.Exists(H1MeterTxModeFile))
                 {
                     foreach (string line in System.IO.File.ReadAllLines(H1MeterTxModeFile))
@@ -19819,6 +19828,14 @@ namespace Thetis
                         else if (k == "rx2") val[1] = n;
                         else if (k == "sub1") val[2] = n;
                         else if (k == "sub2") val[3] = n;
+                        else if (k == "rx1mode") rx1m = n;
+                        else if (k == "rx1unit") rx1u = n;
+                        else if (k == "rx2mode") rx2m = n;
+                        else if (k == "rx2unit") rx2u = n;
+                        else if (k == "sub1mode") s1m = n;
+                        else if (k == "sub1unit") s1u = n;
+                        else if (k == "sub2mode") s2m = n;
+                        else if (k == "sub2unit") s2u = n;
                     }
                 }
                 if (def <= (int)MeterTXMode.FIRST || def >= (int)MeterTXMode.LAST)
@@ -19837,6 +19854,14 @@ namespace Thetis
                 current_meter_tx_mode_rx2 = _h1MeterTxOverride[1] ? (MeterTXMode)val[1] : _h1MeterTxDefault;
                 sub_meter_tx_modes[0] = _h1MeterTxOverride[2] ? (MeterTXMode)val[2] : _h1MeterTxDefault;
                 sub_meter_tx_modes[1] = _h1MeterTxOverride[3] ? (MeterTXMode)val[3] : _h1MeterTxDefault;
+                if (rx1m > (int)MeterRXMode.FIRST && rx1m < (int)MeterRXMode.LAST) current_meter_rx_mode = (MeterRXMode)rx1m;
+                if (rx2m > (int)MeterRXMode.FIRST && rx2m < (int)MeterRXMode.LAST) rx2_meter_mode = (MeterRXMode)rx2m;
+                if (s1m > (int)MeterRXMode.FIRST && s1m < (int)MeterRXMode.LAST) sub_meter_rx_modes[0] = (MeterRXMode)s1m;
+                if (s2m > (int)MeterRXMode.FIRST && s2m < (int)MeterRXMode.LAST) sub_meter_rx_modes[1] = (MeterRXMode)s2m;
+                if (rx1u > (int)MultiMeterMeasureMode.FIRST && rx1u < (int)MultiMeterMeasureMode.LAST) m_eMeasureMode = (MultiMeterMeasureMode)rx1u;
+                if (rx2u > (int)MultiMeterMeasureMode.FIRST && rx2u < (int)MultiMeterMeasureMode.LAST) m_eMeasureModeRX2 = (MultiMeterMeasureMode)rx2u;
+                if (s1u > (int)MultiMeterMeasureMode.FIRST && s1u < (int)MultiMeterMeasureMode.LAST) sub_meter_units[0] = (MultiMeterMeasureMode)s1u;
+                if (s2u > (int)MultiMeterMeasureMode.FIRST && s2u < (int)MultiMeterMeasureMode.LAST) sub_meter_units[1] = (MultiMeterMeasureMode)s2u;
                 H1InvalidateMeterTx();
             }
             catch { }
@@ -22592,11 +22617,11 @@ namespace Thetis
         public MultiMeterMeasureMode MMMeasureModeRX2
         {
             get { return m_eMeasureModeRX2; }
-            set { m_eMeasureModeRX2 = value; }
+            set { m_eMeasureModeRX2 = value; H1SaveMeterTxModes(); }
         }
         public MultiMeterMeasureMode MMMeasureMode {
             get { return m_eMeasureMode; }
-            set { m_eMeasureMode = value; }
+            set { m_eMeasureMode = value; H1SaveMeterTxModes(); }
         }
 
         private bool spacebar_last_btn = false;
@@ -25351,10 +25376,10 @@ namespace Thetis
                     #region Original                    
                     g.FillRectangle(meter_background_pen.Brush, 0, 0, W, H);
 
-                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, MeterTXMode.LAST, chkVFOATX.Checked);
+                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, MeterTXMode.LAST, true);
 
                     if ((!_mox && current_meter_rx_mode != MeterRXMode.OFF) ||
-                        (_mox && chkVFOATX.Checked && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
+                        (_mox && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
                         )
                     {
                         pixel_x = Math.Max(1, pixel_x);
@@ -25401,7 +25426,7 @@ namespace Thetis
                             //
                         }
                     }
-                    else if (_mox && chkVFOATX.Checked && txMode == MeterTXMode.SWR_POWER)
+                    else if (_mox && txMode == MeterTXMode.SWR_POWER)
                     {
                         //MW0LGE to do, just draw lines atm
                         pixel_x = Math.Max(1, pixel_x);
@@ -25449,13 +25474,6 @@ namespace Thetis
                             }
                         }
                     }
-                    else if (_mox && !chkVFOATX.Checked)
-                    {
-                        // H1: keyed from another oscillator - the receive scale stays, the bar falls to its minimum
-                        pixel_x = 1;
-                        g.DrawLine(Pens.Red, pixel_x, 0, pixel_x, H - 10);
-                        g.FillRectangle(meter_background_pen.Brush, pixel_x + 1, 0, W - pixel_x, H - 10);
-                    }
                     break;
                 #endregion
                 case MultiMeterDisplayMode.Edge:
@@ -25463,12 +25481,12 @@ namespace Thetis
                     g.DrawRectangle(edge_meter_background_pen, 0, 0, W, H);
 
                     //MW0LGE moved all code into common function, used by both edge and original meter
-                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, MeterTXMode.LAST, chkVFOATX.Checked);
+                    getMeterPixelPosAndDrawScales(1, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, MeterTXMode.LAST, true);
                     //-
 
                     // draw meter movement
                     if ((!_mox && current_meter_rx_mode != MeterRXMode.OFF) ||
-                        (_mox && chkVFOATX.Checked && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
+                        (_mox && !(txMode == MeterTXMode.OFF || txMode == MeterTXMode.SWR_POWER))
                         )
                     {
                         pixel_x = Math.Max(0, pixel_x);
@@ -25500,7 +25518,7 @@ namespace Thetis
                         g.InterpolationMode = InterpolationMode.Default;
                         g.SmoothingMode = SmoothingMode.Default;
                     }
-                    else if (_mox && chkVFOATX.Checked && txMode == MeterTXMode.SWR_POWER)
+                    else if (_mox && txMode == MeterTXMode.SWR_POWER)
                     {
                         pixel_x = Math.Max(0, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -25533,14 +25551,6 @@ namespace Thetis
 
                         g.InterpolationMode = InterpolationMode.Default;
                         g.SmoothingMode = SmoothingMode.Default;
-                    }
-                    else if (_mox && !chkVFOATX.Checked)
-                    {
-                        // H1: keyed from another oscillator - the receive scale stays, the needle falls to its minimum
-                        pixel_x = 1;
-                        g.DrawLine(line_dark_pen, pixel_x - 1, 0, pixel_x - 1, H);
-                        g.DrawLine(line_pen, pixel_x, 0, pixel_x, H);
-                        g.DrawLine(line_dark_pen, pixel_x + 1, 0, pixel_x + 1, H);
                     }
                     break;
                 #endregion
@@ -25672,7 +25682,7 @@ namespace Thetis
 
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, chkVFOBTX.Checked);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, true);
 
                         pixel_x = Math.Max(1, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -25732,7 +25742,7 @@ namespace Thetis
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
                         //MW0LGE moved all code into common function, used by both edge and original meter
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, chkVFOBTX.Checked);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, true);
                         //-
 
                         pixel_x = Math.Max(0, pixel_x);
@@ -26711,8 +26721,7 @@ namespace Thetis
             // H1: the transmit picture is tied to this row's own transmit tick - while the sub's
             // tick carries the transmit, the band shows the transmit scale and the bar follows it;
             // otherwise the usual receive picture stays, keyed or not.
-            bool subCarries = sub == 0 ? chkSubVFOATX.Checked : chkSubVFOBTX.Checked;
-            bool h1TxPicture = bTx && subCarries;
+            bool h1TxPicture = bTx;
             bool h1DrawBar = subInUse && rxMode != MeterRXMode.OFF && !h1TxPicture;
             if (h1TxPicture) h1DrawBar = sub_meter_tx_modes[sub] != MeterTXMode.OFF && sub_meter_tx_modes[sub] != MeterTXMode.SWR_POWER;
 
@@ -26723,7 +26732,7 @@ namespace Thetis
 
                     // H1: scales in both states, as the two main meters draw them; SubRX1 hands in its
                     // own transmit mode so its band matches its readout line while transmitting.
-                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, sub_meter_tx_modes[sub], subCarries);
+                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, sub_meter_tx_modes[sub], true);
 
                     if (h1DrawBar)
                     {
@@ -26821,7 +26830,7 @@ namespace Thetis
                 case MultiMeterDisplayMode.Edge:
                     g.DrawRectangle(edge_meter_background_pen, 0, 0, W, H);
 
-                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, sub_meter_tx_modes[sub], subCarries);
+                    getMeterPixelPosAndDrawScales(rx, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, sub_meter_tx_modes[sub], true);
 
                     if (h1DrawBar)
                     {
@@ -26927,11 +26936,9 @@ namespace Thetis
             {
                 if (chkPower.Checked && enabled[sub])
                 {
-                    // H1: the feed keeps running through transmit, as the two main meters' feeds do.
-                    // The row whose tick carries the transmit takes the transmit reading; the other
-                    // keeps measuring its own channel.
-                    bool subCarries2 = sub == 0 ? chkSubVFOATX.Checked : chkSubVFOBTX.Checked;
-                    if (!_mox || !subCarries2)
+                    // H1: while keyed every meter takes its own transmit reading; unkeyed it
+                    // measures its own channel.
+                    if (!_mox)
                     {
                         uint thread = sub == 0 ? 0u : 2u;
                         WDSP.MeterType type = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_AVERAGE
@@ -26956,7 +26963,7 @@ namespace Thetis
             {
                 if (!rx2_meter_data_ready)
                 {
-                    if (!_mox || !chkVFOBTX.Checked)
+                    if (!_mox)
                     {
                         //MW0LGE_21d step atten
                         MeterRXMode mode = RX2MeterMode;
@@ -26997,9 +27004,8 @@ namespace Thetis
                     }
                     else
                     {
-                        // H1: while its own transmit tick carries the transmit the RX2 meter takes the
-                        // transmit reading of its transmit display value; with any other tick carrying
-                        // it keeps measuring its own channel, as the sub meters do.
+                        // H1: while keyed the RX2 meter takes the transmit reading of its own
+                        // transmit display value, like the other three meters.
                         MeterTXMode txmode2 = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
                         float txnum2;
                         switch (txmode2)
@@ -32204,6 +32210,7 @@ namespace Thetis
                         break;
                 }
                 current_meter_rx_mode = mode;
+                H1SaveMeterTxModes();
                 if (show_rx1)                                      // collapsed label is RX1/2 dependent
                     lblRXMeter.Text = comboMeterRXMode.Text;
 
@@ -42708,6 +42715,7 @@ namespace Thetis
                         break;
                 }
                 rx2_meter_mode = mode;
+                H1SaveMeterTxModes();
                 if (!show_rx1)                                          // collapsed meter is RX1/RX2 shared
                     lblRXMeter.Text = comboRX2MeterMode.Text;
 
@@ -48751,6 +48759,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 unit++;
                 if (unit >= MultiMeterMeasureMode.LAST) unit = MultiMeterMeasureMode.FIRST + 1;
                 sub_meter_units[sub] = unit;
+                H1SaveMeterTxModes();
             }
             (sub == 0 ? picSubRX1Meter : picSubRX2Meter).Invalidate();
         }
@@ -48759,6 +48768,7 @@ private void incrementMutliMeterDisplayModeRX2()
             if (_mox || chkTUN.Checked) { cycleSubMeter(sub); return; }
             sub_meter_rx_modes[sub] = sub_meter_rx_modes[sub] == MeterRXMode.SIGNAL_STRENGTH
                 ? MeterRXMode.SIGNAL_AVERAGE : MeterRXMode.SIGNAL_STRENGTH;
+            H1SaveMeterTxModes();
             (sub == 0 ? picSubRX1Meter : picSubRX2Meter).Invalidate();
         }
         private void txtSubRX1Meter_Click(object sender, EventArgs e) { cycleSubMeter(0); }
