@@ -6331,6 +6331,29 @@ namespace Thetis
         // place a few times a second while it is up. A layered window costs nothing to re-front and
         // the mouse still passes straight through it.
         private System.Windows.Forms.Timer h1VeilTimer;
+        private bool h1CapSaved;
+        private System.Drawing.Color h1CapRX2, h1CapSubRX2;
+
+        // H1: the meter captions are painted by their boxes above the veil, so no amount of
+        // re-fronting dims the text: the caption colour is dimmed directly instead.
+        private void H1SetRX2CaptionsDim(bool dim)
+        {
+            try
+            {
+                if (!h1CapSaved && grpRX2Meter != null && grpSubRX2Meter != null)
+                {
+                    h1CapRX2 = grpRX2Meter.ForeColor;
+                    h1CapSubRX2 = grpSubRX2Meter.ForeColor;
+                    h1CapSaved = true;
+                }
+                if (!h1CapSaved) return;
+                System.Drawing.Color want = dim ? System.Drawing.Color.FromArgb(95, 95, 100) : h1CapRX2;
+                if (grpRX2Meter != null && grpRX2Meter.ForeColor != want) grpRX2Meter.ForeColor = want;
+                want = dim ? System.Drawing.Color.FromArgb(95, 95, 100) : h1CapSubRX2;
+                if (grpSubRX2Meter != null && grpSubRX2Meter.ForeColor != want) grpSubRX2Meter.ForeColor = want;
+            }
+            catch { }
+        }
 
         private void H1VeilTimerStart()
         {
@@ -6379,6 +6402,7 @@ namespace Thetis
                 }
                 // H1: the two RX2 meter widgets are put away for as long as the veil is up, on every
                 // tick, so a re-show from the meter side cannot win the race
+                H1SetRX2CaptionsDim(up);
                 try { MeterManager.H1SetMeterWidgetVisible("rx2", !up); } catch { }
                 try { MeterManager.H1SetMeterWidgetVisible("subrx", !up); } catch { }
 
