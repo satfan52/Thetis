@@ -11159,7 +11159,7 @@ Ctrl + Left Click on any Band Button adds to Stack</value>
     <value>54</value>
   </data>
   <data name="grpMultimeter.Text" xml:space="preserve">
-    <value>RX1 / TX Meter</value>
+    <value>RX1 Meter</value>
   </data>
   <data name="&gt;&gt;grpMultimeter.Name" xml:space="preserve">
     <value>grpMultimeter</value>

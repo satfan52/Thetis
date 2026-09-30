@@ -6170,6 +6170,7 @@ namespace Thetis
                 {
                     h1RX2VeilStrip.Visible = veil;
                     h1RX2VeilBelow.Visible = veil;
+                    h1RX2VeilTop.Visible = veil;
                 }
                 if (veil)
                 {
@@ -6182,8 +6183,10 @@ namespace Thetis
                         + "\r\n"); } catch { }
                     h1RX2VeilStrip.Push();
                     h1RX2VeilBelow.Push();
+                    h1RX2VeilTop.Push();
                     h1RX2VeilStrip.BringToFront();
                     h1RX2VeilBelow.BringToFront();
+                    h1RX2VeilTop.BringToFront();
                 }
             }
             catch (Exception ex)
@@ -6197,6 +6200,7 @@ namespace Thetis
         // the same dim the power-off veil uses, over the right strip and the block below it.
         private PowerDimOverlay h1RX2VeilStrip;
         private PowerDimOverlay h1RX2VeilBelow;
+        private PowerDimOverlay h1RX2VeilTop;
 
         private void H1InitRX2Veil()
         {
@@ -6213,6 +6217,15 @@ namespace Thetis
             h1RX2VeilBelow.DimAlpha = 115;
             h1RX2VeilBelow.Visible = false;
             this.Controls.Add(h1RX2VeilBelow);
+
+            // H1: the top row's RX2 furniture - the two RX2 meters and the VFO B box - takes the
+            // same dim as the rest of the RX2 side
+            h1RX2VeilTop = new PowerDimOverlay(this);
+            h1RX2VeilTop.Name = "h1RX2VeilTop"; // named: the state save keys controls by name
+            h1RX2VeilTop.DrawPowerButton = false;
+            h1RX2VeilTop.DimAlpha = 115;
+            h1RX2VeilTop.Visible = false;
+            this.Controls.Add(h1RX2VeilTop);
         }
 
         private void H1PlaceRX2Veil()
@@ -6230,10 +6243,16 @@ namespace Thetis
             int by = y0 - 4;
             h1RX2VeilBelow.Bounds = new Rectangle(bx, by, Math.Max(0, ClientSize.Width - bx), Math.Max(0, ClientSize.Height - 18 - by));
 
+            // H1: top row, from the RX2 meter pair across to the window edge
+            int tx0 = (grpSubRX2Meter != null ? grpSubRX2Meter.Left : ClientSize.Width - 760) - 8;
+            int tby = (panelDisplay != null ? panelDisplay.Top : 140);
+            h1RX2VeilTop.Bounds = new Rectangle(tx0, 0, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby));
+
             if (h1RX2VeilStrip.Visible)
             {
                 h1RX2VeilStrip.Push();
                 h1RX2VeilBelow.Push();
+                h1RX2VeilTop.Push();
                 h1RX2VeilStrip.BringToFront();
                 h1RX2VeilBelow.BringToFront();
             }
@@ -6251,7 +6270,8 @@ namespace Thetis
             {
                 bool up = (m_powerDimOverlay != null && m_powerDimOverlay.Visible)
                        || (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible)
-                       || (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible);
+                       || (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible)
+                       || (h1RX2VeilTop != null && h1RX2VeilTop.Visible);
                 if (!up) return;
 
                 string above = null;
@@ -6271,6 +6291,7 @@ namespace Thetis
                 if (m_powerDimOverlay != null && m_powerDimOverlay.Visible) m_powerDimOverlay.BringToFront();
                 if (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible) h1RX2VeilStrip.BringToFront();
                 if (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible) h1RX2VeilBelow.BringToFront();
+                if (h1RX2VeilTop != null && h1RX2VeilTop.Visible) h1RX2VeilTop.BringToFront();
             }
             catch { }
         }
@@ -6989,6 +7010,14 @@ namespace Thetis
                             // so a button is instead redrawn as a darker copy of its own self: the
                             // outline, the body and the contrast against the panel all survive.
                             if (c is ButtonBase || c is PictureBox) WashOut(g, c, r);
+                            else if (c is GroupBox)
+                            {
+                                // H1: a meter or VFO box is one piece of furniture with its caption
+                                // drawn on the frame, so the whole box is redrawn darker and the
+                                // walk does not descend into it
+                                WashOut(g, c, r);
+                                continue;
+                            }
                             else g.FillRectangle(dim, r);
                         }
                     }
@@ -9306,8 +9335,9 @@ namespace Thetis
             m_dVFOBFreq = freqFromString(freq);
             // H1: with RX2 off the VFO B frame is emptied, like the sub meters - the
             // digits stay blank until RX2 comes back
-            txtVFOBFreq.Text = rx2_enabled ? freq : "";
-            txtVFOBMSD.Text = rx2_enabled ? freq : "";
+            // H1: the VFO B figures stay on screen while RX2 is off - the veil dims them
+            txtVFOBFreq.Text = freq;
+            txtVFOBMSD.Text = freq;
 
             string temp = freq;
             int index = temp.IndexOf(separator) + 4;
@@ -19864,7 +19894,7 @@ namespace Thetis
             m_dVFOBFreq = Math.Round(freq, 6); // MW0LGE_21d rounded to 6
             txtVFOBFreq.Text = freq.ToString("f6");
             txtVFOBFreq_LostFocus(this, EventArgs.Empty);
-            if (!rx2_enabled) txtVFOBFreq.Text = ""; // H1: emptied with RX2 off, after the parse
+            // H1: kept on screen, the veil dims it
         }
         private void VFOASubUpdate(double freq)
         {
@@ -36365,7 +36395,7 @@ namespace Thetis
         private void setVFOBFreqNoUpdate(double freq)
         {
             m_dVFOBFreq = freq;
-            txtVFOBFreq.Text = rx2_enabled ? freq.ToString("f6") : ""; // H1: emptied with RX2 off
+            txtVFOBFreq.Text = freq.ToString("f6"); // H1: kept on screen, the veil dims it
         }
         // MW0LGE_21d used to default colours of all button+radio controls, and inside other panels or groups
         // an issue was noticed where text change colour on buttons that had
@@ -38493,31 +38523,23 @@ namespace Thetis
         private void UpdateVFOBRowEnabled()
         {
             if (grpVFOB != null) grpVFOB.Enabled = rx2_enabled;
-            // H1: the RX2 meter is RX2's too - same dim treatment, emptied while RX2 is off
-            if (grpRX2Meter != null) grpRX2Meter.Enabled = rx2_enabled;
-            if (grpSubRX2Meter != null) grpSubRX2Meter.Enabled = rx2_enabled;
+            // H1: the two RX2 meters are left live so they keep their face and their last
+            // reading; the veil is what marks them inactive. The VFO B box stays disabled
+            // because its TX tick must not be clickable with RX2 switched off.
             // H1: in Edge style the meter box shows its own background colour, so it is
             // blacked out while RX2 is off, exactly like the sub meters' boxes, and the
             // display mode's colour is put back when RX2 returns
             if (picRX2Meter != null)
             {
-                picRX2Meter.BackColor = rx2_enabled
-                    ? (current_meter_display_mode == MultiMeterDisplayMode.Edge
-                        ? edge_meter_background_color : meter_background_color)
-                    : Color.Black;
+                picRX2Meter.BackColor = current_meter_display_mode == MultiMeterDisplayMode.Edge
+                    ? edge_meter_background_color : meter_background_color;
                 picRX2Meter.Refresh();
             }
             if (picSubRX2Meter != null) picSubRX2Meter.Invalidate();
 
-            // H1: emptied while RX2 is off - the boxes go blank at once, like the sub
-            // meters, instead of holding the last reading until something rewrites it
-            if (!rx2_enabled)
-            {
-                if (txtVFOBFreq != null) txtVFOBFreq.Text = "";
-                if (txtVFOBMSD != null) txtVFOBMSD.Text = "";
-                if (txtVFOBLSD != null) txtVFOBLSD.Text = "";
-                if (txtRX2Meter != null) txtRX2Meter.Text = "";
-            }
+            // H1: the meters and the VFO B box now keep their face and their last readings while
+            // RX2 is off - they are dimmed by the veil instead of going blank, the same treatment
+            // the rest of the RX2 side gets
         }
 
         // H1: the VFO B lower row is SubVFOB. It shows the sub receiver frequency,
@@ -38679,13 +38701,13 @@ namespace Thetis
                     chkVFOATX.Checked = true;
                     if (chkPower.Checked)
                     {
-                        // H1: with RX2 off VFO B has no role, so releasing SPLIT cannot
-                        // light it up again, whether or not the RX1 sub receiver runs
-                        txtVFOBFreq.ForeColor = vfo_text_dark_color;
-                        txtVFOBMSD.ForeColor = vfo_text_dark_color;
-                        txtVFOBLSD.ForeColor = vfo_text_dark_color;
-                        txtVFOBBand.ForeColor = band_text_dark_color;
-                        txtRX2Meter.ForeColor = SystemColors.GrayText;
+                        // H1: with RX2 off VFO B has no role, but the row stays readable - it is
+                        // the veil that marks it inactive, so the figures keep their light colour
+                        txtVFOBFreq.ForeColor = vfo_text_light_color;
+                        txtVFOBMSD.ForeColor = vfo_text_light_color;
+                        txtVFOBLSD.ForeColor = small_vfo_color;
+                        txtVFOBBand.ForeColor = band_text_light_color;
+                        txtRX2Meter.ForeColor = meter_digital_text_color;
 
                         if (!full_duplex)
                             txtVFOAFreq_LostFocus(this, EventArgs.Empty);
@@ -40488,6 +40510,15 @@ namespace Thetis
 
                         set_rx2_freq = true;
                         txtVFOBFreq_LostFocus(this, EventArgs.Empty);
+
+                        // H1: the VFO B figures keep their light colour while RX2 is off. The dim
+                        // veil marks the row inactive; a dark colour used to hide the digits, which
+                        // made the box look empty instead of switched off.
+                        txtVFOBFreq.ForeColor = vfo_text_light_color;
+                        txtVFOBMSD.ForeColor = vfo_text_light_color;
+                        txtVFOBLSD.ForeColor = small_vfo_color;
+                        txtVFOBBand.ForeColor = band_text_light_color;
+
                         if (!rx2_enabled) return;
 
                         txtVFOBFreq.ForeColor = vfo_text_light_color;
