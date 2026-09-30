@@ -6269,7 +6269,9 @@ namespace Thetis
             // frames, and anything above the dimmer area keeps its full brightness, which is the
             // undimmed sliver. The chrome guard above and the wide-control guard in the walk keep
             // the title bar and the furniture out of it.
-            int tby = Math.Max(30, ttop - 26);
+            // Client coordinates: the meter frames begin at y24, below the menu. A y30
+            // clamp clipped their top six pixels. Cover the complete frame with a two-pixel margin.
+            int tby = Math.Max(0, ttop - 2);
             int tby2 = (panelDisplay != null ? panelDisplay.Top : 140);
             h1RX2VeilTop.Bounds = new Rectangle(tx0, tby, Math.Max(0, ClientSize.Width - tx0), Math.Max(0, tby2 - tby));
 
@@ -6310,6 +6312,7 @@ namespace Thetis
                         b = new Bitmap(c.Width, c.Height);
                         c.DrawToBitmap(b, new Rectangle(0, 0, c.Width, c.Height));
                         h1RX2Freeze[c] = b;
+
                     }
                     catch { if (b != null) { try { b.Dispose(); } catch { } } }
                 }
