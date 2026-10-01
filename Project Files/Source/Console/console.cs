@@ -899,9 +899,14 @@ namespace Thetis
             }
             else
             {
-                console_basis_size.Height -= (panelRX2Filter.Height + 8);
+                // H1: the classic "move down" shrank the window by the RX2 filter panel's
+                // height whenever RX2 was saved off at close, and moved the basis with it -
+                // the startup then collapsed the bottom band (the left blocks went down with
+                // the panafall) and rattled the panel settle. The H1 layout is absolute;
+                // nothing leaves a gap to close. Height and basis are left alone, so starting
+                // with RX2 off now behaves exactly like starting with RX2 on - the path the
+                // operator confirmed comes up clean.
                 this.MinimumSize = new Size(this.MinimumSize.Width, this.MinimumSize.Height - (panelRX2Filter.Height + 8));
-                this.Height -= (panelRX2Filter.Height + 8);
             }
             // end move down
 
@@ -944,6 +949,17 @@ namespace Thetis
 
             //[2.10.3.4]MW0LGE shutdown log remove
             removeShutdownLog();
+
+            // H1: the console is built - release a power-on the state restore had to defer.
+            h1ConsoleReady = true;
+            if (h1PowerOnPending)
+            {
+                h1PowerOnTries = 0;
+                h1PowerOnTimer = new System.Windows.Forms.Timer();
+                h1PowerOnTimer.Interval = 400;
+                h1PowerOnTimer.Tick += h1PowerOnTimer_Tick;
+                h1PowerOnTimer.Start();
+            }
 
             CWFWKeyer = true;
 
@@ -6199,10 +6215,11 @@ namespace Thetis
             {
                 if (h1RX2VeilStrip != null && h1RX2VeilBelow != null)
                 {
-                    // H1: the veil follows the slice USE, not RX2 alone - while a sub borrows the
-                    // second slice its controls are live, and dimming them read as blocks dimmed
-                    // when they should not. Only a slice nothing sits on reads as unused.
-                    bool veil = !active && LegacyItemController.DimUnusedReceivers;
+                    // H1: the veil follows RX2's own state - the operator's rule, stated plainly:
+                    // with RX2 off every RX2-named block wears the dim, whatever borrows the
+                    // second slice; the RX1 side is never dimmed by RX2's state. The earlier
+                    // slice-use gate left the whole right column bright whenever a sub borrowed.
+                    bool veil = !rx2on && LegacyItemController.DimUnusedReceivers;
                     if (h1RX2VeilStrip.Visible != veil)
                     {
                         h1RX2VeilStrip.Visible = veil;
@@ -6263,6 +6280,17 @@ namespace Thetis
         private PowerDimOverlay h1SubRX1Veil;
         private PowerDimOverlay h1SubRX2Veil;
 
+        // H1: a power-on requested while the database restore runs is deferred until the console
+        // is built. Firing it from inside GetState raced the setup form's radio list and
+        // NetworkIO.InitRadio threw a NullReference, which surfaced as the Fatal Error box
+        // (GetState -> chkPower.set_Checked -> chkPower_CheckedChanged -> Audio.Start ->
+        // NetworkIO.InitRadio) and killed the console at startup - seen 1 Oct on the powered
+        // starts after RX2 was saved off.
+        private bool h1ConsoleReady = false;
+        private bool h1PowerOnPending = false;
+        private System.Windows.Forms.Timer h1PowerOnTimer = null;
+        private int h1PowerOnTries = 0;
+
         private void H1InitRX2Veil()
         {
             h1RX2VeilStrip = new PowerDimOverlay(this);
@@ -6312,7 +6340,17 @@ namespace Thetis
             int y0 = panelMultiRX != null ? panelMultiRX.Top - 20 : 740; // the layout's Y0
             int x0 = panelDisplay.Right + 4;
             int top = panelDisplay.Top;
+            // H1: the strip covers the whole right column - the band grids and the panafall
+            // block stand below the filter block and were left at full brightness while RX2
+            // was off. Start left of each of the three and reach past the lowest of them.
             int stripBot = (panelRX2Filter != null ? panelRX2Filter.Bottom : y0) + 4;
+            foreach (Control h1b in new Control[] { h1RX2BandPanel, h1RX2VhfPanel, panelRX2Display })
+            {
+                if (h1b == null) continue;
+                x0 = Math.Min(x0, h1b.Left - 6);
+                stripBot = Math.Max(stripBot, h1b.Bottom + 6);
+            }
+            stripBot = Math.Min(stripBot, ClientSize.Height - 4);
             h1RX2VeilStrip.Bounds = new Rectangle(x0, top, Math.Max(0, ClientSize.Width - x0), Math.Max(0, stripBot - top));
 
             int bx = (panelRX2Mixer != null ? panelRX2Mixer.Left : ClientSize.Width - 407) - 8;
@@ -6686,7 +6724,7 @@ namespace Thetis
             H1Put(udRX1StepAttData, this, lx + pitch, T + oCmb + 17, bw);
             H1Put(pbAutoAttWarningRX1, this, lx + 2 * pitch, T + oCmb + 16);
 
-            H1Cap("rx1mode", "MODE", lx, T + oMode - 18, sw);
+            H1Cap("rx1mode", "RX1 MODE", lx, T + oMode - 18, sw);
             H1Put(panelMode, this, lx, T + oMode, sw, 4 * rh);
             H1Grid(panelMode, new Control[] { radModeLSB, radModeUSB, radModeDSB, radModeCWL, radModeCWU, radModeFMN,
                 radModeAM, radModeSAM, radModeSPEC, radModeDIGL, radModeDIGU, radModeDRM }, 3, pitch, bw, rh);
@@ -6695,7 +6733,7 @@ namespace Thetis
             H1Put(panelDSP, this, lx, T + oDSP, sw, 3 * rh);
             H1Grid(panelDSP, new Control[] { chkNR, chkANF, chkNB, chkDSPNB2, chkMUT, chkBIN, chkTNF, btnTNFAdd }, 3, pitch, bw, rh);
 
-            H1Cap("rx1flt", "FILTER", lx, T + oFlt - 18, sw);
+            H1Cap("rx1flt", "RX1 FILTER", lx, T + oFlt - 18, sw);
             H1Put(panelFilter, this, lx, T + oFlt, sw, 182);
             H1Grid(panelFilter, new Control[] { radFilter1, radFilter2, radFilter3, radFilter4, radFilter5, radFilter6,
                 radFilter7, radFilter8, radFilter9, radFilter10, radFilterVar1, radFilterVar2 }, 3, pitch, bw, rh);
@@ -6723,7 +6761,7 @@ namespace Thetis
             panelRX2Power.Location = new Point(0, 0);
             panelRX2Power.SendToBack();
 
-            H1Cap("rx2mode", "MODE", rx, T + oMode - 18, sw);
+            H1Cap("rx2mode", "RX2 MODE", rx, T + oMode - 18, sw);
             H1Put(panelRX2Mode, this, rx, T + oMode, sw, 4 * rh);
             H1Grid(panelRX2Mode, new Control[] { radRX2ModeLSB, radRX2ModeUSB, radRX2ModeDSB, radRX2ModeCWL, radRX2ModeCWU, radRX2ModeFMN,
                 radRX2ModeAM, radRX2ModeSAM, radRX2ModeSPEC, radRX2ModeDIGL, radRX2ModeDIGU, radRX2ModeDRM }, 3, pitch, bw, rh);
@@ -6732,7 +6770,7 @@ namespace Thetis
             H1Put(panelRX2DSP, this, rx, T + oDSP, sw, 3 * rh);
             H1Grid(panelRX2DSP, new Control[] { chkRX2NR, chkRX2ANF, chkRX2NB, chkRX2NB2, chkRX2Mute, chkRX2BIN, chkRX2TNF, btnRX2TNFAdd }, 3, pitch, bw, rh);
 
-            H1Cap("rx2flt", "FILTER", rx, T + oFlt - 18, sw);
+            H1Cap("rx2flt", "RX2 FILTER", rx, T + oFlt - 18, sw);
             H1Put(panelRX2Filter, this, rx, T + oFlt, sw, 182);
             H1Grid(panelRX2Filter, new Control[] { radRX2Filter1, radRX2Filter2, radRX2Filter3, radRX2Filter4, radRX2Filter5, radRX2Filter6,
                 radRX2Filter7, radRX2Filter8, radRX2Filter9, radRX2Filter10, radRX2FilterVar1, radRX2FilterVar2 }, 3, pitch, bw, rh);
@@ -30719,6 +30757,34 @@ namespace Thetis
         }
         private bool DataFlowing = false;
         private byte[] id_bytes = new byte[1];
+        /// <summary>H1: fires a power-on that the state restore had to defer, once the
+        /// setup form and its radio list exist. One attempt; a failure is logged and the
+        /// power is left off rather than crashing.</summary>
+        private void h1PowerOnTimer_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                h1PowerOnTries++;
+                bool ready = false;
+                try { ready = !IsSetupFormNull && SetupForm != null && SetupForm.SelectedRadioList != null; } catch { ready = false; }
+                if (ready || h1PowerOnTries > 75) // up to about thirty seconds
+                {
+                    if (h1PowerOnTimer != null) { h1PowerOnTimer.Stop(); h1PowerOnTimer.Dispose(); h1PowerOnTimer = null; }
+                    h1PowerOnPending = false;
+                    if (chkPower.Checked)
+                    {
+                        try { chkPower_CheckedChanged(this, EventArgs.Empty); }
+                        catch (Exception ex)
+                        {
+                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                                DateTime.Now.ToString("HH:mm:ss.fff") + " deferred power-on failed: " + ex.Message + "\r\n"); } catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         private void chkPower_CheckedChanged(object sender, System.EventArgs e)
         {
             // ignore if dbman shown, prevents external sources from doing this such as midi/cat
@@ -30729,6 +30795,17 @@ namespace Thetis
                 return;
             }
             //
+
+            // H1: the database restore runs mid-constructor. Powering on from there raced the
+            // setup form's radio list and NetworkIO.InitRadio crashed with a NullReference (the
+            // Fatal Error box). Light the pill now, fire the real power-on once the console is
+            // built - h1PowerOnTimer_Tick.
+            if (!h1ConsoleReady && chkPower.Checked)
+            {
+                chkPower.BackColor = button_selected_color;
+                h1PowerOnPending = true;
+                return;
+            }
 
             if (chkPower.Checked)
             {
@@ -42845,9 +42922,9 @@ namespace Thetis
                     comboRX2Preamp.Visible = _rx2_preamp_present;
                     udRX2StepAttData.Visible = _rx2_preamp_present;
 
-                    // H1: the controls and the veil both follow the slice: the side is disabled
-                    // and dimmed only when nothing sits on it - with a sub borrowing the slice
-                    // the controls are live and stay lit.
+                    // H1: the controls follow the slice (a sub borrowing keeps them live); the
+                    // veil follows RX2 itself - with RX2 off the whole right column dims, whatever
+                    // is borrowing the slice.
                     H1RX2Grey(show, RX2Enabled);
                 }
 
