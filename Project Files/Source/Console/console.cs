@@ -3938,6 +3938,10 @@ namespace Thetis
             List<string> a = DB.GetVars("State");							// Get the saved list of controls
             a.Sort();
 
+            // H1: remember whether the database already holds the sub strips' own settings
+            h1Sub1StateSeen = a.Exists(hs => hs.StartsWith("comboSubRX1Mode/"));
+            h1Sub2StateSeen = a.Exists(hs => hs.StartsWith("comboSubRX2Mode/"));
+
             // MW0LGE_21a
             // this to do list will store any that we want to do after the intial pass
             List<KeyValuePair<string, string>> toDoList = new List<KeyValuePair<string, string>>();
@@ -6747,9 +6751,10 @@ namespace Thetis
             if (ptbRX1AF != null) ptbRX1AF.Visible = false;
             if (lblRX1Vol != null) lblRX1Vol.Text = "RX1";
             if (lblRX1SubVol != null) { lblRX1SubVol.Text = "SubRX1"; lblRX1SubVol.AutoSize = true; }
-            H1Put(chkSquelch, this, aLv + 10, Y0 + 122);
-            H1Put(ptbSquelch, this, aLv, Y0 + 146);
-            H1Put(picSquelch, this, aLv + 9, Y0 + 167);
+            // H1: the squelch text, slider and limit bar share the two pan sliders' span
+            H1Put(chkSquelch, this, aLv + 40, Y0 + 122);
+            H1Put(ptbSquelch, this, aLv + 40, Y0 + 146, 96, 24);
+            H1Put(picSquelch, this, aLv + 40, Y0 + 167, 96);
 
             // ---------- BELOW, right: the mirror ----------
             if (h1RX2BandPanel != null)
@@ -6795,12 +6800,12 @@ namespace Thetis
                 if (h1x + h1w > 228) h1x = 228 - h1w; // never past the panel's right edge
                 lblRX2SubVol.Location = new Point(h1x, 3);
             }
-            H1Put(chkRX2Squelch, this, aRv + 232 - 10 - 80, Y0 + 122);
-            H1Put(ptbRX2Squelch, this, aRv + 232 - 100, Y0 + 146);
-            H1Put(picRX2Squelch, this, aRv + 232 - 9 - 83, Y0 + 167);
-            // H1: VAC1 sits beside the RX1 squelch on its own row; VAC2 in the mirrored slot
-            H1Put(chkVAC1, this, aLv + 96, Y0 + 122, 50);
-            H1Put(chkVAC2, this, aRv + 232 - 90 - 58, Y0 + 122, 50);
+            H1Put(chkRX2Squelch, this, aRv + 90, Y0 + 122); // H1: aligned with the two pan sliders
+            H1Put(ptbRX2Squelch, this, aRv + 90, Y0 + 146, 96, 24);
+            H1Put(picRX2Squelch, this, aRv + 90, Y0 + 167, 96);
+            // H1: the VAC pills join the SubRX/Swap column of their block, on the squelch row
+            H1Put(chkVAC1, this, aLv + 172, Y0 + 122, 50);
+            H1Put(chkVAC2, this, aRv + 2, Y0 + 122, 50);
             // H1: the VAC pills were drawn with the designer's dark caption colour, which is
             // unreadable on the dark skin. Take the squelch pill's light text and font.
             if (chkVAC1 != null) { chkVAC1.ForeColor = chkSquelch.ForeColor; chkVAC1.Font = chkSquelch.Font; }
@@ -6937,7 +6942,7 @@ namespace Thetis
                 H1Put(btnSubRX1FRst, this, stx1 + stw - (btnSubRX1FRst != null ? btnSubRX1FRst.Width : 43), sVal - 2);
                 H1Put(lblSubRX1Gain, this, stx1, sGain);
                 H1Put(ptbSubRX1Gain, this, stx1, sGsl, sldw, 24);
-                H1Put(lblSubRX1GainVal, this, stx1 + stw - 52, sGsl + 5, 52, 14);
+                H1Put(lblSubRX1GainVal, this, stx1 + sldw + 6, sGsl + 5, 52, 14); // H1: the dB readout hugs the gain slider
                 H1Put(chkSubRX1NR, this, stx1, sPil, 45, 23);
                 H1Put(chkSubRX1ANF, this, stx1 + 47, sPil, 45, 23);
                 H1Put(chkSubRX1NB2, this, stx1 + 94, sPil, 45, 23);
@@ -6956,7 +6961,7 @@ namespace Thetis
                 H1Put(btnSubRX2FRst, this, stx2 + stw - (btnSubRX2FRst != null ? btnSubRX2FRst.Width : 43), sVal - 2);
                 H1Put(lblSubRX2Gain, this, stx2, sGain);
                 H1Put(ptbSubRX2Gain, this, stx2, sGsl, sldw, 24);
-                H1Put(lblSubRX2GainVal, this, stx2 + stw - 52, sGsl + 5, 52, 14);
+                H1Put(lblSubRX2GainVal, this, stx2 + sldw + 6, sGsl + 5, 52, 14); // H1: the dB readout hugs the gain slider
                 H1Put(chkSubRX2NR, this, stx2, sPil, 45, 23);
                 H1Put(chkSubRX2ANF, this, stx2 + 47, sPil, 45, 23);
                 H1Put(chkSubRX2NB2, this, stx2 + 94, sPil, 45, 23);
@@ -32131,6 +32136,7 @@ namespace Thetis
             else if (MOX && chkMON.Checked && !m_bIgnoreAFChangeForMonitor) TXAF = ptbAF.Value; //MW0LGE_21k9 ingore the monitor AF slider change when in mox //MW0LGE_22b added chMON, so only adjust txaf if monitoring
 
             setLinkedAF(0, ptbAF.Value); //[2.10.1.0] MW0LGE
+            SyncVacRxGainToAf(ptbAF.Value); // H1: with the processed TX route on, AF is also the VAC1 RX gain
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -32205,6 +32211,9 @@ namespace Thetis
         // [linked MIC/VAC1 TX gain] one guard for both directions; re-entrancy is
         // possible because the Setup numeric fires ValueChanged when written
         private bool micVacSync = false;
+        private bool afVacSync = false; // H1: guard for the AF to VAC1 RX gain link
+        private bool h1Sub1StateSeen = false; // H1: does the database hold saved sub strip settings
+        private bool h1Sub2StateSeen = false;
 
         public bool LinkMicToVacGain
         {
@@ -32242,6 +32251,19 @@ namespace Thetis
                 SetupForm.VACTXGain = micValue;             // ud setter fires ValueChanged -> Audio.VACPreamp
             }
             finally { micVacSync = false; }
+        }
+
+        // AF slider -> VAC1 RX gain, the same link the MIC slider has to the VAC1 TX gain,
+        // and likewise only while the Processed TX Output route is enabled
+        private void SyncVacRxGainToAf(int afValue)
+        {
+            if (afVacSync || !Audio.ProcessedTXOutputEnabled || IsSetupFormNull) return;
+            afVacSync = true;
+            try
+            {
+                SetupForm.VACRXGain = afValue;              // ud setter fires ValueChanged -> Audio.VACRXScale
+            }
+            finally { afVacSync = false; }
         }
 
         private void ptbMic_Scroll(object sender, System.EventArgs e)
@@ -47001,9 +47023,10 @@ namespace Thetis
             ptbRX2SubPan_Scroll(this, EventArgs.Empty);
             // H1: arm the sub strips - the state restore fills the controls without firing their
             // events, so the restored settings are applied to the sub channels here
-            // H1: the strips start from their parent receivers - mode, filter, AGC and noise
-            H1SyncSubFromParent(1);
-            H1SyncSubFromParent(2);
+            // H1: the strips start from their parent receivers on a first run; once the database
+            // holds their own settings those stand, and the strips come back as they were left
+            if (!h1Sub1StateSeen) H1SyncSubFromParent(1);
+            if (!h1Sub2StateSeen) H1SyncSubFromParent(2);
             if (chkEnableMultiRX != null && chkEnableMultiRX.Checked) ApplySubOwnSettings(1);
             if (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked && rx2_enabled) ApplySubOwnSettings(2);
 
