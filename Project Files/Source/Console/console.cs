@@ -6781,11 +6781,20 @@ namespace Thetis
             if (ptbRX2SubPan != null) ptbRX2SubPan.Location = new Point(90, 46);
             lblRX2Pan.Location = new Point(128, 3);
             if (ptbRX2SubGain != null) ptbRX2SubGain.Location = new Point(190, 19); // H1: SubRX2's volume on the right
-            if (lblRX2SubVol != null) lblRX2SubVol.Location = new Point(192, 3);
             if (lblRX2AF != null) lblRX2AF.Visible = false;
             if (ptbRX2AF != null) ptbRX2AF.Visible = false;
             if (lblRX2Vol != null) lblRX2Vol.Text = "RX2";
-            if (lblRX2SubVol != null) { lblRX2SubVol.Text = "SubRX2"; lblRX2SubVol.AutoSize = true; }
+            if (lblRX2SubVol != null)
+            {
+                // H1: the caption is measured and centred over the SubRX2 volume, clamped inside
+                // the panel - a fixed spot near the right edge had the panel clip the word's end
+                lblRX2SubVol.Text = "SubRX2";
+                lblRX2SubVol.AutoSize = true;
+                int h1w = lblRX2SubVol.PreferredWidth;
+                int h1x = (ptbRX2SubGain != null ? ptbRX2SubGain.Location.X + ptbRX2SubGain.Width / 2 : 202) - h1w / 2;
+                if (h1x + h1w > 228) h1x = 228 - h1w; // never past the panel's right edge
+                lblRX2SubVol.Location = new Point(h1x, 3);
+            }
             H1Put(chkRX2Squelch, this, aRv + 232 - 10 - 80, Y0 + 122);
             H1Put(ptbRX2Squelch, this, aRv + 232 - 100, Y0 + 146);
             H1Put(picRX2Squelch, this, aRv + 232 - 9 - 83, Y0 + 167);
