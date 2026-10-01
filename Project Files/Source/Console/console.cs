@@ -41977,6 +41977,7 @@ namespace Thetis
             //
 
             gr_display_size_basis = this.panelDisplay.Size;
+            gr_display_size_basis.Width -= 8; // H1: paired with the panafall-to-x158 shift, the display's right edge stays where it was
             gr_display2_basis = this.panelDisplay2.Location;
             gr_dsp_basis = this.panelDSP.Location;
             gr_multirx_basis = this.panelMultiRX.Location;
@@ -42045,7 +42046,7 @@ namespace Thetis
 
             tb_rx1af_basis = this.ptbRX1AF.Location;
             tb_rx2af_basis = this.ptbRX2AF.Location;
-        gr_display_basis = new Point(this.panelDisplay.Location.X + 26, this.panelDisplay.Location.Y); // H1: panafall to x150
+        gr_display_basis = new Point(this.panelDisplay.Location.X + 34, this.panelDisplay.Location.Y); // H1: panafall to x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
 
             combo_display_mode_basis = this.comboDisplayMode.Location;
             combo_rx2_display_mode_basis = this.comboRX2DisplayMode.Location;
