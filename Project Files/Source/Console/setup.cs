@@ -393,6 +393,8 @@ namespace Thetis
             Audio.ProcessedTXOutputEnabled = chkProcessedTXOutputEnable.Checked;
             // [linked MIC/VAC1 TX gain] re-sync the panel slider for the new route state
             console.SyncMicToVacGain();
+            // H1: the IC-7100 power follows the active power slider on this route; sync at once
+            console.H1RigDriveForceSync();
         }
 
         private CheckBoxTS h1ChkDimUnused;
@@ -422,6 +424,36 @@ namespace Thetis
             LegacyItemController.DimUnusedReceivers = h1ChkDimUnused != null && h1ChkDimUnused.Checked;
         }
 
+        private CheckBoxTS h1ChkRigPowerMeters;
+
+        // H1: the CI-V option in the CAT1 Protocol & CI-V Settings group. When checked, the
+        // Drive / Tune sliders also set the IC-7100 RF power and the SWR / FWD / REF transmit
+        // readings come from the rig's own meters. Built in code; the form's automatic option
+        // save and restore picks it up like any other CheckBoxTS on the tabs.
+        private void H1BuildCivRigMetersOption()
+        {
+            if (h1ChkRigPowerMeters != null || grpCIVControl == null) return;
+            h1ChkRigPowerMeters = new CheckBoxTS();
+            h1ChkRigPowerMeters.AutoSize = false;
+            h1ChkRigPowerMeters.UseVisualStyleBackColor = true;
+            h1ChkRigPowerMeters.Image = null;
+            h1ChkRigPowerMeters.Name = "chkH1RigPowerMeters";
+            h1ChkRigPowerMeters.Text = "IC-7100 power & meters via CI-V";
+            h1ChkRigPowerMeters.Location = new Point(240, 68);
+            h1ChkRigPowerMeters.Size = new Size(268, 22);
+            toolTip1.SetToolTip(h1ChkRigPowerMeters,
+                "When checked, the Drive and Tune sliders also set the IC-7100 RF power over CI-V," + System.Environment.NewLine +
+                "and the SWR, FWD and REF transmit readings come from the IC-7100's own meters" + System.Environment.NewLine +
+                "instead of the Red-Pitaya values. When unchecked, both behave as before.");
+            h1ChkRigPowerMeters.CheckedChanged += h1ChkRigPowerMeters_CheckedChanged;
+            grpCIVControl.Controls.Add(h1ChkRigPowerMeters);
+        }
+
+        private void h1ChkRigPowerMeters_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1RigPowerMetersEnabled = h1ChkRigPowerMeters != null && h1ChkRigPowerMeters.Checked;
+        }
+
         internal void AfterConstructor()
         {
             LogTool.AddLogEntry("      Setup setup controls...", "SETUP_CONT");
@@ -441,6 +473,7 @@ namespace Thetis
             addDelegates();
 
             H1BuildDimUnusedOption(); // H1: the dim-unused receiver option, built in code
+            H1BuildCivRigMetersOption(); // H1: the CI-V rig power & meters option, built in code
 
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;
@@ -10673,6 +10706,7 @@ namespace Thetis
             chkCIVTransceive.Checked = console.CIVTransceive;
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
             chkCIVSyncPTT.Checked = console.CIVSyncPTT;
+            if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Checked = console.H1RigPowerMetersEnabled;
             updateCIVControlsEnabled();
         }
 
@@ -11069,6 +11103,7 @@ namespace Thetis
             if (chkCIVTransceive != null) chkCIVTransceive.Enabled = isCIV;
             if (chkCIVSyncSplit != null) chkCIVSyncSplit.Enabled = isCIV;
             if (chkCIVSyncPTT != null) chkCIVSyncPTT.Enabled = isCIV;
+            if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Enabled = isCIV;
             if (lblCIVInfo != null) lblCIVInfo.Enabled = isCIV;
         }
 

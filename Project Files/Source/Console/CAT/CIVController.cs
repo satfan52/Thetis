@@ -169,6 +169,200 @@ namespace Thetis
 
         #endregion
 
+        #region H1: rig TX power and meter service (hybrid TX Output route)
+
+        // H1: while "Enable Processed TX Output" is on, the console pushes the active power
+        // slider value to the IC-7100 (14 0A) and, while transmitting, reads the rig's own
+        // forward power and SWR meters (15 11 / 15 12) so the FWD / REF / SWR transmit
+        // readings come from the rig instead of the Red-Pitaya power sensing.
+
+        private int _h1PendingRigPower = -1;
+        private int _h1LastSentRigPower = -1;
+        private int _h1MeterPollTicks = 0;
+        private byte _h1MeterPollToggle = 0;
+        private volatile int _h1RigPoRaw = -1;
+        private volatile int _h1RigSwrRaw = -1;
+        private long _h1RigPoStamp = 0;
+        private long _h1RigSwrStamp = 0;
+        private long _h1RigMeterTraceStamp = 0;
+
+        /// <summary>
+        /// H1: queue the transceiver RF power, percent 0 to 100. Coalesced - the latest
+        /// value is sent on the next flood tick.
+        /// </summary>
+        public void SetRigRFPower(int percent)
+        {
+            if (!IsOpen) return;
+            int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+            _h1PendingRigPower = clamped;
+            try { _floodTimer?.Change(0, FLOOD_INTERVAL_MS); } catch { }
+        }
+
+        public bool RigPoFresh(int maxAgeMs)
+        {
+            return H1AgeMs(_h1RigPoStamp) <= maxAgeMs;
+        }
+
+        public bool RigSwrFresh(int maxAgeMs)
+        {
+            return H1AgeMs(_h1RigSwrStamp) <= maxAgeMs;
+        }
+
+        /// <summary>Forward power in watts, converted on the rig's own meter scale.</summary>
+        public float RigForwardWatts
+        {
+            get { return H1PoRawToWatts(_h1RigPoRaw); }
+        }
+
+        /// <summary>SWR ratio, converted on the rig's own meter scale.</summary>
+        public float RigSwrRatio
+        {
+            get { return H1SwrRawToRatio(_h1RigSwrRaw); }
+        }
+
+        /// <summary>Reflected power derived from the rig's forward power and SWR.</summary>
+        public float RigReflectedWatts
+        {
+            get
+            {
+                float fwd = RigForwardWatts;
+                float swr = RigSwrRatio;
+                if (swr < 1.0f) swr = 1.0f;
+                float rho = (swr - 1.0f) / (swr + 1.0f);
+                return fwd * rho * rho;
+            }
+        }
+
+        private static double H1AgeMs(long stamp)
+        {
+            if (stamp == 0) return double.MaxValue;
+            return (Stopwatch.GetTimestamp() - stamp) / (double)Stopwatch.Frequency * 1000.0;
+        }
+
+        private void H1ServiceRigRoute()
+        {
+            H1SendRigPowerIfPending();
+            H1PollRigMeters();
+        }
+
+        private void H1SendRigPowerIfPending()
+        {
+            if (_console == null || !_console.H1RigPowerMetersEnabled)
+            {
+                _h1PendingRigPower = -1;
+                return;
+            }
+            int pending = _h1PendingRigPower;
+            if (pending < 0 || pending == _h1LastSentRigPower) return;
+            SendFrame(CIVProtocol.SetRFPowerFrame(_radioAddr, _hostAddr, pending));
+            _h1LastSentRigPower = pending;
+            RigMeterTrace("PWR {0}% sent (raw {1})", pending, (int)Math.Round(pending * 255.0 / 100.0));
+        }
+
+        private void H1PollRigMeters()
+        {
+            bool wanted = _console != null && _console.MOX && _console.H1RigPowerMetersEnabled;
+            if (!wanted)
+            {
+                _h1MeterPollTicks = 0;
+                return;
+            }
+
+            // one meter read every 100 ms, alternating PO and SWR, so each meter lands at 5 Hz
+            if (++_h1MeterPollTicks < 2) return;
+            _h1MeterPollTicks = 0;
+
+            byte meter = ((_h1MeterPollToggle++ & 1) == 0) ? CIVProtocol.METER_PO : CIVProtocol.METER_SWR;
+            SendFrame(CIVProtocol.ReadMeterFrame(_radioAddr, _hostAddr, meter));
+        }
+
+        private void H1HandleMeterReply(byte[] frame)
+        {
+            if (frame.Length < 8) return;
+            byte sub = frame[5];
+            int value = CIVProtocol.DecodeMeterBcd(frame, 6);
+
+            if (sub == CIVProtocol.METER_PO)
+            {
+                _h1RigPoRaw = value;
+                _h1RigPoStamp = Stopwatch.GetTimestamp();
+            }
+            else if (sub == CIVProtocol.METER_SWR)
+            {
+                _h1RigSwrRaw = value;
+                _h1RigSwrStamp = Stopwatch.GetTimestamp();
+            }
+            else return;
+
+            long now = Stopwatch.GetTimestamp();
+            if (_h1RigMeterTraceStamp == 0 ||
+                (now - _h1RigMeterTraceStamp) / (double)Stopwatch.Frequency >= 1.0)
+            {
+                _h1RigMeterTraceStamp = now;
+                RigMeterTrace("METER PO={0} ({1:F0} W) SWR={2} ({3:F2}:1)", _h1RigPoRaw,
+                    H1PoRawToWatts(_h1RigPoRaw), _h1RigSwrRaw, H1SwrRawToRatio(_h1RigSwrRaw));
+            }
+        }
+
+        // rig meter conversions, manual tables: PO 0213=100 W, 0255=120 W; SWR 0048=1.5, 0080=2.0, 0120=3.0
+        private static readonly int[] H1PoRawPts = { 0, 21, 43, 65, 83, 95, 105, 114, 124, 143, 183, 213, 255 };
+        private static readonly float[] H1PoWattsPts = { 0f, 5f, 10f, 15f, 20f, 25f, 30f, 35f, 40f, 50f, 75f, 100f, 120f };
+        private static readonly int[] H1SwrRawPts = { 0, 48, 80, 120, 240 };
+        private static readonly float[] H1SwrPts = { 1.0f, 1.5f, 2.0f, 3.0f, 6.0f };
+
+        private static float H1Interp(int raw, int[] xs, float[] ys)
+        {
+            if (raw <= xs[0]) return ys[0];
+            int last = xs.Length - 1;
+            if (raw >= xs[last]) return ys[last];
+            for (int i = 1; i <= last; i++)
+            {
+                if (raw <= xs[i])
+                {
+                    float t = (float)(raw - xs[i - 1]) / (xs[i] - xs[i - 1]);
+                    return ys[i - 1] + t * (ys[i] - ys[i - 1]);
+                }
+            }
+            return ys[last];
+        }
+
+        private static float H1PoRawToWatts(int raw)
+        {
+            if (raw < 0) return 0f;
+            return H1Interp(raw, H1PoRawPts, H1PoWattsPts);
+        }
+
+        private static float H1SwrRawToRatio(int raw)
+        {
+            if (raw < 0) return 1.0f;
+            return H1Interp(raw, H1SwrRawPts, H1SwrPts);
+        }
+
+        /// <summary>
+        /// H1: always-on trace beside the exe, like civ_ptt.log. Rotates at 200 kB.
+        /// </summary>
+        private static void RigMeterTrace(string format, params object[] args)
+        {
+            try
+            {
+                string text = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}" + Environment.NewLine, DateTime.Now,
+                    (args != null && args.Length > 0) ? string.Format(format, args) : format);
+                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "civ_meters.log");
+                if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 200 * 1024)
+                {
+                    System.IO.File.Copy(path, path + ".old", true);
+                    System.IO.File.Delete(path);
+                }
+                System.IO.File.AppendAllText(path, text);
+            }
+            catch
+            {
+                // never crash the caller
+            }
+        }
+
+        #endregion
+
         #region Properties
 
         public string PortName
@@ -960,6 +1154,8 @@ namespace Thetis
 
             ReconcilePtt();
             MaybePollForPttVerification();
+
+            H1ServiceRigRoute(); // H1: rig power setting and meter polls on the TX Output route
 
             double targetVfoAFreq = 0.0;
             double targetVfoBFreq = 0.0;
@@ -1869,6 +2065,14 @@ namespace Thetis
             {
                 Log("[HANDLE:NAK] NAK received from IC-7100");
                 Debug.WriteLine("[CIVController] NAK received from IC-7100 (unsupported command or PLL out-of-lock)");
+                return;
+            }
+
+            // H1: meter replies for the TX Output route. They are solicited reads, so they are
+            // processed here, before the filters below that guard unsolicited broadcasts.
+            if (cmd == CIVProtocol.CMD_READ_METER)
+            {
+                H1HandleMeterReply(frame);
                 return;
             }
 

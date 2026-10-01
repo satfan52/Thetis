@@ -204,6 +204,61 @@ namespace Thetis
             return frame;
         }
 
+        #region H1: rig power and meter frames (hybrid TX Output route)
+
+        /// <summary>
+        /// H1: Read-meter command (0x15) with a meter subcommand. The IC-7100 answers
+        /// with the meter value as one or two big-endian BCD bytes, 0000 to 0255.
+        /// </summary>
+        public const byte CMD_READ_METER = 0x15;
+        public const byte METER_PO = 0x11;   // forward power meter: 0000=0%, 0143=50%, 0213=100%
+        public const byte METER_SWR = 0x12;  // SWR meter: 0000=1.0, 0048=1.5, 0080=2.0, 0120=3.0
+
+        /// <summary>
+        /// H1: Level command (0x14), RF power subcommand (0x0A). Data 0000 to 0255 for
+        /// 0 to 100 percent, transmitted as two big-endian BCD bytes.
+        /// </summary>
+        public const byte CMD_SET_LEVEL = 0x14;
+        public const byte LEVEL_RF_POWER = 0x0A;
+
+        /// <summary>
+        /// H1: frame to set the transceiver RF power. percent 0 to 100 maps to 0000 to 0255.
+        /// </summary>
+        public static byte[] SetRFPowerFrame(byte toAddr, byte fromAddr, int percent)
+        {
+            int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+            int raw = (int)Math.Round(clamped * 255.0 / 100.0);
+            byte hi = (byte)((((raw / 1000) % 10) << 4) | ((raw / 100) % 10));
+            byte lo = (byte)((((raw / 10) % 10) << 4) | (raw % 10));
+            return CreateSubcmdFrame(toAddr, fromAddr, CMD_SET_LEVEL, LEVEL_RF_POWER, new byte[] { hi, lo });
+        }
+
+        /// <summary>
+        /// H1: frame to read one meter level (PO or SWR).
+        /// </summary>
+        public static byte[] ReadMeterFrame(byte toAddr, byte fromAddr, byte meterSubcmd)
+        {
+            return CreateSubcmdFrame(toAddr, fromAddr, CMD_READ_METER, meterSubcmd, null);
+        }
+
+        /// <summary>
+        /// H1: decode the meter value from a reply frame, one or two big-endian BCD bytes.
+        /// </summary>
+        public static int DecodeMeterBcd(byte[] frame, int offset)
+        {
+            if (frame == null || frame.Length <= offset) return 0;
+            int value = 0;
+            int count = Math.Min(2, frame.Length - 1 - offset);
+            for (int i = 0; i < count; i++)
+            {
+                byte b = frame[offset + i];
+                value = value * 100 + ((b >> 4) * 10) + (b & 0x0F);
+            }
+            return value;
+        }
+
+        #endregion
+
         /// <summary>
         /// Frame to set operating frequency (0x05).
         /// </summary>

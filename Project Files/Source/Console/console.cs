@@ -8522,6 +8522,15 @@ namespace Thetis
                 }
                 m_powerDimOverlay.BringToFront();
             }
+
+            // H1: the IC-7100 output power follows the active power slider while the TX Output
+            // route is enabled; this catches band recalls, power-up and any other value change.
+            try
+            {
+                if (h1ConsoleReady && !initializing && PowerOn)
+                    H1RigDriveSync(H1ActiveDriveValue());
+            }
+            catch { }
         }
 
         // H1: one settle pass per power change - the two sub rows take their power
@@ -21014,6 +21023,97 @@ namespace Thetis
         // H1: per meter transmit display values. The stock TX settings parameter is the default;
         // a value the user picks for one meter is remembered on top of it, across restarts.
         private MeterTXMode _h1MeterTxDefault = MeterTXMode.FORWARD_POWER;
+
+        // ---------------------------------------------------------------------------------
+        // H1: hybrid TX Output route. With "Enable Processed TX Output" ticked the IC-7100
+        // is the transmitter: the active power slider also sets the rig's RF power, and the
+        // FWD / REF / SWR transmit readings come from the rig's own CI-V meters instead of
+        // the Red-Pitaya power sensing. With the option off, or when the rig stops
+        // answering, every reading falls back to the old source.
+        // ---------------------------------------------------------------------------------
+        private bool H1RigRouteActive
+        {
+            get { return _h1RigPowerMetersEnabled && CIVControllerInstance != null && CIVControllerInstance.IsOpen; }
+        }
+        // H1: the CI-V option in Setup > Serial > CAT1 Protocol & CI-V Settings. When on, the
+        // drive/tune sliders also set the IC-7100 RF power and the SWR / FWD / REF transmit
+        // readings come from the rig's own meters instead of the Red-Pitaya power sensing.
+        private bool _h1RigPowerMetersEnabled = false;
+        public bool H1RigPowerMetersEnabled
+        {
+            get { return _h1RigPowerMetersEnabled; }
+            set
+            {
+                bool wasOn = _h1RigPowerMetersEnabled;
+                _h1RigPowerMetersEnabled = value;
+                if (!wasOn && value) H1RigDriveForceSync(); // H1: sync at once on enable
+            }
+        }
+        private bool H1RigFwdLive
+        {
+            get { return _mox && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000); }
+        }
+        private bool H1RigSwrLive
+        {
+            get { return _mox && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000); }
+        }
+        private bool H1RigRefLive
+        {
+            get { return H1RigFwdLive && H1RigSwrLive; }
+        }
+        private float H1TxFwdW
+        {
+            get { return H1RigFwdLive ? CIVControllerInstance.RigForwardWatts : ((alexpresent || apollopresent) ? calfwdpower : drivepwr); }
+        }
+        private float H1TxSwr
+        {
+            get { return H1RigSwrLive ? CIVControllerInstance.RigSwrRatio : alex_swr; }
+        }
+        private float H1TxRefW
+        {
+            get { return H1RigRefLive ? CIVControllerInstance.RigReflectedWatts : alex_rev; }
+        }
+        private int _h1RigPowerLastSent = -1;
+        private int H1ActiveDriveValue()
+        {
+            if (chk2TONE.Checked)
+            {
+                switch (_2ToneDrivePowerSource)
+                {
+                    case DrivePowerSource.TUNE_SLIDER: return ptbTune.Value;
+                    case DrivePowerSource.FIXED: return twotone_tune_power;
+                    default: return ptbPWR.Value;
+                }
+            }
+            if (chkTUN.Checked)
+            {
+                switch (_tuneDrivePowerSource)
+                {
+                    case DrivePowerSource.TUNE_SLIDER: return ptbTune.Value;
+                    case DrivePowerSource.FIXED: return tune_power;
+                    default: return ptbPWR.Value;
+                }
+            }
+            return ptbPWR.Value;
+        }
+        // H1: also set the IC-7100 output power. Rides the drive handlers and is deduped, so a
+        // slider drag or a band recall costs one frame each time the value really changes.
+        internal void H1RigDriveSync(int value)
+        {
+            if (!H1RigRouteActive) return;
+            if (value < 0) value = 0;
+            if (value > 100) value = 100;
+            if (value == _h1RigPowerLastSent) return;
+            _h1RigPowerLastSent = value;
+            CIVControllerInstance.SetRigRFPower(value);
+        }
+        // H1: send the current value at once - when the option is ticked and at power up.
+        internal void H1RigDriveForceSync()
+        {
+            _h1RigPowerLastSent = -1;
+            H1RigDriveSync(H1ActiveDriveValue());
+        }
+
         private readonly bool[] _h1MeterTxOverride = new bool[4] { false, false, false, false };
         private bool _h1MeterTxModesLoaded = false;
 
@@ -27112,10 +27212,10 @@ namespace Thetis
                         case MeterTXMode.ALC: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
                         case MeterTXMode.ALC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
                         case MeterTXMode.ALC_GROUP: txnum = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC))) + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
-                        case MeterTXMode.FORWARD_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "FWD " + txnum.ToString(format) + " W"; break;
-                        case MeterTXMode.SWR_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "SWR " + txnum.ToString(format) + " W"; break;
-                        case MeterTXMode.REVERSE_POWER: txnum = (float)alex_rev; txout = "REF " + txnum.ToString(format) + " W"; break;
-                        case MeterTXMode.SWR: txnum = alex_swr; txout = "SWR " + txnum.ToString("f1") + " : 1"; break;
+                        case MeterTXMode.FORWARD_POWER: txnum = H1TxFwdW; txout = "FWD " + txnum.ToString(format) + " W"; break; // H1: rig meters on the TX Output route
+                        case MeterTXMode.SWR_POWER: txnum = H1TxFwdW; txout = "SWR " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.REVERSE_POWER: txnum = H1TxRefW; txout = "REF " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.SWR: txnum = H1TxSwr; txout = "SWR " + txnum.ToString("f1") + " : 1"; break;
                         case MeterTXMode.OFF: txout = ""; break;
                     }
                     output = txout;
@@ -27803,6 +27903,12 @@ namespace Thetis
                                 break;
                             case MeterTXMode.FORWARD_POWER:
                             case MeterTXMode.SWR_POWER:
+                                if (H1RigFwdLive)
+                                {
+                                    new_meter_data = H1TxFwdW; // H1: the rig's own forward power
+                                    if (mode == MeterTXMode.SWR_POWER) new_swrmeter_data = H1TxSwr;
+                                    break;
+                                }
                                 if (alexpresent || apollopresent)
                                 {
                                     if (HardwareSpecific.Model == HPSDRModel.ANAN8000D)
@@ -27824,16 +27930,20 @@ namespace Thetis
                                 else
                                     new_meter_data = drivepwr;
 
-                                if (mode == MeterTXMode.SWR_POWER) new_swrmeter_data = alex_swr;
+                                if (mode == MeterTXMode.SWR_POWER) new_swrmeter_data = H1TxSwr; // H1: rig SWR when live
                                 break;
                             case MeterTXMode.REVERSE_POWER:
-                                if (alexpresent || apollopresent)
+                                    if (H1RigRefLive)
                                 {
-                                    new_meter_data = (float)alex_rev;
+                                    new_meter_data = H1TxRefW; // H1: the rig's reflected power
+                                    }
+                                    else if (alexpresent || apollopresent)
+                                    {
+                                        new_meter_data = (float)alex_rev;
                                 }
                                 break;
                             case MeterTXMode.SWR:
-                                new_meter_data = alex_swr;
+                                new_meter_data = H1TxSwr; // H1: the rig's SWR
                                 break;
                             case MeterTXMode.OFF:
                                 new_meter_data = -200.0f;
@@ -27879,10 +27989,10 @@ namespace Thetis
                 case MeterTXMode.ALC: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)); break;
                 case MeterTXMode.ALC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); break;
                 case MeterTXMode.ALC_GROUP: txnum = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC))) + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); break;
-                case MeterTXMode.FORWARD_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; break;
-                case MeterTXMode.SWR_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; break;
-                case MeterTXMode.REVERSE_POWER: txnum = (float)alex_rev; break;
-                case MeterTXMode.SWR: txnum = alex_swr; break;
+                case MeterTXMode.FORWARD_POWER: txnum = H1TxFwdW; break;
+                case MeterTXMode.SWR_POWER: txnum = H1TxFwdW; break;
+                case MeterTXMode.REVERSE_POWER: txnum = H1TxRefW; break;
+                case MeterTXMode.SWR: txnum = H1TxSwr; break;
                 case MeterTXMode.OFF: txnum = -200.0f; break;
             }
             return txnum;
@@ -27905,10 +28015,10 @@ namespace Thetis
                         case MeterTXMode.ALC: txnum = peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
                         case MeterTXMode.ALC_G: txnum = (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
                         case MeterTXMode.ALC_GROUP: txnum = (peak_tx_meter ? (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_PK)) : (float)Math.Max(-30.0f, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC))) + (float)Math.Max(0, -WDSP.CalculateTXMeter(1, WDSP.MeterType.ALC_G)); txout = "ALC " + txnum.ToString(format) + " dB"; break;
-                        case MeterTXMode.FORWARD_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "FWD " + txnum.ToString(format) + " W"; break;
-                        case MeterTXMode.SWR_POWER: txnum = (alexpresent || apollopresent) ? calfwdpower : drivepwr; txout = "SWR " + txnum.ToString(format) + " W"; break;
-                        case MeterTXMode.REVERSE_POWER: txnum = (float)alex_rev; txout = "REF " + txnum.ToString(format) + " W"; break;
-                        case MeterTXMode.SWR: txnum = alex_swr; txout = "SWR " + txnum.ToString("f1") + " : 1"; break;
+                        case MeterTXMode.FORWARD_POWER: txnum = H1TxFwdW; txout = "FWD " + txnum.ToString(format) + " W"; break; // H1: rig meters on the TX Output route
+                        case MeterTXMode.SWR_POWER: txnum = H1TxFwdW; txout = "SWR " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.REVERSE_POWER: txnum = H1TxRefW; txout = "REF " + txnum.ToString(format) + " W"; break;
+                        case MeterTXMode.SWR: txnum = H1TxSwr; txout = "SWR " + txnum.ToString("f1") + " : 1"; break;
                         case MeterTXMode.OFF: txout = ""; break;
                     }
             return txout;
@@ -28307,6 +28417,11 @@ namespace Thetis
                                 break;
                             case MeterTXMode.FORWARD_POWER:
                             case MeterTXMode.SWR_POWER:
+                                if (H1RigFwdLive)
+                                {
+                                    rx2_meter_new_data = H1TxFwdW; // H1: the rig's own forward power
+                                    break;
+                                }
                                 if (alexpresent || apollopresent)
                                 {
                                     if (HardwareSpecific.Model == HPSDRModel.ANAN8000D)
@@ -28323,13 +28438,17 @@ namespace Thetis
                                     rx2_meter_new_data = drivepwr;
                                 break;
                             case MeterTXMode.REVERSE_POWER:
-                                if (alexpresent || apollopresent)
+                                    if (H1RigRefLive)
                                 {
-                                    rx2_meter_new_data = (float)alex_rev;
+                                    rx2_meter_new_data = H1TxRefW; // H1: the rig's reflected power
+                                    }
+                                    else if (alexpresent || apollopresent)
+                                    {
+                                        rx2_meter_new_data = (float)alex_rev;
                                 }
                                 break;
                             case MeterTXMode.SWR:
-                                rx2_meter_new_data = alex_swr;
+                                rx2_meter_new_data = H1TxSwr; // H1: the rig's SWR
                                 break;
                             case MeterTXMode.OFF:
                                 rx2_meter_new_data = -200.0f;
@@ -32341,6 +32460,7 @@ namespace Thetis
             power_by_band[(int)_tx_band] = ptbPWR.Value;
 
             UpdateDriveLabel(lc != null && bUseConstrain, e);
+            H1RigDriveSync(new_pwr); // H1: also set the IC-7100 output power on the TX Output route
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -52822,6 +52942,7 @@ private void incrementMutliMeterDisplayModeRX2()
             tunePower_by_band[(int)_tx_band] = ptbTune.Value;
 
             UpdateTuneLabel(lc != null && bUseConstrain, e);
+            H1RigDriveSync(new_pwr); // H1: also set the IC-7100 output power on the TX Output route
 
             if (sender.GetType() == typeof(PrettyTrackBar))
                 ptbTune.Focus();
