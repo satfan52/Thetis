@@ -1567,6 +1567,8 @@ namespace Thetis
             // H1: the RX2 band buttons take the RX1 band tiles (radRX2Band40 -> radBand40)
             string skinName = ctrl.Name;
             if (skinName.StartsWith("radRX2Band")) skinName = "radBand" + skinName.Substring(10);
+            // H1: the skins draw no RX2 tiles for filters 8 to 10; the RX2 filter row takes the RX1 tiles throughout so all twelve match
+            if (skinName.StartsWith("radRX2Filter")) skinName = "radFilter" + skinName.Substring(12);
 
             string skey = "";
             for (int i = 0; i < 8; i++)

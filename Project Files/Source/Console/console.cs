@@ -6651,7 +6651,11 @@ namespace Thetis
         private void H1Grid(Control panel, Control[] items, int cols, int pitch, int bw, int rh)
         {
             for (int i = 0; i < items.Length; i++)
+            {
                 H1Put(items[i], panel, (i % cols) * pitch, (i / cols) * rh, bw);
+                // H1: the skin tile is wider than the 45 px control and would be clipped flat at the right edge; stretch the one image so the rounded cap shows
+                if (items[i] != null && items[i].BackgroundImageLayout != ImageLayout.Stretch) items[i].BackgroundImageLayout = ImageLayout.Stretch;
+            }
         }
 
         // H1: the top row centred on the panadapter: the two VFO frames sit the same distance either
@@ -8442,7 +8446,7 @@ namespace Thetis
                         }
                         // H1: give the RX2 row the same fill the working row shows, so
                         // no button keeps the pale system grey whatever set it
-                        if (!b.Checked) b.BackColor = Color.FromArgb(37, 37, 37);
+                        if (!b.Checked) b.BackColor = Color.Transparent; // H1: a solid fill shows as a square block behind the rounded button; RX1 stays transparent
                     }
                 }
                 // H1: the zero-tune button is a plain button and keeps the stock pale fill
@@ -42046,7 +42050,7 @@ namespace Thetis
 
             tb_rx1af_basis = this.ptbRX1AF.Location;
             tb_rx2af_basis = this.ptbRX2AF.Location;
-        gr_display_basis = new Point(this.panelDisplay.Location.X + 44, this.panelDisplay.Location.Y); // H1: panafall to x168 (strips 10 px wider each side); was x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
+        gr_display_basis = new Point(this.panelDisplay.Location.X + 44, this.panelDisplay.Location.Y); // H1: panafall to x168 (strips 10 px wider each side) (strips 10 px wider each side); was x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
 
             combo_display_mode_basis = this.comboDisplayMode.Location;
             combo_rx2_display_mode_basis = this.comboRX2DisplayMode.Location;
@@ -43694,34 +43698,34 @@ namespace Thetis
             switch (rx2_filter)
             {
                 case Filter.F1:
-                    radRX2Filter1.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter1.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F2:
-                    radRX2Filter2.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter2.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F3:
-                    radRX2Filter3.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter3.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F4:
-                    radRX2Filter4.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter4.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F5:
-                    radRX2Filter5.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter5.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F6:
-                    radRX2Filter6.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter6.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F7:
-                    radRX2Filter7.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter7.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F8:
-                    radRX2Filter8.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter8.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F9:
-                    radRX2Filter9.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter9.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.F10:
-                    radRX2Filter10.BackColor = Color.FromArgb(37, 37, 37); // H1: the deselected fill that matches this row
+                    radRX2Filter10.BackColor = Color.Transparent; // H1: back to the inherited look, same as RX1 - a solid fill shows as a square block behind the rounded button
                     break;
                 case Filter.VAR1:
                     udRX2FilterLow.Enabled = false;
