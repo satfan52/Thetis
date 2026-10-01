@@ -6764,9 +6764,11 @@ namespace Thetis
             H1Cap("rx1pan", "RX1 PANAFALL", 12, Y0 + 150, 150);
             H1Cap("rx2pan", "RX2 PANAFALL", W - 162, Y0 + 150, 150);
 
-            panelBandHF.Location = new Point(2, Y0 + 12);
-            panelBandGEN.Location = new Point(2, Y0 + 12);
-            panelBandVHF.Location = new Point(2, Y0 + 12);
+            // H1: the block captions carry their rule lines at Y0+14; the band panels keep clear
+            // below them, or a fronted panel hides the rule (the RX2 band grid hid its own)
+            panelBandHF.Location = new Point(2, Y0 + 17);
+            panelBandGEN.Location = new Point(2, Y0 + 17);
+            panelBandVHF.Location = new Point(2, Y0 + 17);
             panelDisplay2.Size = new Size(160, 76); // H1: room for the CTUN beside AVG and Peaks
             panelDisplay2.Location = new Point(12, Y0 + 170);
             H1Put(chkFWCATU, panelDisplay2, 104, 28); // H1: the CTUN tick, level with AVG and Peaks
@@ -6792,13 +6794,13 @@ namespace Thetis
             // ---------- BELOW, right: the mirror ----------
             if (h1RX2BandPanel != null)
             {
-                h1RX2BandPanel.Location = new Point(W - h1RX2BandPanel.Width + 1, Y0 + 12);
+                h1RX2BandPanel.Location = new Point(W - h1RX2BandPanel.Width + 1, Y0 + 17);
                 h1RX2BandPanel.BringToFront();
             }
             if (h1RX2VhfPanel != null)
             {
                 if (h1RX2BandPanel != null) h1RX2VhfPanel.Size = h1RX2BandPanel.Size; // H1: same box as the HF page
-                h1RX2VhfPanel.Location = new Point(W - h1RX2VhfPanel.Width + 1, Y0 + 12);
+                h1RX2VhfPanel.Location = new Point(W - h1RX2VhfPanel.Width + 1, Y0 + 17);
                 h1RX2VhfPanel.BringToFront();
             }
             panelRX2Display.Size = new Size(160, 76); // H1: room for the CTUN beside AVG and Peaks
