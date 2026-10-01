@@ -6193,12 +6193,18 @@ namespace Thetis
                 if (c == null) continue;
                 if (!active)
                 {
-                    if (!h1RX2EnableSave.ContainsKey(c)) h1RX2EnableSave[c] = c.Enabled;
-                    if (c.Enabled) c.Enabled = false;
+                    // H1: only what H1 itself disables is banked. A control already disabled for
+                    // its own reason must not have that state remembered and re-applied, which
+                    // left blocks greyed after the slice woke up again.
+                    if (c.Enabled)
+                    {
+                        h1RX2EnableSave[c] = true;
+                        c.Enabled = false;
+                    }
                 }
                 else if (h1RX2EnableSave.ContainsKey(c))
                 {
-                    c.Enabled = h1RX2EnableSave[c];
+                    c.Enabled = true;
                     h1RX2EnableSave.Remove(c);
                 }
             }
@@ -6206,7 +6212,10 @@ namespace Thetis
             try
             {
                 if (h1RX2VeilStrip == null || h1RX2VeilBelow == null) return;
-                bool veil = !rx2on && LegacyItemController.DimUnusedReceivers;
+                // H1: the veil follows the slice USE, not RX2 alone - while a sub borrows the
+                // second slice its controls are live, and dimming them read as blocks dimmed
+                // when they should not. Only a slice nothing sits on reads as unused.
+                bool veil = !active && LegacyItemController.DimUnusedReceivers;
                 if (h1RX2VeilStrip.Visible != veil)
                 {
                     h1RX2VeilStrip.Visible = veil;
@@ -6897,6 +6906,19 @@ namespace Thetis
             panelVFO.Location = new Point(sx, cY + 20);
             foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
                 if (tp != null) tp.Location = H1ModePanelPoint();
+            // H1: the EQ and TX filter pills sit on one row, centred on the transmit block's
+            // centre line, with a clear band under the transmit filter boxes above - sat tight
+            // under them they read as related to the filter limits, which they are not
+            if (panelModeSpecificPhone != null && chkRXEQ != null && chkTXEQ != null && chkShowTXFilter != null)
+            {
+                int prow = 121;             // panel-relative: the filter boxes end 95 px in; keep a 26 px band under them
+                foreach (Control eqc in new Control[] { chkRXEQ, chkTXEQ, chkShowTXFilter })
+                    if (eqc.Size != new Size(50, 23)) eqc.Size = new Size(50, 23);
+                chkRXEQ.Location = new Point(81, prow);        // centres at 106/168/230 = -62/0/+62 about the block centre
+                chkTXEQ.Location = new Point(143, prow);
+                chkShowTXFilter.Location = new Point(205, prow);
+                chkRXEQ.BringToFront(); chkTXEQ.BringToFront(); chkShowTXFilter.BringToFront();
+            }
             // H1: the SubRX1 and SubRX2 control strips - one minimalist strip per sub in
             // the freed flanks: mode and AGC dropdowns, filter width and shift, AGC gain,
             // and the sub's own noise toggles
@@ -41713,6 +41735,8 @@ namespace Thetis
                 lblRX2AF.Location = new Point(this.ClientSize.Width - 104, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 44);
                 ptbRX2AF.Parent = this;
                 ptbRX2AF.Location = new Point(this.ClientSize.Width - 113, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 61);
+                lblRX2AF.Visible = false; // H1: retired sliders - this pass moves them but must never show them
+                ptbRX2AF.Visible = false;
                 lblRX2RF.Parent = this;
                 lblRX2RF.Location = new Point(this.ClientSize.Width - 104, gr_sound_controls_basis.Y + (v_delta / 8) + (v_delta / 4) + 124);
                 ptbRX2RF.Parent = this;
@@ -42780,22 +42804,23 @@ namespace Thetis
                 comboRX2Band.Visible = false;
                 H1RX2BandVis(!LegacyItemController.HideBands);
 
-                // the RX2 monitor-volume row and the RX2 hardware extras belong to
-                // receiver 2 only: with RX2 off they have no meaning (a source of
-                // confusion), so they follow RX2, not the sub. The collapsed display
+                // the RX2 hardware extras belong to receiver 2 only: with RX2 off they
+                // have no meaning, so they follow RX2, not the sub. The collapsed display
                 // re-parents and manages these itself - leave it alone there.
                 if (!IsCollapsedView || IsExpandedView)
                 {
-                    lblRX2AF.Visible = true;
-                    ptbRX2AF.Visible = true;
+                    // H1: the RX2 AF slider is retired - the RX2 mixer fader is its volume.
+                    // Showing it here resurfaced it over the mode grid, out of nowhere.
+                    lblRX2AF.Visible = false;
+                    ptbRX2AF.Visible = false;
 
                     lblRX2Preamp.Visible = true;
                     comboRX2Preamp.Visible = _rx2_preamp_present;
                     udRX2StepAttData.Visible = _rx2_preamp_present;
 
-                    // H1: the controls are only DISABLED when nothing uses the slice, but the veil
-                    // follows RX2 itself: with RX2 off the whole side must read as inactive even
-                    // while a sub of RX1 is borrowing the slice.
+                    // H1: the controls and the veil both follow the slice: the side is disabled
+                    // and dimmed only when nothing sits on it - with a sub borrowing the slice
+                    // the controls are live and stay lit.
                     H1RX2Grey(show, RX2Enabled);
                 }
 
@@ -46784,7 +46809,7 @@ namespace Thetis
             ptbAF.Show();
             ptbRF.Show();
             ptbPWR.Show();
-            ptbRX1AF.Show();
+            ptbRX1AF.Visible = false; // H1: the RX1 AF slider is retired - no view pass may bring it back
             comboPreamp.Show();
             udRX1StepAttData.Show();
             comboAGC.Show();
@@ -46798,7 +46823,7 @@ namespace Thetis
             H1RX2BandVis(true);
             panelRX2Mixer.Show();
             lblRX2RF.Show();
-            lblRX2AF.Show();
+            lblRX2AF.Visible = false; // H1: retired with its slider
             ptbRX2RF.Show();
             chkRX2Squelch.Show();
             ptbRX2Squelch.Show();
@@ -46813,7 +46838,7 @@ namespace Thetis
 
             picRX2Meter.Show();
             panelRX2RF.Show();
-            ptbRX2AF.Show();
+            ptbRX2AF.Visible = false; // H1: the RX2 AF slider is retired - no view pass may bring it back
             chkX2TR.Show();//MW0LGE
             chkRX2Mute.Show();//MW0LGE
 
@@ -47194,7 +47219,7 @@ namespace Thetis
             {
                 // use panelModeSpecificPhone even though might not be shown, it is still repositioned
                 x = panelModeSpecificPhone.Left + 4;
-                y = panelModeSpecificPhone.Bottom - lblPAProfile.Height - 6;
+                y = panelModeSpecificPhone.Bottom - lblPAProfile.Height + 4; // H1: a clear band under the EQ row above
             }
             else if (_iscollapsed && !_isexpanded)
             {
@@ -47518,7 +47543,7 @@ namespace Thetis
 
                     ptbAF.Hide();
                     ptbRX1AF.Parent = this;
-                    ptbRX1AF.Show();
+                    ptbRX1AF.Visible = false; // H1: the RX1 AF slider is retired - no view pass may bring it back
                     ptbPWR.Parent = this;
                     ptbPWR.Show();
 
@@ -47610,7 +47635,7 @@ namespace Thetis
 
                     ptbRX1AF.Hide();
                     ptbRX2AF.Parent = this;
-                    ptbRX2AF.Show();
+                    ptbRX2AF.Visible = false; // H1: the RX2 AF slider is retired - no view pass may bring it back
 
                     ptbRF.Hide();
                     ptbRX2RF.Parent = this;
