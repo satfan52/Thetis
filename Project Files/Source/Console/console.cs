@@ -8060,6 +8060,10 @@ namespace Thetis
             TextBox lsd = (row == txtVFOABand) ? txtVFOABandLSD : txtVFOBSubLSD;
             if (lsd == null) return;
             string text = row.Text;
+            // H1: the row text and the decimal separator can still be unset while the console is starting; the
+            // stock code threw here (Value cannot be null, seen 2 Oct at the power-state settle) and the failed
+            // start made the database manager open a fresh empty database. Bail out quietly instead.
+            if (text == null || separator == null) { lsd.Text = ""; return; }
             int index = text.IndexOf(separator) + 4;
             lsd.Text = (index > 0 && index < text.Length) ? text.Remove(0, index) : "";
         }
@@ -8478,6 +8482,22 @@ namespace Thetis
         private void PowerStateWatchdog()
         {
             if (m_powerDimOverlay == null) return;
+            // H1: the receiver veils answer to the saved dim option too. They are only raised when a receiver
+            // changes state, so after a restart (option restored, receivers already off) nothing raised them.
+            // Compare what should show with what shows, and refresh only on a mismatch - nothing is written.
+            try
+            {
+                if (h1ConsoleReady && !initializing && h1RX2VeilStrip != null && h1SubRX1Veil != null && h1SubRX2Veil != null)
+                {
+                    bool dimOn = LegacyItemController.DimUnusedReceivers;
+                    bool want2 = dimOn && !RX2Enabled;
+                    bool on1 = chkEnableMultiRX != null && chkEnableMultiRX.Checked;
+                    bool on2 = chkRX2 != null && chkRX2.Checked && chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked;
+                    if (h1RX2VeilStrip.Visible != want2 || h1SubRX1Veil.Visible != (dimOn && !on1) || h1SubRX2Veil.Visible != (dimOn && !on2))
+                        H1RefreshUnusedDim();
+                }
+            }
+            catch { }
             // H1: the sub ticks take their look from the skin's image sets (Skin.cs
             // mirrors the sub ticks onto the main ticks' tiles), so no colour forcing is
             // needed here any more.
