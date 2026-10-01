@@ -2998,6 +2998,10 @@ namespace Thetis
             a.Add("rx2_display_grid_max_xvtr/" + rx2_display_grid_max_xvtr);
             a.Add("rx2_display_grid_min_xvtr/" + rx2_display_grid_min_xvtr);
             a.Add("h1_dim_unused/" + LegacyItemController.DimUnusedReceivers.ToString()); // H1: the dim-unused option
+            a.Add("h1_mutgain_rx1/" + _h1MutGainRx1);   // H1: the levels the mutes hand back on unmute
+            a.Add("h1_mutgain_sub1/" + _h1MutGainSub1);
+            a.Add("h1_mutgain_rx2/" + _h1MutGainRx2);
+            a.Add("h1_mutgain_sub2/" + _h1MutGainSub2);
 
             for (int m = (int)DSPMode.FIRST + 1; m < (int)DSPMode.LAST; m++)
             {
@@ -4722,6 +4726,26 @@ namespace Thetis
                         {
                             bool h1dim;
                             if (bool.TryParse(val, out h1dim)) LegacyItemController.DimUnusedReceivers = h1dim;
+                        }
+                        break;
+                    case "h1_mutgain_rx1":
+                        {
+                            int h1mg; if (int.TryParse(val, out h1mg)) _h1MutGainRx1 = h1mg;
+                        }
+                        break;
+                    case "h1_mutgain_sub1":
+                        {
+                            int h1mg; if (int.TryParse(val, out h1mg)) _h1MutGainSub1 = h1mg;
+                        }
+                        break;
+                    case "h1_mutgain_rx2":
+                        {
+                            int h1mg; if (int.TryParse(val, out h1mg)) _h1MutGainRx2 = h1mg;
+                        }
+                        break;
+                    case "h1_mutgain_sub2":
+                        {
+                            int h1mg; if (int.TryParse(val, out h1mg)) _h1MutGainSub2 = h1mg;
                         }
                         break;
                     case var nam when name.StartsWith("rx1_filters["):
@@ -7001,6 +7025,8 @@ namespace Thetis
         private void ptbRX2SubGain_Scroll(object sender, System.EventArgs e)
         {
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkRX2Mute.Checked) chkRX2Mute.Checked = false;
+            if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkSubRX2MUT != null && chkSubRX2MUT.Checked) // H1: moving the SubRX2 volume brings its stream back
+            { _h1MutFromSlider = true; chkSubRX2MUT.Checked = false; }
 
             if (chkRX2Mute.Checked && m_bMuteWillMuteVAC2)
             {
@@ -7037,6 +7063,8 @@ namespace Thetis
         private CheckBoxTS chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT;
         private CheckBoxTS chkVAC1MUT, chkVAC2MUT; // H1: the receiver mutes in the audio groups
         private CheckBoxTS chkSubRX1Follow, chkSubRX2Follow; // H1: make a sub take its parent's settings
+        private bool _h1MutFromSlider = false; // H1: a muted volume slider, moved, hands its stream back
+        private int _h1MutGainRx1 = 100, _h1MutGainSub1 = 100, _h1MutGainRx2 = 100, _h1MutGainSub2 = 100; // the levels the mutes hand back
         private Label lblSubRX1Mode, lblSubRX1AGC, lblSubRX1Width, lblSubRX1Shift, lblSubRX1Gain;
         private Label lblSubRX2Mode, lblSubRX2AGC, lblSubRX2Width, lblSubRX2Shift, lblSubRX2Gain;
         private Label lblSubRX1FLow, lblSubRX1FHigh, lblSubRX1GainVal;
@@ -7333,6 +7361,19 @@ namespace Thetis
         private void chkSubRX1MUT_CheckedChanged(object sender, EventArgs e)
         {
             if (_sub_console_updating) return;
+            if (!initializing) // H1: the mute runs its volume slider to zero, the unmute hands the level back
+            {
+                if (chkSubRX1MUT.Checked)
+                {
+                    if (ptbRX1Gain.Value > 0) _h1MutGainSub1 = ptbRX1Gain.Value;
+                    ptbRX1Gain.Value = 0;
+                }
+                else if (!_h1MutFromSlider)
+                {
+                    ptbRX1Gain.Value = _h1MutGainSub1;
+                }
+            }
+            _h1MutFromSlider = false;
             radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
             if (chkSubRX1MUT.Focused) btnHidden.Focus();
         }
@@ -7342,6 +7383,19 @@ namespace Thetis
         private void chkVAC1MUT_CheckedChanged(object sender, EventArgs e)
         {
             if (_sub_console_updating) return;
+            if (!initializing) // H1: the mute runs its volume slider to zero, the unmute hands the level back
+            {
+                if (chkVAC1MUT.Checked)
+                {
+                    if (ptbRX0Gain.Value > 0) _h1MutGainRx1 = ptbRX0Gain.Value;
+                    ptbRX0Gain.Value = 0;
+                }
+                else if (!_h1MutFromSlider)
+                {
+                    ptbRX0Gain.Value = _h1MutGainRx1;
+                }
+            }
+            _h1MutFromSlider = false;
             radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
             if (chkVAC1MUT.Focused) btnHidden.Focus();
         }
@@ -7491,6 +7545,19 @@ namespace Thetis
         private void chkVAC2MUT_CheckedChanged(object sender, EventArgs e)
         {
             if (_sub2_console_updating) return;
+            if (!initializing) // H1: the mute runs its volume slider to zero, the unmute hands the level back
+            {
+                if (chkVAC2MUT.Checked)
+                {
+                    if (ptbRX2Gain.Value > 0) _h1MutGainRx2 = ptbRX2Gain.Value;
+                    ptbRX2Gain.Value = 0;
+                }
+                else if (!_h1MutFromSlider)
+                {
+                    ptbRX2Gain.Value = _h1MutGainRx2;
+                }
+            }
+            _h1MutFromSlider = false;
             radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
             if (chkVAC2MUT.Focused) btnHidden.Focus();
         }
@@ -7498,8 +7565,50 @@ namespace Thetis
         private void chkSubRX2MUT_CheckedChanged(object sender, EventArgs e)
         {
             if (_sub2_console_updating) return;
+            if (!initializing) // H1: the mute runs its volume slider to zero, the unmute hands the level back
+            {
+                if (chkSubRX2MUT.Checked)
+                {
+                    if (ptbRX2SubGain.Value > 0) _h1MutGainSub2 = ptbRX2SubGain.Value;
+                    ptbRX2SubGain.Value = 0;
+                }
+                else if (!_h1MutFromSlider)
+                {
+                    ptbRX2SubGain.Value = _h1MutGainSub2;
+                }
+            }
+            _h1MutFromSlider = false;
             radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
             if (chkSubRX2MUT.Focused) btnHidden.Focus();
+        }
+
+        // H1: at startup a restored mute owns its volume slider - a muted stream starts at zero
+        private void H1ApplyMutes()
+        {
+            try
+            {
+                if (chkVAC1MUT != null && ptbRX0Gain != null)
+                {
+                    if (chkVAC1MUT.Checked) ptbRX0Gain.Value = 0;
+                    radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
+                }
+                if (chkSubRX1MUT != null && ptbRX1Gain != null)
+                {
+                    if (chkSubRX1MUT.Checked) ptbRX1Gain.Value = 0;
+                    radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+                }
+                if (chkVAC2MUT != null && ptbRX2Gain != null)
+                {
+                    if (chkVAC2MUT.Checked) ptbRX2Gain.Value = 0;
+                    radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
+                }
+                if (chkSubRX2MUT != null && ptbRX2SubGain != null)
+                {
+                    if (chkSubRX2MUT.Checked) ptbRX2SubGain.Value = 0;
+                    radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+                }
+            }
+            catch { }
         }
 
         /// <summary>The sub NR run state: on = the sub's own selected NR type, off = all
@@ -41247,6 +41356,8 @@ namespace Thetis
 
             //MWLGE_21k9 re-worked //[2.10.1.0] MW0LGE added eventargs empty
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkMUT.Checked) chkMUT.Checked = false;
+            if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkVAC1MUT != null && chkVAC1MUT.Checked) // H1: moving the RX1 volume brings its stream back
+            { _h1MutFromSlider = true; chkVAC1MUT.Checked = false; }
 
             if (chkMUT.Checked && m_bMuteWillMuteVAC1) //MW0LGE_21k9
             {
@@ -41287,6 +41398,8 @@ namespace Thetis
             //
             //[2.10.1.0] MW0LGE consider mute when on vac
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkMUT.Checked) chkMUT.Checked = false;
+            if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkSubRX1MUT != null && chkSubRX1MUT.Checked) // H1: moving the SubRX1 volume brings its stream back
+            { _h1MutFromSlider = true; chkSubRX1MUT.Checked = false; }
 
             if (chkMUT.Checked && m_bMuteWillMuteVAC1)
             {
@@ -43885,6 +43998,8 @@ namespace Thetis
         {
             //MWLGE_21k9 re-worked //[2.10.1.0] MW0LGE event args empty
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkRX2Mute.Checked) chkRX2Mute.Checked = false;
+            if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkVAC2MUT != null && chkVAC2MUT.Checked) // H1: moving the RX2 volume brings its stream back
+            { _h1MutFromSlider = true; chkVAC2MUT.Checked = false; }
 
             if (chkRX2Mute.Checked && m_bMuteWillMuteVAC2) //MW0LGE_21k9
             {
@@ -47021,6 +47136,8 @@ namespace Thetis
             // H1: arm the RX2 sub channel from the restored SubRX2 volume and pan values
             ptbRX2SubGain_Scroll(this, EventArgs.Empty);
             ptbRX2SubPan_Scroll(this, EventArgs.Empty);
+            // H1: the mutes own their volume sliders - a muted stream starts at zero
+            H1ApplyMutes();
             // H1: arm the sub strips - the state restore fills the controls without firing their
             // events, so the restored settings are applied to the sub channels here
             // H1: the strips start from their parent receivers on a first run; once the database
