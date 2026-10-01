@@ -802,7 +802,7 @@ namespace Thetis
             }
             if (!ownFiles)
             {
-                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2TNFAdd") skinName = "btnTNFAdd"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF";
+                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2TNFAdd") skinName = "btnTNFAdd"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF"; else if (skinName == "btnSubRX1FRst" || skinName == "btnSubRX2FRst") skinName = "btnFilterShiftReset";
             }
 
 

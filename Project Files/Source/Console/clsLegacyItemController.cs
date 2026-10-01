@@ -66,6 +66,7 @@ namespace Thetis
         private static bool _hide_noise_mnf;
         private static bool _hide_mic_comp;
         private static bool _hide_display_controls;
+        private static bool _dim_unused;
         
         static LegacyItemController()
         {
@@ -86,6 +87,7 @@ namespace Thetis
             _hide_noise_mnf = false;
             _hide_mic_comp = false;
             _hide_display_controls = false;
+            _dim_unused = true; // H1: dim the unused receivers by default
     }
         public static void Init(Console c)
         {
@@ -304,6 +306,15 @@ namespace Thetis
             {
                 _expand_spectrum_to_top = value;
                 if (_update_on_property_change) Update();
+            }
+        }
+        public static bool DimUnusedReceivers
+        {
+            get { return _dim_unused; }
+            set
+            {
+                _dim_unused = value;
+                if (_console != null) _console.H1RefreshUnusedDim();
             }
         }
         public static void Update()

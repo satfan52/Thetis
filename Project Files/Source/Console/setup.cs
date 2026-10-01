@@ -395,6 +395,33 @@ namespace Thetis
             console.SyncMicToVacGain();
         }
 
+        private CheckBoxTS h1ChkDimUnused;
+
+        // H1: the "dim unused receiver controls" switch, built in code so no designer
+        // or resource edits are needed. It follows the console items group.
+        private void H1BuildDimUnusedOption()
+        {
+            if (h1ChkDimUnused != null || groupBoxTS44 == null) return;
+            h1ChkDimUnused = new CheckBoxTS();
+            h1ChkDimUnused.AutoSize = true;
+            h1ChkDimUnused.UseVisualStyleBackColor = true;
+            h1ChkDimUnused.Image = null;
+            h1ChkDimUnused.Name = "chkH1DimUnused";
+            h1ChkDimUnused.Text = "Dim unused receiver controls (RX2, SUBRX1, SUBRX2)";
+            int h1yb = 0;
+            foreach (Control h1c in groupBoxTS44.Controls) h1yb = Math.Max(h1yb, h1c.Bottom);
+            h1ChkDimUnused.Location = new Point(19, h1yb + 6);
+            h1ChkDimUnused.Checked = LegacyItemController.DimUnusedReceivers;
+            h1ChkDimUnused.CheckedChanged += h1ChkDimUnused_CheckedChanged;
+            groupBoxTS44.Controls.Add(h1ChkDimUnused);
+            if (groupBoxTS44.Height < h1ChkDimUnused.Bottom + 12) groupBoxTS44.Height = h1ChkDimUnused.Bottom + 12;
+        }
+
+        private void h1ChkDimUnused_CheckedChanged(object sender, EventArgs e)
+        {
+            LegacyItemController.DimUnusedReceivers = h1ChkDimUnused != null && h1ChkDimUnused.Checked;
+        }
+
         internal void AfterConstructor()
         {
             LogTool.AddLogEntry("      Setup setup controls...", "SETUP_CONT");
@@ -412,6 +439,8 @@ namespace Thetis
             updateDiscordState();
 
             addDelegates();
+
+            H1BuildDimUnusedOption(); // H1: the dim-unused receiver option, built in code
 
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;

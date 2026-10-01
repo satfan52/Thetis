@@ -2997,6 +2997,7 @@ namespace Thetis
             a.Add("rx2_display_grid_min_gen/" + rx2_display_grid_min_gen);
             a.Add("rx2_display_grid_max_xvtr/" + rx2_display_grid_max_xvtr);
             a.Add("rx2_display_grid_min_xvtr/" + rx2_display_grid_min_xvtr);
+            a.Add("h1_dim_unused/" + LegacyItemController.DimUnusedReceivers.ToString()); // H1: the dim-unused option
 
             for (int m = (int)DSPMode.FIRST + 1; m < (int)DSPMode.LAST; m++)
             {
@@ -4712,6 +4713,13 @@ namespace Thetis
                     case "auto_start_forms":
                         setAutoStartData(val); //[2.10.3.6]MW0LGE
                         break;
+
+                    case "h1_dim_unused":
+                        {
+                            bool h1dim;
+                            if (bool.TryParse(val, out h1dim)) LegacyItemController.DimUnusedReceivers = h1dim;
+                        }
+                        break;
                     case var nam when name.StartsWith("rx1_filters["):
                         start = name.IndexOf("[") + 1;
                         length = name.IndexOf("]") - start;
@@ -6170,7 +6178,7 @@ namespace Thetis
             try
             {
                 if (h1RX2VeilStrip == null || h1RX2VeilBelow == null) return;
-                bool veil = !rx2on;
+                bool veil = !rx2on && LegacyItemController.DimUnusedReceivers;
                 if (h1RX2VeilStrip.Visible != veil)
                 {
                     h1RX2VeilStrip.Visible = veil;
@@ -6318,8 +6326,20 @@ namespace Thetis
             if (h1SubRX1Veil == null || h1SubRX2Veil == null) return;
             bool on1 = chkEnableMultiRX != null && chkEnableMultiRX.Checked;
             bool on2 = chkRX2 != null && chkRX2.Checked && chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked;
-            SetSubVeil(h1SubRX1Veil, !on1);
-            SetSubVeil(h1SubRX2Veil, !on2);
+            bool dim = LegacyItemController.DimUnusedReceivers; // H1: the user's option
+            SetSubVeil(h1SubRX1Veil, dim && !on1);
+            SetSubVeil(h1SubRX2Veil, dim && !on2);
+        }
+
+        /// <summary>H1: re-evaluate every dim veil when the option is switched.</summary>
+        public void H1RefreshUnusedDim()
+        {
+            try
+            {
+                UpdateSubVeilStates();
+                H1RX2Grey(SecondSliceActive, RX2Enabled);
+            }
+            catch { }
         }
 
         private void SetSubVeil(PowerDimOverlay veil, bool show)
@@ -6692,8 +6712,8 @@ namespace Thetis
             int aL = 175, aR = W - 175 - 232;         // audio groups, mirrored
             H1Cap("rx1bands", "RX1 BANDS", 12, Y0, 150);
             H1Cap("rx2bands", "RX2 BANDS", W - 162, Y0, 150);
-            H1Cap("rx1audio", "VAC1 Audio", aL, Y0, 232);
-            H1Cap("rx2audio", "VAC2 Audio", aR, Y0, 232);
+            H1Cap("rx1audio", "VAC1 AUDIO", aL, Y0, 232);
+            H1Cap("rx2audio", "VAC2 AUDIO", aR, Y0, 232);
             H1Cap("rx1pan", "RX1 PANAFALL", 12, Y0 + 150, 150);
             H1Cap("rx2pan", "RX2 PANAFALL", W - 162, Y0 + 150, 150);
 
@@ -6841,8 +6861,8 @@ namespace Thetis
                 int sldw = cbw + 14;                      // shortened slider length
                 int col2 = cbw + 18;                      // second column offset
                 int stw = col2 + sldw + 8;                // strip width, headroom for the values row
-                int stx1 = 415;
-                int stx2 = W - 415 - stw;
+                int stx1 = sx - 24 - stw;                 // H1: the strip sits close against the VFO block
+                int stx2 = tx + tw + 24;                  // H1: and this one close against the TRANSMIT and MASTER blocks
                 int sY = 740;                             // caption line, level with VAC1 Audio
                 int sMod = sY + 22;                       // Mode / AGC labels
                 int sCmb = sMod + 16;                     // dropdowns
@@ -6854,8 +6874,8 @@ namespace Thetis
                 int sNoi = sGsl + 24 + 11;                // NOISE caption, clear of the bottom bezel
                 int sPil = sNoi + 20;                     // the sub's noise pills, one row
                 h1SubStx1 = stx1; h1SubStx2 = stx2; h1SubStw = stw;
-                H1Cap("subrx1", "SubRX1", stx1, sY, stw);
-                H1Cap("subrx2", "SubRX2", stx2, sY, stw);
+                H1Cap("subrx1", "SUBRX1", stx1, sY, stw);
+                H1Cap("subrx2", "SUBRX2", stx2, sY, stw);
                 H1Cap("subrx1noise", "NOISE", stx1, sNoi, stw);
                 H1Cap("subrx2noise", "NOISE", stx2, sNoi, stw);
                 H1Put(lblSubRX1Mode, this, stx1, sMod);
@@ -6868,7 +6888,7 @@ namespace Thetis
                 H1Put(ptbSubRX1Shift, this, stx1 + col2, sSld, sldw, 24);
                 H1Put(lblSubRX1FLow, this, stx1, sVal + 1);
                 H1Put(lblSubRX1FHigh, this, stx1 + 72, sVal + 1);
-                H1Put(btnSubRX1FRst, this, stx1 + stw - 43, sVal - 2, 43, 20);
+                H1Put(btnSubRX1FRst, this, stx1 + stw - (btnSubRX1FRst != null ? btnSubRX1FRst.Width : 43), sVal - 2);
                 H1Put(lblSubRX1Gain, this, stx1, sGain);
                 H1Put(ptbSubRX1Gain, this, stx1, sGsl, sldw, 24);
                 H1Put(lblSubRX1GainVal, this, stx1 + stw - 52, sGsl + 5, 52, 14);
@@ -6887,7 +6907,7 @@ namespace Thetis
                 H1Put(ptbSubRX2Shift, this, stx2 + col2, sSld, sldw, 24);
                 H1Put(lblSubRX2FLow, this, stx2, sVal + 1);
                 H1Put(lblSubRX2FHigh, this, stx2 + 72, sVal + 1);
-                H1Put(btnSubRX2FRst, this, stx2 + stw - 43, sVal - 2, 43, 20);
+                H1Put(btnSubRX2FRst, this, stx2 + stw - (btnSubRX2FRst != null ? btnSubRX2FRst.Width : 43), sVal - 2);
                 H1Put(lblSubRX2Gain, this, stx2, sGain);
                 H1Put(ptbSubRX2Gain, this, stx2, sGsl, sldw, 24);
                 H1Put(lblSubRX2GainVal, this, stx2 + stw - 52, sGsl + 5, 52, 14);
@@ -7142,7 +7162,7 @@ namespace Thetis
             ButtonTS b = new ButtonTS();
             b.Name = name;
             b.Text = "Reset";
-            b.Size = new Size(43, 20);
+            b.Size = btnFilterShiftReset.Size; // H1: the reset's exact surface, so the shared skin art fits
             b.Font = btnFilterShiftReset.Font;
             b.ForeColor = btnFilterShiftReset.ForeColor;
             b.FlatStyle = btnFilterShiftReset.FlatStyle;
