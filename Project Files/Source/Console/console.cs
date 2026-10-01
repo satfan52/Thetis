@@ -6898,10 +6898,13 @@ namespace Thetis
             H1Put(ptbAF, this, mx, cYm + 38);
             H1Put(lblPWR, this, mx, cYm + 72);
             H1Put(ptbPWR, this, mx, cYm + 88);
-            // H1: Tune sits under Drive in the MASTER column, in the same row rhythm
-            H1Put(lblTune, this, mx, cYm + 122);
-            H1Put(ptbTune, this, mx, cYm + 138);
-            H1Put(udTXStepAttData, this, mx, cYm + 176);
+            // H1: the Tune slider and the TX step attenuator show only in their own modes. Their
+            // MASTER-column slots covered the transmit profile row, and the row under the block
+            // runs into the status bar, so they ride the clear slot under the VFO block's RIT/XIT
+            // row: Tune label and slider stacked at x740, the attenuator beside the PA line.
+            H1Put(lblTune, this, 740, cYm + 245);
+            H1Put(ptbTune, this, 740, cYm + 267, 100, 24);
+            H1Put(udTXStepAttData, this, 1074, cYm + 273);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
             panelSoundControls.SendToBack();
@@ -7020,6 +7023,11 @@ namespace Thetis
                     if (k != null) k.BringToFront();
                 UpdateSubVeilStates(); // H1: the sub veils follow the layout and stay on top
             }
+
+            // H1: the tune row and the TX attenuator live over the VFO panel's empty lower half,
+            // which is opaque - without this fronting the panel paints over them
+            foreach (Control k in new Control[] { lblTune, ptbTune, udTXStepAttData })
+                if (k != null) k.BringToFront();
 
             if (btnHidden != null && this.ActiveControl != null && this.ActiveControl is PrettyTrackBar) btnHidden.Focus(); // H1: no slider keeps the focus highlight
             H1KeepVeilOnTop(); // H1: nothing the layout fronted may end up above the dim veil
