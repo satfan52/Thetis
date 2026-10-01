@@ -6206,6 +6206,8 @@ namespace Thetis
         private PowerDimOverlay h1RX2VeilStrip;
         private PowerDimOverlay h1RX2VeilBelow;
         private PowerDimOverlay h1RX2VeilTop;
+        private PowerDimOverlay h1SubRX1Veil;
+        private PowerDimOverlay h1SubRX2Veil;
 
         private void H1InitRX2Veil()
         {
@@ -6231,6 +6233,21 @@ namespace Thetis
             h1RX2VeilTop.DimAlpha = 115;
             h1RX2VeilTop.Visible = false;
             this.Controls.Add(h1RX2VeilTop);
+
+            // H1: the SubRX strips wear the same dim while their sub is off
+            h1SubRX1Veil = new PowerDimOverlay(this);
+            h1SubRX1Veil.Name = "h1SubRX1Veil";
+            h1SubRX1Veil.DrawPowerButton = false;
+            h1SubRX1Veil.DimAlpha = 115;
+            h1SubRX1Veil.Visible = false;
+            this.Controls.Add(h1SubRX1Veil);
+
+            h1SubRX2Veil = new PowerDimOverlay(this);
+            h1SubRX2Veil.Name = "h1SubRX2Veil";
+            h1SubRX2Veil.DrawPowerButton = false;
+            h1SubRX2Veil.DimAlpha = 115;
+            h1SubRX2Veil.Visible = false;
+            this.Controls.Add(h1SubRX2Veil);
         }
 
         private void H1PlaceRX2Veil()
@@ -6287,6 +6304,34 @@ namespace Thetis
             }
         }
 
+        private void H1PlaceSubVeil(PowerDimOverlay veil, int x, int w, int top, int bottom)
+        {
+            if (veil == null) return;
+            veil.Bounds = new Rectangle(x - 6, top - 6, w + 12, (bottom - top) + 12);
+        }
+
+        /// <summary>H1: each sub strip is dimmed while its sub is off - the same veil the
+        /// RX2 side wears. The veil lets the mouse through, so the controls behind it
+        /// still work; it marks the block as inactive.</summary>
+        private void UpdateSubVeilStates()
+        {
+            if (h1SubRX1Veil == null || h1SubRX2Veil == null) return;
+            bool on1 = chkEnableMultiRX != null && chkEnableMultiRX.Checked;
+            bool on2 = chkRX2 != null && chkRX2.Checked && chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked;
+            SetSubVeil(h1SubRX1Veil, !on1);
+            SetSubVeil(h1SubRX2Veil, !on2);
+        }
+
+        private void SetSubVeil(PowerDimOverlay veil, bool show)
+        {
+            if (veil.Visible != show) veil.Visible = show;
+            if (show)
+            {
+                veil.Push();
+                veil.BringToFront();
+            }
+        }
+
         // H1: the dim veil must stay above every control while it is up. Stock code brings the
         // four attenuator controls to the front, which lifted the two ATT boxes out of the veil:
         // on power-up they glowed while the rest of the console was still dimmed.
@@ -6338,7 +6383,9 @@ namespace Thetis
                 bool up = (m_powerDimOverlay != null && m_powerDimOverlay.Visible)
                        || (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible)
                        || (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible)
-                       || (h1RX2VeilTop != null && h1RX2VeilTop.Visible);
+                       || (h1RX2VeilTop != null && h1RX2VeilTop.Visible)
+                       || (h1SubRX1Veil != null && h1SubRX1Veil.Visible)
+                       || (h1SubRX2Veil != null && h1SubRX2Veil.Visible);
                 if (!up) return;
 
                 string above = null;
@@ -6359,6 +6406,8 @@ namespace Thetis
                 if (h1RX2VeilStrip != null && h1RX2VeilStrip.Visible) h1RX2VeilStrip.BringToFront();
                 if (h1RX2VeilBelow != null && h1RX2VeilBelow.Visible) h1RX2VeilBelow.BringToFront();
                 if (h1RX2VeilTop != null && h1RX2VeilTop.Visible) h1RX2VeilTop.BringToFront();
+                if (h1SubRX1Veil != null && h1SubRX1Veil.Visible) h1SubRX1Veil.BringToFront();
+                if (h1SubRX2Veil != null && h1SubRX2Veil.Visible) h1SubRX2Veil.BringToFront();
             }
             catch { }
         }
@@ -6643,8 +6692,8 @@ namespace Thetis
             int aL = 175, aR = W - 175 - 232;         // audio groups, mirrored
             H1Cap("rx1bands", "RX1 BANDS", 12, Y0, 150);
             H1Cap("rx2bands", "RX2 BANDS", W - 162, Y0, 150);
-            H1Cap("rx1audio", "RX1 AUDIO", aL, Y0, 232);
-            H1Cap("rx2audio", "RX2 AUDIO", aR, Y0, 232);
+            H1Cap("rx1audio", "VAC1 Audio", aL, Y0, 232);
+            H1Cap("rx2audio", "VAC2 Audio", aR, Y0, 232);
             H1Cap("rx1pan", "RX1 PANAFALL", 12, Y0 + 150, 150);
             H1Cap("rx2pan", "RX2 PANAFALL", W - 162, Y0 + 150, 150);
 
@@ -6712,7 +6761,7 @@ namespace Thetis
             // groups sit under it, all balanced about the same centre line. The flanks stay
             // open for the SubRX1 and SubRX2 control groups that come later.
             int cx = (panelDisplay.Left + panelDisplay.Right) / 2; // panadapter centre
-            int cY = 796;                                     // caption line of the shared groups
+            int cY = H1_CY;                                   // caption line of the shared groups
             int cw = 292;                                     // cluster width: 4 buttons of 70 px at 74 px pitch
             int mw = 112;                                     // MASTER column width
             // H1: the cluster and the MASTER column read as one block and are centred
@@ -6746,7 +6795,7 @@ namespace Thetis
             // H1: MASTER moved out of the group row, to the right of the button cluster in
             // the dead space beside it; VFO and TRANSMIT close up under the centre line,
             // widening both flanks for the sub receiver control groups that come later.
-            int vw = 130, tw = 336, g2 = 24;
+            int vw = H1_TX_VW, tw = H1_TX_TW, g2 = H1_TX_G2;
             int sx = cx - (vw + g2 + tw) / 2;                 // VFO
             int tx = sx + vw + g2;                            // TRANSMIT
             int cYm = 696;                                    // MASTER caption line, level with the cluster
@@ -6768,7 +6817,7 @@ namespace Thetis
             panelSoundControls.SendToBack();
             panelVFO.Location = new Point(sx, cY + 20);
             foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
-                if (tp != null) tp.Location = new Point(tx, cY + 20);
+                if (tp != null) tp.Location = H1ModePanelPoint();
             // H1: the SubRX1 and SubRX2 control strips - one minimalist strip per sub in
             // the freed flanks: mode and AGC dropdowns, filter width and shift, AGC gain,
             // and the sub's own noise toggles
@@ -6791,23 +6840,24 @@ namespace Thetis
                 cbw += SystemInformation.VerticalScrollBarWidth + 12; // + drop-down button + margins
                 int sldw = cbw + 14;                      // shortened slider length
                 int col2 = cbw + 18;                      // second column offset
-                int stw = col2 + sldw;                    // strip width
+                int stw = col2 + sldw + 8;                // strip width, headroom for the values row
                 int stx1 = 415;
                 int stx2 = W - 415 - stw;
-                int sY = 740;                             // caption line, level with RX1 AUDIO
+                int sY = 740;                             // caption line, level with VAC1 Audio
                 int sMod = sY + 22;                       // Mode / AGC labels
                 int sCmb = sMod + 16;                     // dropdowns
                 int sFlt = sCmb + 21 + 9;                 // Width / Shift labels
                 int sSld = sFlt + 16;                     // Width / Shift sliders
-                int sGain = sSld + 24 + 14;               // AGC Gain label
-                int sGsl = sGain + 16;                    // AGC Gain slider
-                int sNoi = sGsl + 24 + 16;                // NOISE caption
-                int sPil = sNoi + 22;                     // noise pills, first row
-                int sPi2 = sPil + 26;                     // noise pills, second row
-                H1Cap("subrx1", "SUBRX1", stx1, sY, stw);
-                H1Cap("subrx2", "SUBRX2", stx2, sY, stw);
-                H1Cap("subrx1noise", "NOISE", stx1, sNoi, 140);
-                H1Cap("subrx2noise", "NOISE", stx2, sNoi, 140);
+                int sVal = sSld + 24 + 5;                 // filter Low/High values row and Reset
+                int sGain = sVal + 21;                    // AGC Gain label
+                int sGsl = sGain + 16;                    // AGC Gain slider, MUT beside it
+                int sNoi = sGsl + 24 + 11;                // NOISE caption, clear of the bottom bezel
+                int sPil = sNoi + 20;                     // the sub's noise pills, one row
+                h1SubStx1 = stx1; h1SubStx2 = stx2; h1SubStw = stw;
+                H1Cap("subrx1", "SubRX1", stx1, sY, stw);
+                H1Cap("subrx2", "SubRX2", stx2, sY, stw);
+                H1Cap("subrx1noise", "NOISE", stx1, sNoi, stw);
+                H1Cap("subrx2noise", "NOISE", stx2, sNoi, stw);
                 H1Put(lblSubRX1Mode, this, stx1, sMod);
                 H1Put(comboSubRX1Mode, this, stx1, sCmb, cbw, 21);
                 H1Put(lblSubRX1AGC, this, stx1 + col2, sMod);
@@ -6816,13 +6866,17 @@ namespace Thetis
                 H1Put(ptbSubRX1Width, this, stx1, sSld, sldw, 24);
                 H1Put(lblSubRX1Shift, this, stx1 + col2, sFlt);
                 H1Put(ptbSubRX1Shift, this, stx1 + col2, sSld, sldw, 24);
+                H1Put(lblSubRX1FLow, this, stx1, sVal + 1);
+                H1Put(lblSubRX1FHigh, this, stx1 + 72, sVal + 1);
+                H1Put(btnSubRX1FRst, this, stx1 + stw - 43, sVal - 2, 43, 20);
                 H1Put(lblSubRX1Gain, this, stx1, sGain);
                 H1Put(ptbSubRX1Gain, this, stx1, sGsl, sldw, 24);
+                H1Put(lblSubRX1GainVal, this, stx1 + stw - 52, sGsl + 5, 52, 14);
+                H1Put(chkSubRX1MUT, this, stx1 + sldw + 10, sGsl, 45, 23);
                 H1Put(chkSubRX1NR, this, stx1, sPil, 45, 23);
                 H1Put(chkSubRX1ANF, this, stx1 + 47, sPil, 45, 23);
                 H1Put(chkSubRX1NB2, this, stx1 + 94, sPil, 45, 23);
-                H1Put(chkSubRX1BIN, this, stx1, sPi2, 45, 23);
-                H1Put(chkSubRX1MUT, this, stx1 + 47, sPi2, 45, 23);
+                H1Put(chkSubRX1BIN, this, stx1 + 141, sPil, 45, 23);
                 H1Put(lblSubRX2Mode, this, stx2, sMod);
                 H1Put(comboSubRX2Mode, this, stx2, sCmb, cbw, 21);
                 H1Put(lblSubRX2AGC, this, stx2 + col2, sMod);
@@ -6831,15 +6885,22 @@ namespace Thetis
                 H1Put(ptbSubRX2Width, this, stx2, sSld, sldw, 24);
                 H1Put(lblSubRX2Shift, this, stx2 + col2, sFlt);
                 H1Put(ptbSubRX2Shift, this, stx2 + col2, sSld, sldw, 24);
+                H1Put(lblSubRX2FLow, this, stx2, sVal + 1);
+                H1Put(lblSubRX2FHigh, this, stx2 + 72, sVal + 1);
+                H1Put(btnSubRX2FRst, this, stx2 + stw - 43, sVal - 2, 43, 20);
                 H1Put(lblSubRX2Gain, this, stx2, sGain);
                 H1Put(ptbSubRX2Gain, this, stx2, sGsl, sldw, 24);
+                H1Put(lblSubRX2GainVal, this, stx2 + stw - 52, sGsl + 5, 52, 14);
+                H1Put(chkSubRX2MUT, this, stx2 + sldw + 10, sGsl, 45, 23);
                 H1Put(chkSubRX2NR, this, stx2, sPil, 45, 23);
                 H1Put(chkSubRX2ANF, this, stx2 + 47, sPil, 45, 23);
                 H1Put(chkSubRX2NB2, this, stx2 + 94, sPil, 45, 23);
-                H1Put(chkSubRX2BIN, this, stx2, sPi2, 45, 23);
-                H1Put(chkSubRX2MUT, this, stx2 + 47, sPi2, 45, 23);
-                foreach (Control k in new Control[] { lblSubRX1Mode, comboSubRX1Mode, lblSubRX1AGC, comboSubRX1AGC, lblSubRX1Width, ptbSubRX1Width, lblSubRX1Shift, ptbSubRX1Shift, lblSubRX1Gain, ptbSubRX1Gain, chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT, lblSubRX2Mode, comboSubRX2Mode, lblSubRX2AGC, comboSubRX2AGC, lblSubRX2Width, ptbSubRX2Width, lblSubRX2Shift, ptbSubRX2Shift, lblSubRX2Gain, ptbSubRX2Gain, chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT })
+                H1Put(chkSubRX2BIN, this, stx2 + 141, sPil, 45, 23);
+                H1PlaceSubVeil(h1SubRX1Veil, stx1, stw, sY, sPil + 23);
+                H1PlaceSubVeil(h1SubRX2Veil, stx2, stw, sY, sPil + 23);
+                foreach (Control k in new Control[] { lblSubRX1Mode, comboSubRX1Mode, lblSubRX1AGC, comboSubRX1AGC, lblSubRX1Width, ptbSubRX1Width, lblSubRX1Shift, ptbSubRX1Shift, lblSubRX1FLow, lblSubRX1FHigh, btnSubRX1FRst, lblSubRX1Gain, ptbSubRX1Gain, lblSubRX1GainVal, chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT, lblSubRX2Mode, comboSubRX2Mode, lblSubRX2AGC, comboSubRX2AGC, lblSubRX2Width, ptbSubRX2Width, lblSubRX2Shift, ptbSubRX2Shift, lblSubRX2FLow, lblSubRX2FHigh, btnSubRX2FRst, lblSubRX2Gain, ptbSubRX2Gain, lblSubRX2GainVal, chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT })
                     if (k != null) k.BringToFront();
+                UpdateSubVeilStates(); // H1: the sub veils follow the layout and stay on top
             }
 
             if (btnHidden != null && this.ActiveControl != null && this.ActiveControl is PrettyTrackBar) btnHidden.Focus(); // H1: no slider keeps the focus highlight
@@ -6906,6 +6967,10 @@ namespace Thetis
         private CheckBoxTS chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT;
         private Label lblSubRX1Mode, lblSubRX1AGC, lblSubRX1Width, lblSubRX1Shift, lblSubRX1Gain;
         private Label lblSubRX2Mode, lblSubRX2AGC, lblSubRX2Width, lblSubRX2Shift, lblSubRX2Gain;
+        private Label lblSubRX1FLow, lblSubRX1FHigh, lblSubRX1GainVal;
+        private Label lblSubRX2FLow, lblSubRX2FHigh, lblSubRX2GainVal;
+        private System.Windows.Forms.ButtonTS btnSubRX1FRst, btnSubRX2FRst;
+        private int h1SubStx1 = 415, h1SubStx2 = 1180, h1SubStw = 180; // strip metrics for the readouts
 
         private bool _sub2_console_updating = false;
         private int _sub2_agc_gain = 40;
@@ -6922,8 +6987,19 @@ namespace Thetis
                 Label lw = NewSubLabel(s1 ? "lblSubRX1Width" : "lblSubRX2Width", "Width");
                 Label ls = NewSubLabel(s1 ? "lblSubRX1Shift" : "lblSubRX2Shift", "Shift");
                 Label lg = NewSubLabel(s1 ? "lblSubRX1Gain" : "lblSubRX2Gain", "AGC Gain");
+                Label lf = NewSubLabel(s1 ? "lblSubRX1FLow" : "lblSubRX2FLow", "Low");
+                lf.AutoSize = false; lf.Size = new Size(60, 14); lf.TextAlign = ContentAlignment.MiddleLeft;
+                Label lh = NewSubLabel(s1 ? "lblSubRX1FHigh" : "lblSubRX2FHigh", "High");
+                lh.AutoSize = false; lh.Size = new Size(62, 14); lh.TextAlign = ContentAlignment.MiddleLeft;
+                Label gv = NewSubLabel(s1 ? "lblSubRX1GainVal" : "lblSubRX2GainVal", "");
+                gv.AutoSize = false; gv.Size = new Size(52, 14); gv.TextAlign = ContentAlignment.MiddleRight;
+                ButtonTS rst = NewSubResetButton(s1 ? "btnSubRX1FRst" : "btnSubRX2FRst");
+                rst.Tag = s1 ? "1" : "2";
+                rst.Click += btnSubFRst_Click;
                 if (s1) { lblSubRX1Mode = lm; lblSubRX1AGC = la; lblSubRX1Width = lw; lblSubRX1Shift = ls; lblSubRX1Gain = lg; }
                 else { lblSubRX2Mode = lm; lblSubRX2AGC = la; lblSubRX2Width = lw; lblSubRX2Shift = ls; lblSubRX2Gain = lg; }
+                if (s1) { lblSubRX1FLow = lf; lblSubRX1FHigh = lh; lblSubRX1GainVal = gv; btnSubRX1FRst = rst; }
+                else { lblSubRX2FLow = lf; lblSubRX2FHigh = lh; lblSubRX2GainVal = gv; btnSubRX2FRst = rst; }
 
                 ComboBoxTS cm = NewSubCombo(s1 ? "comboSubRX1Mode" : "comboSubRX2Mode");
                 for (DSPMode m = DSPMode.LSB; m <= DSPMode.DRM; m++) cm.Items.Add(m.ToString());
@@ -6965,7 +7041,8 @@ namespace Thetis
                     wp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX1Width_Scroll);
                     sp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX1Shift_Scroll);
                     gp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX1Gain_Scroll);
-                    n1.CheckedChanged += chkSubRX1NR_CheckedChanged;
+                    n1.Click += chkSubRX1NR_Click;
+                    n1.MouseDown += chkSubRX1NR_MouseDown;
                     n2.CheckedChanged += chkSubRX1ANF_CheckedChanged;
                     n3.CheckedChanged += chkSubRX1NB2_CheckedChanged;
                     n4.CheckedChanged += chkSubRX1BIN_CheckedChanged;
@@ -6978,7 +7055,8 @@ namespace Thetis
                     wp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX2Width_Scroll);
                     sp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX2Shift_Scroll);
                     gp.Scroll += new PrettyTrackBar.ScrollHandler(ptbSubRX2Gain_Scroll);
-                    n1.CheckedChanged += chkSubRX2NR_CheckedChanged;
+                    n1.Click += chkSubRX2NR_Click;
+                    n1.MouseDown += chkSubRX2NR_MouseDown;
                     n2.CheckedChanged += chkSubRX2ANF_CheckedChanged;
                     n3.CheckedChanged += chkSubRX2NB2_CheckedChanged;
                     n4.CheckedChanged += chkSubRX2BIN_CheckedChanged;
@@ -6988,8 +7066,12 @@ namespace Thetis
                 Controls.Add(lm); Controls.Add(la); Controls.Add(lw); Controls.Add(ls); Controls.Add(lg);
                 Controls.Add(cm); Controls.Add(ca);
                 Controls.Add(wp); Controls.Add(sp); Controls.Add(gp);
+                Controls.Add(lf); Controls.Add(lh); Controls.Add(gv); Controls.Add(rst);
                 Controls.Add(n1); Controls.Add(n2); Controls.Add(n3); Controls.Add(n4); Controls.Add(n5);
             }
+
+            UpdateSubGainReadout(1); UpdateSubGainReadout(2);
+            UpdateSubFilterReadout(1); UpdateSubFilterReadout(2);
         }
 
         private Label NewSubLabel(string name, string text)
@@ -7054,6 +7136,23 @@ namespace Thetis
             return c;
         }
 
+        // H1: the twin of the RX1 filter panel's Reset button
+        private ButtonTS NewSubResetButton(string name)
+        {
+            ButtonTS b = new ButtonTS();
+            b.Name = name;
+            b.Text = "Reset";
+            b.Size = new Size(43, 20);
+            b.Font = btnFilterShiftReset.Font;
+            b.ForeColor = btnFilterShiftReset.ForeColor;
+            b.FlatStyle = btnFilterShiftReset.FlatStyle;
+            b.BackColor = btnFilterShiftReset.BackColor;
+            b.UseVisualStyleBackColor = btnFilterShiftReset.UseVisualStyleBackColor;
+            b.FlatAppearance.BorderSize = 0;
+            b.TabStop = false;
+            return b;
+        }
+
         private DSPMode SubModeFromCombo(ComboBox cb)
         {
             int i = cb != null ? cb.SelectedIndex : -1;
@@ -7066,7 +7165,12 @@ namespace Thetis
         private void comboSubRX1Mode_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (_sub_console_updating || initializing) return;
-            SetSubMode(SubModeFromCombo(comboSubRX1Mode));
+            DSPMode m = SubModeFromCombo(comboSubRX1Mode);
+            SetSubMode(m);
+            // H1: a mode change redefines the passband - apply that mode's default
+            // filter (F5), exactly as a receiver's own mode change does
+            if (m != DSPMode.FIRST && m != DSPMode.LAST && m != DSPMode.DRM && m != DSPMode.SPEC)
+                SetSubFilter(rx1_filters[(int)m].GetLow(Filter.F5), rx1_filters[(int)m].GetHigh(Filter.F5), true);
             if (comboSubRX1Mode.Focused) btnHidden.Focus();
         }
 
@@ -7096,11 +7200,16 @@ namespace Thetis
             SetSubAgcGain(ptbSubRX1Gain.Value);
         }
 
-        private void chkSubRX1NR_CheckedChanged(object sender, EventArgs e)
+        private void chkSubRX1NR_Click(object sender, EventArgs e)
         {
             if (_sub_console_updating) return;
-            SetSubNRRun(1, chkSubRX1NR.Checked);
+            CycleSubNR(1);
             if (chkSubRX1NR.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX1NR_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (IsRightButton(e)) SetupForm.ShowSetupTab(Setup.SetupTab.NR_Tab);
         }
 
         private void chkSubRX1ANF_CheckedChanged(object sender, EventArgs e)
@@ -7131,12 +7240,56 @@ namespace Thetis
             if (chkSubRX1MUT.Focused) btnHidden.Focus();
         }
 
+        /// <summary>H1: the filter Low/High readout under the Width/Shift sliders.</summary>
+        private void UpdateSubFilterReadout(int sub)
+        {
+            Label lo = sub == 1 ? lblSubRX1FLow : lblSubRX2FLow;
+            Label hi = sub == 1 ? lblSubRX1FHigh : lblSubRX2FHigh;
+            if (lo == null || hi == null) return;
+            int low, high;
+            try
+            {
+                low = radio.GetDSPRX(sub - 1, 1).RXFilterLow;
+                high = radio.GetDSPRX(sub - 1, 1).RXFilterHigh;
+            }
+            catch { return; } // the DSP channel does not exist yet during the constructor
+            lo.Text = "Low " + (low > 0 ? "+" + low : low.ToString());
+            hi.Text = "High " + (high > 0 ? "+" + high : high.ToString());
+        }
+
+        /// <summary>H1: the AGC gain dB readout at the right end of the gain row.</summary>
+        private void UpdateSubGainReadout(int sub)
+        {
+            Label g = sub == 1 ? lblSubRX1GainVal : lblSubRX2GainVal;
+            if (g == null) return;
+            PrettyTrackBar s = sub == 1 ? ptbSubRX1Gain : ptbSubRX2Gain;
+            int v = s != null ? s.Value : (sub == 1 ? _sub_agc_gain : _sub2_agc_gain);
+            g.Text = v.ToString() + " dB";
+        }
+
+        /// <summary>H1: a sub filter Reset returns Width and Shift to the current mode's
+        /// default filter - the same F5 preset the console applies on a mode change.</summary>
+        private void btnSubFRst_Click(object sender, EventArgs e)
+        {
+            ButtonTS b = sender as ButtonTS;
+            int sub = b != null && Convert.ToString(b.Tag) == "2" ? 2 : 1;
+            DSPMode mode = sub == 1 ? GetSubMode() : radio.GetDSPRX(1, 1).DSPMode;
+            if (mode == DSPMode.FIRST || mode == DSPMode.LAST || mode == DSPMode.DRM || mode == DSPMode.SPEC) return;
+            int low = rx1_filters[(int)mode].GetLow(Filter.F5);
+            int high = rx1_filters[(int)mode].GetHigh(Filter.F5);
+            if (sub == 1) SetSubFilter(low, high); else SetSub2Filter(low, high);
+            if (b != null && b.Focused) btnHidden.Focus();
+        }
+
         // ---- SubRX2 handlers ----
 
         private void comboSubRX2Mode_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (_sub2_console_updating || initializing) return;
-            SetSub2Mode(SubModeFromCombo(comboSubRX2Mode));
+            DSPMode m = SubModeFromCombo(comboSubRX2Mode);
+            SetSub2Mode(m);
+            if (m != DSPMode.FIRST && m != DSPMode.LAST && m != DSPMode.DRM && m != DSPMode.SPEC)
+                SetSub2Filter(rx1_filters[(int)m].GetLow(Filter.F5), rx1_filters[(int)m].GetHigh(Filter.F5), true);
             if (comboSubRX2Mode.Focused) btnHidden.Focus();
         }
 
@@ -7166,11 +7319,16 @@ namespace Thetis
             SetSub2AgcGain(ptbSubRX2Gain.Value);
         }
 
-        private void chkSubRX2NR_CheckedChanged(object sender, EventArgs e)
+        private void chkSubRX2NR_Click(object sender, EventArgs e)
         {
             if (_sub2_console_updating) return;
-            SetSubNRRun(2, chkSubRX2NR.Checked);
+            CycleSubNR(2);
             if (chkSubRX2NR.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX2NR_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (IsRightButton(e)) SetupForm.ShowSetupTab(Setup.SetupTab.NR_Tab);
         }
 
         private void chkSubRX2ANF_CheckedChanged(object sender, EventArgs e)
@@ -7201,18 +7359,49 @@ namespace Thetis
             if (chkSubRX2MUT.Focused) btnHidden.Focus();
         }
 
-        /// <summary>The sub NR run state: on = the NR type the receiver currently
-        /// uses, off = all four off. The sub keeps its own run flag set.</summary>
+        /// <summary>The sub NR run state: on = the sub's own selected NR type, off = all
+        /// four off. The sub keeps its own run flag set and its own type, independent of
+        /// the parent receiver's NR.</summary>
         private void SetSubNRRun(int rx, bool on)
         {
             if (rx < 1 || rx > 2) return;
             RadioDSPRX rad = radio.GetDSPRX(rx - 1, 1);
             int nr = 0;
-            if (on) { nr = _nr_selected[rx - 1]; if (nr < 1) nr = 1; }
+            if (on) { nr = _sub_nr_selected[rx - 1]; if (nr < 1) nr = 1; }
             rad.RXANR1Run = (nr == 1) ? 1 : 0;
             rad.RXANR2Run = (nr == 2) ? 1 : 0;
             rad.RXANR3Run = (nr == 3) ? 1 : 0;
             rad.RXANR4Run = (nr == 4) ? 1 : 0;
+        }
+
+        /// <summary>H1: one press of a sub NR button steps the whole NR set - NR1, NR2,
+        /// NR3, NR4, off - exactly the way the RX1 and RX2 NR buttons behave.</summary>
+        private void CycleSubNR(int sub)
+        {
+            if (sub < 1 || sub > 2) return;
+            _sub_nr_selected[sub - 1] = _sub_nr_selected[sub - 1] + 1;
+            if (_sub_nr_selected[sub - 1] > 4) _sub_nr_selected[sub - 1] = 0;
+            ApplySubNR(sub);
+        }
+
+        /// <summary>H1: put the sub's stored NR type on its channel and dress its pill,
+        /// the same way the RX1 button's text and tick follow its type.</summary>
+        private void ApplySubNR(int sub)
+        {
+            int nr = _sub_nr_selected[sub - 1];
+            RadioDSPRX rad = radio.GetDSPRX(sub - 1, 1);
+            rad.RXANR1Run = (nr == 1) ? 1 : 0;
+            rad.RXANR2Run = (nr == 2) ? 1 : 0;
+            rad.RXANR3Run = (nr == 3) ? 1 : 0;
+            rad.RXANR4Run = (nr == 4) ? 1 : 0;
+
+            CheckBoxTS pill = sub == 1 ? chkSubRX1NR : chkSubRX2NR;
+            if (pill == null) return;
+            bool oldu = sub == 1 ? _sub_console_updating : _sub2_console_updating;
+            if (sub == 1) _sub_console_updating = true; else _sub2_console_updating = true;
+            pill.Checked = nr > 0;
+            pill.Text = nr < 2 ? "NR" : "NR" + nr;   // NR1 reads "NR", like the RX1 button
+            if (sub == 1) _sub_console_updating = oldu; else _sub2_console_updating = oldu;
         }
 
         private void SubFilterFromSliders(int sub)
@@ -7359,6 +7548,7 @@ namespace Thetis
             Display.SubRX2FilterLow = low;
             Display.SubRX2FilterHigh = high;
             SubFilterToSliders(2, low, high);
+            UpdateSubFilterReadout(2);
         }
 
         /// <summary>Set the RX2 sub channel's own AGC mode, mirroring SetSubAgcMode.</summary>
@@ -7389,6 +7579,7 @@ namespace Thetis
 
             _sub2_agc_gain = value;
             SyncSubGainSlider(2, value);
+            UpdateSubGainReadout(2);
         }
 
         #endregion
@@ -40548,6 +40739,8 @@ namespace Thetis
             if (!initializing) radio.GetDSPRX(0, 1).Active = chkEnableMultiRX.Checked; //MW0LGE only set after init complete
             // H1: the second-slice controls belong to the sub whenever RX2 is off
             UpdateSecondSliceControlsVisible();
+            UpdateSubVeilStates(); // H1: the SubRX1 strip dims with the sub
+            H1TracePanelMoves("mx1=" + chkEnableMultiRX.Checked);
                                                                                        //for some reason fixes issue where multirx has no audio if
                                                                                        //thetis loaded with multirx already on
             if (chkEnableMultiRX.Checked)
@@ -40712,6 +40905,7 @@ namespace Thetis
 
         unsafe private void chkEnableMultiRX2_CheckedChanged(object sender, System.EventArgs e)
         {
+            UpdateSubVeilStates(); // H1: the SubRX2 strip dims with its sub
             // H1: while RX2 is on, a change of this button is the user's choice - remember
             // it. The forced untick when RX2 goes off happens after rx2_enabled is already
             // false, so it cannot overwrite the memory.
@@ -41043,6 +41237,19 @@ namespace Thetis
                 ckQuickRec.BackColor = SystemColors.Control;
             }
         }
+        // H1: the transmit section's one resting place. These numbers and the
+        // centre-line arithmetic below are shared by H1LayoutV4 and the mode-panel
+        // pass, so no later pass can park the section anywhere else.
+        private const int H1_TX_VW = 130, H1_TX_G2 = 24, H1_TX_TW = 336, H1_CY = 796;
+
+        private Point H1ModePanelPoint()
+        {
+            int cx = (panelDisplay.Left + panelDisplay.Right) / 2;
+            int sx = cx - (H1_TX_VW + H1_TX_G2 + H1_TX_TW) / 2;
+            int tx = sx + H1_TX_VW + H1_TX_G2;
+            return new Point(tx, H1_CY + 20);
+        }
+
         private void moveModeSpecificPanels()
         {
             H1TracePanelMoves("msp-enter");
@@ -41050,7 +41257,10 @@ namespace Thetis
             // them there, so this pass must produce the same spot. The stock basis arithmetic parked
             // them up and right of the column, and any pass running after the layout (a mode change,
             // an expand) dropped the whole transmit section away from it until the next relayout.
-            Point h1 = new Point(this.ClientSize.Width / 2 + 30, 740 + 20); // same as H1LayoutV4
+            // The spot comes from H1ModePanelPoint() so this pass and the layout can
+            // never drift apart again - the old hard-coded pair went stale when the
+            // layout moved.
+            Point h1 = H1ModePanelPoint();
             panelModeSpecificPhone.Location = h1;
             panelModeSpecificCW.Location = h1;
             panelModeSpecificDigital.Location = h1;
@@ -41699,6 +41909,7 @@ namespace Thetis
             if (oldRX2Enabled != chkRX2.Checked) RX2EnabledPreChangedHandlers?.Invoke(chkRX2.Checked);
 
             RX2Enabled = chkRX2.Checked;
+            H1TracePanelMoves("rx2set=" + chkRX2.Checked); // H1: trace the reported trigger
 
             // H1: VFO B is RX2's slice. With RX2 off its transmit tick is greyed and cannot arm,
             // because the transmit frequency then comes from VFO A, or SubVFOA under SPLIT.
@@ -42092,6 +42303,7 @@ namespace Thetis
             Display.SubRX1FilterLow = low; // H1: the drawn sub window follows this filter
             Display.SubRX1FilterHigh = high;
             SubFilterToSliders(1, low, high);
+            UpdateSubFilterReadout(1);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
         }
@@ -42129,6 +42341,7 @@ namespace Thetis
 
             _sub_agc_gain = value;
             SyncSubGainSlider(1, value);
+            UpdateSubGainReadout(1);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
         }
@@ -44540,6 +44753,8 @@ namespace Thetis
                     + " phone=" + (panelModeSpecificPhone == null ? "-" : panelModeSpecificPhone.Location.ToString())
                     + " cw=" + (panelModeSpecificCW == null ? "-" : panelModeSpecificCW.Location.ToString())
                     + " txatt=" + (udTXStepAttData == null ? "-" : udTXStepAttData.Location.ToString())
+                    + " mon=" + (chkMON == null ? "-" : chkMON.Location.ToString())
+                    + " mox=" + (chkMOX == null ? "-" : chkMOX.Location.ToString())
                     + "\r\n");
             }
             catch { }
@@ -48426,6 +48641,7 @@ namespace Thetis
         }
 
         private int[] _nr_selected = new int[]{ 0, 0 }; // the current NR for each rx
+        private int[] _sub_nr_selected = new int[] { 0, 0 }; // each sub's own NR: 0 = off, 1..4 = NR1..NR4
         private void nr_selected_from_text(string text)
         {
             if (string.IsNullOrEmpty(text)) return;
@@ -48447,11 +48663,24 @@ namespace Thetis
                 }
             }
 
+            // H1: the two sub receivers' own NR types ride behind the receiver fields;
+            // saves from before this change simply leave the subs off
+            int scount = (int)Math.Min(Math.Max(parts.Length - _nr_selected.Length, 0), _sub_nr_selected.Length);
+            for (int i = 0; i < scount; i++)
+            {
+                if (int.TryParse(parts[_nr_selected.Length + i], out int snr))
+                {
+                    _sub_nr_selected[i] = snr;
+                }
+            }
+
             for (int i = 0; i < _nr_selected.Length; i++)
             {
                 setupNR(i + 1, false);
                 setupNR(i + 1, true);
             }
+            ApplySubNR(1);
+            ApplySubNR(2);
         }
         private string nr_selected_to_text()
         {
@@ -48459,6 +48688,10 @@ namespace Thetis
             for (int i = 0; i < _nr_selected.Length; i++)
             {
                 ret += _nr_selected[i].ToString() + "|";
+            }
+            for (int i = 0; i < _sub_nr_selected.Length; i++)
+            {
+                ret += _sub_nr_selected[i].ToString() + "|";
             }
             if (ret.EndsWith("|")) ret = ret.Substring(0, ret.Length - 1);
             return ret;
