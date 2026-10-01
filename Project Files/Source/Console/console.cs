@@ -6692,7 +6692,7 @@ namespace Thetis
             int W = this.ClientSize.Width;
             int T = panelDisplay.Top + 3;
             int pitch = 47, bw = 45, rh = 23;
-            int sw = 3 * pitch;
+            int sw = 3 * pitch + 5; // H1: five more pixels of strip so the AGC combos and the value boxes are not cramped
             int lx = 5;
             int rx = W - 5 - sw;
             // group offsets down the strip, about 34 px between groups
@@ -6718,11 +6718,11 @@ namespace Thetis
             H1Put(lblRF, this, lx, T + oAGC);
             H1Put(ptbRF, this, lx, T + oAGC + 16);
             H1Put(lblAGC, this, lx, T + oCmb);
-            H1Put(comboAGC, this, lx, T + oCmb + 16, bw);
-            H1Put(lblPreamp, this, lx + pitch, T + oCmb, bw);
-            H1Put(comboPreamp, this, lx + pitch, T + oCmb + 16, bw);
-            H1Put(udRX1StepAttData, this, lx + pitch, T + oCmb + 17, bw);
-            H1Put(pbAutoAttWarningRX1, this, lx + 2 * pitch, T + oCmb + 16);
+            H1Put(comboAGC, this, lx, T + oCmb + 16, 66); // H1: wide enough for Custom
+            H1Put(lblPreamp, this, lx + 71, T + oCmb, 50);
+            H1Put(comboPreamp, this, lx + 71, T + oCmb + 16, 50);
+            H1Put(udRX1StepAttData, this, lx + 71, T + oCmb + 17, 50); // H1: the ATT value box gets width
+            H1Put(pbAutoAttWarningRX1, this, lx + 124, T + oCmb + 16);
 
             H1Cap("rx1mode", "RX1 MODE", lx, T + oMode - 18, sw);
             H1Put(panelMode, this, lx, T + oMode, sw, 4 * rh);
@@ -6744,19 +6744,19 @@ namespace Thetis
             H1Put(btnFilterShiftReset, panelFilter, 96, 134, 43, 20);
             lblFilterLow.AutoSize = true; lblFilterHigh.AutoSize = true;
             H1Put(lblFilterLow, panelFilter, 0, 164);
-            H1Put(udFilterLow, panelFilter, 24, 160, 44);
-            H1Put(lblFilterHigh, panelFilter, 70, 164);
-            H1Put(udFilterHigh, panelFilter, 98, 160, 42);
+            H1Put(udFilterLow, panelFilter, 25, 160, 46); // H1: values like -2662 fit whole now
+            H1Put(lblFilterHigh, panelFilter, 71, 164);
+            H1Put(udFilterHigh, panelFilter, 99, 160, 46);
 
             // ---------- RIGHT strip: RX2 only, same rows ----------
             H1Put(lblRX2RF, this, rx, T + oAGC);
             H1Put(ptbRX2RF, this, rx, T + oAGC + 16);
             H1Put(lblRX2AGC, this, rx, T + oCmb);
-            H1Put(comboRX2AGC, this, rx, T + oCmb + 16, bw);
-            H1Put(lblRX2Preamp, this, rx + pitch, T + oCmb, bw);
-            H1Put(comboRX2Preamp, this, rx + pitch, T + oCmb + 16, bw);
-            H1Put(udRX2StepAttData, this, rx + pitch, T + oCmb + 17, bw);
-            H1Put(pbAutoAttWarningRX2, this, rx + 2 * pitch, T + oCmb + 16);
+            H1Put(comboRX2AGC, this, rx, T + oCmb + 16, 66); // H1: wide enough for Custom
+            H1Put(lblRX2Preamp, this, rx + 71, T + oCmb, 50);
+            H1Put(comboRX2Preamp, this, rx + 71, T + oCmb + 16, 50);
+            H1Put(udRX2StepAttData, this, rx + 71, T + oCmb + 17, 50); // H1: the ATT value box gets width
+            H1Put(pbAutoAttWarningRX2, this, rx + 124, T + oCmb + 16);
             panelRX2Power.Size = new Size(1, 1);
             panelRX2Power.Location = new Point(0, 0);
             panelRX2Power.SendToBack();
@@ -6784,9 +6784,9 @@ namespace Thetis
             }
             lblRX2FilterLow.AutoSize = true; lblRX2FilterHigh.AutoSize = true;
             H1Put(lblRX2FilterLow, panelRX2Filter, 0, 164);
-            H1Put(udRX2FilterLow, panelRX2Filter, 24, 160, 44);
-            H1Put(lblRX2FilterHigh, panelRX2Filter, 70, 164);
-            H1Put(udRX2FilterHigh, panelRX2Filter, 98, 160, 42);
+            H1Put(udRX2FilterLow, panelRX2Filter, 25, 160, 46); // H1: values like -2662 fit whole now
+            H1Put(lblRX2FilterHigh, panelRX2Filter, 71, 164);
+            H1Put(udRX2FilterHigh, panelRX2Filter, 99, 160, 46);
 
             foreach (Control k in new Control[] { lblRF, ptbRF, lblAGC, comboAGC, lblPreamp, comboPreamp, udRX1StepAttData,
                 lblRX2RF, ptbRX2RF, lblRX2AGC, comboRX2AGC, lblRX2Preamp, comboRX2Preamp, udRX2StepAttData,
@@ -41977,7 +41977,7 @@ namespace Thetis
             //
 
             gr_display_size_basis = this.panelDisplay.Size;
-            gr_display_size_basis.Width -= 8; // H1: paired with the panafall-to-x158 shift, the display's right edge stays where it was
+            gr_display_size_basis.Width -= 13; // H1: 8 for the panafall-to-x158 left shift + 5 off the right edge (the operator asked for five each side)
             gr_display2_basis = this.panelDisplay2.Location;
             gr_dsp_basis = this.panelDSP.Location;
             gr_multirx_basis = this.panelMultiRX.Location;
