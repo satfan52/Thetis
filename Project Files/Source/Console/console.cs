@@ -6271,7 +6271,7 @@ namespace Thetis
 
             int bx = (panelRX2Mixer != null ? panelRX2Mixer.Left : ClientSize.Width - 407) - 8;
             int by = y0 - 4;
-            h1RX2VeilBelow.Bounds = new Rectangle(bx, by, Math.Max(0, ClientSize.Width - bx), Math.Max(0, ClientSize.Height - 18 - by));
+            h1RX2VeilBelow.Bounds = new Rectangle(bx, by, 248, Math.Max(0, ClientSize.Height - 18 - by)); // H1: the audio group's box only - the sub strip has its own veil
 
             // H1: top row, from the RX2 meter pair across to the window edge
             // H1: start just above the meters themselves and stop at the display. Running this box up
@@ -6710,11 +6710,20 @@ namespace Thetis
                 if (k != null) k.BringToFront();
 
             // ---------- BELOW, left: RX1 bands, audio, panafall ----------
-            int aL = 175, aR = W - 175 - 232;         // audio groups, mirrored
+            int aL = 175, aR = W - 175 - 232;         // the outer slots, mirrored
+            // H1: the centre zone's geometry, computed up front - the audio blocks and the
+            // sub strips swap: the strips take the outer slots, the audio groups the inner
+            // ones, each hugging the centre blocks
+            int cx = (panelDisplay.Left + panelDisplay.Right) / 2; // panadapter centre
+            int vw = H1_TX_VW, tw = H1_TX_TW, g2 = H1_TX_G2;
+            int sx = cx - (vw + g2 + tw) / 2;                 // VFO
+            int tx = sx + vw + g2;                            // TRANSMIT
+            int aLv = sx - 24 - 232;                          // VAC1 block, inner slot
+            int aRv = tx + tw + 24;                           // VAC2 block, inner slot
             H1Cap("rx1bands", "RX1 BANDS", 12, Y0, 150);
             H1Cap("rx2bands", "RX2 BANDS", W - 162, Y0, 150);
-            H1Cap("rx1audio", "VAC1 AUDIO", aL, Y0, 232);
-            H1Cap("rx2audio", "VAC2 AUDIO", aR, Y0, 232);
+            H1Cap("rx1audio", "VAC1 AUDIO", aLv, Y0, 232);
+            H1Cap("rx2audio", "VAC2 AUDIO", aRv, Y0, 232);
             H1Cap("rx1pan", "RX1 PANAFALL", 12, Y0 + 150, 150);
             H1Cap("rx2pan", "RX2 PANAFALL", W - 162, Y0 + 150, 150);
 
@@ -6724,7 +6733,10 @@ namespace Thetis
             panelDisplay2.Size = new Size(110, 76);
             panelDisplay2.Location = new Point(12, Y0 + 170);
 
-            panelMultiRX.Location = new Point(aL, Y0 + 20);
+            if (panelMultiRX != null) panelMultiRX.Size = new Size(232, 98); // H1: room for the mutes under the vols
+            panelMultiRX.Location = new Point(aLv, Y0 + 20);
+            H1Put(chkVAC1MUT, panelMultiRX, 12, 73, 45, 23);   // H1: the receiver's mute, under its volume
+            H1Put(chkSubRX1MUT, panelMultiRX, 140, 73, 45, 23); // H1: the sub's mute, moved out of the strip
             H1Put(chkEnableMultiRX, panelMultiRX, 172, 20, 50);
             H1Put(chkPanSwap, panelMultiRX, 172, 46, 50);
             // H1: the AF sliders only mirror the Vol sliders - the user retired them, and the
@@ -6733,9 +6745,9 @@ namespace Thetis
             if (ptbRX1AF != null) ptbRX1AF.Visible = false;
             if (lblRX1Vol != null) lblRX1Vol.Text = "RX1";
             if (lblRX1SubVol != null) { lblRX1SubVol.Text = "SubRX1"; lblRX1SubVol.AutoSize = true; }
-            H1Put(chkSquelch, this, aL + 10, Y0 + 96);
-            H1Put(ptbSquelch, this, aL, Y0 + 120);
-            H1Put(picSquelch, this, aL + 9, Y0 + 141);
+            H1Put(chkSquelch, this, aLv + 10, Y0 + 122);
+            H1Put(ptbSquelch, this, aLv, Y0 + 146);
+            H1Put(picSquelch, this, aLv + 9, Y0 + 167);
 
             // ---------- BELOW, right: the mirror ----------
             if (h1RX2BandPanel != null)
@@ -6752,7 +6764,10 @@ namespace Thetis
             panelRX2Display.Size = new Size(110, 76);
             panelRX2Display.Location = new Point(W - 113, Y0 + 170);
             H1Put(chkX2TR, panelRX2Display, 52, 50);
-            panelRX2Mixer.Location = new Point(aR, Y0 + 20);
+            if (panelRX2Mixer != null) panelRX2Mixer.Size = new Size(232, 98); // H1: room for the mutes
+            panelRX2Mixer.Location = new Point(aRv, Y0 + 20);
+            H1Put(chkVAC2MUT, panelRX2Mixer, 12, 73, 45, 23);  // H1: RX2's mute, under its volume
+            H1Put(chkSubRX2MUT, panelRX2Mixer, 140, 73, 45, 23); // H1: SubRX2's mute, moved out of the strip
             // the mirror of the RX1 audio group: switches on the outer-left, sub volume next to
             // them, then pan, then the main volume on the right
             H1Put(chkEnableMultiRX2, panelRX2Mixer, 2, 20, 50);
@@ -6768,12 +6783,12 @@ namespace Thetis
             if (ptbRX2AF != null) ptbRX2AF.Visible = false;
             if (lblRX2Vol != null) lblRX2Vol.Text = "RX2";
             if (lblRX2SubVol != null) { lblRX2SubVol.Text = "SubRX2"; lblRX2SubVol.AutoSize = true; }
-            H1Put(chkRX2Squelch, this, aR + 232 - 10 - 80, Y0 + 96);
-            H1Put(ptbRX2Squelch, this, aR + 232 - 100, Y0 + 120);
-            H1Put(picRX2Squelch, this, aR + 232 - 9 - 83, Y0 + 141);
+            H1Put(chkRX2Squelch, this, aRv + 232 - 10 - 80, Y0 + 122);
+            H1Put(ptbRX2Squelch, this, aRv + 232 - 100, Y0 + 146);
+            H1Put(picRX2Squelch, this, aRv + 232 - 9 - 83, Y0 + 167);
             // H1: VAC1 sits beside the RX1 squelch on its own row; VAC2 in the mirrored slot
-            H1Put(chkVAC1, this, aL + 96, Y0 + 96, 50);
-            H1Put(chkVAC2, this, aR + 232 - 90 - 58, Y0 + 96, 50);
+            H1Put(chkVAC1, this, aLv + 96, Y0 + 122, 50);
+            H1Put(chkVAC2, this, aRv + 232 - 90 - 58, Y0 + 122, 50);
             // H1: the VAC pills were drawn with the designer's dark caption colour, which is
             // unreadable on the dark skin. Take the squelch pill's light text and font.
             if (chkVAC1 != null) { chkVAC1.ForeColor = chkSquelch.ForeColor; chkVAC1.Font = chkSquelch.Font; }
@@ -6787,7 +6802,6 @@ namespace Thetis
             // panadapter, centred on it and at double surface; the MASTER, VFO and TRANSMIT
             // groups sit under it, all balanced about the same centre line. The flanks stay
             // open for the SubRX1 and SubRX2 control groups that come later.
-            int cx = (panelDisplay.Left + panelDisplay.Right) / 2; // panadapter centre
             int cY = H1_CY;                                   // caption line of the shared groups
             int cw = 292;                                     // cluster width: 4 buttons of 70 px at 74 px pitch
             int mw = 112;                                     // MASTER column width
@@ -6821,10 +6835,7 @@ namespace Thetis
 
             // H1: MASTER moved out of the group row, to the right of the button cluster in
             // the dead space beside it; VFO and TRANSMIT close up under the centre line,
-            // widening both flanks for the sub receiver control groups that come later.
-            int vw = H1_TX_VW, tw = H1_TX_TW, g2 = H1_TX_G2;
-            int sx = cx - (vw + g2 + tw) / 2;                 // VFO
-            int tx = sx + vw + g2;                            // TRANSMIT
+            // widen both flanks for the sub receiver control groups that come later.
             int cYm = 696;                                    // MASTER caption line, level with the cluster
             int mx = bx + cw + g2;                            // MASTER, right of the cluster
             H1Cap("mast", "MASTER", mx, cYm, 110);
@@ -6868,8 +6879,8 @@ namespace Thetis
                 int sldw = cbw + 14;                      // shortened slider length
                 int col2 = cbw + 18;                      // second column offset
                 int stw = col2 + sldw + 8;                // strip width, headroom for the values row
-                int stx1 = sx - 24 - stw;                 // H1: the strip sits close against the VFO block
-                int stx2 = tx + tw + 24;                  // H1: and this one close against the TRANSMIT and MASTER blocks
+                int stx1 = aL;                            // H1: the strips take the outer slots - the swap
+                int stx2 = aR;                            // H1: SubRX2 goes where the VAC2 group stood
                 int sY = 740;                             // caption line, level with VAC1 Audio
                 int sMod = sY + 22;                       // Mode / AGC labels
                 int sCmb = sMod + 16;                     // dropdowns
@@ -6899,7 +6910,6 @@ namespace Thetis
                 H1Put(lblSubRX1Gain, this, stx1, sGain);
                 H1Put(ptbSubRX1Gain, this, stx1, sGsl, sldw, 24);
                 H1Put(lblSubRX1GainVal, this, stx1 + stw - 52, sGsl + 5, 52, 14);
-                H1Put(chkSubRX1MUT, this, stx1 + sldw + 10, sGsl, 45, 23);
                 H1Put(chkSubRX1NR, this, stx1, sPil, 45, 23);
                 H1Put(chkSubRX1ANF, this, stx1 + 47, sPil, 45, 23);
                 H1Put(chkSubRX1NB2, this, stx1 + 94, sPil, 45, 23);
@@ -6918,7 +6928,6 @@ namespace Thetis
                 H1Put(lblSubRX2Gain, this, stx2, sGain);
                 H1Put(ptbSubRX2Gain, this, stx2, sGsl, sldw, 24);
                 H1Put(lblSubRX2GainVal, this, stx2 + stw - 52, sGsl + 5, 52, 14);
-                H1Put(chkSubRX2MUT, this, stx2 + sldw + 10, sGsl, 45, 23);
                 H1Put(chkSubRX2NR, this, stx2, sPil, 45, 23);
                 H1Put(chkSubRX2ANF, this, stx2 + 47, sPil, 45, 23);
                 H1Put(chkSubRX2NB2, this, stx2 + 94, sPil, 45, 23);
@@ -6939,7 +6948,7 @@ namespace Thetis
         // beside them, so the two strips read as twins.
         private void ShapeRX2MixerStrip()
         {
-            panelRX2Mixer.Size = new Size(232, 72);
+            panelRX2Mixer.Size = new Size(232, 98); // H1: the taller mirror, room for the mutes
             ptbRX2Gain.Location = new Point(12, 19);
             ptbRX2Gain.Size = new Size(24, 52);
             ptbRX2Pan.Location = new Point(40, 19);
@@ -6992,6 +7001,7 @@ namespace Thetis
         private PrettyTrackBar ptbSubRX2Width, ptbSubRX2Shift, ptbSubRX2Gain;
         private CheckBoxTS chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT;
         private CheckBoxTS chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT;
+        private CheckBoxTS chkVAC1MUT, chkVAC2MUT; // H1: the receiver mutes in the audio groups
         private Label lblSubRX1Mode, lblSubRX1AGC, lblSubRX1Width, lblSubRX1Shift, lblSubRX1Gain;
         private Label lblSubRX2Mode, lblSubRX2AGC, lblSubRX2Width, lblSubRX2Shift, lblSubRX2Gain;
         private Label lblSubRX1FLow, lblSubRX1FHigh, lblSubRX1GainVal;
@@ -7096,6 +7106,14 @@ namespace Thetis
                 Controls.Add(lf); Controls.Add(lh); Controls.Add(gv); Controls.Add(rst);
                 Controls.Add(n1); Controls.Add(n2); Controls.Add(n3); Controls.Add(n4); Controls.Add(n5);
             }
+
+            // H1: the two receiver mutes live in the audio groups, under their volumes
+            chkVAC1MUT = NewSubPill("chkVAC1MUT", "MUT");
+            chkVAC1MUT.CheckedChanged += chkVAC1MUT_CheckedChanged;
+            Controls.Add(chkVAC1MUT);
+            chkVAC2MUT = NewSubPill("chkVAC2MUT", "MUT");
+            chkVAC2MUT.CheckedChanged += chkVAC2MUT_CheckedChanged;
+            Controls.Add(chkVAC2MUT);
 
             UpdateSubGainReadout(1); UpdateSubGainReadout(2);
             UpdateSubFilterReadout(1); UpdateSubFilterReadout(2);
@@ -7276,6 +7294,15 @@ namespace Thetis
             if (chkSubRX1MUT.Focused) btnHidden.Focus();
         }
 
+        // H1: the receiver's own mute in the audio group - the main stream only,
+        // the sub keeps its level. The mirror of the strips' mute for the parent.
+        private void chkVAC1MUT_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
+            if (chkVAC1MUT.Focused) btnHidden.Focus();
+        }
+
         /// <summary>H1: the filter Low/High readout under the Width/Shift sliders.</summary>
         private void UpdateSubFilterReadout(int sub)
         {
@@ -7402,6 +7429,13 @@ namespace Thetis
             if (_sub2_console_updating) return;
             radio.GetDSPRX(1, 1).BinOn = chkSubRX2BIN.Checked;
             if (chkSubRX2BIN.Focused) btnHidden.Focus();
+        }
+
+        private void chkVAC2MUT_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
+            if (chkVAC2MUT.Focused) btnHidden.Focus();
         }
 
         private void chkSubRX2MUT_CheckedChanged(object sender, EventArgs e)
