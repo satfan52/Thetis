@@ -6914,7 +6914,7 @@ namespace Thetis
             // H1: the display panel's bottom edge crosses this zone at y705; the cluster is
             // fronted in the loop below, so its rows ride up near that line but stay clear
             // of the display's black readout band, which ends at y674
-            int r1 = 678, r2 = 716;                           // cluster rows, just clear of the display's readout band
+            int r1 = 692, r2 = 730;                           // cluster rows, just clear of the display's readout band
             foreach (Control cb in new Control[] { chkMON, chkTUN, chkMOX, chk2TONE, chkRX2SR, chkFWCATUBypass, ckQuickRec, ckQuickPlay })
             {
                 if (cb == null) continue;
@@ -42050,7 +42050,7 @@ namespace Thetis
 
             tb_rx1af_basis = this.ptbRX1AF.Location;
             tb_rx2af_basis = this.ptbRX2AF.Location;
-        gr_display_basis = new Point(this.panelDisplay.Location.X + 44, this.panelDisplay.Location.Y); // H1: panafall to x168 (strips 10 px wider each side) (strips 10 px wider each side); was x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
+        gr_display_basis = new Point(this.panelDisplay.Location.X + 44, this.panelDisplay.Location.Y + 14); // H1: panafall to x168 and 14 px lower so it sits centred between the top row and the bottom blocks (20 px above, 20 below); was x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
 
             combo_display_mode_basis = this.comboDisplayMode.Location;
             combo_rx2_display_mode_basis = this.comboRX2DisplayMode.Location;
