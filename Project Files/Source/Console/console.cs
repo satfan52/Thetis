@@ -32245,7 +32245,6 @@ namespace Thetis
             else if (MOX && chkMON.Checked && !m_bIgnoreAFChangeForMonitor) TXAF = ptbAF.Value; //MW0LGE_21k9 ingore the monitor AF slider change when in mox //MW0LGE_22b added chMON, so only adjust txaf if monitoring
 
             setLinkedAF(0, ptbAF.Value); //[2.10.1.0] MW0LGE
-            SyncVacRxGainToAf(ptbAF.Value); // H1: with the processed TX route on, AF is also the VAC1 RX gain
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -32320,7 +32319,6 @@ namespace Thetis
         // [linked MIC/VAC1 TX gain] one guard for both directions; re-entrancy is
         // possible because the Setup numeric fires ValueChanged when written
         private bool micVacSync = false;
-        private bool afVacSync = false; // H1: guard for the AF to VAC1 RX gain link
         private bool h1Sub1StateSeen = false; // H1: does the database hold saved sub strip settings
         private bool h1Sub2StateSeen = false;
 
@@ -32360,19 +32358,6 @@ namespace Thetis
                 SetupForm.VACTXGain = micValue;             // ud setter fires ValueChanged -> Audio.VACPreamp
             }
             finally { micVacSync = false; }
-        }
-
-        // AF slider -> VAC1 RX gain, the same link the MIC slider has to the VAC1 TX gain,
-        // and likewise only while the Processed TX Output route is enabled
-        private void SyncVacRxGainToAf(int afValue)
-        {
-            if (afVacSync || !Audio.ProcessedTXOutputEnabled || IsSetupFormNull) return;
-            afVacSync = true;
-            try
-            {
-                SetupForm.VACRXGain = afValue;              // ud setter fires ValueChanged -> Audio.VACRXScale
-            }
-            finally { afVacSync = false; }
         }
 
         private void ptbMic_Scroll(object sender, System.EventArgs e)
