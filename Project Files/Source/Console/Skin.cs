@@ -1052,6 +1052,8 @@ namespace Thetis
                 else if (skinName == "chkSubRX2MUT") skinName = "chkMUT";
                 else if (skinName == "chkVAC1MUT") skinName = "chkMUT";
                 else if (skinName == "chkVAC2MUT") skinName = "chkMUT";
+                else if (skinName == "chkSubRX1Follow") skinName = "chkMUT";
+                else if (skinName == "chkSubRX2Follow") skinName = "chkMUT";
             }
 
             string skey = "";

@@ -6769,19 +6769,19 @@ namespace Thetis
             if (chkX2TR != null) chkX2TR.Visible = true;
             if (panelRX2Mixer != null) panelRX2Mixer.Size = new Size(232, 98); // H1: room for the mutes
             panelRX2Mixer.Location = new Point(aRv, Y0 + 20);
-            H1Put(chkVAC2MUT, panelRX2Mixer, 180, 73, 45, 23); // H1: RX2's mute, centred under its volume
-            H1Put(chkSubRX2MUT, panelRX2Mixer, 52, 73, 45, 23); // H1: SubRX2's mute, centred under its volume
+            H1Put(chkVAC2MUT, panelRX2Mixer, 52, 73, 45, 23);  // H1: RX2's mute, under RX2's volume
+            H1Put(chkSubRX2MUT, panelRX2Mixer, 180, 73, 45, 23); // H1: SubRX2's mute, under SubRX2's volume
             // the mirror of the RX1 audio group: switches on the outer-left, sub volume next to
             // them, then pan, then the main volume on the right
             H1Put(chkEnableMultiRX2, panelRX2Mixer, 2, 20, 50);
             H1Put(chkRX2PanSwap, panelRX2Mixer, 2, 46, 50);
-            if (ptbRX2SubGain != null) ptbRX2SubGain.Location = new Point(62, 19);
-            if (lblRX2SubVol != null) lblRX2SubVol.Location = new Point(64, 3);
+            ptbRX2Gain.Location = new Point(62, 19);   // H1: RX2's volume on the left, same scheme as the RX1 block
+            lblRX2Vol.Location = new Point(64, 3);
             ptbRX2Pan.Location = new Point(90, 19);
             if (ptbRX2SubPan != null) ptbRX2SubPan.Location = new Point(90, 46);
             lblRX2Pan.Location = new Point(128, 3);
-            ptbRX2Gain.Location = new Point(190, 19);
-            lblRX2Vol.Location = new Point(192, 3);
+            if (ptbRX2SubGain != null) ptbRX2SubGain.Location = new Point(190, 19); // H1: SubRX2's volume on the right
+            if (lblRX2SubVol != null) lblRX2SubVol.Location = new Point(192, 3);
             if (lblRX2AF != null) lblRX2AF.Visible = false;
             if (ptbRX2AF != null) ptbRX2AF.Visible = false;
             if (lblRX2Vol != null) lblRX2Vol.Text = "RX2";
@@ -6881,7 +6881,7 @@ namespace Thetis
                 cbw += SystemInformation.VerticalScrollBarWidth + 12; // + drop-down button + margins
                 int sldw = cbw + 14;                      // shortened slider length
                 int col2 = cbw + 18;                      // second column offset
-                int stw = col2 + sldw + 8;                // strip width, headroom for the values row
+                int stw = col2 + sldw + 8 + 28;           // strip width: the values row and the follow pill at the end
                 // H1: the strips centre in the space between the audio groups and the band columns
                 int stx1 = (175 + aLv) / 2 - stw / 2;
                 int stx2 = ((aRv + 232) + (W - 172)) / 2 - stw / 2;
@@ -6898,8 +6898,15 @@ namespace Thetis
                 h1SubStx1 = stx1; h1SubStx2 = stx2; h1SubStw = stw;
                 H1Cap("subrx1", "SUBRX1", stx1, sY, stw);
                 H1Cap("subrx2", "SUBRX2", stx2, sY, stw);
-                // H1: the strip captions wear white and carry no rule line - they belong to their blocks
-                foreach (string h1k in new string[] { "subrx1", "subrx2", "subrx1noise", "subrx2noise" })
+                // H1: the block titles keep the console's caption blue and their rule lines; the
+                // inner Noise caption stays white-and-unruled as the operator asked
+                foreach (string h1k in new string[] { "subrx1", "subrx2" })
+                {
+                    Control h1c;
+                    if (h1Caps.TryGetValue(h1k, out h1c) && h1c != null) h1c.ForeColor = Color.FromArgb(140, 170, 215);
+                    if (h1Caps.TryGetValue(h1k + "_r", out h1c) && h1c != null) h1c.Visible = true;
+                }
+                foreach (string h1k in new string[] { "subrx1noise", "subrx2noise" })
                 {
                     Control h1c;
                     if (h1Caps.TryGetValue(h1k, out h1c) && h1c != null) h1c.ForeColor = Color.White;
@@ -6908,9 +6915,10 @@ namespace Thetis
                 H1Cap("subrx1noise", "Noise", stx1, sNoi, stw);
                 H1Cap("subrx2noise", "Noise", stx2, sNoi, stw);
                 H1Put(lblSubRX1Mode, this, stx1, sMod);
-                H1Put(comboSubRX1Mode, this, stx1, sCmb, cbw, 21);
+                H1Put(comboSubRX1Mode, this, stx1, sCmb, cbw - 12, 21); // H1: shortened - the follow pill takes the row's end
                 H1Put(lblSubRX1AGC, this, stx1 + col2, sMod);
-                H1Put(comboSubRX1AGC, this, stx1 + col2, sCmb, cbw, 21);
+                H1Put(comboSubRX1AGC, this, stx1 + col2, sCmb, cbw - 12, 21);
+                H1Put(chkSubRX1Follow, this, stx1 + stw - 45, sCmb, 45, 21);
                 H1Put(lblSubRX1Width, this, stx1, sFlt);
                 H1Put(ptbSubRX1Width, this, stx1, sSld, sldw, 24);
                 H1Put(lblSubRX1Shift, this, stx1 + col2, sFlt);
@@ -6926,9 +6934,10 @@ namespace Thetis
                 H1Put(chkSubRX1NB2, this, stx1 + 94, sPil, 45, 23);
                 H1Put(chkSubRX1BIN, this, stx1 + 141, sPil, 45, 23);
                 H1Put(lblSubRX2Mode, this, stx2, sMod);
-                H1Put(comboSubRX2Mode, this, stx2, sCmb, cbw, 21);
+                H1Put(comboSubRX2Mode, this, stx2, sCmb, cbw - 12, 21); // H1: shortened - the follow pill takes the row's end
                 H1Put(lblSubRX2AGC, this, stx2 + col2, sMod);
-                H1Put(comboSubRX2AGC, this, stx2 + col2, sCmb, cbw, 21);
+                H1Put(comboSubRX2AGC, this, stx2 + col2, sCmb, cbw - 12, 21);
+                H1Put(chkSubRX2Follow, this, stx2 + stw - 45, sCmb, 45, 21);
                 H1Put(lblSubRX2Width, this, stx2, sFlt);
                 H1Put(ptbSubRX2Width, this, stx2, sSld, sldw, 24);
                 H1Put(lblSubRX2Shift, this, stx2 + col2, sFlt);
@@ -7013,6 +7022,7 @@ namespace Thetis
         private CheckBoxTS chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT;
         private CheckBoxTS chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT;
         private CheckBoxTS chkVAC1MUT, chkVAC2MUT; // H1: the receiver mutes in the audio groups
+        private CheckBoxTS chkSubRX1Follow, chkSubRX2Follow; // H1: make a sub take its parent's settings
         private Label lblSubRX1Mode, lblSubRX1AGC, lblSubRX1Width, lblSubRX1Shift, lblSubRX1Gain;
         private Label lblSubRX2Mode, lblSubRX2AGC, lblSubRX2Width, lblSubRX2Shift, lblSubRX2Gain;
         private Label lblSubRX1FLow, lblSubRX1FHigh, lblSubRX1GainVal;
@@ -7125,6 +7135,14 @@ namespace Thetis
             chkVAC2MUT = NewSubPill("chkVAC2MUT", "MUT");
             chkVAC2MUT.CheckedChanged += chkVAC2MUT_CheckedChanged;
             Controls.Add(chkVAC2MUT);
+
+            // H1: the follow pills - a ticked strip mirrors its parent receiver, frequency aside
+            chkSubRX1Follow = NewSubPill("chkSubRX1Follow", "=RX1");
+            chkSubRX1Follow.CheckedChanged += chkSubRX1Follow_CheckedChanged;
+            Controls.Add(chkSubRX1Follow);
+            chkSubRX2Follow = NewSubPill("chkSubRX2Follow", "=RX2");
+            chkSubRX2Follow.CheckedChanged += chkSubRX2Follow_CheckedChanged;
+            Controls.Add(chkSubRX2Follow);
 
             UpdateSubGainReadout(1); UpdateSubGainReadout(2);
             UpdateSubFilterReadout(1); UpdateSubFilterReadout(2);
@@ -7442,6 +7460,20 @@ namespace Thetis
             if (chkSubRX2BIN.Focused) btnHidden.Focus();
         }
 
+        private void chkSubRX1Follow_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub_console_updating) return;
+            if (chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: take the parent's set at the tick
+            if (chkSubRX1Follow.Focused) btnHidden.Focus();
+        }
+
+        private void chkSubRX2Follow_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_sub2_console_updating) return;
+            if (chkSubRX2Follow.Checked) H1SyncSubFromParent(2);
+            if (chkSubRX2Follow.Focused) btnHidden.Focus();
+        }
+
         private void chkVAC2MUT_CheckedChanged(object sender, EventArgs e)
         {
             if (_sub2_console_updating) return;
@@ -7499,6 +7531,61 @@ namespace Thetis
             pill.Checked = nr > 0;
             pill.Text = nr < 2 ? "NR" : "NR" + nr;   // NR1 reads "NR", like the RX1 button
             if (sub == 1) _sub_console_updating = oldu; else _sub2_console_updating = oldu;
+        }
+
+        /// <summary>H1: bring a sub strip to its parent receiver's set - mode, filter, AGC and
+        /// the noise toggles, NR type included. Frequency is never touched. Run at startup so
+        /// the strips begin from the parent, and live while the strip's follow pill is ticked.</summary>
+        private void H1SyncSubFromParent(int sub)
+        {
+            try
+            {
+                if (sub != 1 && sub != 2) return;
+                if (sub == 1 ? comboSubRX1Mode == null : comboSubRX2Mode == null) return;
+                RadioDSPRX parent = radio.GetDSPRX(sub == 1 ? 0 : 1, 0);
+                if (parent == null) return;
+
+                // mode and passband - the setters sync their combos and sliders themselves
+                if (sub == 1) SetSubMode(parent.DSPMode); else SetSub2Mode(parent.DSPMode);
+                if (parent.DSPMode != DSPMode.FM)
+                {
+                    int lo = parent.RXFilterLow, hi = parent.RXFilterHigh;
+                    if (hi > lo) { if (sub == 1) SetSubFilter(lo, hi); else SetSub2Filter(lo, hi); }
+                }
+
+                // AGC mode and gain
+                if (sub == 1) SetSubAgcMode(parent.RXAGCMode); else SetSub2AgcMode(parent.RXAGCMode);
+                int gain = sub == 1
+                    ? (ptbRF != null ? ptbRF.Value : 60)
+                    : (ptbRX2RF != null ? ptbRX2RF.Value : 60);
+                if (sub == 1) SetSubAgcGain(gain); else SetSub2AgcGain(gain);
+
+                // the noise set: NR type, ANF, NB2 and BIN
+                _sub_nr_selected[sub - 1] = _nr_selected[sub - 1];
+                ApplySubNR(sub);
+
+                bool oldu = sub == 1 ? _sub_console_updating : _sub2_console_updating;
+                if (sub == 1) _sub_console_updating = true; else _sub2_console_updating = true;
+                if (sub == 1)
+                {
+                    if (chkSubRX1ANF != null) chkSubRX1ANF.Checked = chkANF != null && chkANF.Checked;
+                    if (chkSubRX1NB2 != null) chkSubRX1NB2.Checked = chkDSPNB2 != null && chkDSPNB2.Checked;
+                    if (chkSubRX1BIN != null) chkSubRX1BIN.Checked = chkBIN != null && chkBIN.Checked;
+                }
+                else
+                {
+                    if (chkSubRX2ANF != null) chkSubRX2ANF.Checked = chkRX2ANF != null && chkRX2ANF.Checked;
+                    if (chkSubRX2NB2 != null) chkSubRX2NB2.Checked = chkRX2NB2 != null && chkRX2NB2.Checked;
+                    if (chkSubRX2BIN != null) chkSubRX2BIN.Checked = chkRX2BIN != null && chkRX2BIN.Checked;
+                }
+                if (sub == 1) _sub_console_updating = oldu; else _sub2_console_updating = oldu;
+
+                RadioDSPRX subCh = radio.GetDSPRX(sub == 1 ? 0 : 1, 1);
+                subCh.AutoNotchFilter = sub == 1 ? (chkANF != null && chkANF.Checked) : (chkRX2ANF != null && chkRX2ANF.Checked);
+                subCh.BinOn = sub == 1 ? (chkBIN != null && chkBIN.Checked) : (chkRX2BIN != null && chkRX2BIN.Checked);
+                WDSP.SetRXASNBARun(WDSP.id(sub == 1 ? 0u : 2u, 1u), sub == 1 ? (chkDSPNB2 != null && chkDSPNB2.Checked) : (chkRX2NB2 != null && chkRX2NB2.Checked));
+            }
+            catch { }
         }
 
         private void SubFilterFromSliders(int sub)
@@ -10048,6 +10135,7 @@ namespace Thetis
 
             m_nLowOutRX1 = low;
             m_nHighOutRX1 = high;
+            if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: the follower takes the passband
         }
 
         public void UpdateRX2Filters(int low, int high, bool force = false, bool from_change_event = false)
@@ -10154,6 +10242,7 @@ namespace Thetis
 
             m_nLowOutRX2 = low;
             m_nHighOutRX2 = high;
+            if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: the follower takes the passband
         }
 
         public void UpdateRX1FilterNames(Filter f, string old_name, string new_name)
@@ -31290,6 +31379,7 @@ namespace Thetis
             if (chkBIN.Checked) chkBIN.BackColor = button_selected_color;
             else chkBIN.BackColor = SystemColors.Control;
             radio.GetDSPRX(0, 0).BinOn = chkBIN.Checked;
+            if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: the follower takes the BIN state
             // H1: BIN for the sub is the SubRX1 strip's own pill now
             BINToolStripMenuItem.Checked = chkBIN.Checked;
             if(old_state != radio.GetDSPRX(0, 0).BinOn)
@@ -32060,6 +32150,7 @@ namespace Thetis
             }
 
             rx1_agct_by_band[(int)rx1_band] = ptbRF.Value;
+            if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: the follower takes the gain
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -38364,6 +38455,8 @@ namespace Thetis
 
             UpdateDSP();
 
+            if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: a follower takes the new mode and band
+
             txtVFOAFreq_LostFocus(this, EventArgs.Empty);
             ptbPWR_Scroll(this, EventArgs.Empty);
             if (chkVFOSplit.Checked || full_duplex || PSState)
@@ -40647,6 +40740,7 @@ namespace Thetis
                 lblANFLabel.Text = "---";
             }
             radio.GetDSPRX(0, 0).AutoNotchFilter = chkANF.Checked;
+            if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: the follower takes the ANF state
             // H1: ANF for the sub is the SubRX1 strip's own pill now
             cat_anf_status = Convert.ToInt32(chkANF.Checked);
             ANFToolStripMenuItem.Checked = chkANF.Checked;
@@ -40674,6 +40768,7 @@ namespace Thetis
             }
 
             WDSP.SetRXASNBARun(WDSP.id(0, 0), chkDSPNB2.Checked);
+            if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: the follower takes the NB2 state
             // H1: NB2 for the sub is the SubRX1 strip's own pill now
             cat_snb_status = Convert.ToInt32(chkDSPNB2.Checked);
             SNBtoolStripMenuItem.Checked = chkDSPNB2.Checked;
@@ -40701,6 +40796,7 @@ namespace Thetis
                 lblRX2SNBLabel.Text = "---";
             }
             WDSP.SetRXASNBARun(WDSP.id(2, 0), chkRX2NB2.Checked);
+            if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: the follower takes the NB2 state
             cat_rx2snb_status = Convert.ToInt32(chkRX2NB2.Checked);
             AndromedaIndicatorCheck(EIndicatorActions.eINSNB, false, chkRX2NB2.Checked);
 
@@ -43152,6 +43248,7 @@ namespace Thetis
             }
 
             UpdateDSP();
+            if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: a follower takes the new mode and band
             txtVFOBFreq_LostFocus(this, EventArgs.Empty);
             chkRX2Squelch_CheckStateChanged(this, EventArgs.Empty);
             ptbPWR_Scroll(this, EventArgs.Empty);
@@ -43567,6 +43664,7 @@ namespace Thetis
                 lblRX2ANFLabel.Text = "---";
             }
             radio.GetDSPRX(1, 0).AutoNotchFilter = chkRX2ANF.Checked;
+            if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: the follower takes the ANF state
             // H1: ANF for the RX2 sub is the SubRX2 strip's own pill now
 
             catrx2_anf_status = Convert.ToInt32(chkRX2ANF.Checked);
@@ -43586,6 +43684,7 @@ namespace Thetis
             if (chkRX2BIN.Checked) chkRX2BIN.BackColor = button_selected_color;
             else chkRX2BIN.BackColor = SystemColors.Control;
             radio.GetDSPRX(1, 0).BinOn = chkRX2BIN.Checked;
+            if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: the follower takes the BIN state
             // H1: BIN for the RX2 sub is the SubRX2 strip's own pill now
             bIN2ToolStripMenuItem.Checked = chkRX2BIN.Checked;
             if (old_state != radio.GetDSPRX(1, 0).BinOn)
@@ -43686,6 +43785,7 @@ namespace Thetis
             }
 
             rx2_agct_by_band[(int)rx2_band] = ptbRX2RF.Value;
+            if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: the follower takes the gain
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -46892,6 +46992,9 @@ namespace Thetis
             ptbRX2SubPan_Scroll(this, EventArgs.Empty);
             // H1: arm the sub strips - the state restore fills the controls without firing their
             // events, so the restored settings are applied to the sub channels here
+            // H1: the strips start from their parent receivers - mode, filter, AGC and noise
+            H1SyncSubFromParent(1);
+            H1SyncSubFromParent(2);
             if (chkEnableMultiRX != null && chkEnableMultiRX.Checked) ApplySubOwnSettings(1);
             if (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked && rx2_enabled) ApplySubOwnSettings(2);
 
@@ -48822,6 +48925,9 @@ namespace Thetis
             if (_nr_selected[rx - 1] > 4) _nr_selected[rx - 1] = 0;
 
             setupNR(rx, false);
+            // H1: a following strip mirrors the receiver's whole set, NR included
+            if (rx == 1 && chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1);
+            if (rx == 2 && chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2);
             // H1: the sub's own NR pill drives the sub channel now, this cycle no longer does
 
             if (_nr_selected[rx - 1] != old_nr) NRChangedHandlers?.Invoke(rx, old_nr, _nr_selected[rx - 1]);
@@ -48836,6 +48942,8 @@ namespace Thetis
             _nr_selected[rx - 1] = nr;
 
             setupNR(rx, false);
+            if (rx == 1 && chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: a following strip mirrors the NR
+            if (rx == 2 && chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2);
             if(incude_sub) setupNR(rx, true);
 
             if (_nr_selected[rx - 1] != old_nr) NRChangedHandlers?.Invoke(rx, old_nr, _nr_selected[rx - 1]);
