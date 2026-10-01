@@ -6338,6 +6338,7 @@ namespace Thetis
             {
                 UpdateSubVeilStates();
                 H1RX2Grey(SecondSliceActive, RX2Enabled);
+                PowerStateWatchdog(); // the power-off veil answers to the option too
             }
             catch { }
         }
@@ -6726,11 +6727,15 @@ namespace Thetis
             panelMultiRX.Location = new Point(aL, Y0 + 20);
             H1Put(chkEnableMultiRX, panelMultiRX, 172, 20, 50);
             H1Put(chkPanSwap, panelMultiRX, 172, 46, 50);
-            H1Put(lblRX1AF, this, aL + 12, Y0 + 96);
-            H1Put(ptbRX1AF, this, aL + 8, Y0 + 112, 210);
-            H1Put(chkSquelch, this, aL + 10, Y0 + 142);
-            H1Put(ptbSquelch, this, aL, Y0 + 166);
-            H1Put(picSquelch, this, aL + 9, Y0 + 187);
+            // H1: the AF sliders only mirror the Vol sliders - the user retired them, and the
+            // rows close up into the freed space. The Vol sliders are named for their streams.
+            if (lblRX1AF != null) lblRX1AF.Visible = false;
+            if (ptbRX1AF != null) ptbRX1AF.Visible = false;
+            if (lblRX1Vol != null) lblRX1Vol.Text = "RX1";
+            if (lblRX1SubVol != null) { lblRX1SubVol.Text = "SubRX1"; lblRX1SubVol.AutoSize = true; }
+            H1Put(chkSquelch, this, aL + 10, Y0 + 96);
+            H1Put(ptbSquelch, this, aL, Y0 + 120);
+            H1Put(picSquelch, this, aL + 9, Y0 + 141);
 
             // ---------- BELOW, right: the mirror ----------
             if (h1RX2BandPanel != null)
@@ -6759,14 +6764,16 @@ namespace Thetis
             lblRX2Pan.Location = new Point(128, 3);
             ptbRX2Gain.Location = new Point(190, 19);
             lblRX2Vol.Location = new Point(192, 3);
-            H1Put(lblRX2AF, this, aR + 16, Y0 + 96);
-            H1Put(ptbRX2AF, this, aR + 12, Y0 + 112, 210);
-            H1Put(chkRX2Squelch, this, aR + 232 - 10 - 80, Y0 + 142);
-            H1Put(ptbRX2Squelch, this, aR + 232 - 100, Y0 + 166);
-            H1Put(picRX2Squelch, this, aR + 232 - 9 - 83, Y0 + 187);
+            if (lblRX2AF != null) lblRX2AF.Visible = false;
+            if (ptbRX2AF != null) ptbRX2AF.Visible = false;
+            if (lblRX2Vol != null) lblRX2Vol.Text = "RX2";
+            if (lblRX2SubVol != null) { lblRX2SubVol.Text = "SubRX2"; lblRX2SubVol.AutoSize = true; }
+            H1Put(chkRX2Squelch, this, aR + 232 - 10 - 80, Y0 + 96);
+            H1Put(ptbRX2Squelch, this, aR + 232 - 100, Y0 + 120);
+            H1Put(picRX2Squelch, this, aR + 232 - 9 - 83, Y0 + 141);
             // H1: VAC1 sits beside the RX1 squelch on its own row; VAC2 in the mirrored slot
-            H1Put(chkVAC1, this, aL + 96, Y0 + 142, 50);
-            H1Put(chkVAC2, this, aR + 232 - 90 - 58, Y0 + 142, 50);
+            H1Put(chkVAC1, this, aL + 96, Y0 + 96, 50);
+            H1Put(chkVAC2, this, aR + 232 - 90 - 58, Y0 + 96, 50);
             // H1: the VAC pills were drawn with the designer's dark caption colour, which is
             // unreadable on the dark skin. Take the squelch pill's light text and font.
             if (chkVAC1 != null) { chkVAC1.ForeColor = chkSquelch.ForeColor; chkVAC1.Font = chkSquelch.Font; }
@@ -7189,8 +7196,17 @@ namespace Thetis
             SetSubMode(m);
             // H1: a mode change redefines the passband - apply that mode's default
             // filter (F5), exactly as a receiver's own mode change does
-            if (m != DSPMode.FIRST && m != DSPMode.LAST && m != DSPMode.DRM && m != DSPMode.SPEC)
+            if (m == DSPMode.FM)
+            {
+                // H1: FM carries no preset passband - its band is fixed: the receiver's
+                // own deviation plus high cut. The width and shift controls go with it.
+                int halfBw = (int)(radio.GetDSPRX(0, 0).RXFMDeviation + radio.GetDSPRX(0, 0).RXFMHighCut);
+                if (halfBw > 0) SetSubFilter(-halfBw, halfBw, true);
+            }
+            else if (m != DSPMode.FIRST && m != DSPMode.LAST && m != DSPMode.DRM && m != DSPMode.SPEC)
                 SetSubFilter(rx1_filters[(int)m].GetLow(Filter.F5), rx1_filters[(int)m].GetHigh(Filter.F5), true);
+            if (ptbSubRX1Width != null) ptbSubRX1Width.Enabled = m != DSPMode.FM;
+            if (ptbSubRX1Shift != null) ptbSubRX1Shift.Enabled = m != DSPMode.FM;
             if (comboSubRX1Mode.Focused) btnHidden.Focus();
         }
 
@@ -7295,6 +7311,14 @@ namespace Thetis
             int sub = b != null && Convert.ToString(b.Tag) == "2" ? 2 : 1;
             DSPMode mode = sub == 1 ? GetSubMode() : radio.GetDSPRX(1, 1).DSPMode;
             if (mode == DSPMode.FIRST || mode == DSPMode.LAST || mode == DSPMode.DRM || mode == DSPMode.SPEC) return;
+            if (mode == DSPMode.FM)
+            {
+                // H1: FM's band is fixed - the reset returns it to the receiver's own band
+                int halfBw = (int)(radio.GetDSPRX(sub == 1 ? 0 : 1, 0).RXFMDeviation + radio.GetDSPRX(sub == 1 ? 0 : 1, 0).RXFMHighCut);
+                if (halfBw > 0) { if (sub == 1) SetSubFilter(-halfBw, halfBw); else SetSub2Filter(-halfBw, halfBw); }
+                if (b != null && b.Focused) btnHidden.Focus();
+                return;
+            }
             int low = rx1_filters[(int)mode].GetLow(Filter.F5);
             int high = rx1_filters[(int)mode].GetHigh(Filter.F5);
             if (sub == 1) SetSubFilter(low, high); else SetSub2Filter(low, high);
@@ -7308,8 +7332,16 @@ namespace Thetis
             if (_sub2_console_updating || initializing) return;
             DSPMode m = SubModeFromCombo(comboSubRX2Mode);
             SetSub2Mode(m);
-            if (m != DSPMode.FIRST && m != DSPMode.LAST && m != DSPMode.DRM && m != DSPMode.SPEC)
+            if (m == DSPMode.FM)
+            {
+                // H1: FM's band is fixed - the receiver's deviation plus high cut
+                int halfBw = (int)(radio.GetDSPRX(1, 0).RXFMDeviation + radio.GetDSPRX(1, 0).RXFMHighCut);
+                if (halfBw > 0) SetSub2Filter(-halfBw, halfBw, true);
+            }
+            else if (m != DSPMode.FIRST && m != DSPMode.LAST && m != DSPMode.DRM && m != DSPMode.SPEC)
                 SetSub2Filter(rx1_filters[(int)m].GetLow(Filter.F5), rx1_filters[(int)m].GetHigh(Filter.F5), true);
+            if (ptbSubRX2Width != null) ptbSubRX2Width.Enabled = m != DSPMode.FM;
+            if (ptbSubRX2Shift != null) ptbSubRX2Shift.Enabled = m != DSPMode.FM;
             if (comboSubRX2Mode.Focused) btnHidden.Focus();
         }
 
@@ -7505,7 +7537,14 @@ namespace Thetis
                 RadioDSPRX s = radio.GetDSPRX(0, 1);
                 WDSP.SetDSPSamplerate(WDSP.id(0, 1), _sub_dsp_mode == DSPMode.FM ? 192000 : 48000);
                 s.DSPMode = _sub_dsp_mode;
-                SubFilterFromSliders(1);
+                if (_sub_dsp_mode == DSPMode.FM)
+                {
+                    int halfBw = (int)(radio.GetDSPRX(0, 0).RXFMDeviation + radio.GetDSPRX(0, 0).RXFMHighCut);
+                    if (halfBw > 0) SetSubFilter(-halfBw, halfBw, true);
+                }
+                else SubFilterFromSliders(1);
+                if (ptbSubRX1Width != null) ptbSubRX1Width.Enabled = _sub_dsp_mode != DSPMode.FM;
+                if (ptbSubRX1Shift != null) ptbSubRX1Shift.Enabled = _sub_dsp_mode != DSPMode.FM;
                 if (comboSubRX1AGC != null && comboSubRX1AGC.SelectedIndex >= 0)
                     SetSubAgcMode((AGCMode)comboSubRX1AGC.SelectedIndex);
                 SetSubAgcGain(ptbSubRX1Gain != null ? ptbSubRX1Gain.Value : _sub_agc_gain);
@@ -7523,7 +7562,14 @@ namespace Thetis
                 RadioDSPRX s = radio.GetDSPRX(1, 1);
                 WDSP.SetDSPSamplerate(WDSP.id(2, 1), _sub2_dsp_mode == DSPMode.FM ? 192000 : 48000);
                 s.DSPMode = _sub2_dsp_mode;
-                SubFilterFromSliders(2);
+                if (_sub2_dsp_mode == DSPMode.FM)
+                {
+                    int halfBw = (int)(radio.GetDSPRX(1, 0).RXFMDeviation + radio.GetDSPRX(1, 0).RXFMHighCut);
+                    if (halfBw > 0) SetSub2Filter(-halfBw, halfBw, true);
+                }
+                else SubFilterFromSliders(2);
+                if (ptbSubRX2Width != null) ptbSubRX2Width.Enabled = _sub2_dsp_mode != DSPMode.FM;
+                if (ptbSubRX2Shift != null) ptbSubRX2Shift.Enabled = _sub2_dsp_mode != DSPMode.FM;
                 if (comboSubRX2AGC != null && comboSubRX2AGC.SelectedIndex >= 0)
                     SetSub2AgcMode((AGCMode)comboSubRX2AGC.SelectedIndex);
                 SetSub2AgcGain(ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : _sub2_agc_gain);
@@ -7910,7 +7956,10 @@ namespace Thetis
                             // film drove its body into the panel it sits on and the shape dissolved,
                             // so a button is instead redrawn as a darker copy of its own self: the
                             // outline, the body and the contrast against the panel all survive.
-                            if (c is ButtonBase || c is PictureBox) WashOut(g, c, r);
+                            // H1: never wash a running display control - DrawToBitmap of the live
+                            // panadapter/panafall comes back as rainbow stripes. A plain film over
+                            // it dims correctly.
+                            if ((c is ButtonBase || c is PictureBox) && !(c is PanDisplay)) WashOut(g, c, r);
                             else if (c is GroupBox)
                             {
                                 // H1: a meter or VFO box is one piece of furniture with its caption
@@ -8080,7 +8129,9 @@ namespace Thetis
             // H1: the sub ticks take their look from the skin's image sets (Skin.cs
             // mirrors the sub ticks onto the main ticks' tiles), so no colour forcing is
             // needed here any more.
-            bool show = !chkPower.Checked;
+            // H1: the dimming option governs this veil too - with it off the console stays
+            // readable from the moment it starts, only the radio being off remains
+            bool show = !chkPower.Checked && LegacyItemController.DimUnusedReceivers;
             if (m_powerDimOverlay.Visible != show)
             {
                 m_powerDimOverlay.Visible = show;
@@ -8113,7 +8164,7 @@ namespace Thetis
             showTxSelection(); // the ticks, the receiver rows, the LSD boxes and both sub rows
             if (m_powerDimOverlay != null)
             {
-                m_powerDimOverlay.Visible = !chkPower.Checked;
+                m_powerDimOverlay.Visible = !chkPower.Checked && LegacyItemController.DimUnusedReceivers;
                 if (m_powerDimOverlay.Visible)
                 {
                     m_powerDimOverlay.Bounds = ClientRectangle;
@@ -41021,7 +41072,6 @@ namespace Thetis
         private int _old_rx2_gain = -1;
         private void ptbRX0Gain_Scroll(object sender, System.EventArgs e)
         {
-            lblRX1Vol.Text = "Vol";
 
             //MWLGE_21k9 re-worked //[2.10.1.0] MW0LGE added eventargs empty
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkMUT.Checked) chkMUT.Checked = false;
@@ -41942,6 +41992,7 @@ namespace Thetis
             // H1: with RX2 off the second-slice controls serve the sub, with RX2 on
             // they serve receiver 2 again - their own job
             UpdateSecondSliceControlsVisible();
+            UpdateSubVeilStates(); // H1: the stored sub-receiver states change with RX2 - the veils must follow, or SubRX2's dim sticks
 
             // H1: SubRX2 is a sub receiver OF RX2, so it cannot outlive it: switching
             // RX2 off switches the second sub receiver off and greys its button out
