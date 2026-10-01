@@ -6626,10 +6626,10 @@ namespace Thetis
                 if (k != null) k.BackColor = Color.Transparent;
 
             H1TopRow();
-            H1Cap("rx1gain", "AGC GAIN", lx, T + 8, sw);
-            H1Cap("rx2gain", "AGC GAIN", rx, T + 8, sw);
-            H1Cap("rx1agc", "AGC MODE / ATT", lx, T + oCmb - 18, sw);
-            H1Cap("rx2agc", "AGC MODE / ATT", rx, T + oCmb - 18, sw);
+            H1Cap("rx1gain", "RX1 AGC GAIN", lx, T + 8, sw);
+            H1Cap("rx2gain", "RX2 AGC GAIN", rx, T + 8, sw);
+            H1Cap("rx1agc", "RX1 AGC MODE / ATT", lx, T + oCmb - 18, sw);
+            H1Cap("rx2agc", "RX2 AGC MODE / ATT", rx, T + oCmb - 18, sw);
             // ---------- LEFT strip: RX1 only ----------
             H1Put(lblRF, this, lx, T + oAGC);
             H1Put(ptbRF, this, lx, T + oAGC + 16);
@@ -6645,7 +6645,7 @@ namespace Thetis
             H1Grid(panelMode, new Control[] { radModeLSB, radModeUSB, radModeDSB, radModeCWL, radModeCWU, radModeFMN,
                 radModeAM, radModeSAM, radModeSPEC, radModeDIGL, radModeDIGU, radModeDRM }, 3, pitch, bw, rh);
 
-            H1Cap("rx1dsp", "NOISE", lx, T + oDSP - 18, sw);
+            H1Cap("rx1dsp", "RX1 NOISE", lx, T + oDSP - 18, sw);
             H1Put(panelDSP, this, lx, T + oDSP, sw, 3 * rh);
             H1Grid(panelDSP, new Control[] { chkNR, chkANF, chkNB, chkDSPNB2, chkMUT, chkBIN, chkTNF, btnTNFAdd }, 3, pitch, bw, rh);
 
@@ -6682,7 +6682,7 @@ namespace Thetis
             H1Grid(panelRX2Mode, new Control[] { radRX2ModeLSB, radRX2ModeUSB, radRX2ModeDSB, radRX2ModeCWL, radRX2ModeCWU, radRX2ModeFMN,
                 radRX2ModeAM, radRX2ModeSAM, radRX2ModeSPEC, radRX2ModeDIGL, radRX2ModeDIGU, radRX2ModeDRM }, 3, pitch, bw, rh);
 
-            H1Cap("rx2dsp", "NOISE", rx, T + oDSP - 18, sw);
+            H1Cap("rx2dsp", "RX2 NOISE", rx, T + oDSP - 18, sw);
             H1Put(panelRX2DSP, this, rx, T + oDSP, sw, 3 * rh);
             H1Grid(panelRX2DSP, new Control[] { chkRX2NR, chkRX2ANF, chkRX2NB, chkRX2NB2, chkRX2Mute, chkRX2BIN, chkRX2TNF, btnRX2TNFAdd }, 3, pitch, bw, rh);
 
@@ -6730,13 +6730,15 @@ namespace Thetis
             panelBandHF.Location = new Point(2, Y0 + 12);
             panelBandGEN.Location = new Point(2, Y0 + 12);
             panelBandVHF.Location = new Point(2, Y0 + 12);
-            panelDisplay2.Size = new Size(110, 76);
+            panelDisplay2.Size = new Size(160, 76); // H1: room for the CTUN beside AVG and Peaks
             panelDisplay2.Location = new Point(12, Y0 + 170);
+            H1Put(chkFWCATU, panelDisplay2, 104, 28); // H1: the CTUN tick, level with AVG and Peaks
+            if (chkFWCATU != null) chkFWCATU.Visible = true;
 
             if (panelMultiRX != null) panelMultiRX.Size = new Size(232, 98); // H1: room for the mutes under the vols
             panelMultiRX.Location = new Point(aLv, Y0 + 20);
-            H1Put(chkVAC1MUT, panelMultiRX, 12, 73, 45, 23);   // H1: the receiver's mute, under its volume
-            H1Put(chkSubRX1MUT, panelMultiRX, 140, 73, 45, 23); // H1: the sub's mute, moved out of the strip
+            H1Put(chkVAC1MUT, panelMultiRX, 2, 73, 45, 23);    // H1: the receiver's mute, centred under its volume
+            H1Put(chkSubRX1MUT, panelMultiRX, 130, 73, 45, 23); // H1: the sub's mute, centred under its volume
             H1Put(chkEnableMultiRX, panelMultiRX, 172, 20, 50);
             H1Put(chkPanSwap, panelMultiRX, 172, 46, 50);
             // H1: the AF sliders only mirror the Vol sliders - the user retired them, and the
@@ -6761,13 +6763,14 @@ namespace Thetis
                 h1RX2VhfPanel.Location = new Point(W - h1RX2VhfPanel.Width + 1, Y0 + 12);
                 h1RX2VhfPanel.BringToFront();
             }
-            panelRX2Display.Size = new Size(110, 76);
-            panelRX2Display.Location = new Point(W - 113, Y0 + 170);
-            H1Put(chkX2TR, panelRX2Display, 52, 50);
+            panelRX2Display.Size = new Size(160, 76); // H1: room for the CTUN beside AVG and Peaks
+            panelRX2Display.Location = new Point(W - 163, Y0 + 170);
+            H1Put(chkX2TR, panelRX2Display, 104, 28); // H1: the CTUN tick, level with AVG and Peaks
+            if (chkX2TR != null) chkX2TR.Visible = true;
             if (panelRX2Mixer != null) panelRX2Mixer.Size = new Size(232, 98); // H1: room for the mutes
             panelRX2Mixer.Location = new Point(aRv, Y0 + 20);
-            H1Put(chkVAC2MUT, panelRX2Mixer, 12, 73, 45, 23);  // H1: RX2's mute, under its volume
-            H1Put(chkSubRX2MUT, panelRX2Mixer, 140, 73, 45, 23); // H1: SubRX2's mute, moved out of the strip
+            H1Put(chkVAC2MUT, panelRX2Mixer, 180, 73, 45, 23); // H1: RX2's mute, centred under its volume
+            H1Put(chkSubRX2MUT, panelRX2Mixer, 52, 73, 45, 23); // H1: SubRX2's mute, centred under its volume
             // the mirror of the RX1 audio group: switches on the outer-left, sub volume next to
             // them, then pan, then the main volume on the right
             H1Put(chkEnableMultiRX2, panelRX2Mixer, 2, 20, 50);
@@ -6811,7 +6814,7 @@ namespace Thetis
             // H1: the display panel's bottom edge crosses this zone at y705; the cluster is
             // fronted in the loop below, so its rows ride up near that line but stay clear
             // of the display's black readout band, which ends at y674
-            int r1 = 698, r2 = 736;                           // cluster rows, just under the display
+            int r1 = 678, r2 = 716;                           // cluster rows, just clear of the display's readout band
             foreach (Control cb in new Control[] { chkMON, chkTUN, chkMOX, chk2TONE, chkRX2SR, chkFWCATUBypass, ckQuickRec, ckQuickPlay })
             {
                 if (cb == null) continue;
@@ -6836,7 +6839,7 @@ namespace Thetis
             // H1: MASTER moved out of the group row, to the right of the button cluster in
             // the dead space beside it; VFO and TRANSMIT close up under the centre line,
             // widen both flanks for the sub receiver control groups that come later.
-            int cYm = 696;                                    // MASTER caption line, level with the cluster
+            int cYm = 676;                                    // MASTER caption line, level with the cluster
             int mx = bx + cw + g2;                            // MASTER, right of the cluster
             H1Cap("mast", "MASTER", mx, cYm, 110);
             H1Cap("split", "VFO", sx, cY, 130);
@@ -6879,23 +6882,31 @@ namespace Thetis
                 int sldw = cbw + 14;                      // shortened slider length
                 int col2 = cbw + 18;                      // second column offset
                 int stw = col2 + sldw + 8;                // strip width, headroom for the values row
-                int stx1 = aL;                            // H1: the strips take the outer slots - the swap
-                int stx2 = aR;                            // H1: SubRX2 goes where the VAC2 group stood
+                // H1: the strips centre in the space between the audio groups and the band columns
+                int stx1 = (175 + aLv) / 2 - stw / 2;
+                int stx2 = ((aRv + 232) + (W - 172)) / 2 - stw / 2;
                 int sY = 740;                             // caption line, level with VAC1 Audio
                 int sMod = sY + 22;                       // Mode / AGC labels
                 int sCmb = sMod + 16;                     // dropdowns
                 int sFlt = sCmb + 21 + 9;                 // Width / Shift labels
                 int sSld = sFlt + 16;                     // Width / Shift sliders
-                int sVal = sSld + 24 + 5;                 // filter Low/High values row and Reset
-                int sGain = sVal + 21;                    // AGC Gain label
-                int sGsl = sGain + 16;                    // AGC Gain slider, MUT beside it
-                int sNoi = sGsl + 24 + 11;                // NOISE caption, clear of the bottom bezel
-                int sPil = sNoi + 20;                     // the sub's noise pills, one row
+                int sVal = sSld + 24 + 2;                 // filter Low/High values row and Reset
+                int sGain = sVal + 19;                    // AGC Gain label
+                int sGsl = sGain + 15;                    // AGC Gain slider and dB
+                int sNoi = sGsl + 24 + 5;                 // the caption above the noise pills
+                int sPil = sNoi + 18;                     // the sub's noise pills, one row, clear of the bezel
                 h1SubStx1 = stx1; h1SubStx2 = stx2; h1SubStw = stw;
                 H1Cap("subrx1", "SUBRX1", stx1, sY, stw);
                 H1Cap("subrx2", "SUBRX2", stx2, sY, stw);
-                H1Cap("subrx1noise", "NOISE", stx1, sNoi, stw);
-                H1Cap("subrx2noise", "NOISE", stx2, sNoi, stw);
+                // H1: the strip captions wear white and carry no rule line - they belong to their blocks
+                foreach (string h1k in new string[] { "subrx1", "subrx2", "subrx1noise", "subrx2noise" })
+                {
+                    Control h1c;
+                    if (h1Caps.TryGetValue(h1k, out h1c) && h1c != null) h1c.ForeColor = Color.White;
+                    if (h1Caps.TryGetValue(h1k + "_r", out h1c) && h1c != null) h1c.Visible = false;
+                }
+                H1Cap("subrx1noise", "Noise", stx1, sNoi, stw);
+                H1Cap("subrx2noise", "Noise", stx2, sNoi, stw);
                 H1Put(lblSubRX1Mode, this, stx1, sMod);
                 H1Put(comboSubRX1Mode, this, stx1, sCmb, cbw, 21);
                 H1Put(lblSubRX1AGC, this, stx1 + col2, sMod);
@@ -7126,7 +7137,7 @@ namespace Thetis
             l.Text = text;
             l.AutoSize = true;
             l.BackColor = Color.Transparent;
-            l.ForeColor = Color.FromArgb(140, 170, 215);
+            l.ForeColor = Color.White; // H1: the strip's labels in plain white, by request
             l.Font = new Font("Microsoft Sans Serif", 7.5f, FontStyle.Bold);
             return l;
         }
@@ -41344,7 +41355,7 @@ namespace Thetis
         // H1: the transmit section's one resting place. These numbers and the
         // centre-line arithmetic below are shared by H1LayoutV4 and the mode-panel
         // pass, so no later pass can park the section anywhere else.
-        private const int H1_TX_VW = 130, H1_TX_G2 = 24, H1_TX_TW = 336, H1_CY = 796;
+        private const int H1_TX_VW = 130, H1_TX_G2 = 24, H1_TX_TW = 336, H1_CY = 776; // H1: the centre block ride up toward the display
 
         private Point H1ModePanelPoint()
         {
