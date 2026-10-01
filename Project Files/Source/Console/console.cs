@@ -6186,16 +6186,61 @@ namespace Thetis
 
         private void H1RX2Grey(bool active, bool rx2on)
         {
-            // H1: the disabling runs first and on its own: the veil below must never be able to
-            // stop it, whatever it does.
+            // H1: the veil is DRAWN before the disabling pass, deliberately. The veil renders
+            // each skinned control with a temporary Enabled of true and then hands back the
+            // value it read first. While an ancestor is already disabled that read is false,
+            // so the hand-back pinned the control's OWN Enabled false for good - the mode
+            // buttons, the noise and filter pills and the mixer group stayed dead after the
+            // receiver came back (reproduced live: rx2 off then on left 42 controls disabled).
+            // Drawn first, the controls are still enabled, the hand-back is a no-op, and the
+            // lowering below is unchanged. The lowering stays independent of the drawing: it
+            // runs after this try/catch whatever the drawing does.
+            try
+            {
+                if (h1RX2VeilStrip != null && h1RX2VeilBelow != null)
+                {
+                    // H1: the veil follows the slice USE, not RX2 alone - while a sub borrows the
+                    // second slice its controls are live, and dimming them read as blocks dimmed
+                    // when they should not. Only a slice nothing sits on reads as unused.
+                    bool veil = !active && LegacyItemController.DimUnusedReceivers;
+                    if (h1RX2VeilStrip.Visible != veil)
+                    {
+                        h1RX2VeilStrip.Visible = veil;
+                        h1RX2VeilBelow.Visible = veil;
+                        h1RX2VeilTop.Visible = veil;
+                    }
+                    if (veil)
+                    {
+                        H1PlaceRX2Veil();
+                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                            DateTime.Now.ToString("HH:mm:ss.fff") + " veil active=" + active + " rx2on=" + rx2on
+                            + " stripVis=" + h1RX2VeilStrip.Visible + " stripBounds=" + h1RX2VeilStrip.Bounds
+                            + " stripHandle=" + h1RX2VeilStrip.IsHandleCreated
+                            + " belowBounds=" + h1RX2VeilBelow.Bounds + " belowHandle=" + h1RX2VeilBelow.IsHandleCreated
+                            + "\r\n"); } catch { }
+                        h1RX2VeilStrip.Push();
+                        h1RX2VeilBelow.Push();
+                        h1RX2VeilTop.Push();
+                        h1RX2VeilStrip.BringToFront();
+                        h1RX2VeilBelow.BringToFront();
+                        h1RX2VeilTop.BringToFront();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + ex.ToString() + "\r\n"); } catch { }
+            }
+
+            // H1: the disabling pass. Only what H1 itself disables is banked: a control already
+            // disabled for its own reason must not have that state remembered and re-applied,
+            // which left blocks greyed after the slice woke up again.
             foreach (Control c in H1RX2Owned())
             {
                 if (c == null) continue;
                 if (!active)
                 {
-                    // H1: only what H1 itself disables is banked. A control already disabled for
-                    // its own reason must not have that state remembered and re-applied, which
-                    // left blocks greyed after the slice woke up again.
                     if (c.Enabled)
                     {
                         h1RX2EnableSave[c] = true;
@@ -6207,42 +6252,6 @@ namespace Thetis
                     c.Enabled = true;
                     h1RX2EnableSave.Remove(c);
                 }
-            }
-
-            try
-            {
-                if (h1RX2VeilStrip == null || h1RX2VeilBelow == null) return;
-                // H1: the veil follows the slice USE, not RX2 alone - while a sub borrows the
-                // second slice its controls are live, and dimming them read as blocks dimmed
-                // when they should not. Only a slice nothing sits on reads as unused.
-                bool veil = !active && LegacyItemController.DimUnusedReceivers;
-                if (h1RX2VeilStrip.Visible != veil)
-                {
-                    h1RX2VeilStrip.Visible = veil;
-                    h1RX2VeilBelow.Visible = veil;
-                    h1RX2VeilTop.Visible = veil;
-                }
-                if (veil)
-                {
-                    H1PlaceRX2Veil();
-                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
-                        DateTime.Now.ToString("HH:mm:ss.fff") + " veil active=" + active + " rx2on=" + rx2on
-                        + " stripVis=" + h1RX2VeilStrip.Visible + " stripBounds=" + h1RX2VeilStrip.Bounds
-                        + " stripHandle=" + h1RX2VeilStrip.IsHandleCreated
-                        + " belowBounds=" + h1RX2VeilBelow.Bounds + " belowHandle=" + h1RX2VeilBelow.IsHandleCreated
-                        + "\r\n"); } catch { }
-                    h1RX2VeilStrip.Push();
-                    h1RX2VeilBelow.Push();
-                    h1RX2VeilTop.Push();
-                    h1RX2VeilStrip.BringToFront();
-                    h1RX2VeilBelow.BringToFront();
-                    h1RX2VeilTop.BringToFront();
-                }
-            }
-            catch (Exception ex)
-            {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_veil.log"),
-                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + ex.ToString() + "\r\n"); } catch { }
             }
         }
 
@@ -8173,14 +8182,22 @@ namespace Thetis
             {
                 int w = c.Width, h = c.Height;
                 if (w <= 1 || h <= 1 || w > 512 || h > 256) return;
+                // H1: the temporary enable is only safe while the parent chain is enabled.
+                // Under a disabled ancestor c.Enabled reads false through the chain, and
+                // handing that back pinned the control's OWN Enabled false for good: the mode
+                // buttons, the noise and filter pills and the mixer group stayed dead after
+                // the receiver came back (reproduced live: rx2 off then on left 42 controls
+                // disabled), and every veil re-push while the side was off re-stamped them.
+                // There, draw the control as it is.
+                bool ancestorOn = (c.Parent == null) || c.Parent.Enabled;
                 bool was = c.Enabled;
                 try
                 {
                     using (Bitmap bmp = new Bitmap(w, h))
                     {
-                        try { c.Enabled = true; } catch { }
+                        if (ancestorOn) { try { c.Enabled = true; } catch { } }
                         c.DrawToBitmap(bmp, new Rectangle(0, 0, w, h));
-                        c.Enabled = was;
+                        if (ancestorOn) c.Enabled = was;
                         // a straight brightness scale: it cannot shift the hue, which a greying
                         // matrix did - that turned the whole right side olive
                         float k = 0.60f;
@@ -8196,7 +8213,7 @@ namespace Thetis
                         }
                     }
                 }
-                catch { try { c.Enabled = was; } catch { } }
+                catch { if (ancestorOn) { try { c.Enabled = was; } catch { } } }
             }
 
             // H1: dim every control that sits inside this veil's box, in place. Containers are
