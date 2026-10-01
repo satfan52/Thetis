@@ -6692,7 +6692,7 @@ namespace Thetis
             int W = this.ClientSize.Width;
             int T = panelDisplay.Top + 3;
             int pitch = 47, bw = 45, rh = 23;
-            int sw = 3 * pitch + 5; // H1: five more pixels of strip so the AGC combos and the value boxes are not cramped
+            int sw = 3 * pitch + 15; // H1: five more pixels of strip so the AGC combos and the value boxes are not cramped
             int lx = 5;
             int rx = W - 5 - sw;
             // group offsets down the strip, about 34 px between groups
@@ -6718,11 +6718,11 @@ namespace Thetis
             H1Put(lblRF, this, lx, T + oAGC);
             H1Put(ptbRF, this, lx, T + oAGC + 16);
             H1Put(lblAGC, this, lx, T + oCmb);
-            H1Put(comboAGC, this, lx, T + oCmb + 16, 66); // H1: wide enough for Custom
-            H1Put(lblPreamp, this, lx + 71, T + oCmb, 50);
-            H1Put(comboPreamp, this, lx + 71, T + oCmb + 16, 50);
-            H1Put(udRX1StepAttData, this, lx + 71, T + oCmb + 17, 50); // H1: the ATT value box gets width
-            H1Put(pbAutoAttWarningRX1, this, lx + 124, T + oCmb + 16);
+            H1Put(comboAGC, this, lx, T + oCmb + 16, 76); // H1: wide enough for Custom
+            H1Put(lblPreamp, this, lx + 82, T + oCmb, 60);
+            H1Put(comboPreamp, this, lx + 82, T + oCmb + 16, 60);
+            H1Put(udRX1StepAttData, this, lx + 82, T + oCmb + 17, 60); // H1: the ATT value box gets width
+            H1Put(pbAutoAttWarningRX1, this, lx + 144, T + oCmb + 16);
 
             H1Cap("rx1mode", "RX1 MODE", lx, T + oMode - 18, sw);
             H1Put(panelMode, this, lx, T + oMode, sw, 4 * rh);
@@ -6744,19 +6744,19 @@ namespace Thetis
             H1Put(btnFilterShiftReset, panelFilter, 96, 134, 43, 20);
             lblFilterLow.AutoSize = true; lblFilterHigh.AutoSize = true;
             H1Put(lblFilterLow, panelFilter, 0, 164);
-            H1Put(udFilterLow, panelFilter, 25, 160, 46); // H1: values like -2662 fit whole now
-            H1Put(lblFilterHigh, panelFilter, 71, 164);
-            H1Put(udFilterHigh, panelFilter, 99, 160, 46);
+            H1Put(udFilterLow, panelFilter, 26, 160, 50); // H1: values like -2662 fit whole now
+            H1Put(lblFilterHigh, panelFilter, 79, 164);
+            H1Put(udFilterHigh, panelFilter, 108, 160, 48);
 
             // ---------- RIGHT strip: RX2 only, same rows ----------
             H1Put(lblRX2RF, this, rx, T + oAGC);
             H1Put(ptbRX2RF, this, rx, T + oAGC + 16);
             H1Put(lblRX2AGC, this, rx, T + oCmb);
-            H1Put(comboRX2AGC, this, rx, T + oCmb + 16, 66); // H1: wide enough for Custom
-            H1Put(lblRX2Preamp, this, rx + 71, T + oCmb, 50);
-            H1Put(comboRX2Preamp, this, rx + 71, T + oCmb + 16, 50);
-            H1Put(udRX2StepAttData, this, rx + 71, T + oCmb + 17, 50); // H1: the ATT value box gets width
-            H1Put(pbAutoAttWarningRX2, this, rx + 124, T + oCmb + 16);
+            H1Put(comboRX2AGC, this, rx, T + oCmb + 16, 76); // H1: wide enough for Custom
+            H1Put(lblRX2Preamp, this, rx + 82, T + oCmb, 60);
+            H1Put(comboRX2Preamp, this, rx + 82, T + oCmb + 16, 60);
+            H1Put(udRX2StepAttData, this, rx + 82, T + oCmb + 17, 60); // H1: the ATT value box gets width
+            H1Put(pbAutoAttWarningRX2, this, rx + 144, T + oCmb + 16);
             panelRX2Power.Size = new Size(1, 1);
             panelRX2Power.Location = new Point(0, 0);
             panelRX2Power.SendToBack();
@@ -6784,9 +6784,9 @@ namespace Thetis
             }
             lblRX2FilterLow.AutoSize = true; lblRX2FilterHigh.AutoSize = true;
             H1Put(lblRX2FilterLow, panelRX2Filter, 0, 164);
-            H1Put(udRX2FilterLow, panelRX2Filter, 25, 160, 46); // H1: values like -2662 fit whole now
-            H1Put(lblRX2FilterHigh, panelRX2Filter, 71, 164);
-            H1Put(udRX2FilterHigh, panelRX2Filter, 99, 160, 46);
+            H1Put(udRX2FilterLow, panelRX2Filter, 26, 160, 50); // H1: values like -2662 fit whole now
+            H1Put(lblRX2FilterHigh, panelRX2Filter, 79, 164);
+            H1Put(udRX2FilterHigh, panelRX2Filter, 108, 160, 48);
 
             foreach (Control k in new Control[] { lblRF, ptbRF, lblAGC, comboAGC, lblPreamp, comboPreamp, udRX1StepAttData,
                 lblRX2RF, ptbRX2RF, lblRX2AGC, comboRX2AGC, lblRX2Preamp, comboRX2Preamp, udRX2StepAttData,
@@ -41977,7 +41977,7 @@ namespace Thetis
             //
 
             gr_display_size_basis = this.panelDisplay.Size;
-            gr_display_size_basis.Width -= 13; // H1: 8 for the panafall-to-x158 left shift + 5 off the right edge (the operator asked for five each side)
+            gr_display_size_basis.Width -= 33; // H1: 8 for the panafall-to-x158 left shift + 5 off the right edge (the operator asked for five each side)
             gr_display2_basis = this.panelDisplay2.Location;
             gr_dsp_basis = this.panelDSP.Location;
             gr_multirx_basis = this.panelMultiRX.Location;
@@ -42046,7 +42046,7 @@ namespace Thetis
 
             tb_rx1af_basis = this.ptbRX1AF.Location;
             tb_rx2af_basis = this.ptbRX2AF.Location;
-        gr_display_basis = new Point(this.panelDisplay.Location.X + 34, this.panelDisplay.Location.Y); // H1: panafall to x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
+        gr_display_basis = new Point(this.panelDisplay.Location.X + 44, this.panelDisplay.Location.Y); // H1: panafall to x168 (strips 10 px wider each side); was x158 - the RX1 buttons' right caps run to about x145 and the 150 edge read as the display cutting them; eight more pixels of gutter
 
             combo_display_mode_basis = this.comboDisplayMode.Location;
             combo_rx2_display_mode_basis = this.comboRX2DisplayMode.Location;
