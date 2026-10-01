@@ -952,6 +952,16 @@ namespace Thetis
 
             // H1: the console is built - release a power-on the state restore had to defer.
             h1ConsoleReady = true;
+            // H1: the saved dim option is loaded by now - one settle pass puts every veil where the
+            // restored receiver states and the option say, now and again once the window has settled
+            try { H1RefreshUnusedDim(); } catch { }
+            try {
+                System.Windows.Forms.Timer h1DimSettle = new System.Windows.Forms.Timer();
+                int h1DimTicks = 0;
+                h1DimSettle.Interval = 1000;
+                h1DimSettle.Tick += (ts, te) => { try { H1RefreshUnusedDim(); } catch { } if (++h1DimTicks >= 8) { h1DimSettle.Stop(); h1DimSettle.Dispose(); } };
+                h1DimSettle.Start();
+            } catch { }
             if (h1PowerOnPending)
             {
                 h1PowerOnTries = 0;
