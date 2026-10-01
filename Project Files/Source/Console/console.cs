@@ -6910,7 +6910,7 @@ namespace Thetis
             int mw = 112;                                     // MASTER column width
             // H1: the cluster and the MASTER column read as one block and are centred
             // together over the VFO and TRANSMIT pair below
-            int bx = cx - (cw + 24 + mw) / 2;                 // cluster left, block centred on the panadapter
+            int bx = cx - cw / 2; // H1: the cluster is centred alone now - Master AF and Drive flank it                 // cluster left, block centred on the panadapter
             // H1: the display panel's bottom edge crosses this zone at y705; the cluster is
             // fronted in the loop below, so its rows ride up near that line but stay clear
             // of the display's black readout band, which ends at y674
@@ -6941,14 +6941,20 @@ namespace Thetis
             // widen both flanks for the sub receiver control groups that come later.
             int cYm = 676;                                    // MASTER caption line, level with the cluster
             int mx = bx + cw + g2;                            // MASTER, right of the cluster
-            H1Cap("mast", "MASTER", mx, cYm, 110);
+            // H1: Master AF and Drive flank the MON-2TON block, one each side at the same distance and
+            // the same height, centred in the free band between the panadapter's bottom edge (y720) and
+            // the VFO/TRANSMIT caption line (y776), clear of the display
+            int sy = r1 + (r2 + 32 - r1) / 2 - 19;           // label+slider (38 px) centred on the MON-2TON block (y692-762, centre 727)
+            int mxL = bx - 16 - 84;                          // Master AF, left of the cluster
+            int mxR = bx + cw + 16;                           // Drive, right of the cluster
             H1Cap("split", "VFO", sx, cY, 130);
             H1Cap("tx", "TRANSMIT", tx, cY, 336);
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
-            H1Put(lblAF, this, mx, cYm + 22);
-            H1Put(ptbAF, this, mx, cYm + 38);
-            H1Put(lblPWR, this, mx, cYm + 72);
-            H1Put(ptbPWR, this, mx, cYm + 88);
+            H1Put(lblAF, this, mxL, sy);
+            H1Put(ptbAF, this, mxL, sy + 16, 84, 22);
+            H1Put(lblPWR, this, mxR, sy);
+            H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
+            foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
             // H1: the Tune slider and the TX step attenuator show only in their own modes. Their
             // MASTER-column slots covered the transmit profile row, and the row under the block
             // runs into the status bar, so they ride the clear slot under the VFO block's RIT/XIT
