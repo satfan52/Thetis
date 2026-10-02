@@ -145,6 +145,7 @@ namespace Thetis
         private bool _tracedPo = false;
         private bool _tracedTe = false;
         private int _lastWa = -1;
+        private int _lastAutoLog = -1000; // H1: rate limit for the amplifier's AUTO: frames
         private volatile bool _sawCon = false;
         private volatile bool _sawStatus = false;
         private volatile bool _sawInfo = false;
@@ -400,17 +401,13 @@ namespace Thetis
                         if (_pollCount % 300 == 0) LogText("link alive, amp state {0}", StateName(_ampState));
                     }
 
-                    // H1: 'I' at 4/s while the amplifier reports PTT on. The manager
-                    // sends 'I' only to legacy units with an unreadable firmware
-                    // version; this console keeps them so amp_lan_raw.log shows what
-                    // THIS amplifier answers during transmit - revisit once the push
-                    // behaviour is confirmed live.
-                    if (_pttOn && now - _lastIFast >= 250)
-                    {
-                        _lastIFast = now;
-                        Send("I");
-                        PumpReads(60);
-                    }
+                    // H1: the 'I' fallback poll was REMOVED 2026-10-02. Confirmed live: this
+                    // amplifier pushes the binary '=' meter frame on its own while it
+                    // transmits, and its controller is command-load sensitive - during its
+                    // internal AUTOTUNE episodes extra traffic delays the mode toggle (a
+                    // stand-by request landed 13 s late, live 2026-10-02). The manager only
+                    // ever sends 'I' to legacy units without a readable firmware version;
+                    // do not reintroduce it without a legacy unit to test against.
                 }
                 catch (Exception ex)
                 {
@@ -729,6 +726,22 @@ namespace Thetis
                 {
                     _lastWa = wa;
                     if (wa % 30 == 0 || wa < 10) LogText("heating, {0} to go", wa);
+                }
+                return;
+            }
+            if (token.StartsWith("AUTO", StringComparison.Ordinal))
+            {
+                // H1: the amplifier's own automatics - "AUTO:AUTOTUNE IN PROGRESS;",
+                // "AUTO:WAITING FOR INPUT POWER;", "AUTO:AUTOTUNE ABORTED;". While that
+                // state machine runs the controller is unresponsive to mode commands -
+                // live 2026-10-02: the stand-by toggle landed 13 s late and every tune
+                // press cancelled during the "ABORTED" storm. Surface it (rate limited)
+                // so a cancelled tune is explainable from amp_lan.log.
+                int n2 = Environment.TickCount;
+                if (n2 - _lastAutoLog >= 1000)
+                {
+                    _lastAutoLog = n2;
+                    LogText("amp: {0}", token);
                 }
                 return;
             }

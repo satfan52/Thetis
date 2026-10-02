@@ -21224,7 +21224,18 @@ namespace Thetis
             _h1AmpTuneArmed = false;
             _h1AmpTuneWasOperate = false;
             if (!_h1AmpTuneStandbyEnabled || AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
-            if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate) return; // a hand-set stand-by stays untouched
+            if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
+            {
+                // H1: already in stand-by (hand-set, or left over from a cancelled tune).
+                // The two-phase tune still runs: phase 1 is already satisfied and the
+                // monitor may advance to the operating tune (user expectation 2026-10-02 -
+                // the amp comes up in phase 2 even when it started bypassed). No request
+                // is sent; releasing before the advance leaves the amplifier in stand-by.
+                _h1AmpTuneArmed = true;
+                _h1AmpTuneReqMs = AmpLanControllerInstance.ClockMs;
+                AmpLanControllerInstance.LogNote("TUNE: amplifier already in stand-by - two-phase tune armed");
+                return;
+            }
             _h1AmpTuneWasOperate = AmpLanControllerInstance.IsOperate; // when the state is unknown the end reads the first state frame
             _h1AmpTuneArmed = true;
             _h1AmpTuneReqMs = AmpLanControllerInstance.ClockMs;
@@ -34183,7 +34194,7 @@ namespace Thetis
                 _h1TuneOperationalPhase = false;                                 // H1: two-phase tune starts bypassed
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
-                await H1AmpTuneStandbySettle(1200); // H1: hold the carrier until the amp reports stand-by - no amplified blip
+                await H1AmpTuneStandbySettle(2500); // H1: hold the carrier until the amp reports stand-by - no amplified blip
                 if (!chkTUN.Checked) return; // cancelled when the amplifier could not be put in stand-by
                 chkTUN.BackColor = button_selected_color;
 
