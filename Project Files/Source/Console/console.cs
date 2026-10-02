@@ -21252,6 +21252,28 @@ namespace Thetis
             AmpLanControllerInstance.RequestOperate();
         }
 
+        // H1: hold the tune carrier until the amplifier reports stand-by, so no amplified
+        // blip escapes at the start of a tune (user requirement 2026-10-02: the carrier
+        // started about 20 ms after the request and the amplifier was still operating for
+        // its first few hundred milliseconds). Waits at most maxMs; releases on timeout.
+        private async Task H1AmpTuneStandbySettle(int maxMs)
+        {
+            if (AmpLanControllerInstance == null || !_h1AmpTuneStandbyEnabled || !_h1AmpTuneArmed) return;
+            if (!AmpLanControllerInstance.IsOpen) return;
+            DateTime start = DateTime.UtcNow;
+            DateTime deadline = start.AddMilliseconds(maxMs);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
+                {
+                    AmpLanControllerInstance.LogNote("carrier held {0} ms for stand-by", (int)(DateTime.UtcNow - start).TotalMilliseconds);
+                    return;
+                }
+                await Task.Delay(15);
+            }
+            AmpLanControllerInstance.LogNote("stand-by not confirmed within {0} ms, carrier released", maxMs);
+        }
+
         private readonly bool[] _h1MeterTxOverride = new bool[4] { false, false, false, false };
         private bool _h1MeterTxModesLoaded = false;
 
@@ -34053,6 +34075,7 @@ namespace Thetis
                 _tuning = true;                                                  // used for a few things
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
+                await H1AmpTuneStandbySettle(700); // H1: hold the carrier until the amp reports stand-by - no amplified blip
                 chkTUN.BackColor = button_selected_color;
 
                 old_meter_tx_mode_before_tune = current_meter_tx_mode;

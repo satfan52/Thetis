@@ -321,6 +321,12 @@ namespace Thetis
             return false;
         }
 
+        /// <summary>One line into amp_lan.log on behalf of the console (forensics).</summary>
+        public void LogNote(string format, params object[] args)
+        {
+            LogText("TUNE: " + format, args);
+        }
+
         public void Dispose()
         {
             _dispose = true;
