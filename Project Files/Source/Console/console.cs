@@ -21451,8 +21451,14 @@ namespace Thetis
                     default: return ptbPWR.Value;
                 }
             }
-            // H1 round 2: during Tune the rig power follows the SELECTED source at
-            // every phase - tune slider, fixed level or drive slider (user requirement).
+            // H1 round 6b (user report 2026-10-02): while the amplifier is inline in
+            // the second phase of the two-phase tune, the rig follows the DRIVE slider.
+            // Without this the once-a-second power tick kept re-asserting the matching
+            // level and silently undid the phase-2 drop (user saw the tune stay at the
+            // matching level for the whole amplified phase).
+            if (chkTUN.Checked && _h1TunePhase2) return ptbPWR.Value;
+            // H1 round 2: during the matching phase the rig power follows the SELECTED
+            // source - tune slider, fixed level or drive slider (user requirement).
             if (chkTUN.Checked)
             {
                 switch (_tuneDrivePowerSource)
@@ -21491,7 +21497,7 @@ namespace Thetis
             get
             {
                 if (chk2TONE.Checked) return _2ToneDrivePowerSource == DrivePowerSource.DRIVE_SLIDER;
-                if (chkTUN.Checked) return _tuneDrivePowerSource == DrivePowerSource.DRIVE_SLIDER;
+                if (chkTUN.Checked) return _tuneDrivePowerSource == DrivePowerSource.DRIVE_SLIDER || _h1TunePhase2;
                 return true;
             }
         }
@@ -21500,7 +21506,7 @@ namespace Thetis
             get
             {
                 if (chk2TONE.Checked) return _2ToneDrivePowerSource == DrivePowerSource.TUNE_SLIDER;
-                if (chkTUN.Checked) return _tuneDrivePowerSource == DrivePowerSource.TUNE_SLIDER;
+                if (chkTUN.Checked) return _tuneDrivePowerSource == DrivePowerSource.TUNE_SLIDER && !_h1TunePhase2;
                 return false;
             }
         }
@@ -21620,11 +21626,13 @@ namespace Thetis
         }
         private bool _h1AmpTuneArmed = false;
         private bool _h1AmpTuneWasOperate = false;
+        private bool _h1TunePhase2 = false; // H1 round 6b: true from the tuner-settled advance to the end of the tune
         private long _h1AmpTuneReqMs = 0;
         internal void H1AmpTuneStandbyBegin()
         {
             _h1AmpTuneArmed = false;
             _h1AmpTuneWasOperate = false;
+            _h1TunePhase2 = false;
             if (!_h1AmpTuneStandbyEnabled || AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
             if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
             {
@@ -21758,6 +21766,7 @@ namespace Thetis
             // never amplified. (User spec: "Once the SWR holds ... Thetis switches to the
             // amp operate and it generates a TUNE signal at the power level set by the
             // driver slider for optimally driving the amp.")
+            _h1TunePhase2 = true; // from here the drive slider owns the rig (also for the power tick)
             int operational = ptbPWR.Value;
             H1RigDriveSync(operational);
             if (CIVControllerInstance != null)
@@ -34823,6 +34832,7 @@ namespace Thetis
 
                 if (current_meter_tx_mode != old_meter_tx_mode_before_tune) //MW0LGE_21j
                     CurrentMeterTXMode = old_meter_tx_mode_before_tune;
+                _h1TunePhase2 = false; // H1 round 6b: end of the two-phase tune
                 H1RigDriveForceSync(); // H1: back to the drive level on the IC-7100 after tune
 
                 NetworkIO.SetUserOut0(0);      // why this?? CHECK
