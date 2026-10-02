@@ -5,6 +5,9 @@
 // manager (AmpMan 3.41, decompiled) and re-verified on the bench 2026-10-02:
 //
 //   'C' handshake    -> "CON;WA<nnn>;"   (WA = heating countdown, 1/s while heating)
+//     IMPORTANT: each 'C' TOGGLES the client slot and is answered CON; (now ON) or
+//     COFF; (now OFF); commands sent while the slot is OFF are ignored. One C at a
+//     time, proceed only when the last ack was CON (see Handshake).
 //   '?'              -> "ST<flags>;..."  (status: band, antenna)
 //   '1'              -> "INFO:...;"      (amplifier type and firmware version)
 //   'T' poll, 1/s    -> "TE<nn>;"        (temperature; the manager's steady poll)
@@ -164,6 +167,8 @@ namespace Thetis
         private volatile bool _cooling = false;
         private volatile int _coolSeconds = 0;
         private volatile int _coolTemp = -1;
+        private long _lastWaMs = 0;   // H1: last WA frame (heating countdown)
+        private long _lastCoolMs = 0; // H1: last COON/CO/CT frame (cooling)
         private volatile bool _fault = false;
         private long _faultMs = 0;
         private volatile string _autoText = "";      // the amplifier's own AUTO: wording
@@ -180,6 +185,7 @@ namespace Thetis
         private long _autoStandbyMs = 0;
         private long _autoStandbyFireMs = 0;
         private volatile bool _sawCon = false;
+        private volatile int _clientAck = 0; // H1: +1 last client ack was CON, -1 was COFF, 0 none yet
         private volatile bool _sawStatus = false;
         private volatile bool _sawInfo = false;
         private long _verboseUntil = 0;
@@ -675,6 +681,22 @@ namespace Thetis
                         }
                     }
 
+                    // H1 round 2: the thermal states latch only while their frames keep
+                    // arriving (WA 1/s while heating; CO/CT while cooling) - expire them so
+                    // a missed PAON;/PAOFF; cannot leave the pills stuck on HEATING/COOLING
+                    // (user saw the PA pill stay on HEATING after the amplifier was ready)
+                    long nowT = NowMs();
+                    if (_heating && nowT - _lastWaMs > 15000)
+                    {
+                        _heating = false; _heatSeconds = 0;
+                        LogText("amp: heating state expired (no WA frames for 15 s)");
+                    }
+                    if (_cooling && nowT - _lastCoolMs > 45000)
+                    {
+                        _cooling = false; _coolSeconds = 0; _coolTemp = -1;
+                        LogText("amp: cooling state expired (no CO/CT frames for 45 s)");
+                    }
+
                     // H1 round 2: a tuning episode ended - the amplifier must not linger in
                     // OPERATE. Return it to stand-by (hold while transmitting; give up after
                     // two minutes so a deaf amplifier cannot latch a stale intention).
@@ -778,13 +800,27 @@ namespace Thetis
             _sawStatus = false;
             _sawInfo = false;
 
-            for (int attempt = 0; attempt < 3; attempt++)
+            // H1 2026-10-02 (the long "the amplifier is deaf" afternoon): 'C' TOGGLES the
+            // amplifier's client slot - each C is answered CON; (slot now ON) or COFF;
+            // (slot now OFF), and every command after a COFF is silently ignored. The old
+            // code sent TWO C's back to back; against a freshly booted amplifier (slot
+            // OFF) that left the slot OFF (wonky order CON then COFF) and the console ran
+            // deaf for forty minutes - surviving a power cycle, because a reboot starts
+            // the slot OFF too. Send ONE C at a time and proceed only when the LAST ack
+            // was CON; the official manager works exactly this way (one C per wait).
+            bool gotCon = false;
+            for (int attempt = 0; attempt < 4; attempt++)
             {
-                Send(attempt == 1 ? " " : "C");
-                Thread.Sleep(attempt == 1 ? 400 : 150);
+                _clientAck = 0;
                 Send("C");
-                if (WaitUntil(delegate { return _sawCon; }, 1500)) break;
-                if (attempt == 2) return false;
+                WaitUntil(delegate { return _clientAck != 0; }, 1600);
+                if (_clientAck == 1) { gotCon = true; break; }
+                Thread.Sleep(150);
+            }
+            if (!gotCon)
+            {
+                LogText("handshake: no CON after four C attempts - dropping the link and trying again");
+                return false;
             }
 
             // H1: the status and info frames must both arrive. A half handshake leaves the
@@ -975,6 +1011,14 @@ namespace Thetis
             if (token == "CON")
             {
                 _sawCon = true;
+                _clientAck = 1;
+                return;
+            }
+            if (token == "COFF")
+            {
+                // the amplifier switched our client slot OFF - every command from here
+                // is silently ignored until another 'C' toggles it back ON
+                _clientAck = -1;
                 return;
             }
 
@@ -1004,6 +1048,7 @@ namespace Thetis
                     return;
                 case "COON":
                     _cooling = true;
+                    _lastCoolMs = NowMs();
                     LogText("amp: cooling started");
                     return;
                 case "STOP":
@@ -1038,6 +1083,7 @@ namespace Thetis
                 {
                     _heating = wa > 0;
                     _heatSeconds = wa;
+                    _lastWaMs = NowMs();
                     if (wa != _lastWa)
                     {
                         _lastWa = wa;
@@ -1054,6 +1100,7 @@ namespace Thetis
                 {
                     _cooling = true;
                     _coolSeconds = co;
+                    _lastCoolMs = NowMs();
                     if (co % 30 == 0 || co < 10) LogText("cooling, {0} to go", co);
                 }
                 return;
@@ -1066,6 +1113,7 @@ namespace Thetis
                 {
                     _cooling = true;
                     _coolTemp = ct;
+                    _lastCoolMs = NowMs();
                     if (ct % 10 == 0) LogText("cooling, {0} C", ct);
                 }
                 return;
@@ -1342,6 +1390,11 @@ namespace Thetis
                 _stopTries = 0;
                 _stopNextMs = 0;
                 _lastArmSentMs = 0;
+                _heating = false;
+                _heatSeconds = 0;
+                _cooling = false;
+                _coolSeconds = 0;
+                _coolTemp = -1;
             }
             if (was)
             {
