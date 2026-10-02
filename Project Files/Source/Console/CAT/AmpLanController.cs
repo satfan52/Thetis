@@ -838,7 +838,8 @@ namespace Thetis
                 }
                 else if (token.IndexOf("ABORTED", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          token.IndexOf("DONE", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         token.IndexOf("COMPLETE", StringComparison.OrdinalIgnoreCase) >= 0)
+                         token.IndexOf("COMPLETE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         token.IndexOf("ESC", StringComparison.OrdinalIgnoreCase) >= 0) // AUTOESC = the amp left its tuning session (seen live 2026-10-02)
                 {
                     _autoTune = false;
                 }
