@@ -556,7 +556,7 @@ namespace Thetis
             h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
             h1ChkAmpTuneStandby.Image = null;
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
-            h1ChkAmpTuneStandby.Text = "Smart Tune for optimal ATU antenna matching and Linear Amp operation";
+            h1ChkAmpTuneStandby.Text = "Two-step tune for easy operation with an ATU and a linear amplifier";
             h1ChkAmpTuneStandby.Location = new Point(10, 20);
             h1ChkAmpTuneStandby.Size = new Size(536, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
