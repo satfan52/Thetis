@@ -21115,7 +21115,7 @@ namespace Thetis
                     default: return ptbPWR.Value;
                 }
             }
-            if (chkTUN.Checked)
+            if (chkTUN.Checked && !_h1TuneOperationalPhase)
             {
                 switch (_tuneDrivePowerSource)
                 {
@@ -21271,7 +21271,8 @@ namespace Thetis
                 }
                 await Task.Delay(15);
             }
-            AmpLanControllerInstance.LogNote("stand-by not confirmed within {0} ms, carrier released", maxMs);
+            AmpLanControllerInstance.LogNote("amplifier did not confirm stand-by within {0} ms - tune cancelled", maxMs);
+            chkTUN.Checked = false; // never run the tune carrier with the amplifier possibly operating
         }
 
         // H1: two-phase tune (user requirement 2026-10-02). Phase 1: the amplifier is
@@ -21285,6 +21286,7 @@ namespace Thetis
         private const float H1TuneMatchSwr = 2.0f;
         private const int H1TuneMatchHoldMs = 1000;
         private bool _h1TuneAutoRunning = false;
+        private bool _h1TuneOperationalPhase = false;
 
         private void H1TuneAutoPhaseStart()
         {
@@ -21333,13 +21335,44 @@ namespace Thetis
             }
         }
 
-        private void H1TuneAutoPhaseAdvance()
+        private async void H1TuneAutoPhaseAdvance()
         {
             if (!chkTUN.Checked) return;
-            // 1) the drive back to the operational level while the amplifier is still bypassed
+            // 1) the drive to the operational level WHILE the amplifier is still bypassed.
+            // The PWR property alone did NOT reach the rig: while TUNE is active the drive
+            // sync maps to the TUNE level and the dedupe then swallowed the value - the rig
+            // kept 70% and the amp keyed into it (~1.4 kW, user report live 2026-10-02).
+            // Push the value explicitly and WAIT until the rig's own forward meter shows
+            // the power actually dropped before letting the amplifier key.
             int operational = _tuneDrivePowerSource == DrivePowerSource.FIXED ? PreviousPWR : ptbPWR.Value;
+            _h1TuneOperationalPhase = true; // the drive sync maps to the operational value from here
             PWRSliderLimitEnabled = true;
             PWR = operational;
+            H1RigDriveSync(operational);
+            if (CIVControllerInstance != null)
+            {
+                DateTime dl = DateTime.UtcNow.AddMilliseconds(1500);
+                bool dropped = false;
+                while (DateTime.UtcNow < dl)
+                {
+                    if (!chkTUN.Checked) return;
+                    if (CIVControllerInstance.RigPoFresh(1500) &&
+                        CIVControllerInstance.RigForwardWatts <= operational + 20.0f)
+                    {
+                        dropped = true;
+                        break;
+                    }
+                    await Task.Delay(80);
+                }
+                if (!dropped)
+                {
+                    if (AmpLanControllerInstance != null)
+                        AmpLanControllerInstance.LogNote("rig power {0:F0} W did not drop toward drive {1}% - staying bypassed",
+                            CIVControllerInstance.RigForwardWatts, operational);
+                    return; // never amplify the tune power
+                }
+            }
+            if (!chkTUN.Checked) return;
             // 2) the amplifier to OPERATE - the same carrier continues as the operating tune
             if (AmpLanControllerInstance != null)
             {
@@ -34147,9 +34180,11 @@ namespace Thetis
                 //
 
                 _tuning = true;                                                  // used for a few things
+                _h1TuneOperationalPhase = false;                                 // H1: two-phase tune starts bypassed
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
-                await H1AmpTuneStandbySettle(700); // H1: hold the carrier until the amp reports stand-by - no amplified blip
+                await H1AmpTuneStandbySettle(1200); // H1: hold the carrier until the amp reports stand-by - no amplified blip
+                if (!chkTUN.Checked) return; // cancelled when the amplifier could not be put in stand-by
                 chkTUN.BackColor = button_selected_color;
 
                 old_meter_tx_mode_before_tune = current_meter_tx_mode;
@@ -34265,6 +34300,7 @@ namespace Thetis
                         break;
                 }
                 _tuning = false;
+                _h1TuneOperationalPhase = false; // H1: back to the tune drive mapping
                 H1AmpTuneStandbyEnd(); // H1: OM2000A+ back to operate after tune
 
                 updateVFOFreqs(chkTUN.Checked, true);
