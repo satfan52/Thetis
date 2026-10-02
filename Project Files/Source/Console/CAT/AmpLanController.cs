@@ -149,6 +149,7 @@ namespace Thetis
         private volatile bool _autoTune = false; // H1: the amplifier's own autotune armed/running
         private int _autoTuneMs = 0;             // H1: tick of the last autotune frame
         private volatile bool _wantAutoTune = false; // H1: console Auto tune button asked for it
+        private volatile bool _wantAutoTuneStop = false; // H1: right-click on Auto tune, back to manual
         private volatile bool _sawCon = false;
         private volatile bool _sawStatus = false;
         private volatile bool _sawInfo = false;
@@ -265,9 +266,10 @@ namespace Thetis
             // when disabled the worker closes the socket on its next pass
         }
 
-        /// <summary>H1: enable the amplifier's own autotune (the third tune type). '9' is the
-        /// official manager's run/again command; the amplifier then reports it is waiting for
-        /// input power, which the console's Tune press supplies at the drive level.</summary>
+        /// <summary>H1: enable the amplifier's own autotune (the third tune type). 'L' is the
+        /// command behind the official manager's "Automatic" menu; the amplifier answers AUTO;
+        /// and reports it is waiting for input power, which the console's Tune press supplies
+        /// at the drive level.</summary>
         public void RequestAutoTune()
         {
             if (!IsOpen)
@@ -277,6 +279,19 @@ namespace Thetis
             }
             _wantAutoTune = true;
             LogText("AUTOTUNE: enable requested");
+        }
+
+        /// <summary>H1: back to the amplifier's manual tuning (right-click on Auto tune).
+        /// 'M' is the official manager's "Manual" menu item; the amp answers MAN;.</summary>
+        public void RequestAutoTuneStop()
+        {
+            if (!IsOpen)
+            {
+                LogText("AUTOTUNE: back to manual skipped, amplifier link is not open");
+                return;
+            }
+            _wantAutoTuneStop = true;
+            LogText("AUTOTUNE: back to manual requested");
         }
 
         /// <summary>Ask for stand-by. No-op when the state is already known to be stand-by.</summary>
@@ -433,15 +448,24 @@ namespace Thetis
                     }
 
                     // H1: the amplifier's own autotune, requested from the console's Auto tune
-                    // button. '9' is the official manager's run/again command for the amp's
-                    // autotune page; the amp then reports AUTO:WAITING FOR INPUT POWER while it
-                    // waits for the tune carrier (the third-tune-type flow supplies it).
+                    // button. 'L' is the command behind the official manager's "Automatic" menu
+                    // item - verified on the wire 2026-10-02: the amp answers AUTO; and then
+                    // AUTO:WAITING FOR INPUT POWER, exactly like selecting A Tune on its panel.
+                    // ('9' is only a softkey inside the tuning page and does nothing alone.)
+                    // The third-tune-type flow then supplies the carrier.
                     if (_wantAutoTune)
                     {
                         _wantAutoTune = false;
-                        Send("9");
+                        Send("L");
                         PumpReads(150);
-                        LogText("AUTOTUNE: '9' sent to the amplifier");
+                        LogText("AUTOTUNE: 'L' sent to the amplifier (automatic tuning armed)");
+                    }
+                    if (_wantAutoTuneStop)
+                    {
+                        _wantAutoTuneStop = false;
+                        Send("M");
+                        PumpReads(150);
+                        LogText("AUTOTUNE: 'M' sent to the amplifier (back to manual)");
                     }
 
                     // H1: the 'I' fallback poll was REMOVED 2026-10-02. Confirmed live: this

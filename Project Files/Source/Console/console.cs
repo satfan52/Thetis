@@ -6693,50 +6693,35 @@ namespace Thetis
             picSubRX2Meter.Size = new Size(meter_w - 8, picRX2Meter.Height);
         }
 
-        // H1: the amplifier controls on the main console (user 2026-10-02): two radios that
-        // show and switch the OM2000A+ stand-by / operate state, and one button that enables
-        // the amplifier's own autotune ('9' - the official manager's run/again command). They
-        // appear only while the amplifier link is enabled (OM2000A+ meter source or the
-        // stand-by option) and sit right of the Drive slider.
-        private RadioButtonTS h1AmpStby;
-        private RadioButtonTS h1AmpOper;
+        // H1: the amplifier controls on the main console (user 2026-10-02): ONE toggle pill
+        // that shows and switches the OM2000A+ stand-by / operate state (user: one button is
+        // enough), and one button that arms the amplifier's own autotune - 'L', the command
+        // behind the official manager's "Automatic" menu, verified on the wire: the amp
+        // answers AUTO; then AUTO:WAITING FOR INPUT POWER, exactly like selecting A Tune on
+        // the panel ('9' is only a softkey inside that page and does nothing alone).
+        // Right-click on the button sends 'M' back to manual (the amp answers MAN;).
+        private CheckBoxTS h1AmpMode;
         private ButtonTS h1AmpAutoTune;
         private bool _h1AmpBtnSync = false;
 
         private void H1CreateAmpButtons()
         {
-            RadioButtonTS src = radBand2;
-            if (src == null) return;
+            if (chkMUT == null) return;
 
-            h1AmpStby = new RadioButtonTS();
-            h1AmpStby.Name = "radH1AmpStby";
-            h1AmpStby.Text = "STBY";
-            h1AmpStby.Appearance = src.Appearance;
-            h1AmpStby.FlatStyle = src.FlatStyle;
-            h1AmpStby.FlatAppearance.BorderSize = 0;
-            h1AmpStby.Font = src.Font;
-            h1AmpStby.ForeColor = src.ForeColor;
-            h1AmpStby.BackColor = src.BackColor;
-            h1AmpStby.TextAlign = src.TextAlign;
-            h1AmpStby.Size = src.Size;
-            h1AmpStby.TabStop = false;
-            h1AmpStby.CheckedChanged += H1AmpModeClick;
-            this.Controls.Add(h1AmpStby);
-
-            h1AmpOper = new RadioButtonTS();
-            h1AmpOper.Name = "radH1AmpOper";
-            h1AmpOper.Text = "OPER";
-            h1AmpOper.Appearance = src.Appearance;
-            h1AmpOper.FlatStyle = src.FlatStyle;
-            h1AmpOper.FlatAppearance.BorderSize = 0;
-            h1AmpOper.Font = src.Font;
-            h1AmpOper.ForeColor = src.ForeColor;
-            h1AmpOper.BackColor = src.BackColor;
-            h1AmpOper.TextAlign = src.TextAlign;
-            h1AmpOper.Size = src.Size;
-            h1AmpOper.TabStop = false;
-            h1AmpOper.CheckedChanged += H1AmpModeClick;
-            this.Controls.Add(h1AmpOper);
+            h1AmpMode = new CheckBoxTS();
+            h1AmpMode.Name = "chkH1AmpMode";
+            h1AmpMode.Text = "AMP ?";
+            h1AmpMode.Appearance = chkMUT.Appearance;
+            h1AmpMode.FlatStyle = chkMUT.FlatStyle;
+            h1AmpMode.FlatAppearance.BorderSize = 0;
+            h1AmpMode.Font = chkMUT.Font;
+            h1AmpMode.ForeColor = chkMUT.ForeColor;
+            h1AmpMode.BackColor = chkMUT.BackColor;
+            h1AmpMode.TextAlign = chkMUT.TextAlign;
+            h1AmpMode.Size = chkMUT.Size;
+            h1AmpMode.TabStop = false;
+            h1AmpMode.CheckedChanged += H1AmpModeClick;
+            this.Controls.Add(h1AmpMode);
 
             h1AmpAutoTune = new ButtonTS();
             h1AmpAutoTune.Name = "btnH1AmpAutoTune";
@@ -6753,33 +6738,33 @@ namespace Thetis
             h1AmpAutoTune.FlatAppearance.BorderSize = 0;
             h1AmpAutoTune.TabStop = false;
             h1AmpAutoTune.Click += H1AmpAutoTuneClick;
+            h1AmpAutoTune.MouseUp += H1AmpAutoTuneMouseUp;
             this.Controls.Add(h1AmpAutoTune);
 
-            h1AmpStby.Visible = false; h1AmpOper.Visible = false; h1AmpAutoTune.Visible = false;
+            h1AmpMode.Visible = false; h1AmpAutoTune.Visible = false;
         }
 
         internal void H1AmpButtonsVis()
         {
-            if (h1AmpStby == null) return;
+            if (h1AmpMode == null) return;
             bool on = _h1MeterSource == 2 || _h1AmpTuneStandbyEnabled;
-            if (h1AmpStby.Visible != on) h1AmpStby.Visible = on;
-            if (h1AmpOper.Visible != on) h1AmpOper.Visible = on;
+            if (h1AmpMode.Visible != on) h1AmpMode.Visible = on;
             if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
         }
 
         internal void H1AmpButtonsSync()
         {
-            // H1: mirror the real amplifier state onto the radios (called from the 1 s watchdog)
-            if (h1AmpStby == null || !h1AmpStby.Visible) return;
+            // H1: mirror the real amplifier state onto the toggle pill (called from the 1 s watchdog)
+            if (h1AmpMode == null || !h1AmpMode.Visible) return;
             if (AmpLanControllerInstance == null) return;
             _h1AmpBtnSync = true;
             try
             {
                 bool known = AmpLanControllerInstance.StateKnown;
                 bool oper = known && AmpLanControllerInstance.IsOperate;
-                bool stby = known && !oper;
-                if (h1AmpOper.Checked != oper) h1AmpOper.Checked = oper;
-                if (h1AmpStby.Checked != stby) h1AmpStby.Checked = stby;
+                string txt = !known ? "AMP ?" : (oper ? "OPER" : "STBY");
+                if (h1AmpMode.Text != txt) h1AmpMode.Text = txt;
+                if (h1AmpMode.Checked != oper) h1AmpMode.Checked = oper;
             }
             finally { _h1AmpBtnSync = false; }
         }
@@ -6787,9 +6772,8 @@ namespace Thetis
         private void H1AmpModeClick(object sender, EventArgs e)
         {
             if (initializing || _h1AmpBtnSync) return; // a state restore is not a command
-            RadioButtonTS r = sender as RadioButtonTS;
-            if (r == null || !r.Checked || AmpLanControllerInstance == null) return;
-            if (r == h1AmpOper) AmpLanControllerInstance.RequestOperate();
+            if (h1AmpMode == null || AmpLanControllerInstance == null) return;
+            if (h1AmpMode.Checked) AmpLanControllerInstance.RequestOperate();
             else AmpLanControllerInstance.RequestStandby();
         }
 
@@ -6797,6 +6781,13 @@ namespace Thetis
         {
             if (AmpLanControllerInstance == null) return;
             AmpLanControllerInstance.RequestAutoTune();
+        }
+
+        private void H1AmpAutoTuneMouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right) return;
+            if (AmpLanControllerInstance == null) return;
+            AmpLanControllerInstance.RequestAutoTuneStop(); // H1: right-click arms manual again
         }
 
         private void H1LayoutV4()
@@ -7064,14 +7055,13 @@ namespace Thetis
             H1Put(lblPWR, this, mxR, sy);
             H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
-            // H1: the amplifier controls - stand-by / operate and the amplifier's own autotune -
-            // sit right of the Drive slider on the cluster's rows. VAC2 AUDIO moved down to the
-            // VFO line (user 2026-10-02) to open this pocket. Shown only while the OM2000A+
-            // link is enabled (meter source or the stand-by option).
-            H1Put(h1AmpStby, this, mxR + 92, sy, 56, 22);
-            H1Put(h1AmpOper, this, mxR + 150, sy, 56, 22);
-            H1Put(h1AmpAutoTune, this, mxR + 92, sy + 24, 114, 22);
-            foreach (Control ac in new Control[] { h1AmpStby, h1AmpOper, h1AmpAutoTune })
+            // H1: the amplifier toggle and its autotune button sit right of the Drive slider on
+            // the cluster's rows. VAC2 AUDIO moved down to the VFO line (user 2026-10-02) to
+            // open this pocket. Shown only while the OM2000A+ link is enabled (meter source or
+            // the stand-by option). The pill reads OPER / STBY / AMP ? and switches on click.
+            H1Put(h1AmpMode, this, mxR + 92, sy, 84, 22);
+            H1Put(h1AmpAutoTune, this, mxR + 92, sy + 24, 84, 22);
+            foreach (Control ac in new Control[] { h1AmpMode, h1AmpAutoTune })
                 if (ac != null)
                 {
                     if (ac.BackgroundImageLayout != ImageLayout.Stretch) ac.BackgroundImageLayout = ImageLayout.Stretch;

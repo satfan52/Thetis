@@ -1054,6 +1054,7 @@ namespace Thetis
                 else if (skinName == "chkVAC2MUT") skinName = "chkMUT";
                 else if (skinName == "chkSubRX1Follow") skinName = "chkMUT";
                 else if (skinName == "chkSubRX2Follow") skinName = "chkMUT";
+                else if (skinName == "chkH1AmpMode") skinName = "chkMUT";
             }
 
             string skey = "";
@@ -1566,7 +1567,6 @@ namespace Thetis
         {
             // H1: the RX2 band buttons take the RX1 band tiles (radRX2Band40 -> radBand40)
             string skinName = ctrl.Name;
-            if (skinName == "radH1AmpStby" || skinName == "radH1AmpOper") skinName = "radBand2"; // H1: the console amp radios take the RX1 band tile
             if (skinName.StartsWith("radRX2Band")) skinName = "radBand" + skinName.Substring(10);
             // H1: the skins draw no RX2 tiles for filters 8 to 10; the RX2 filter row takes the RX1 tiles throughout so all twelve match
             if (skinName.StartsWith("radRX2Filter")) skinName = "radFilter" + skinName.Substring(12);
