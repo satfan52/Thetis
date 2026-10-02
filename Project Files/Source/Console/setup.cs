@@ -517,8 +517,8 @@ namespace Thetis
             toolTip1.SetToolTip(h1ChkTrxMeterCiv,
                 "When checked, the transmit meter shows the IC-7100's readings while the rig" + System.Environment.NewLine +
                 "transmits, fetched over CI-V by the option above. When the amplifier operates" + System.Environment.NewLine +
-                "and its Amp page option is checked, its readings take over. When unchecked," + System.Environment.NewLine +
-                "the meter stays on the SDR.");
+                "and 'TX meter uses the OM2000A+' is checked on the Amp page, its readings" + System.Environment.NewLine +
+                "take over. When unchecked, the meter stays on the SDR.");
 
             LabelTS h1LblTrxInfo = new LabelTS();
             h1LblTrxInfo.AutoSize = false;
@@ -604,9 +604,10 @@ namespace Thetis
             h1ChkAmpMeterAmp.Location = new Point(346, 47);
             h1ChkAmpMeterAmp.Size = new Size(200, 22);
             toolTip1.SetToolTip(h1ChkAmpMeterAmp,
-                "When ticked, the FWD, REF and SWR transmit readings come from the OM2000A+ while" + System.Environment.NewLine +
-                "the amplifier operates. While it stands by they fall back to the IC-7100 when its" + System.Environment.NewLine +
-                "option is ticked on the Transceivers page, otherwise to the SDR connected to Thetis.");
+                "When checked, the transmit meter shows the OM2000A+ readings while the amplifier" + System.Environment.NewLine +
+                "operates. While it stands by, the meter returns to the IC-7100 when 'TX meter uses" + System.Environment.NewLine +
+                "the IC-7100 data' is checked on the Transceivers page, otherwise to the SDR" + System.Environment.NewLine +
+                "connected to Thetis.");
 
             LabelTS h1LblAmpAddr = new LabelTS();
             h1LblAmpAddr.AutoSize = true;
