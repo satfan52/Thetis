@@ -802,7 +802,7 @@ namespace Thetis
             }
             if (!ownFiles)
             {
-                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2TNFAdd") skinName = "btnTNFAdd"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF"; else if (skinName == "btnSubRX1FRst" || skinName == "btnSubRX2FRst") skinName = "btnFilterShiftReset";
+                if (skinName == "btnRX2FilterShiftReset") skinName = "btnFilterShiftReset"; else if (skinName == "btnRX2BandHF") skinName = "btnBandHF"; else if (skinName == "btnRX2TNFAdd") skinName = "btnTNFAdd"; else if (skinName == "btnRX2BandVHF") skinName = "btnBandVHF"; else if (skinName == "btnSubRX1FRst" || skinName == "btnSubRX2FRst") skinName = "btnFilterShiftReset"; else if (skinName == "btnH1AmpAutoTune") skinName = "btnFilterShiftReset";
             }
 
 
@@ -1566,6 +1566,7 @@ namespace Thetis
         {
             // H1: the RX2 band buttons take the RX1 band tiles (radRX2Band40 -> radBand40)
             string skinName = ctrl.Name;
+            if (skinName == "radH1AmpStby" || skinName == "radH1AmpOper") skinName = "radBand2"; // H1: the console amp radios take the RX1 band tile
             if (skinName.StartsWith("radRX2Band")) skinName = "radBand" + skinName.Substring(10);
             // H1: the skins draw no RX2 tiles for filters 8 to 10; the RX2 filter row takes the RX1 tiles throughout so all twelve match
             if (skinName.StartsWith("radRX2Filter")) skinName = "radFilter" + skinName.Substring(12);

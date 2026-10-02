@@ -148,6 +148,7 @@ namespace Thetis
         private int _lastAutoLog = -1000; // H1: rate limit for the amplifier's AUTO: frames
         private volatile bool _autoTune = false; // H1: the amplifier's own autotune armed/running
         private int _autoTuneMs = 0;             // H1: tick of the last autotune frame
+        private volatile bool _wantAutoTune = false; // H1: console Auto tune button asked for it
         private volatile bool _sawCon = false;
         private volatile bool _sawStatus = false;
         private volatile bool _sawInfo = false;
@@ -262,6 +263,20 @@ namespace Thetis
             LogText(enabled ? "LINK enabled" : "LINK disabled");
             if (enabled) EnsureWorker();
             // when disabled the worker closes the socket on its next pass
+        }
+
+        /// <summary>H1: enable the amplifier's own autotune (the third tune type). '9' is the
+        /// official manager's run/again command; the amplifier then reports it is waiting for
+        /// input power, which the console's Tune press supplies at the drive level.</summary>
+        public void RequestAutoTune()
+        {
+            if (!IsOpen)
+            {
+                LogText("AUTOTUNE: skipped, amplifier link is not open");
+                return;
+            }
+            _wantAutoTune = true;
+            LogText("AUTOTUNE: enable requested");
         }
 
         /// <summary>Ask for stand-by. No-op when the state is already known to be stand-by.</summary>
@@ -415,6 +430,18 @@ namespace Thetis
                         PumpReads(120);
                         _pollCount++;
                         if (_pollCount % 300 == 0) LogText("link alive, amp state {0}", StateName(_ampState));
+                    }
+
+                    // H1: the amplifier's own autotune, requested from the console's Auto tune
+                    // button. '9' is the official manager's run/again command for the amp's
+                    // autotune page; the amp then reports AUTO:WAITING FOR INPUT POWER while it
+                    // waits for the tune carrier (the third-tune-type flow supplies it).
+                    if (_wantAutoTune)
+                    {
+                        _wantAutoTune = false;
+                        Send("9");
+                        PumpReads(150);
+                        LogText("AUTOTUNE: '9' sent to the amplifier");
                     }
 
                     // H1: the 'I' fallback poll was REMOVED 2026-10-02. Confirmed live: this

@@ -774,6 +774,7 @@ namespace Thetis
             InitSubRXStrips(); // H1: create the SubRX1 and SubRX2 control strips before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
+            H1CreateAmpButtons(); // H1: the amplifier stand-by/operate radios and the autotune button
             chkRX2.Size = chkPower.Size; // H1: the RX2 button is the power button's size
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
             H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
@@ -6692,6 +6693,112 @@ namespace Thetis
             picSubRX2Meter.Size = new Size(meter_w - 8, picRX2Meter.Height);
         }
 
+        // H1: the amplifier controls on the main console (user 2026-10-02): two radios that
+        // show and switch the OM2000A+ stand-by / operate state, and one button that enables
+        // the amplifier's own autotune ('9' - the official manager's run/again command). They
+        // appear only while the amplifier link is enabled (OM2000A+ meter source or the
+        // stand-by option) and sit right of the Drive slider.
+        private RadioButtonTS h1AmpStby;
+        private RadioButtonTS h1AmpOper;
+        private ButtonTS h1AmpAutoTune;
+        private bool _h1AmpBtnSync = false;
+
+        private void H1CreateAmpButtons()
+        {
+            RadioButtonTS src = radBand2;
+            if (src == null) return;
+
+            h1AmpStby = new RadioButtonTS();
+            h1AmpStby.Name = "radH1AmpStby";
+            h1AmpStby.Text = "STBY";
+            h1AmpStby.Appearance = src.Appearance;
+            h1AmpStby.FlatStyle = src.FlatStyle;
+            h1AmpStby.FlatAppearance.BorderSize = 0;
+            h1AmpStby.Font = src.Font;
+            h1AmpStby.ForeColor = src.ForeColor;
+            h1AmpStby.BackColor = src.BackColor;
+            h1AmpStby.TextAlign = src.TextAlign;
+            h1AmpStby.Size = src.Size;
+            h1AmpStby.TabStop = false;
+            h1AmpStby.CheckedChanged += H1AmpModeClick;
+            this.Controls.Add(h1AmpStby);
+
+            h1AmpOper = new RadioButtonTS();
+            h1AmpOper.Name = "radH1AmpOper";
+            h1AmpOper.Text = "OPER";
+            h1AmpOper.Appearance = src.Appearance;
+            h1AmpOper.FlatStyle = src.FlatStyle;
+            h1AmpOper.FlatAppearance.BorderSize = 0;
+            h1AmpOper.Font = src.Font;
+            h1AmpOper.ForeColor = src.ForeColor;
+            h1AmpOper.BackColor = src.BackColor;
+            h1AmpOper.TextAlign = src.TextAlign;
+            h1AmpOper.Size = src.Size;
+            h1AmpOper.TabStop = false;
+            h1AmpOper.CheckedChanged += H1AmpModeClick;
+            this.Controls.Add(h1AmpOper);
+
+            h1AmpAutoTune = new ButtonTS();
+            h1AmpAutoTune.Name = "btnH1AmpAutoTune";
+            h1AmpAutoTune.Text = "Auto tune";
+            if (btnFilterShiftReset != null)
+            {
+                h1AmpAutoTune.Size = btnFilterShiftReset.Size;
+                h1AmpAutoTune.Font = btnFilterShiftReset.Font;
+                h1AmpAutoTune.ForeColor = btnFilterShiftReset.ForeColor;
+                h1AmpAutoTune.FlatStyle = btnFilterShiftReset.FlatStyle;
+                h1AmpAutoTune.BackColor = btnFilterShiftReset.BackColor;
+                h1AmpAutoTune.UseVisualStyleBackColor = btnFilterShiftReset.UseVisualStyleBackColor;
+            }
+            h1AmpAutoTune.FlatAppearance.BorderSize = 0;
+            h1AmpAutoTune.TabStop = false;
+            h1AmpAutoTune.Click += H1AmpAutoTuneClick;
+            this.Controls.Add(h1AmpAutoTune);
+
+            h1AmpStby.Visible = false; h1AmpOper.Visible = false; h1AmpAutoTune.Visible = false;
+        }
+
+        internal void H1AmpButtonsVis()
+        {
+            if (h1AmpStby == null) return;
+            bool on = _h1MeterSource == 2 || _h1AmpTuneStandbyEnabled;
+            if (h1AmpStby.Visible != on) h1AmpStby.Visible = on;
+            if (h1AmpOper.Visible != on) h1AmpOper.Visible = on;
+            if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
+        }
+
+        internal void H1AmpButtonsSync()
+        {
+            // H1: mirror the real amplifier state onto the radios (called from the 1 s watchdog)
+            if (h1AmpStby == null || !h1AmpStby.Visible) return;
+            if (AmpLanControllerInstance == null) return;
+            _h1AmpBtnSync = true;
+            try
+            {
+                bool known = AmpLanControllerInstance.StateKnown;
+                bool oper = known && AmpLanControllerInstance.IsOperate;
+                bool stby = known && !oper;
+                if (h1AmpOper.Checked != oper) h1AmpOper.Checked = oper;
+                if (h1AmpStby.Checked != stby) h1AmpStby.Checked = stby;
+            }
+            finally { _h1AmpBtnSync = false; }
+        }
+
+        private void H1AmpModeClick(object sender, EventArgs e)
+        {
+            if (initializing || _h1AmpBtnSync) return; // a state restore is not a command
+            RadioButtonTS r = sender as RadioButtonTS;
+            if (r == null || !r.Checked || AmpLanControllerInstance == null) return;
+            if (r == h1AmpOper) AmpLanControllerInstance.RequestOperate();
+            else AmpLanControllerInstance.RequestStandby();
+        }
+
+        private void H1AmpAutoTuneClick(object sender, EventArgs e)
+        {
+            if (AmpLanControllerInstance == null) return;
+            AmpLanControllerInstance.RequestAutoTune();
+        }
+
         private void H1LayoutV4()
         {
             int W = this.ClientSize.Width;
@@ -6811,8 +6918,9 @@ namespace Thetis
             int aRv = tx + tw + 24;                           // VAC2 block, inner slot
             H1Cap("rx1bands", "RX1 BANDS", 12, Y0, 150);
             H1Cap("rx2bands", "RX2 BANDS", W - 162, Y0, 150);
-            H1Cap("rx1audio", "VAC1 AUDIO", aLv, Y0, 232);
-            H1Cap("rx2audio", "VAC2 AUDIO", aRv, Y0, 232);
+            int aY = H1_CY;                                   // H1: the VAC audio groups moved down to the VFO / TRANSMIT caption line (user 2026-10-02)
+            H1Cap("rx1audio", "VAC1 AUDIO", aLv, aY, 232);
+            H1Cap("rx2audio", "VAC2 AUDIO", aRv, aY, 232);
             H1Cap("rx1pan", "RX1 PANAFALL", 12, Y0 + 150, 150);
             H1Cap("rx2pan", "RX2 PANAFALL", W - 162, Y0 + 150, 150);
 
@@ -6827,7 +6935,7 @@ namespace Thetis
             if (chkFWCATU != null) chkFWCATU.Visible = true;
 
             if (panelMultiRX != null) panelMultiRX.Size = new Size(232, 98); // H1: room for the mutes under the vols
-            panelMultiRX.Location = new Point(aLv, Y0 + 20);
+            panelMultiRX.Location = new Point(aLv, aY + 20);
             H1Put(chkVAC1MUT, panelMultiRX, 2, 73, 45, 23);    // H1: the receiver's mute, centred under its volume
             H1Put(chkSubRX1MUT, panelMultiRX, 130, 73, 45, 23); // H1: the sub's mute, centred under its volume
             H1Put(chkEnableMultiRX, panelMultiRX, 172, 20, 50);
@@ -6839,9 +6947,9 @@ namespace Thetis
             if (lblRX1Vol != null) lblRX1Vol.Text = "RX1";
             if (lblRX1SubVol != null) { lblRX1SubVol.Text = "SubRX1"; lblRX1SubVol.AutoSize = true; }
             // H1: the squelch text, slider and limit bar share the two pan sliders' span
-            H1Put(chkSquelch, this, aLv + 40, Y0 + 122);
-            H1Put(ptbSquelch, this, aLv + 40, Y0 + 146, 96, 24);
-            H1Put(picSquelch, this, aLv + 40, Y0 + 167, 96);
+            H1Put(chkSquelch, this, aLv + 40, aY + 122);
+            H1Put(ptbSquelch, this, aLv + 40, aY + 146, 96, 24);
+            H1Put(picSquelch, this, aLv + 40, aY + 167, 96);
 
             // ---------- BELOW, right: the mirror ----------
             if (h1RX2BandPanel != null)
@@ -6860,7 +6968,7 @@ namespace Thetis
             H1Put(chkX2TR, panelRX2Display, 104, 28); // H1: the CTUN tick, level with AVG and Peaks
             if (chkX2TR != null) chkX2TR.Visible = true;
             if (panelRX2Mixer != null) panelRX2Mixer.Size = new Size(232, 98); // H1: room for the mutes
-            panelRX2Mixer.Location = new Point(aRv, Y0 + 20);
+            panelRX2Mixer.Location = new Point(aRv, aY + 20);
             H1Put(chkVAC2MUT, panelRX2Mixer, 52, 73, 45, 23);  // H1: RX2's mute, under RX2's volume
             H1Put(chkSubRX2MUT, panelRX2Mixer, 180, 73, 45, 23); // H1: SubRX2's mute, under SubRX2's volume
             // the mirror of the RX1 audio group: switches on the outer-left, sub volume next to
@@ -6887,12 +6995,12 @@ namespace Thetis
                 if (h1x + h1w > 228) h1x = 228 - h1w; // never past the panel's right edge
                 lblRX2SubVol.Location = new Point(h1x, 3);
             }
-            H1Put(chkRX2Squelch, this, aRv + 90, Y0 + 122); // H1: aligned with the two pan sliders
-            H1Put(ptbRX2Squelch, this, aRv + 90, Y0 + 146, 96, 24);
-            H1Put(picRX2Squelch, this, aRv + 90, Y0 + 167, 96);
+            H1Put(chkRX2Squelch, this, aRv + 90, aY + 122); // H1: aligned with the two pan sliders
+            H1Put(ptbRX2Squelch, this, aRv + 90, aY + 146, 96, 24);
+            H1Put(picRX2Squelch, this, aRv + 90, aY + 167, 96);
             // H1: the VAC pills join the SubRX/Swap column of their block, on the squelch row
-            H1Put(chkVAC1, this, aLv + 172, Y0 + 122, 50);
-            H1Put(chkVAC2, this, aRv + 2, Y0 + 122, 50);
+            H1Put(chkVAC1, this, aLv + 172, aY + 122, 50);
+            H1Put(chkVAC2, this, aRv + 2, aY + 122, 50);
             // H1: the VAC pills were drawn with the designer's dark caption colour, which is
             // unreadable on the dark skin. Take the squelch pill's light text and font.
             if (chkVAC1 != null) { chkVAC1.ForeColor = chkSquelch.ForeColor; chkVAC1.Font = chkSquelch.Font; }
@@ -6945,7 +7053,7 @@ namespace Thetis
             // H1: Master AF and Drive flank the MON-2TON block, one each side at the same distance and
             // the same height, centred in the free band between the panadapter's bottom edge (y720) and
             // the VFO/TRANSMIT caption line (y776), clear of the display
-            int sy = r1 + (r2 + 32 - r1) / 2 - 19;           // label+slider (38 px) centred on the MON-2TON block (y692-762, centre 727)
+            int sy = r1;                                      // H1: the Master AF and Drive pairs ride up level with the cluster's top row (user 2026-10-02) - the whole band reads as one line
             int mxL = bx - 16 - 84;                          // Master AF, left of the cluster
             int mxR = bx + cw + 16;                           // Drive, right of the cluster
             H1Cap("split", "VFO", sx, cY, 130);
@@ -6956,12 +7064,25 @@ namespace Thetis
             H1Put(lblPWR, this, mxR, sy);
             H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
-            // H1: the Tune slider and the TX step attenuator show only in their own modes. Their
-            // MASTER-column slots covered the transmit profile row, and the row under the block
-            // runs into the status bar, so they ride the clear slot under the VFO block's RIT/XIT
-            // row: Tune label and slider stacked at x740, the attenuator beside the PA line.
-            H1Put(lblTune, this, 740, cYm + 245);
-            H1Put(ptbTune, this, 740, cYm + 267, 100, 24);
+            // H1: the amplifier controls - stand-by / operate and the amplifier's own autotune -
+            // sit right of the Drive slider on the cluster's rows. VAC2 AUDIO moved down to the
+            // VFO line (user 2026-10-02) to open this pocket. Shown only while the OM2000A+
+            // link is enabled (meter source or the stand-by option).
+            H1Put(h1AmpStby, this, mxR + 92, sy, 56, 22);
+            H1Put(h1AmpOper, this, mxR + 150, sy, 56, 22);
+            H1Put(h1AmpAutoTune, this, mxR + 92, sy + 24, 114, 22);
+            foreach (Control ac in new Control[] { h1AmpStby, h1AmpOper, h1AmpAutoTune })
+                if (ac != null)
+                {
+                    if (ac.BackgroundImageLayout != ImageLayout.Stretch) ac.BackgroundImageLayout = ImageLayout.Stretch;
+                    ac.BringToFront();
+                }
+            H1AmpButtonsVis();
+            // H1: the Tune slider rides directly under the Drive slider and appears there only
+            // when the tune power source is the tune slider (user 2026-10-02); the TX step
+            // attenuator shows only in its own mode and keeps its slot beside the PA line.
+            H1Put(lblTune, this, mxR, sy + 40);
+            H1Put(ptbTune, this, mxR, sy + 56, 84, 22);
             H1Put(udTXStepAttData, this, 1074, cYm + 273);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
@@ -7008,7 +7129,7 @@ namespace Thetis
                 // H1: the strips centre in the space between the audio groups and the band columns
                 int stx1 = (175 + aLv) / 2 - stw / 2;
                 int stx2 = ((aRv + 232) + (W - 172)) / 2 - stw / 2;
-                int sY = 740;                             // caption line, level with VAC1 Audio
+                int sY = 740;                             // caption line kept at 740; the VAC audio groups moved down to the VFO/TRANSMIT line (user 2026-10-02)
                 int sMod = sY + 22;                       // Mode / AGC labels
                 int sCmb = sMod + 16;                     // dropdowns
                 int sFlt = sCmb + 21 + 9;                 // Width / Shift labels
@@ -8482,6 +8603,7 @@ namespace Thetis
 
         private void PowerStateWatchdog()
         {
+            H1AmpButtonsSync(); // H1: keep the amp radios on the real amplifier state (idempotent)
             if (m_powerDimOverlay == null) return;
             // H1: the receiver veils answer to the saved dim option too. They are only raised when a receiver
             // changes state, so after a restart (option restored, receivers already off) nothing raised them.
@@ -21203,6 +21325,7 @@ namespace Thetis
             if (AmpLanControllerInstance == null) return;
             AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
             AmpLanControllerInstance.SetEnabled(_h1MeterSource == 2 || _h1AmpTuneStandbyEnabled);
+            H1AmpButtonsVis(); // H1: the console amp controls follow the same enable condition
         }
         private bool H1AmpFwdLive
         {
