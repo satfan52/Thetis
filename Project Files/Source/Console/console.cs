@@ -6710,6 +6710,8 @@ namespace Thetis
         private CheckBoxTS h1AmpAutoTune;
         private Label h1AmpStatus;
         private bool _h1AmpBtnSync = false;
+        private bool _h1AutoTuneCarrierArmed = false; // H1 round 3: the Auto tune button runs the Tune carrier
+        private int _h1AutoTuneCarrierArmMs = 0;
 
         private void H1CreateAmpButtons()
         {
@@ -6814,6 +6816,46 @@ namespace Thetis
                     if (h1AmpAutoTune.Checked != busy) h1AmpAutoTune.Checked = busy;
                 }
 
+                // H1 round 3: the Auto tune button also runs the Tune carrier for the
+                // amplifier's own autotune and terminates it when the session ends. The
+                // carrier engages once the amplifier reports it waits for input power;
+                // done, failed, aborted and stopped all release it, and the stand-by
+                // return then fires at once - "no more distraction possible" (user
+                // requirement 2026-10-02). The link check and the four-minute cap make
+                // sure a dropped link or a hung session can never leave a carrier on.
+                if (_h1AutoTuneCarrierArmed)
+                {
+                    int armedFor = Environment.TickCount - _h1AutoTuneCarrierArmMs;
+                    if (!AmpLanControllerInstance.IsOpen)
+                    {
+                        _h1AutoTuneCarrierArmed = false;
+                        if (chkTUN.Checked) chkTUN.Checked = false; // no link, no carrier
+                    }
+                    else if (!AmpLanControllerInstance.IsAutoTune)
+                    {
+                        // the session ended - release the carrier so the amplifier can go
+                        // to stand-by at once (the stand-by return is already armed)
+                        _h1AutoTuneCarrierArmed = false;
+                        if (chkTUN.Checked)
+                        {
+                            chkTUN.Checked = false;
+                            AmpLanControllerInstance.LogNote("autotune finished - Tune released, amplifier free to stand down");
+                        }
+                    }
+                    else if (chkTUN.Checked && armedFor > 240000)
+                    {
+                        _h1AutoTuneCarrierArmed = false;
+                        chkTUN.Checked = false;
+                        AmpLanControllerInstance.LogNote("autotune carrier watchdog - Tune released after four minutes with no session end");
+                    }
+                    else if (!chkTUN.Checked && PowerOn &&
+                             (AmpLanControllerInstance.AutoTuneWaitingForInput || armedFor > 6000))
+                    {
+                        chkTUN.Checked = true; // the usual Tune feeds the amplifier its autotune signal
+                        AmpLanControllerInstance.LogNote("autotune armed - Tune engaged to feed the amplifier");
+                    }
+                }
+
                 H1AmpStatusUpdate();
             }
             finally { _h1AmpBtnSync = false; }
@@ -6913,7 +6955,14 @@ namespace Thetis
                 return;
             }
             // toggle: lit -> stop the autotune and return the amp to stand-by; unlit -> arm it
-            if (h1AmpAutoTune.Checked) AmpLanControllerInstance.RequestAutoTune();
+            if (h1AmpAutoTune.Checked)
+            {
+                AmpLanControllerInstance.RequestAutoTune();
+                // H1 round 3: this autotune will run its own Tune carrier - engage it when the
+                // amplifier reports it waits for input power, release it when the session ends
+                _h1AutoTuneCarrierArmed = true;
+                _h1AutoTuneCarrierArmMs = Environment.TickCount;
+            }
             else AmpLanControllerInstance.RequestAutoTuneAbort();
         }
 

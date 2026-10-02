@@ -238,6 +238,13 @@ namespace Thetis
             }
         }
 
+        /// <summary>H1 round 3: the amplifier reports it waits for input power - the console's
+        /// Auto tune button engages the Tune carrier at this point.</summary>
+        public bool AutoTuneWaitingForInput
+        {
+            get { return _autoTune && _autoText.IndexOf("WAITING", StringComparison.OrdinalIgnoreCase) >= 0; }
+        }
+
         /// <summary>H1: true while an autotune episode is on - from the click (arming, the
         /// operate-first nudge) through the amplifier's WAITING / IN PROGRESS frames until
         /// the console stops chasing a stop request. Drives the Auto tune pill's lit state.</summary>
