@@ -541,13 +541,16 @@ namespace Thetis
                 "Smart Tune for optimal ATU antenna matching and Linear Amp operation." + System.Environment.NewLine +
                 System.Environment.NewLine +
                 "If the TUNE button is hit, the amp is put in stand-by and Thetis generates a TUNE signal at" + System.Environment.NewLine +
-                "the power level set by the \"Tune slider\" for optimal ATU antenna matching. Once the SWR holds" + System.Environment.NewLine +
-                "at 2.0:1 or better for one second, Thetis switches the amp to operate and generates a TUNE" + System.Environment.NewLine +
-                "signal at the power level set by the \"driver slider\" for optimally driving the amp." + System.Environment.NewLine +
+                "the power level set by the selected tune source - the \"Tune slider\" - for optimal ATU" + System.Environment.NewLine +
+                "antenna matching. Once the SWR holds at 2.0:1 or better for one second, Thetis lowers the" + System.Environment.NewLine +
+                "TUNE signal to the power level set by the \"driver slider\", the level the amplifier is" + System.Environment.NewLine +
+                "normally driven at, and then switches the amplifier to operate for optimally driving the" + System.Environment.NewLine +
+                "amp. Set the driver slider to the operating level first: at zero the amplified part of" + System.Environment.NewLine +
+                "the tune is silent. The Tune slider keeps its matching value for the next tune." + System.Environment.NewLine +
                 System.Environment.NewLine +
-                "If the Auto tune button is hit, an automatic autotune sequence is initiated in the amp, and a" + System.Environment.NewLine +
-                "TUNE signal is generated at the power level set by the \"driver slider\" for optimally tuning" + System.Environment.NewLine +
-                "the amp.");
+                "If the Auto tune button is hit, an automatic autotune sequence is initiated in the amp," + System.Environment.NewLine +
+                "and a TUNE signal is generated at the power level set by the selected tune source for" + System.Environment.NewLine +
+                "optimally tuning the amp.");
 
             h1ChkAmpBlockVis = new CheckBoxTS();
             h1ChkAmpBlockVis.AutoSize = false;
