@@ -6831,15 +6831,21 @@ namespace Thetis
                         _h1AutoTuneCarrierArmed = false;
                         if (chkTUN.Checked) chkTUN.Checked = false; // no link, no carrier
                     }
-                    else if (!AmpLanControllerInstance.IsAutoTune)
+                    else if (!AmpLanControllerInstance.IsAutoTune || AmpLanControllerInstance.AutoTuneStopping)
                     {
-                        // the session ended - release the carrier so the amplifier can go
-                        // to stand-by at once (the stand-by return is already armed)
+                        // the session ended, or a stop is being chased: release the carrier
+                        // at once so the amplifier can go to stand-by, and disarm so the
+                        // carrier cannot be re-engaged while the stop is in flight (seen
+                        // live 2026-10-02: a manual Tune release during a stop chase was
+                        // followed by the machine re-engaging the carrier into the
+                        // stopping session)
                         _h1AutoTuneCarrierArmed = false;
                         if (chkTUN.Checked)
                         {
                             chkTUN.Checked = false;
-                            AmpLanControllerInstance.LogNote("autotune finished - Tune released, amplifier free to stand down");
+                            AmpLanControllerInstance.LogNote(AmpLanControllerInstance.AutoTuneStopping
+                                ? "autotune stopping - Tune released"
+                                : "autotune finished - Tune released, amplifier free to stand down");
                         }
                     }
                     else if (chkTUN.Checked && armedFor > 240000)
