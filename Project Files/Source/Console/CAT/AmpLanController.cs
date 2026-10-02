@@ -149,6 +149,7 @@ namespace Thetis
         private volatile bool _autoTune = false; // H1: the amplifier's own autotune armed/running
         private int _autoTuneMs = 0;             // H1: tick of the last autotune frame
         private volatile bool _wantAutoTune = false; // H1: console Auto tune button asked for it
+        private volatile int _wantAutoTuneMs = 0;    // H1: when the operate-first nudge started
         private volatile bool _wantAutoTuneStop = false; // H1: right-click on Auto tune, back to manual
         private volatile bool _sawCon = false;
         private volatile bool _sawStatus = false;
@@ -451,14 +452,27 @@ namespace Thetis
                     // button. 'L' is the command behind the official manager's "Automatic" menu
                     // item - verified on the wire 2026-10-02: the amp answers AUTO; and then
                     // AUTO:WAITING FOR INPUT POWER, exactly like selecting A Tune on its panel.
-                    // ('9' is only a softkey inside the tuning page and does nothing alone.)
-                    // The third-tune-type flow then supplies the carrier.
+                    // IMPORTANT (live-probed): 'L' sent while the amp is in STAND-BY is silently
+                    // deferred - the user saw nothing. So bring a known stand-by amp to OPERATE
+                    // first and wait for it to report, then send 'L'. Unknown state: send 'L'
+                    // straight away (the amp itself defers it if needed).
                     if (_wantAutoTune)
                     {
-                        _wantAutoTune = false;
-                        Send("L");
-                        PumpReads(150);
-                        LogText("AUTOTUNE: 'L' sent to the amplifier (automatic tuning armed)");
+                        bool oper = _stateKnown && _ampState == 2;
+                        if (_stateKnown && !oper && _wantAutoTuneMs == 0)
+                        {
+                            _wantAutoTuneMs = Environment.TickCount;
+                            LogText("AUTOTUNE: amplifier is in stand-by - requesting operate first");
+                            RequestOperate();
+                        }
+                        else if (oper || _wantAutoTuneMs == 0 || Environment.TickCount - _wantAutoTuneMs > 6000)
+                        {
+                            _wantAutoTune = false;
+                            _wantAutoTuneMs = 0;
+                            Send("L");
+                            PumpReads(150);
+                            LogText("AUTOTUNE: 'L' sent to the amplifier (automatic tuning armed)");
+                        }
                     }
                     if (_wantAutoTuneStop)
                     {
