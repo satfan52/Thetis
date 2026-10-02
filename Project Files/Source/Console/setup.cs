@@ -454,7 +454,6 @@ namespace Thetis
             console.H1RigPowerMetersEnabled = h1ChkRigPowerMeters != null && h1ChkRigPowerMeters.Checked;
         }
 
-        private TabPage tpOtherHW_trx;
         private GroupBoxTS h1GrpTrx;
         private CheckBoxTS h1ChkTrxMeterCiv;
         private CheckBoxTS h1ChkAmpMeterAmp;
@@ -473,21 +472,8 @@ namespace Thetis
         {
             if (h1GrpTrx != null || tpOtherHW_amp == null) return;
 
-            tpOtherHW_trx = new TabPage();
-            tpOtherHW_trx.BackColor = System.Drawing.SystemColors.Control;
-            tpOtherHW_trx.Padding = new System.Windows.Forms.Padding(3);
-            tpOtherHW_trx.Size = tpOtherHW_amp.Size;
-            tpOtherHW_trx.Name = "tpOtherHW_trx";
-            tpOtherHW_trx.Text = "Transceivers";
-            TabControl h1trxparent = TabOtherHW;
-            if (h1trxparent != null)
-            {
-                // Plain Add - TabPages.Insert at the end index silently orphans the page
-                // in this build: it gets a parent but never joins the collection and never
-                // draws. The Amp page is the last one, so Add lands Transceivers right
-                // next to it, as asked.
-                h1trxparent.TabPages.Add(tpOtherHW_trx);
-            }
+            // The Transceivers page itself is declared in the designer, next to the Amp
+            // page; only its contents are built here, in the code-built H1 style.
 
             h1GrpTrx = new GroupBoxTS();
             h1GrpTrx.Text = "IC-7100";
