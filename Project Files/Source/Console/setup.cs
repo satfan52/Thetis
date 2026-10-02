@@ -489,7 +489,7 @@ namespace Thetis
             h1ChkTrxMeterCiv.Location = new Point(10, 20);
             h1ChkTrxMeterCiv.Size = new Size(300, 22);
             toolTip1.SetToolTip(h1ChkTrxMeterCiv,
-                "When checked, the FWD, REF and SWR transmit readings come from the IC-7100 over CI-V" + System.Environment.NewLine +
+                "When ticked, the FWD, REF and SWR transmit readings come from the IC-7100 over CI-V" + System.Environment.NewLine +
                 "while it is the transmitting radio. Unchecked, they come from the SDR connected to" + System.Environment.NewLine +
                 "Thetis. The OM2000A+ readings take over when its option on the Amp page is ticked and" + System.Environment.NewLine +
                 "the amplifier operates; while the amplifier stands by the fall-back is to this option" + System.Environment.NewLine +
@@ -534,18 +534,18 @@ namespace Thetis
             h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
             h1ChkAmpTuneStandby.Image = null;
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
-            h1ChkAmpTuneStandby.Text = "stand-by during tune, then operating tune";
+            h1ChkAmpTuneStandby.Text = "TUNE: amplifier stands by, then operates";
             h1ChkAmpTuneStandby.Location = new Point(10, 20);
             h1ChkAmpTuneStandby.Size = new Size(300, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
-                "When checked, TUNE runs the whole sequence automatically: the OM2000A+ is switched" + System.Environment.NewLine +
-                "to stand-by first and the rig transmits the Tune power so the antenna tuner can match." + System.Environment.NewLine +
-                "Once the rig SWR holds at 2.0:1 or better for one second the drive drops to the Drive" + System.Environment.NewLine +
-                "Level and the amplifier returns to operate - the same carrier continues as the" + System.Environment.NewLine +
-                "operating tune. Releasing before that leaves the amplifier in stand-by. With this" + System.Environment.NewLine +
-                "unchecked, TUNE is a plain carrier and the amplifier is not touched. If the amplifier" + System.Environment.NewLine +
-                "is running its own autotune, TUNE always sends a carrier at the Drive Level and" + System.Environment.NewLine +
-                "leaves the amplifier alone.");
+                "When ticked, the TUNE button runs in two steps. Step 1: the OM2000A+ is put in" + System.Environment.NewLine +
+                "stand-by and the rig transmits at the Tune power, so the antenna tuner matches with" + System.Environment.NewLine +
+                "the amplifier bypassed. Step 2: once the rig SWR holds at 2.0:1 or better for one" + System.Environment.NewLine +
+                "second, the drive returns to the Drive Level, the amplifier switches to operate, and" + System.Environment.NewLine +
+                "the same carrier continues as the operating tune. Releasing TUNE before step 2 leaves" + System.Environment.NewLine +
+                "the amplifier in stand-by. Unticked, TUNE is a plain carrier and the amplifier is" + System.Environment.NewLine +
+                "not touched at all. While the amplifier runs its own autotune, TUNE only sends a" + System.Environment.NewLine +
+                "carrier at the selected tune power and the amplifier is left alone.");
 
             h1ChkAmpBlockVis = new CheckBoxTS();
             h1ChkAmpBlockVis.AutoSize = false;
@@ -569,7 +569,7 @@ namespace Thetis
             h1ChkAmpMeterAmp.Location = new Point(346, 47);
             h1ChkAmpMeterAmp.Size = new Size(200, 22);
             toolTip1.SetToolTip(h1ChkAmpMeterAmp,
-                "When checked, the FWD, REF and SWR transmit readings come from the OM2000A+ while" + System.Environment.NewLine +
+                "When ticked, the FWD, REF and SWR transmit readings come from the OM2000A+ while" + System.Environment.NewLine +
                 "the amplifier operates. While it stands by they fall back to the IC-7100 when its" + System.Environment.NewLine +
                 "option is ticked on the Transceivers page, otherwise to the SDR connected to Thetis.");
 
