@@ -21274,6 +21274,80 @@ namespace Thetis
             AmpLanControllerInstance.LogNote("stand-by not confirmed within {0} ms, carrier released", maxMs);
         }
 
+        // H1: two-phase tune (user requirement 2026-10-02). Phase 1: the amplifier is
+        // bypassed and the rig tunes the remote tuner at the Tune power level; when the
+        // rig's SWR through the bypass holds at or below H1TuneMatchSwr for
+        // H1TuneMatchHoldMs the tuner has finished. Phase 2: the drive drops back to the
+        // operational level WHILE THE AMPLIFIER IS STILL BYPASSED, then the amplifier
+        // switches to OPERATE - the same carrier continues as the operating tune. The
+        // sequence only runs when the tune begin actually put the amplifier in stand-by
+        // (a hand-set stand-by tunes bypassed and stays untouched, as before).
+        private const float H1TuneMatchSwr = 2.0f;
+        private const int H1TuneMatchHoldMs = 1000;
+        private bool _h1TuneAutoRunning = false;
+
+        private void H1TuneAutoPhaseStart()
+        {
+            if (_h1TuneAutoRunning) return;
+            if (!_h1AmpTuneStandbyEnabled || !_h1AmpTuneArmed) return;
+            if (AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
+            _h1TuneAutoRunning = true;
+            AmpLanControllerInstance.LogNote("two-phase tune armed: waiting for the tuner (SWR {0:0.0} or better for {1} s)", H1TuneMatchSwr, H1TuneMatchHoldMs / 1000);
+            H1TuneAutoPhaseRun();
+        }
+
+        private async void H1TuneAutoPhaseRun()
+        {
+            // async void on the UI thread: the continuations run on the UI context, so
+            // the advance may touch PWR and the slider state directly
+            DateTime stableSince = DateTime.MinValue;
+            try
+            {
+                while (chkTUN.Checked)
+                {
+                    await Task.Delay(100);
+                    if (!chkTUN.Checked) break;
+                    if (AmpLanControllerInstance == null) break;
+                    if (AmpLanControllerInstance.StateKnown && AmpLanControllerInstance.IsOperate) break; // already in phase 2
+                    if (CIVControllerInstance == null || !CIVControllerInstance.RigSwrFresh(1500))
+                    {
+                        stableSince = DateTime.MinValue;
+                        continue;
+                    }
+                    float swr = CIVControllerInstance.RigSwrRatio;
+                    if (swr <= H1TuneMatchSwr)
+                    {
+                        if (stableSince == DateTime.MinValue) stableSince = DateTime.UtcNow;
+                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1TuneMatchHoldMs)
+                        {
+                            H1TuneAutoPhaseAdvance();
+                            break;
+                        }
+                    }
+                    else stableSince = DateTime.MinValue;
+                }
+            }
+            finally
+            {
+                _h1TuneAutoRunning = false;
+            }
+        }
+
+        private void H1TuneAutoPhaseAdvance()
+        {
+            if (!chkTUN.Checked) return;
+            // 1) the drive back to the operational level while the amplifier is still bypassed
+            int operational = _tuneDrivePowerSource == DrivePowerSource.FIXED ? PreviousPWR : ptbPWR.Value;
+            PWRSliderLimitEnabled = true;
+            PWR = operational;
+            // 2) the amplifier to OPERATE - the same carrier continues as the operating tune
+            if (AmpLanControllerInstance != null)
+            {
+                AmpLanControllerInstance.RequestOperate();
+                AmpLanControllerInstance.LogNote("tuner settled, operating tune: drive {0}%, amplifier to OPERATE", operational);
+            }
+        }
+
         private readonly bool[] _h1MeterTxOverride = new bool[4] { false, false, false, false };
         private bool _h1MeterTxModesLoaded = false;
 
@@ -34157,6 +34231,7 @@ namespace Thetis
                     chkTUN.Checked = false;
                     return;
                 }
+                H1TuneAutoPhaseStart(); // H1: two-phase tune - switch to the operating tune once the tuner settles
                 // MW0LGE_21k8 moved below mox
                 updateVFOFreqs(chkTUN.Checked, true);
 
