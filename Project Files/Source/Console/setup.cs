@@ -560,24 +560,12 @@ namespace Thetis
             h1ChkAmpTuneStandby.Location = new Point(10, 20);
             h1ChkAmpTuneStandby.Size = new Size(536, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
-                "Smart Tune for optimal ATU antenna matching and Linear Amp operation." + System.Environment.NewLine +
-                System.Environment.NewLine +
-                "If the TUNE button is hit, the amp is put in stand-by and Thetis generates a TUNE signal at" + System.Environment.NewLine +
-                "the power level set by the selected tune source for optimal ATU antenna matching. Once the" + System.Environment.NewLine +
-                "SWR holds at 2.0:1 or better for one second, Thetis lowers the TUNE signal to the power level" + System.Environment.NewLine +
-                "set by the \"driver slider\", the level the amplifier is normally driven at, and then switches" + System.Environment.NewLine +
-                "the amplifier to operate for optimally driving the amp. Set the driver slider to the operating" + System.Environment.NewLine +
-                "level first: at zero the amplified part of the tune is silent. The Tune slider keeps its" + System.Environment.NewLine +
-                "matching value for the next tune." + System.Environment.NewLine +
-                System.Environment.NewLine +
-                "When the selected tune source is the \"driver slider\", the antenna tuning runs with the" + System.Environment.NewLine +
-                "amplifier bypassed at the same power level at which the amplifier will then be driven - too" + System.Environment.NewLine +
-                "high for the amplifier it will saturate and enter protection; too low for the antenna tuner" + System.Environment.NewLine +
-                "it may not match the antenna optimally." + System.Environment.NewLine +
-                System.Environment.NewLine +
-                "If the Auto tune button is hit, an automatic autotune sequence is initiated in the amp," + System.Environment.NewLine +
-                "and a TUNE signal is generated at the power level set by the selected tune source for" + System.Environment.NewLine +
-                "optimally tuning the amp.");
+                "When checked, the OM2000A+ is bypassed for as long as the Antenna SWR has not" + System.Environment.NewLine +
+                "stabilised below 2, and the Tuning power is set by the \"Tune\" level." + System.Environment.NewLine +
+                "When the antenna is matched, the amp comes in line and the Tuning power changes to" + System.Environment.NewLine +
+                "the \"Drive\" level instead of the \"Tune\" level." + System.Environment.NewLine +
+                "When unchecked, the Tuning power is always set by the \"Tune\" level regardless of" + System.Environment.NewLine +
+                "the Antenna SWR value, or whether the amp is in line or switched to standby.");
 
             h1ChkAmpBlockVis = new CheckBoxTS();
             h1ChkAmpBlockVis.AutoSize = false;
@@ -588,9 +576,7 @@ namespace Thetis
             h1ChkAmpBlockVis.Location = new Point(10, 74);
             h1ChkAmpBlockVis.Size = new Size(190, 22);
             toolTip1.SetToolTip(h1ChkAmpBlockVis,
-                "Shows the OM2000A+ panel - mode, PA power, Auto tune and the activity readout -" + System.Environment.NewLine +
-                "on the console, left of the MON/TUN/MOX buttons. Hidden by default. The amplifier" + System.Environment.NewLine +
-                "link and the meters work either way.");
+                "Shows the OM2000A+ block in the GUI.");
 
             h1ChkAmpMeterAmp = new CheckBoxTS();
             h1ChkAmpMeterAmp.AutoSize = false;
