@@ -546,13 +546,18 @@ namespace Thetis
             h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
             h1ChkAmpTuneStandby.Image = null;
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
-            h1ChkAmpTuneStandby.Text = "standby during tune";
+            h1ChkAmpTuneStandby.Text = "stand-by during tune, then operating tune";
             h1ChkAmpTuneStandby.Location = new Point(10, 20);
             h1ChkAmpTuneStandby.Size = new Size(300, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
-                "When checked, the OM2000A+ is switched to stand-by the moment TUNE is engaged" + System.Environment.NewLine +
-                "and back to operate when tune ends. An amplifier switched to stand-by by hand" + System.Environment.NewLine +
-                "stays untouched.");
+                "When checked, TUNE runs the whole sequence automatically: the OM2000A+ is switched" + System.Environment.NewLine +
+                "to stand-by first and the rig transmits the Tune power so the antenna tuner can match." + System.Environment.NewLine +
+                "Once the rig SWR holds at 2.0:1 or better for one second the drive drops to the Drive" + System.Environment.NewLine +
+                "Level and the amplifier returns to operate - the same carrier continues as the" + System.Environment.NewLine +
+                "operating tune. Releasing before that leaves the amplifier in stand-by. With this" + System.Environment.NewLine +
+                "unchecked, TUNE is a plain carrier and the amplifier is not touched. If the amplifier" + System.Environment.NewLine +
+                "is running its own autotune, TUNE always sends a carrier at the Drive Level and" + System.Environment.NewLine +
+                "leaves the amplifier alone.");
 
             LabelTS h1LblAmpAddr = new LabelTS();
             h1LblAmpAddr.AutoSize = true;
