@@ -146,6 +146,8 @@ namespace Thetis
         private bool _tracedTe = false;
         private int _lastWa = -1;
         private int _lastAutoLog = -1000; // H1: rate limit for the amplifier's AUTO: frames
+        private volatile bool _autoTune = false; // H1: the amplifier's own autotune armed/running
+        private int _autoTuneMs = 0;             // H1: tick of the last autotune frame
         private volatile bool _sawCon = false;
         private volatile bool _sawStatus = false;
         private volatile bool _sawInfo = false;
@@ -181,6 +183,20 @@ namespace Thetis
         public bool IsOperate
         {
             get { return _stateKnown && _ampState == 2; }
+        }
+
+        /// <summary>H1: the amplifier's own autotune is armed or running. While that state
+        /// machine is active the amp ignores mode toggles, so the console runs the third
+        /// tune type for it instead: carrier at the drive value, amplifier left untouched.
+        /// A silent cancellation on the amp panel expires after 10 minutes without frames.</summary>
+        public bool IsAutoTune
+        {
+            get
+            {
+                if (!_autoTune) return false;
+                if (Environment.TickCount - _autoTuneMs > 600000) return false;
+                return true;
+            }
         }
 
         public float AmpForwardWatts
@@ -743,6 +759,25 @@ namespace Thetis
                     _lastAutoLog = n2;
                     LogText("amp: {0}", token);
                 }
+                // H1: track the state for the tune logic - third tune type: the carrier is
+                // sent at the drive value with the amplifier left alone. IN PROGRESS /
+                // WAITING FOR INPUT POWER = active; ABORTED / DONE / COMPLETE = finished.
+                // A silent cancellation on the amplifier panel expires via the 10-minute
+                // rule in IsAutoTune.
+                bool was = _autoTune;
+                if (token.IndexOf("IN PROGRESS", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    token.IndexOf("WAITING", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _autoTune = true;
+                    _autoTuneMs = n2;
+                }
+                else if (token.IndexOf("ABORTED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         token.IndexOf("DONE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         token.IndexOf("COMPLETE", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _autoTune = false;
+                }
+                if (_autoTune != was) LogText("amp: autotune {0}", _autoTune ? "active" : "finished");
                 return;
             }
             if (token.StartsWith("ST", StringComparison.Ordinal))

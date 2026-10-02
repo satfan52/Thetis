@@ -34192,10 +34192,29 @@ namespace Thetis
 
                 _tuning = true;                                                  // used for a few things
                 _h1TuneOperationalPhase = false;                                 // H1: two-phase tune starts bypassed
+                // H1: third tune type - the amplifier runs its OWN autotune (its controller
+                // reports AUTOTUNE IN PROGRESS / WAITING FOR INPUT POWER). While that state
+                // machine runs, mode toggles are ignored, so a stand-by request would only
+                // cancel the press and the amp would stay "waiting for input power" forever
+                // (user report 2026-10-02). Instead: carrier at the DRIVE value, no stand-by
+                // request, no two-phase - the amplifier is left exactly as it is so its own
+                // autotune can see the RF. If it is parked in stand-by, ask for operate once
+                // (best effort - it may be ignored until its automatics finish).
+                bool ampAutoTune = AmpLanControllerInstance != null && AmpLanControllerInstance.IsAutoTune;
+                if (ampAutoTune)
+                {
+                    _h1TuneOperationalPhase = true;  // the drive follows the main slider, not the tune level
+                    if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
+                        AmpLanControllerInstance.RequestOperate();
+                    AmpLanControllerInstance.LogNote("TUNE: amplifier autotune active - tune at the drive value, amplifier left untouched");
+                }
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
-                H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
-                await H1AmpTuneStandbySettle(2500); // H1: hold the carrier until the amp reports stand-by - no amplified blip
-                if (!chkTUN.Checked) return; // cancelled when the amplifier could not be put in stand-by
+                if (!ampAutoTune)
+                {
+                    H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
+                    await H1AmpTuneStandbySettle(2500); // H1: hold the carrier until the amp reports stand-by - no amplified blip
+                    if (!chkTUN.Checked) return; // cancelled when the amplifier could not be put in stand-by
+                }
                 chkTUN.BackColor = button_selected_color;
 
                 old_meter_tx_mode_before_tune = current_meter_tx_mode;
@@ -34236,7 +34255,7 @@ namespace Thetis
                 // set power
                 int new_pwr = SetPowerUsingTargetDBM(out bool bUseConstrain, out double targetdBm, true, true, false);
                 //
-                if (_tuneDrivePowerSource == DrivePowerSource.FIXED)
+                if (_tuneDrivePowerSource == DrivePowerSource.FIXED && !ampAutoTune)
                 {
                     PWRSliderLimitEnabled = false;
                     PWR = new_pwr;
