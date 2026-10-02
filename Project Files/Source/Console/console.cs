@@ -25652,7 +25652,7 @@ namespace Thetis
             MeterRXMode rxMode;
             // H1: the sub meters hand in their own transmit readout mode, so their scale and their
             // bar answer to the same mode their readout line shows; every other caller keeps the pair.
-            MeterTXMode txMode = txModeOverride != MeterTXMode.LAST ? txModeOverride : (chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1);
+            MeterTXMode txMode = txModeOverride != MeterTXMode.LAST ? txModeOverride : current_meter_tx_mode_rx1;
 
             bool bAboveS9Frequency;
             if (rx == 1)
@@ -26860,7 +26860,7 @@ namespace Thetis
                     num = avg_num = current_meter_data * 0.2 + avg_num * 0.8; // slow decay
             }
 
-            MeterTXMode txMode = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1;
+            MeterTXMode txMode = current_meter_tx_mode_rx1; // H1: each meter keeps its own value during tune too
 
             switch (current_meter_display_mode)
             {
@@ -27174,7 +27174,7 @@ namespace Thetis
 
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, true);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 1, false, current_meter_tx_mode_rx2, true);
 
                         pixel_x = Math.Max(1, pixel_x);
                         pixel_x = Math.Min(W - 3, pixel_x);
@@ -27234,7 +27234,7 @@ namespace Thetis
                     if (rx2_meter_mode != MeterRXMode.OFF && rx2_enabled)
                     {
                         //MW0LGE moved all code into common function, used by both edge and original meter
-                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2, true);
+                        getMeterPixelPosAndDrawScales(2, g, H, W, num, out pixel_x, out pixel_x_swr, 12, true, current_meter_tx_mode_rx2, true);
                         //-
 
                         pixel_x = Math.Max(0, pixel_x);
@@ -27335,7 +27335,7 @@ namespace Thetis
                 if (_mox || chkTUN.Checked)
                 {
                     // H1: RX2 transmit readout - same values as RX1, chosen per meter
-                    MeterTXMode tx2 = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
+                    MeterTXMode tx2 = current_meter_tx_mode_rx2; // H1: per-meter value during tune too
                     float txnum;
                     string txout = "";
                     switch (tx2)
@@ -27988,7 +27988,7 @@ namespace Thetis
                     }
                     else
                     {
-                        MeterTXMode mode = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1;
+                        MeterTXMode mode = current_meter_tx_mode_rx1; // H1: per-meter value during tune too
                         float num;
 
                         switch (mode)
@@ -28508,7 +28508,7 @@ namespace Thetis
                     {
                         // H1: while keyed the RX2 meter takes the transmit reading of its own
                         // transmit display value, like the other three meters.
-                        MeterTXMode txmode2 = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
+                        MeterTXMode txmode2 = current_meter_tx_mode_rx2; // H1: per-meter value during tune too
                         float txnum2;
                         switch (txmode2)
                         {
@@ -50294,34 +50294,30 @@ namespace Thetis
 
         private void incrementMultiMeterTXMode()
         {
-            // H1: cycle the transmit meter values the same way reception cycles its units
-            MeterTXMode tmp = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx1;
+            // H1: cycle THIS meter's own transmit value - while TUNE is active too. The
+            // earlier version stepped the one shared tune value during a tune, so RX1 and
+            // RX2 showed the same reading and could not be set apart (user requirement
+            // 2026-10-02: RX2 on REF while RX1 shows something else).
+            MeterTXMode tmp = current_meter_tx_mode_rx1;
             tmp++;
             if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
-            if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode_rx1 = tmp;
-            if (!chkTUN.Checked)
-            {
-                _h1MeterTxOverride[0] = current_meter_tx_mode_rx1 != _h1MeterTxDefault;
-                H1SaveMeterTxModes();
-            }
+            current_meter_tx_mode_rx1 = tmp;
+            _h1MeterTxOverride[0] = current_meter_tx_mode_rx1 != _h1MeterTxDefault;
+            H1SaveMeterTxModes();
             picMultiMeterDigital.Invalidate();
-            picRX2Meter.Invalidate();
             txtMultiText.Invalidate();
-            txtRX2Meter.Invalidate();
         }
 
 private void incrementMultiMeterTXModeRX2()
         {
-            // H1: cycle the transmit meter values the same way reception cycles its units
-            MeterTXMode tmp = chkTUN.Checked ? tune_meter_tx_mode : current_meter_tx_mode_rx2;
+            // H1: cycle this meter's own transmit value - while TUNE is active too (see
+            // incrementMultiMeterTXMode)
+            MeterTXMode tmp = current_meter_tx_mode_rx2;
             tmp++;
             if (tmp >= MeterTXMode.LAST) tmp = MeterTXMode.FIRST + 1;
-            if (chkTUN.Checked) tune_meter_tx_mode = tmp; else current_meter_tx_mode_rx2 = tmp;
-            if (!chkTUN.Checked)
-            {
-                _h1MeterTxOverride[1] = current_meter_tx_mode_rx2 != _h1MeterTxDefault;
-                H1SaveMeterTxModes();
-            }
+            current_meter_tx_mode_rx2 = tmp;
+            _h1MeterTxOverride[1] = current_meter_tx_mode_rx2 != _h1MeterTxDefault;
+            H1SaveMeterTxModes();
             picRX2Meter.Invalidate();
             txtRX2Meter.Invalidate();
         }
