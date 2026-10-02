@@ -442,9 +442,8 @@ namespace Thetis
             h1ChkRigPowerMeters.Location = new Point(300, 44);
             h1ChkRigPowerMeters.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkRigPowerMeters,
-                "When checked, the Drive and Tune sliders also set the IC-7100's RF power, and the" + System.Environment.NewLine +
-                "rig's SWR, FWD and REF readings are fetched over CI-V. When unchecked, the rig" + System.Environment.NewLine +
-                "keeps its own power setting and no readings are fetched.");
+                "When checked, Thetis sets the IC-7100's RF power based on the \"Drive\" and \"Tune\"" + System.Environment.NewLine +
+                "levels and it fetches the IC-7100's FWD, REF and SWR readings.");
             h1ChkRigPowerMeters.CheckedChanged += h1ChkRigPowerMeters_CheckedChanged;
             grpCIVControl.Controls.Add(h1ChkRigPowerMeters);
         }
@@ -515,10 +514,8 @@ namespace Thetis
             h1ChkTrxMeterCiv.Location = new Point(300, 20);
             h1ChkTrxMeterCiv.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkTrxMeterCiv,
-                "When checked, the transmit meter shows the IC-7100's readings while the rig" + System.Environment.NewLine +
-                "transmits, fetched over CI-V by the option above. When the amplifier operates" + System.Environment.NewLine +
-                "and 'TX meter uses the OM2000A+' is checked on the Amp page, its readings" + System.Environment.NewLine +
-                "take over. When unchecked, the meter stays on the SDR.");
+                "When checked, the Thetis TX meter displays the IC-7100's FWD, REF and SWR" + System.Environment.NewLine +
+                "readings (instead of the SDR ones).");
 
             LabelTS h1LblTrxInfo = new LabelTS();
             h1LblTrxInfo.AutoSize = false;
@@ -604,10 +601,8 @@ namespace Thetis
             h1ChkAmpMeterAmp.Location = new Point(346, 47);
             h1ChkAmpMeterAmp.Size = new Size(200, 22);
             toolTip1.SetToolTip(h1ChkAmpMeterAmp,
-                "When checked, the transmit meter shows the OM2000A+ readings while the amplifier" + System.Environment.NewLine +
-                "operates. While it stands by, the meter returns to the IC-7100 when 'TX meter uses" + System.Environment.NewLine +
-                "the IC-7100 data' is checked on the Transceivers page, otherwise to the SDR" + System.Environment.NewLine +
-                "connected to Thetis.");
+                "When checked, the Thetis TX meter displays the OM2000A's FWD, REF and SWR" + System.Environment.NewLine +
+                "readings during PA operation (but not while the amp is bypassed).");
 
             LabelTS h1LblAmpAddr = new LabelTS();
             h1LblAmpAddr.AutoSize = true;
