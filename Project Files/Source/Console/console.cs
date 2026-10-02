@@ -21053,11 +21053,11 @@ namespace Thetis
         }
         private bool H1RigFwdLive
         {
-            get { return _mox && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000); }
+            get { return _mox && _h1MeterSource == 1 && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000); }
         }
         private bool H1RigSwrLive
         {
-            get { return _mox && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000); }
+            get { return _mox && _h1MeterSource == 1 && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000); }
         }
         private bool H1RigRefLive
         {
@@ -21125,13 +21125,16 @@ namespace Thetis
         // Either option opens the network link; both off closes it. The amp accepts only
         // one connection at a time, so the OM Power manager must stay closed then.
         // ---------------------------------------------------------------------------------
-        private bool _h1AmpMetersEnabled = false;
-        public bool H1AmpMetersEnabled
+        // H1: where the TX transmit readings come from. 0 = Red Pitaya sensing (normal),
+        // 1 = IC-7100 CI-V meters, 2 = OM2000A+ over the network. Chosen by the three-way
+        // "TX Meter Source" radio group in Setup on the Display tab.
+        private int _h1MeterSource = 0;
+        public int H1MeterSource
         {
-            get { return _h1AmpMetersEnabled; }
+            get { return _h1MeterSource; }
             set
             {
-                _h1AmpMetersEnabled = value;
+                _h1MeterSource = value;
                 H1AmpUpdateRoute();
             }
         }
@@ -21171,15 +21174,15 @@ namespace Thetis
         {
             if (AmpLanControllerInstance == null) return;
             AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
-            AmpLanControllerInstance.SetEnabled(_h1AmpMetersEnabled || _h1AmpTuneStandbyEnabled);
+            AmpLanControllerInstance.SetEnabled(_h1MeterSource == 2 || _h1AmpTuneStandbyEnabled);
         }
         private bool H1AmpFwdLive
         {
-            get { return _mox && _h1AmpMetersEnabled && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000); }
+            get { return _mox && _h1MeterSource == 2 && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000); }
         }
         private bool H1AmpSwrLive
         {
-            get { return _mox && _h1AmpMetersEnabled && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000) && AmpLanControllerInstance.RefFresh(2000); }
+            get { return _mox && _h1MeterSource == 2 && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000) && AmpLanControllerInstance.RefFresh(2000); }
         }
         private bool H1AmpRefLive
         {

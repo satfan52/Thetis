@@ -454,47 +454,101 @@ namespace Thetis
             console.H1RigPowerMetersEnabled = h1ChkRigPowerMeters != null && h1ChkRigPowerMeters.Checked;
         }
 
+        private GroupBoxTS grpH1MeterSource;
+        private RadioButtonTS radH1MeterRp;
+        private RadioButtonTS radH1MeterCiv;
+        private RadioButtonTS radH1MeterAmp;
         private GroupBoxTS h1GrpAmp;
-        private CheckBoxTS h1ChkAmpMeters;
         private CheckBoxTS h1ChkAmpTuneStandby;
         private TextBoxTS h1TxtAmpAddress;
         private TextBoxTS h1TxtAmpPort;
 
-        // H1: the OM2000A+ LAN options, built in code into their own group on the Serial
-        // tab, right above the CAT1 Protocol & CI-V Settings group. Two separate switches:
-        // one for the power and meter readings, one for the stand-by during tune. Either
-        // one opens the network link to the amplifier; both off closes it. The automatic
-        // option save and restore picks them up like any other control on the tabs.
+        // H1: the TX meter source - one three-way choice for where the FWD / REF / SWR
+        // transmit readings come from: the Red-Pitaya sensing (normal), the IC-7100 CI-V
+        // meters, or the OM2000A+ over the network. Built in code onto the Display tab,
+        // right beside the Multimeter group that owns the other meter display settings.
+        private void H1BuildMeterSourceOption()
+        {
+            if (grpH1MeterSource != null || tpDisplayGeneral == null) return;
+
+            grpH1MeterSource = new GroupBoxTS();
+            grpH1MeterSource.Text = "TX Meter Source";
+            grpH1MeterSource.Location = new Point(394, 148);
+            grpH1MeterSource.Size = new Size(170, 142);
+
+            radH1MeterRp = new RadioButtonTS();
+            radH1MeterRp.AutoSize = false;
+            radH1MeterRp.Image = null;
+            radH1MeterRp.Name = "radH1MeterRp";
+            radH1MeterRp.Text = "Red Pitaya";
+            radH1MeterRp.Location = new Point(12, 20);
+            radH1MeterRp.Size = new Size(145, 22);
+            toolTip1.SetToolTip(radH1MeterRp, "Normal operation: the FWD, REF and SWR transmit readings come from the hardware power sensing.");
+            radH1MeterRp.CheckedChanged += h1MeterSource_CheckedChanged;
+
+            radH1MeterCiv = new RadioButtonTS();
+            radH1MeterCiv.AutoSize = false;
+            radH1MeterCiv.Image = null;
+            radH1MeterCiv.Name = "radH1MeterCiv";
+            radH1MeterCiv.Text = "IC-7100";
+            radH1MeterCiv.Location = new Point(12, 44);
+            radH1MeterCiv.Size = new Size(145, 22);
+            toolTip1.SetToolTip(radH1MeterCiv, "The transmit readings come from the IC-7100's own meters over CI-V. Needs the option in CAT1 Protocol & CI-V Settings; falls back to Red Pitaya when the rig is silent.");
+            radH1MeterCiv.CheckedChanged += h1MeterSource_CheckedChanged;
+
+            radH1MeterAmp = new RadioButtonTS();
+            radH1MeterAmp.AutoSize = false;
+            radH1MeterAmp.Image = null;
+            radH1MeterAmp.Name = "radH1MeterAmp";
+            radH1MeterAmp.Text = "OM2000A+";
+            radH1MeterAmp.Location = new Point(12, 68);
+            radH1MeterAmp.Size = new Size(145, 22);
+            toolTip1.SetToolTip(radH1MeterAmp, "The transmit readings come from the OM2000A+ over the network. Opens the amplifier link; the OM Power manager cannot connect while it is open.");
+            radH1MeterAmp.CheckedChanged += h1MeterSource_CheckedChanged;
+
+            LabelTS h1LblMeterSourceInfo = new LabelTS();
+            h1LblMeterSourceInfo.AutoSize = false;
+            h1LblMeterSourceInfo.Image = null;
+            h1LblMeterSourceInfo.ForeColor = System.Drawing.SystemColors.GrayText;
+            h1LblMeterSourceInfo.Text = "Falls back to Red Pitaya when the chosen source is not available.";
+            h1LblMeterSourceInfo.Location = new Point(12, 94);
+            h1LblMeterSourceInfo.Size = new Size(148, 42);
+
+            grpH1MeterSource.Controls.Add(radH1MeterRp);
+            grpH1MeterSource.Controls.Add(radH1MeterCiv);
+            grpH1MeterSource.Controls.Add(radH1MeterAmp);
+            grpH1MeterSource.Controls.Add(h1LblMeterSourceInfo);
+            tpDisplayGeneral.Controls.Add(grpH1MeterSource);
+        }
+
+        private void h1MeterSource_CheckedChanged(object sender, EventArgs e)
+        {
+            if (radH1MeterRp == null) return;
+            if (radH1MeterRp.Checked) console.H1MeterSource = 0;
+            else if (radH1MeterCiv.Checked) console.H1MeterSource = 1;
+            else if (radH1MeterAmp.Checked) console.H1MeterSource = 2;
+        }
+
+        // H1: the OM2000A+ group - standby during tune plus the amplifier address. On
+        // the Audio tab, TX Output subpage, beside the processed TX output setup, because
+        // this is the route the amplifier serves.
         private void H1BuildAmpLanOptions()
         {
-            if (h1GrpAmp != null || tpCATSerialPorts == null) return;
+            if (h1GrpAmp != null || tpProcessedTXOutput == null) return;
 
             h1GrpAmp = new GroupBoxTS();
-                        h1GrpAmp.Text = "OM2000A+ Amplifier (LAN)";
-            h1GrpAmp.Location = new Point(180, 226);
-            h1GrpAmp.Size = new Size(520, 62);
-
-            h1ChkAmpMeters = new CheckBoxTS();
-            h1ChkAmpMeters.AutoSize = false;
-            h1ChkAmpMeters.UseVisualStyleBackColor = true;
-            h1ChkAmpMeters.Image = null;
-            h1ChkAmpMeters.Name = "chkH1AmpMeters";
-            h1ChkAmpMeters.Text = "OM2000A+ power & meters via LAN";
-            h1ChkAmpMeters.Location = new Point(10, 12);
-            h1ChkAmpMeters.Size = new Size(240, 22);
-            toolTip1.SetToolTip(h1ChkAmpMeters,
-                "When checked, the SWR, FWD and REF transmit readings come from the OM2000A+" + System.Environment.NewLine +
-                "over the network instead of the IC-7100 values. When unchecked, the readings" + System.Environment.NewLine +
-                "behave as before and the amplifier link is not used for the meters.");
+            h1GrpAmp.Text = "OM2000A+";
+            h1GrpAmp.Location = new Point(448, 8);
+            h1GrpAmp.Size = new Size(258, 133);
 
             h1ChkAmpTuneStandby = new CheckBoxTS();
             h1ChkAmpTuneStandby.AutoSize = false;
             h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
             h1ChkAmpTuneStandby.Image = null;
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
-            h1ChkAmpTuneStandby.Text = "OM2000A+ standby during tune";
-            h1ChkAmpTuneStandby.Location = new Point(256, 12);
-            h1ChkAmpTuneStandby.Size = new Size(250, 22);
+            h1ChkAmpTuneStandby.Text = "standby during tune";
+            h1ChkAmpTuneStandby.Location = new Point(10, 20);
+            h1ChkAmpTuneStandby.Size = new Size(238, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
                 "When checked, the OM2000A+ is switched to stand-by the moment TUNE is engaged" + System.Environment.NewLine +
                 "and back to operate when tune ends. An amplifier switched to stand-by by hand" + System.Environment.NewLine +
@@ -504,46 +558,48 @@ namespace Thetis
             h1LblAmpAddr.AutoSize = true;
             h1LblAmpAddr.Image = null;
             h1LblAmpAddr.Text = "Address:";
-            h1LblAmpAddr.Location = new Point(10, 39);
+            h1LblAmpAddr.Location = new Point(10, 49);
 
             h1TxtAmpAddress = new TextBoxTS();
             h1TxtAmpAddress.Name = "txtH1AmpAddress";
             h1TxtAmpAddress.MaxLength = 40;
-            h1TxtAmpAddress.Size = new Size(120, 20);
-            h1TxtAmpAddress.Location = new Point(68, 36);
+            h1TxtAmpAddress.Size = new Size(150, 20);
+            h1TxtAmpAddress.Location = new Point(70, 46);
             h1TxtAmpAddress.Text = "192.168.129.124";
-            toolTip1.SetToolTip(h1TxtAmpAddress, "The amplifier's network address, as set in its own network settings.");
+            toolTip1.SetToolTip(h1TxtAmpAddress, "The amplifier's network address, as set in its own network settings. One connection at a time; the OM Power manager cannot share it.");
 
             LabelTS h1LblAmpPort = new LabelTS();
             h1LblAmpPort.AutoSize = true;
             h1LblAmpPort.Image = null;
             h1LblAmpPort.Text = "Port:";
-            h1LblAmpPort.Location = new Point(198, 39);
+            h1LblAmpPort.Location = new Point(10, 73);
 
             h1TxtAmpPort = new TextBoxTS();
             h1TxtAmpPort.Name = "txtH1AmpPort";
             h1TxtAmpPort.MaxLength = 5;
             h1TxtAmpPort.Size = new Size(52, 20);
-            h1TxtAmpPort.Location = new Point(233, 36);
+            h1TxtAmpPort.Location = new Point(70, 70);
             h1TxtAmpPort.Text = "10001";
 
-            h1ChkAmpMeters.CheckedChanged += h1ChkAmpMeters_CheckedChanged;
+            LabelTS h1LblAmpInfo = new LabelTS();
+            h1LblAmpInfo.AutoSize = false;
+            h1LblAmpInfo.Image = null;
+            h1LblAmpInfo.ForeColor = System.Drawing.SystemColors.GrayText;
+            h1LblAmpInfo.Text = "The link opens with this option or the OM2000A+ meter source.";
+            h1LblAmpInfo.Location = new Point(10, 92);
+            h1LblAmpInfo.Size = new Size(238, 36);
+
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
             h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
 
-            h1GrpAmp.Controls.Add(h1ChkAmpMeters);
             h1GrpAmp.Controls.Add(h1ChkAmpTuneStandby);
             h1GrpAmp.Controls.Add(h1LblAmpAddr);
             h1GrpAmp.Controls.Add(h1TxtAmpAddress);
             h1GrpAmp.Controls.Add(h1LblAmpPort);
             h1GrpAmp.Controls.Add(h1TxtAmpPort);
-            tpCATSerialPorts.Controls.Add(h1GrpAmp);
-        }
-
-        private void h1ChkAmpMeters_CheckedChanged(object sender, EventArgs e)
-        {
-            console.H1AmpMetersEnabled = h1ChkAmpMeters != null && h1ChkAmpMeters.Checked;
+            h1GrpAmp.Controls.Add(h1LblAmpInfo);
+            tpProcessedTXOutput.Controls.Add(h1GrpAmp);
         }
 
         private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
@@ -583,6 +639,7 @@ namespace Thetis
             H1BuildDimUnusedOption(); // H1: the dim-unused receiver option, built in code
             H1BuildCivRigMetersOption(); // H1: the CI-V rig power & meters option, built in code
             H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
+            H1BuildMeterSourceOption(); // H1: the three-way TX meter source, built in code
 
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;
@@ -10816,7 +10873,13 @@ namespace Thetis
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
             chkCIVSyncPTT.Checked = console.CIVSyncPTT;
             if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Checked = console.H1RigPowerMetersEnabled;
-            if (h1ChkAmpMeters != null) h1ChkAmpMeters.Checked = console.H1AmpMetersEnabled;
+            if (radH1MeterAmp != null) // H1: mirror the TX meter source choice
+            {
+                int h1src = console.H1MeterSource;
+                if (h1src == 2) radH1MeterAmp.Checked = true;
+                else if (h1src == 1) radH1MeterCiv.Checked = true;
+                else radH1MeterRp.Checked = true;
+            }
             if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
             if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
             if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
