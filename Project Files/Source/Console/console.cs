@@ -34737,7 +34737,15 @@ namespace Thetis
                 {
                     if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
                         AmpLanControllerInstance.RequestOperate();
-                    AmpLanControllerInstance.LogNote("amplifier autotune active - tune at the selected tune power, amplifier left untouched");
+                    // H1 (user 2026-10-02): the amplifier tunes its own output network IN-LINE,
+                    // so it must be driven at the level it will be operated at, not the antenna
+                    // matching level - the Tune level (70-100 W) would saturate the amplifier
+                    // during its autotune. User spec: "the AutoTune signal at the power level
+                    // set by the driver slider, for optimally driving the amp". The phase flag
+                    // gives the whole power path the drive level and keeps the Tune slider out
+                    // of the way; the tune end resets it like any two-phase tune.
+                    _h1TunePhase2 = true; // the DRIVE level is the Autotune carrier level
+                    AmpLanControllerInstance.LogNote("amplifier autotune active - carrier at the drive level, amplifier left untouched");
                 }
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 if (!ampAutoTune)
