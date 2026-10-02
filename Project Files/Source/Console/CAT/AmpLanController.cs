@@ -7,8 +7,10 @@
 //   'C' handshake    -> "CON;WA<nnn>;"   (WA = heating countdown, 1/s while heating)
 //   '?'              -> "ST<flags>;"     (status: band, antenna)
 //   '1'              -> "INFO:...;"      (amplifier type and firmware version)
-//   'T' poll, 1/s    -> "TE<nn>;"        (temperature, and the measurement set)
-//   during transmit  -> "PO<W>,PR<W>,PI<W>;"   forward / reflected / input power
+//   '#' poll, 1/s    -> housekeeping batch ("IP0;IG0;UP2952;UG123;US0;UH8.5;UM237;TE64;")
+//   'T' poll, each 5th -> "TE<nn>;"        (temperature, kept for the log)
+//   'I' poll, 4/s while PTT on -> the power frame "PO<W>,PR<W>,PI<W>;IS..;FR..;"
+//                       (forward / reflected / input power - feeds the TX meters)
 //   "OPERATE;", "STBY;", "PTTON;", "PTTOFF;"   state reports
 //   'O'              -> toggles stand-by / operate, amp replies with the new state
 //
@@ -86,6 +88,7 @@ namespace Thetis
 
         // requested state change: 0 none, 1 stand-by, 2 operate
         private volatile int _wantState = 0;
+        private volatile bool _pttOn = false;
 
         private string _rx = string.Empty;
         private long _lastPoll = 0;
@@ -98,6 +101,7 @@ namespace Thetis
         private volatile bool _sawInfo = false;
         private long _verboseUntil = 0;
         private int _pollCount = 0;
+        private long _lastIFast = 0;
         private readonly System.Collections.Generic.List<long> _stateEventMs = new System.Collections.Generic.List<long>();
         private readonly System.Collections.Generic.List<bool> _stateEventOperate = new System.Collections.Generic.List<bool>();
 
@@ -309,10 +313,28 @@ namespace Thetis
                     if (now - _lastPoll >= 1000)
                     {
                         _lastPoll = now;
-                        Send("T");
+                        // H1: '#' is the batch query the official manager sends once a second;
+                        // it returns the power frame (PO<fwd>,PR<ref>,PI<input>) that feeds the
+                        // TX meters. 'T' (temperature) rides along every fifth poll.
+                        Send("#");
                         PumpReads(120);
                         _pollCount++;
+                        if (_pollCount % 5 == 0)
+                        {
+                            Send("T");
+                            PumpReads(80);
+                        }
                         if (_pollCount % 300 == 0) LogText("link alive, amp state {0}", StateName(_ampState));
+                    }
+
+                    // H1: while the amplifier is transmitting, ask for the power snapshot four
+                    // times a second - the same 'I' query the official manager uses during PTT;
+                    // it answers with PO<fwd>,PR<ref>,PI<input>, which feeds the TX meters.
+                    if (_pttOn && now - _lastIFast >= 250)
+                    {
+                        _lastIFast = now;
+                        Send("I");
+                        PumpReads(60);
                     }
                 }
                 catch (Exception ex)
@@ -349,13 +371,15 @@ namespace Thetis
                     _poStamp = 0;
                     _prStamp = 0;
                     _stateKnown = false;
+                    _pttOn = false;
+                    _lastIFast = 0;
                 }
 
                 LogText("CONNECTED to {0}:{1}", address, port);
                 _verboseUntil = NowMs() + 15000;
                 if (!Handshake())
                 {
-                    LogText("HANDSHAKE failed, amplifier control board did not answer");
+                    LogText("HANDSHAKE failed, link dropped, retrying");
                     CloseSocket("handshake failed");
                     return false;
                 }
@@ -389,11 +413,20 @@ namespace Thetis
                 if (attempt == 2) return false;
             }
 
-            Send("?");
-            WaitUntil(delegate { return _sawStatus; }, 1500);
-
-            Send("1");
-            WaitUntil(delegate { return _sawInfo; }, 1500);
+            // H1: the status and info frames must both arrive. A half handshake leaves the
+            // amplifier deaf to every later command - states, tune toggles and the meter
+            // queries - so a missing frame means: drop the link and try the whole thing again.
+            for (int round = 0; round < 2; round++)
+            {
+                if (!_sawStatus) { Send("?"); WaitUntil(delegate { return _sawStatus; }, 1200); }
+                if (!_sawInfo) { Send("1"); WaitUntil(delegate { return _sawInfo; }, 1200); }
+                if (_sawStatus && _sawInfo) break;
+            }
+            if (!(_sawStatus && _sawInfo))
+            {
+                LogText("handshake incomplete (ST={0} INFO={1}) - dropping the link and trying again", _sawStatus, _sawInfo);
+                return false;
+            }
 
             // the state and the measurements arrive from the per-second polls from now on
             return true;
@@ -536,9 +569,11 @@ namespace Thetis
                     SetState(1);
                     return;
                 case "PTTON":
+                    _pttOn = true;
                     LogText("PTT on");
                     return;
                 case "PTTOFF":
+                    _pttOn = false;
                     LogText("PTT off");
                     return;
                 case "PAON":
