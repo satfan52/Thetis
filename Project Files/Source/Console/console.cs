@@ -2039,6 +2039,7 @@ namespace Thetis
             AriesSiolisten = new SIO6ListenerII(this);
             GanymedeSiolisten = new SIO7ListenerII(this);
             CIVControllerInstance = new CIVController(this);
+            AmpLanControllerInstance = new AmpLanController(this); // H1: OM2000A+ LAN link
 
             EQForm = new EQForm(this);
 
@@ -16189,6 +16190,7 @@ namespace Thetis
         public SIO6ListenerII AriesSiolisten { get; set; } = null;
         public SIO7ListenerII GanymedeSiolisten { get; set; } = null;
         public CIVController CIVControllerInstance { get; set; } = null;
+        public AmpLanController AmpLanControllerInstance { get; set; } = null; // H1: OM2000A+ LAN link
 
         public bool HideTuneStep
         {
@@ -21063,15 +21065,15 @@ namespace Thetis
         }
         private float H1TxFwdW
         {
-            get { return H1RigFwdLive ? CIVControllerInstance.RigForwardWatts : ((alexpresent || apollopresent) ? calfwdpower : drivepwr); }
+            get { return H1AmpFwdLive ? AmpLanControllerInstance.AmpForwardWatts : (H1RigFwdLive ? CIVControllerInstance.RigForwardWatts : ((alexpresent || apollopresent) ? calfwdpower : drivepwr)); }
         }
         private float H1TxSwr
         {
-            get { return H1RigSwrLive ? CIVControllerInstance.RigSwrRatio : alex_swr; }
+            get { return H1AmpSwrLive ? AmpLanControllerInstance.AmpSwrRatio : (H1RigSwrLive ? CIVControllerInstance.RigSwrRatio : alex_swr); }
         }
         private float H1TxRefW
         {
-            get { return H1RigRefLive ? CIVControllerInstance.RigReflectedWatts : alex_rev; }
+            get { return H1AmpRefLive ? AmpLanControllerInstance.AmpReflectedWatts : (H1RigRefLive ? CIVControllerInstance.RigReflectedWatts : alex_rev); }
         }
         private int _h1RigPowerLastSent = -1;
         private int H1ActiveDriveValue()
@@ -21112,6 +21114,95 @@ namespace Thetis
         {
             _h1RigPowerLastSent = -1;
             H1RigDriveSync(H1ActiveDriveValue());
+        }
+
+        // ---------------------------------------------------------------------------------
+        // H1: OM2000A+ LAN link. Two separate Setup options, both in the OM2000A+ group:
+        //  - "power & meters": the FWD / REF / SWR transmit readings come from the amp
+        //    (forward / reflected / input power frames) instead of the IC-7100 values.
+        //  - "standby during tune": the amp drops to stand-by when TUNE is engaged and
+        //    returns to operate when tune ends - only if it was operating before.
+        // Either option opens the network link; both off closes it. The amp accepts only
+        // one connection at a time, so the OM Power manager must stay closed then.
+        // ---------------------------------------------------------------------------------
+        private bool _h1AmpMetersEnabled = false;
+        public bool H1AmpMetersEnabled
+        {
+            get { return _h1AmpMetersEnabled; }
+            set
+            {
+                _h1AmpMetersEnabled = value;
+                H1AmpUpdateRoute();
+            }
+        }
+        private bool _h1AmpTuneStandbyEnabled = false;
+        public bool H1AmpTuneStandbyEnabled
+        {
+            get { return _h1AmpTuneStandbyEnabled; }
+            set
+            {
+                _h1AmpTuneStandbyEnabled = value;
+                H1AmpUpdateRoute();
+            }
+        }
+        private string _h1AmpAddress = "192.168.129.124";
+        public string H1AmpAddress
+        {
+            get { return _h1AmpAddress; }
+            set
+            {
+                if (string.IsNullOrEmpty(value)) return;
+                _h1AmpAddress = value.Trim();
+                if (AmpLanControllerInstance != null) AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
+            }
+        }
+        private int _h1AmpPort = 10001;
+        public int H1AmpPort
+        {
+            get { return _h1AmpPort; }
+            set
+            {
+                if (value <= 0 || value > 65535) return;
+                _h1AmpPort = value;
+                if (AmpLanControllerInstance != null) AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
+            }
+        }
+        private void H1AmpUpdateRoute()
+        {
+            if (AmpLanControllerInstance == null) return;
+            AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
+            AmpLanControllerInstance.SetEnabled(_h1AmpMetersEnabled || _h1AmpTuneStandbyEnabled);
+        }
+        private bool H1AmpFwdLive
+        {
+            get { return _mox && _h1AmpMetersEnabled && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000); }
+        }
+        private bool H1AmpSwrLive
+        {
+            get { return _mox && _h1AmpMetersEnabled && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000) && AmpLanControllerInstance.RefFresh(2000); }
+        }
+        private bool H1AmpRefLive
+        {
+            get { return H1AmpSwrLive; }
+        }
+        private bool _h1AmpTuneArmed = false;
+        private bool _h1AmpTuneWasOperate = false;
+        internal void H1AmpTuneStandbyBegin()
+        {
+            _h1AmpTuneArmed = false;
+            _h1AmpTuneWasOperate = false;
+            if (!_h1AmpTuneStandbyEnabled || AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
+            if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate) return; // a hand-set stand-by stays untouched
+            _h1AmpTuneWasOperate = AmpLanControllerInstance.IsOperate; // false when the state is unknown: nothing to restore later
+            _h1AmpTuneArmed = true;
+            AmpLanControllerInstance.RequestStandby();
+        }
+        internal void H1AmpTuneStandbyEnd()
+        {
+            if (!_h1AmpTuneArmed) return;
+            _h1AmpTuneArmed = false;
+            if (!_h1AmpTuneWasOperate || AmpLanControllerInstance == null) return;
+            AmpLanControllerInstance.RequestOperate();
         }
 
         private readonly bool[] _h1MeterTxOverride = new bool[4] { false, false, false, false };
@@ -33903,6 +33994,7 @@ namespace Thetis
                 //
 
                 _tuning = true;                                                  // used for a few things
+                H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
                 chkTUN.BackColor = button_selected_color;
 
                 old_meter_tx_mode_before_tune = current_meter_tx_mode;
@@ -34017,6 +34109,7 @@ namespace Thetis
                         break;
                 }
                 _tuning = false;
+                H1AmpTuneStandbyEnd(); // H1: OM2000A+ back to operate after tune
 
                 updateVFOFreqs(chkTUN.Checked, true);
 

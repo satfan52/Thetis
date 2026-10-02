@@ -454,6 +454,114 @@ namespace Thetis
             console.H1RigPowerMetersEnabled = h1ChkRigPowerMeters != null && h1ChkRigPowerMeters.Checked;
         }
 
+        private GroupBoxTS h1GrpAmp;
+        private CheckBoxTS h1ChkAmpMeters;
+        private CheckBoxTS h1ChkAmpTuneStandby;
+        private TextBoxTS h1TxtAmpAddress;
+        private TextBoxTS h1TxtAmpPort;
+
+        // H1: the OM2000A+ LAN options, built in code into their own group on the Serial
+        // tab, right above the CAT1 Protocol & CI-V Settings group. Two separate switches:
+        // one for the power and meter readings, one for the stand-by during tune. Either
+        // one opens the network link to the amplifier; both off closes it. The automatic
+        // option save and restore picks them up like any other control on the tabs.
+        private void H1BuildAmpLanOptions()
+        {
+            if (h1GrpAmp != null || tpCATSerialPorts == null) return;
+
+            h1GrpAmp = new GroupBoxTS();
+                        h1GrpAmp.Text = "OM2000A+ Amplifier (LAN)";
+            h1GrpAmp.Location = new Point(180, 226);
+            h1GrpAmp.Size = new Size(520, 62);
+
+            h1ChkAmpMeters = new CheckBoxTS();
+            h1ChkAmpMeters.AutoSize = false;
+            h1ChkAmpMeters.UseVisualStyleBackColor = true;
+            h1ChkAmpMeters.Image = null;
+            h1ChkAmpMeters.Name = "chkH1AmpMeters";
+            h1ChkAmpMeters.Text = "OM2000A+ power & meters via LAN";
+            h1ChkAmpMeters.Location = new Point(10, 12);
+            h1ChkAmpMeters.Size = new Size(240, 22);
+            toolTip1.SetToolTip(h1ChkAmpMeters,
+                "When checked, the SWR, FWD and REF transmit readings come from the OM2000A+" + System.Environment.NewLine +
+                "over the network instead of the IC-7100 values. When unchecked, the readings" + System.Environment.NewLine +
+                "behave as before and the amplifier link is not used for the meters.");
+
+            h1ChkAmpTuneStandby = new CheckBoxTS();
+            h1ChkAmpTuneStandby.AutoSize = false;
+            h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
+            h1ChkAmpTuneStandby.Image = null;
+            h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
+            h1ChkAmpTuneStandby.Text = "OM2000A+ standby during tune";
+            h1ChkAmpTuneStandby.Location = new Point(256, 12);
+            h1ChkAmpTuneStandby.Size = new Size(250, 22);
+            toolTip1.SetToolTip(h1ChkAmpTuneStandby,
+                "When checked, the OM2000A+ is switched to stand-by the moment TUNE is engaged" + System.Environment.NewLine +
+                "and back to operate when tune ends. An amplifier switched to stand-by by hand" + System.Environment.NewLine +
+                "stays untouched.");
+
+            LabelTS h1LblAmpAddr = new LabelTS();
+            h1LblAmpAddr.AutoSize = true;
+            h1LblAmpAddr.Image = null;
+            h1LblAmpAddr.Text = "Address:";
+            h1LblAmpAddr.Location = new Point(10, 39);
+
+            h1TxtAmpAddress = new TextBoxTS();
+            h1TxtAmpAddress.Name = "txtH1AmpAddress";
+            h1TxtAmpAddress.MaxLength = 40;
+            h1TxtAmpAddress.Size = new Size(120, 20);
+            h1TxtAmpAddress.Location = new Point(68, 36);
+            h1TxtAmpAddress.Text = "192.168.129.124";
+            toolTip1.SetToolTip(h1TxtAmpAddress, "The amplifier's network address, as set in its own network settings.");
+
+            LabelTS h1LblAmpPort = new LabelTS();
+            h1LblAmpPort.AutoSize = true;
+            h1LblAmpPort.Image = null;
+            h1LblAmpPort.Text = "Port:";
+            h1LblAmpPort.Location = new Point(198, 39);
+
+            h1TxtAmpPort = new TextBoxTS();
+            h1TxtAmpPort.Name = "txtH1AmpPort";
+            h1TxtAmpPort.MaxLength = 5;
+            h1TxtAmpPort.Size = new Size(52, 20);
+            h1TxtAmpPort.Location = new Point(233, 36);
+            h1TxtAmpPort.Text = "10001";
+
+            h1ChkAmpMeters.CheckedChanged += h1ChkAmpMeters_CheckedChanged;
+            h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
+            h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
+            h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
+
+            h1GrpAmp.Controls.Add(h1ChkAmpMeters);
+            h1GrpAmp.Controls.Add(h1ChkAmpTuneStandby);
+            h1GrpAmp.Controls.Add(h1LblAmpAddr);
+            h1GrpAmp.Controls.Add(h1TxtAmpAddress);
+            h1GrpAmp.Controls.Add(h1LblAmpPort);
+            h1GrpAmp.Controls.Add(h1TxtAmpPort);
+            tpCATSerialPorts.Controls.Add(h1GrpAmp);
+        }
+
+        private void h1ChkAmpMeters_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1AmpMetersEnabled = h1ChkAmpMeters != null && h1ChkAmpMeters.Checked;
+        }
+
+        private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1AmpTuneStandbyEnabled = h1ChkAmpTuneStandby != null && h1ChkAmpTuneStandby.Checked;
+        }
+
+        private void h1TxtAmpAddress_TextChanged(object sender, EventArgs e)
+        {
+            console.H1AmpAddress = h1TxtAmpAddress != null ? h1TxtAmpAddress.Text : string.Empty;
+        }
+
+        private void h1TxtAmpPort_TextChanged(object sender, EventArgs e)
+        {
+            int port;
+            if (h1TxtAmpPort != null && int.TryParse(h1TxtAmpPort.Text.Trim(), out port)) console.H1AmpPort = port;
+        }
+
         internal void AfterConstructor()
         {
             LogTool.AddLogEntry("      Setup setup controls...", "SETUP_CONT");
@@ -474,6 +582,7 @@ namespace Thetis
 
             H1BuildDimUnusedOption(); // H1: the dim-unused receiver option, built in code
             H1BuildCivRigMetersOption(); // H1: the CI-V rig power & meters option, built in code
+            H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
 
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;
@@ -10707,6 +10816,10 @@ namespace Thetis
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
             chkCIVSyncPTT.Checked = console.CIVSyncPTT;
             if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Checked = console.H1RigPowerMetersEnabled;
+            if (h1ChkAmpMeters != null) h1ChkAmpMeters.Checked = console.H1AmpMetersEnabled;
+            if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
+            if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
+            if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
             updateCIVControlsEnabled();
         }
 
