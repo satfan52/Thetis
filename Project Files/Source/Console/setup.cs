@@ -503,14 +503,14 @@ namespace Thetis
             radH1MeterAmp.Text = "OM2000A+";
             radH1MeterAmp.Location = new Point(12, 68);
             radH1MeterAmp.Size = new Size(145, 22);
-            toolTip1.SetToolTip(radH1MeterAmp, "The transmit readings come from the OM2000A+ over the network. Opens the amplifier link; the OM Power manager cannot connect while it is open.");
+            toolTip1.SetToolTip(radH1MeterAmp, "The transmit readings come from the OM2000A+ over the network. While the amplifier stands by - for instance during Tune - they come from the IC-7100 instead. Opens the amplifier link; the OM Power manager cannot connect while it is open.");
             radH1MeterAmp.CheckedChanged += h1MeterSource_CheckedChanged;
 
             LabelTS h1LblMeterSourceInfo = new LabelTS();
             h1LblMeterSourceInfo.AutoSize = false;
             h1LblMeterSourceInfo.Image = null;
             h1LblMeterSourceInfo.ForeColor = System.Drawing.SystemColors.GrayText;
-            h1LblMeterSourceInfo.Text = "Falls back to Red Pitaya when the chosen source is not available.";
+            h1LblMeterSourceInfo.Text = "Falls back to the IC-7100 while the amp stands by.";
             h1LblMeterSourceInfo.Location = new Point(12, 94);
             h1LblMeterSourceInfo.Size = new Size(148, 42);
 

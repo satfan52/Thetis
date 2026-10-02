@@ -1,28 +1,52 @@
 // H1: OM Power OM2000A+ remote control over the LAN.
 //
 // The amplifier carries a Lantronix XPort network interface. Its data port (10001)
-// speaks a small ASCII protocol, recovered from the official OM Power manager and
-// verified live on the bench 2026-10-02:
+// speaks a small mixed ASCII/binary protocol, recovered from the official OM Power
+// manager (AmpMan 3.41, decompiled) and re-verified on the bench 2026-10-02:
 //
 //   'C' handshake    -> "CON;WA<nnn>;"   (WA = heating countdown, 1/s while heating)
-//   '?'              -> "ST<flags>;"     (status: band, antenna)
+//   '?'              -> "ST<flags>;..."  (status: band, antenna)
 //   '1'              -> "INFO:...;"      (amplifier type and firmware version)
-//   '#' poll, 1/s    -> housekeeping batch ("IP0;IG0;UP2952;UG123;US0;UH8.5;UM237;TE64;")
-//   'T' poll, each 5th -> "TE<nn>;"        (temperature, kept for the log)
-//   'I' poll, 4/s while PTT on -> the power frame "PO<W>,PR<W>,PI<W>;IS..;FR..;"
-//                       (forward / reflected / input power - feeds the TX meters)
-//   "OPERATE;", "STBY;", "PTTON;", "PTTOFF;"   state reports
+//   'T' poll, 1/s    -> "TE<nn>;"        (temperature; the manager's steady poll)
+//   '#' poll         -> housekeeping batch "IP0;IG0;UP2952;UG123;US0;UH8.5;UM237;TE64;"
+//                       (the manager sends this only in its Advanced view)
+//   'F' poll         -> "FR<kHz>;"       (measured frequency)
+//   'J'              -> "TCVR:IC7100;"   (transceiver configured in the amplifier)
+//   'I' poll         -> "IP<n>;"         (input/plate reading; the manager sends 'I'
+//                       at 4/s during PTT only to units whose firmware version is
+//                       unreadable - legacy amplifiers that do not push meter frames)
+//   "OPERATE;", "STBY;", "PTTON;", "PTTOFF;"   state reports, pushed on change
 //   'O'              -> toggles stand-by / operate, amp replies with the new state
+//
+// The TX meter data is a BINARY frame the amplifier pushes of its own accord while
+// it transmits: '=' then 8 data bytes then ';' (10 bytes on current firmware):
+//
+//   [=][PO_L][PO_H][PR/2][PI][IS][FR_L][FR_H][IP/20][;]
+//
+//   PO = PO_L + 256*PO_H   forward watts     PR = 2 * PRbyte    reflected watts
+//   PI = PI byte           input watts       IS = signed byte   screen current
+//   FR = FR_L + 256*FR_H   frequency units   IP = 20 * IPbyte   plate current
+//
+// Legacy units send a 9-byte variant without the IP byte; both shapes are accepted,
+// the expected length follows the firmware version in the INFO frame. The official
+// manager does NOT poll these values - it synthesizes the text "PO<..>,PR<..>,PI<..>;
+// IS<..>;FR<..>;" from the binary frame and parses that internally. The ASCII
+// "PO...,PR...,PI..." reply the first version of this class waited for never exists
+// on the wire, which is why the meters stayed empty (user report 2026-10-02).
 //
 // Only ONE TCP client is accepted at a time, so the console holds the link only
 // while one of the two H1 amp options is enabled; the OM Power manager software
-// cannot be connected at the same time.
+// cannot be connected at the same time. After a client disconnects the board can
+// refuse new sessions for roughly 10-15 seconds.
 //
-// This class owns the connection, the one-second poll, the receive parser and the
-// stand-by / operate requests with confirmation and one retry. Everything is
-// traced to amp_lan.log beside the exe.
+// This class owns the connection, the one-second poll, the receive parser (ASCII
+// tokens AND the binary meter frame) and the stand-by / operate requests with
+// confirmation and one retry. Everything is traced to amp_lan.log; the raw wire
+// bytes (TX and RX) are traced to amp_lan_raw.log - kept while the amplifier
+// integration is being verified, remove when the user says so.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
@@ -47,6 +71,26 @@ namespace Thetis
                 string text = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}" + Environment.NewLine, DateTime.Now,
                     (args != null && args.Length > 0) ? string.Format(format, args) : format);
                 string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "amp_lan.log");
+                if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 200 * 1024)
+                {
+                    System.IO.File.Copy(path, path + ".old", true);
+                    System.IO.File.Delete(path);
+                }
+                System.IO.File.AppendAllText(path, text);
+            }
+            catch
+            {
+                // never crash the caller
+            }
+        }
+
+        /// <summary>Raw wire trace, every byte sent and received (diagnostic build).</summary>
+        private static void LogRaw(string line)
+        {
+            try
+            {
+                string text = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}" + Environment.NewLine, DateTime.Now, line);
+                string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "amp_lan_raw.log");
                 if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 200 * 1024)
                 {
                     System.IO.File.Copy(path, path + ".old", true);
@@ -90,7 +134,12 @@ namespace Thetis
         private volatile int _wantState = 0;
         private volatile bool _pttOn = false;
 
-        private string _rx = string.Empty;
+        // worker-thread private receive buffer - may hold raw binary frame bytes, so
+        // it is a byte list, NOT the decoded string the first version used
+        private readonly List<byte> _rxBytes = new List<byte>();
+        // expected length of the binary meter frame (10 with the IP byte, 9 legacy);
+        // chosen from the firmware version in the INFO frame
+        private volatile int _binFrameLen = 10;
         private long _lastPoll = 0;
         private long _lastMeterTrace = 0;
         private bool _tracedPo = false;
@@ -250,6 +299,28 @@ namespace Thetis
             return false;
         }
 
+        /// <summary>The LAST state frame sent inside [sinceMs, sinceMs + windowMs], with the
+        /// state it carried. The tune-restore decision uses this: a window that ends in
+        /// STANDBY means the amplifier was operating and the request switched it down
+        /// (a hand-set stand-by ends in OPERATE once the toggle brought it up).</summary>
+        public bool TryGetLastStateWithin(long sinceMs, long windowMs, out bool wasOperate)
+        {
+            lock (_sync)
+            {
+                for (int i = _stateEventMs.Count - 1; i >= 0; i--)
+                {
+                    long t = _stateEventMs[i];
+                    if (t >= sinceMs && t - sinceMs <= windowMs)
+                    {
+                        wasOperate = _stateEventOperate[i];
+                        return true;
+                    }
+                }
+            }
+            wasOperate = false;
+            return false;
+        }
+
         public void Dispose()
         {
             _dispose = true;
@@ -313,23 +384,21 @@ namespace Thetis
                     if (now - _lastPoll >= 1000)
                     {
                         _lastPoll = now;
-                        // H1: '#' is the batch query the official manager sends once a second;
-                        // it returns the power frame (PO<fwd>,PR<ref>,PI<input>) that feeds the
-                        // TX meters. 'T' (temperature) rides along every fifth poll.
-                        Send("#");
+                        // H1: 'T' is the official manager's steady one-second poll; it
+                        // returns the temperature frame "TE<n>;". The TX meter data is
+                        // NOT polled - the amplifier pushes the binary '=' meter frame
+                        // itself while it transmits.
+                        Send("T");
                         PumpReads(120);
                         _pollCount++;
-                        if (_pollCount % 5 == 0)
-                        {
-                            Send("T");
-                            PumpReads(80);
-                        }
                         if (_pollCount % 300 == 0) LogText("link alive, amp state {0}", StateName(_ampState));
                     }
 
-                    // H1: while the amplifier is transmitting, ask for the power snapshot four
-                    // times a second - the same 'I' query the official manager uses during PTT;
-                    // it answers with PO<fwd>,PR<ref>,PI<input>, which feeds the TX meters.
+                    // H1: 'I' at 4/s while the amplifier reports PTT on. The manager
+                    // sends 'I' only to legacy units with an unreadable firmware
+                    // version; this console keeps them so amp_lan_raw.log shows what
+                    // THIS amplifier answers during transmit - revisit once the push
+                    // behaviour is confirmed live.
                     if (_pttOn && now - _lastIFast >= 250)
                     {
                         _lastIFast = now;
@@ -367,13 +436,18 @@ namespace Thetis
                 {
                     _client = client;
                     _stream = client.GetStream();
-                    _rx = string.Empty;
+                    // a fresh session starts clean - no request from a previous
+                    // session may survive into it (a standby request left pending by a
+                    // tune press during a half handshake must not fire minutes later:
+                    // user hit this live 2026-10-02, the amp was parked in stand-by)
+                    _wantState = 0;
                     _poStamp = 0;
                     _prStamp = 0;
                     _stateKnown = false;
                     _pttOn = false;
                     _lastIFast = 0;
                 }
+                _rxBytes.Clear();
 
                 LogText("CONNECTED to {0}:{1}", address, port);
                 _verboseUntil = NowMs() + 15000;
@@ -492,6 +566,7 @@ namespace Thetis
             if (stream == null) return;
             byte[] bytes = Encoding.ASCII.GetBytes(s);
             stream.Write(bytes, 0, bytes.Length);
+            LogRaw(string.Format("TX: {0}", s == " " ? "[space]" : s));
         }
 
         /// <summary>Read whatever is pending and parse it, for up to ms milliseconds.</summary>
@@ -516,35 +591,78 @@ namespace Thetis
                     CloseSocket("peer closed");
                     return;
                 }
-                lock (_sync)
-                {
-                    _rx += Encoding.ASCII.GetString(buffer, 0, n);
-                }
-                ParseFrames();
+                for (int i = 0; i < n; i++) _rxBytes.Add(buffer[i]);
+                LogRaw(string.Format("RX {0,3} B: {1}", n, BitConverter.ToString(buffer, 0, n).Replace("-", " ")));
+                ProcessFrames();
             }
             while (NowMs() < deadline && IsOpen);
         }
 
-        private void ParseFrames()
+        /// <summary>
+        /// Split the receive stream into the binary meter frame ('=' ... ';') and the
+        /// ASCII ";"-terminated tokens, the way the official manager's reader does.
+        /// </summary>
+        private void ProcessFrames()
         {
             while (true)
             {
-                string rx;
-                lock (_sync) { rx = _rx; }
-                int semi = rx.IndexOf(';');
+                if (_rxBytes.Count == 0) return;
+
+                if (_rxBytes[0] == (byte)'=')
+                {
+                    if (_binFrameLen >= 10)
+                    {
+                        // modern firmware: '=' + 8 data bytes + ';'
+                        if (_rxBytes.Count < 10) return; // wait for the rest of the frame
+                        if (_rxBytes[9] == (byte)';')
+                        {
+                            byte[] frame = _rxBytes.GetRange(0, 10).ToArray();
+                            _rxBytes.RemoveRange(0, 10);
+                            ParseBinaryFrame(frame, 10);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        // legacy firmware expected: accept both shapes, prefer the
+                        // modern one once it is complete
+                        if (_rxBytes.Count >= 10 && _rxBytes[9] == (byte)';')
+                        {
+                            byte[] frame = _rxBytes.GetRange(0, 10).ToArray();
+                            _rxBytes.RemoveRange(0, 10);
+                            ParseBinaryFrame(frame, 10);
+                            continue;
+                        }
+                        if (_rxBytes.Count >= 9 && _rxBytes[8] == (byte)';')
+                        {
+                            byte[] frame = _rxBytes.GetRange(0, 9).ToArray();
+                            _rxBytes.RemoveRange(0, 9);
+                            ParseBinaryFrame(frame, 9);
+                            continue;
+                        }
+                        if (_rxBytes.Count < 10) return; // wait for more bytes
+                    }
+                    // no ';' where the frame must end: not a meter frame after all -
+                    // drop the byte and resync
+                    LogText("bin frame lost sync, dropping a byte");
+                    _rxBytes.RemoveAt(0);
+                    continue;
+                }
+
+                int semi = _rxBytes.IndexOf((byte)';');
                 if (semi < 0)
                 {
                     // guard against runaway if the amp ever streams junk
-                    if (rx.Length > 512) lock (_sync) { _rx = string.Empty; }
+                    if (_rxBytes.Count > 512)
+                    {
+                        _rxBytes.Clear();
+                        LogText("rx overflow, buffer cleared");
+                    }
                     return;
                 }
-                string token;
-                lock (_sync)
-                {
-                    token = _rx.Substring(0, semi);
-                    _rx = _rx.Substring(semi + 1);
-                }
-                HandleToken(token.Trim());
+                string token = Encoding.ASCII.GetString(_rxBytes.GetRange(0, semi).ToArray()).Trim();
+                _rxBytes.RemoveRange(0, semi + 1);
+                HandleToken(token);
             }
         }
 
@@ -611,13 +729,46 @@ namespace Thetis
             if (token.StartsWith("ST", StringComparison.Ordinal))
             {
                 _sawStatus = true;
-                LogText("ST frame: {0}", token);
+                // H1: the ST frame encodes the amplifier state directly
+                // ("ST7100- 12 17M" = ST + [1 char] + PA-on digit + operate digit +
+                // PTT digit + mode char + antenna text - the same mapping the official
+                // manager's regex "ST([^;]{1})(\d)(\d)(\d)([01-])([^;]{0,51});" uses).
+                // Parsing it settles the operate/stand-by state at every connect, which
+                // the tune-restore logic depends on.
+                if (token.Length >= 8 && (token[3] == '0' || token[3] == '1')
+                    && (token[4] == '0' || token[4] == '1') && (token[5] == '0' || token[5] == '1'))
+                {
+                    SetState(token[4] == '1' ? 2 : 1);
+                    LogText("ST: {0} -> PA {1}, {2}, PTT {3}", token,
+                        token[3] == '1' ? "on" : "off",
+                        token[4] == '1' ? "operate" : "standby",
+                        token[5] == '1' ? "on" : "off");
+                }
+                else
+                {
+                    LogText("ST frame (not parsed): {0}", token);
+                }
                 return;
             }
             if (token.StartsWith("INFO", StringComparison.Ordinal))
             {
                 _sawInfo = true;
                 LogText("INFO frame: {0}", token);
+                // the firmware version decides the binary meter frame length: a
+                // readable version means the 8-data-byte frame ('=' PO PR PI IS FR IP
+                // ';'), an unreadable one the legacy 7-data-byte frame
+                try
+                {
+                    string[] parts = token.Split(',');
+                    float v;
+                    _binFrameLen = (parts.Length >= 4 && float.TryParse(parts[3],
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out v)) ? 10 : 9;
+                }
+                catch
+                {
+                    _binFrameLen = 9;
+                }
                 return;
             }
             if (token.StartsWith("FR", StringComparison.Ordinal) || token.StartsWith("FA", StringComparison.Ordinal))
@@ -630,39 +781,71 @@ namespace Thetis
             // everything else: PSU readings, warnings and so on - ignored for now
         }
 
+        /// <summary>
+        /// The binary meter frame the amplifier pushes while transmitting:
+        /// '=' PO_L PO_H PR/2 PI IS FR_L FR_H [IP/20] ';'. Offsets follow the official
+        /// manager's decoder byte for byte.
+        /// </summary>
+        private void ParseBinaryFrame(byte[] f, int len)
+        {
+            int po = f[1] + f[2] * 256;
+            int pr = f[3] * 2;
+            int pi = f[4];
+            int isVal = ((f[5] & 0x80) != 0) ? -((f[5] ^ 0xFF) + 1) : f[5];
+            int fr = f[6] + f[7] * 256;
+            string note;
+            if (len >= 10)
+            {
+                int ip = f[8] * 20;
+                note = string.Format("power frame (bin {0}B): PO={1}W PR={2}W PI={3}W IS={4} FR={5} IP={6}", len, po, pr, pi, isVal, fr, ip);
+            }
+            else
+            {
+                note = string.Format("power frame (bin {0}B): PO={1}W PR={2}W PI={3}W IS={4} FR={5}", len, po, pr, pi, isVal, fr);
+            }
+            StorePower(po, pr, pi, note);
+        }
+
+        /// <summary>Kept for compatibility - the wire protocol of this amplifier never
+        /// carries the ASCII PO/PR/PI form (the official manager synthesizes it from the
+        /// binary frame internally), so this path should stay silent.</summary>
         private void ParsePower(string token)
         {
-            // PO<watts>,PR<watts>,PI<watts with decimals>;
             try
             {
                 string[] parts = token.Split(',');
                 if (parts.Length < 3) return;
-                float po = float.Parse(parts[0].Substring(2), System.Globalization.CultureInfo.InvariantCulture);
-                float pr = float.Parse(parts[1].Substring(2), System.Globalization.CultureInfo.InvariantCulture);
-                float pi = float.Parse(parts[2].Substring(2), System.Globalization.CultureInfo.InvariantCulture);
-                lock (_sync)
-                {
-                    _po = po;
-                    _pr = pr;
-                    _pi = pi;
-                    _poStamp = NowMs();
-                    _prStamp = _poStamp;
-                }
-                if (!_tracedPo)
-                {
-                    _tracedPo = true;
-                    LogText("power frame: {0}", token);
-                }
-                long now = NowMs();
-                if (now - _lastMeterTrace >= 1000)
-                {
-                    _lastMeterTrace = now;
-                    LogText("PWR PO={0:0} W  PR={1:0} W  PI={2:0.0} W", po, pr, pi);
-                }
+                int po = (int)float.Parse(parts[0].Substring(2), System.Globalization.CultureInfo.InvariantCulture);
+                int pr = (int)float.Parse(parts[1].Substring(2), System.Globalization.CultureInfo.InvariantCulture);
+                int pi = (int)float.Parse(parts[2].Substring(2), System.Globalization.CultureInfo.InvariantCulture);
+                StorePower(po, pr, pi, "power frame (ascii): " + token);
             }
             catch
             {
                 // malformed frame, ignore
+            }
+        }
+
+        private void StorePower(int po, int pr, int pi, string firstNote)
+        {
+            lock (_sync)
+            {
+                _po = po;
+                _pr = pr;
+                _pi = pi;
+                _poStamp = NowMs();
+                _prStamp = _poStamp;
+            }
+            if (!_tracedPo)
+            {
+                _tracedPo = true;
+                LogText(firstNote);
+            }
+            long now = NowMs();
+            if (now - _lastMeterTrace >= 1000)
+            {
+                _lastMeterTrace = now;
+                LogText("PWR PO={0} W  PR={1} W  PI={2} W", po, pr, pi);
             }
         }
 
@@ -708,6 +891,11 @@ namespace Thetis
                     try { _client.Close(); } catch { }
                     _client = null;
                 }
+                // the link died - any request that was never actioned is void and must
+                // not fire after the next reconnect (user hit this live 2026-10-02:
+                // a tune press during a half handshake parked the amp in stand-by
+                // minutes later on an unrelated session)
+                _wantState = 0;
             }
             if (was)
             {

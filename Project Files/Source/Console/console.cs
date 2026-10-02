@@ -21059,13 +21059,32 @@ namespace Thetis
                 if (!wasOn && value) H1RigDriveForceSync(); // H1: sync at once on enable
             }
         }
+        // H1: true when the OM2000A+ link is up and the amplifier reports stand-by. The
+        // rig readings take over in that state - Tune parks the amplifier in stand-by on
+        // purpose (the MFJ tuner needs the bare Tune signal), and a standby amplifier
+        // sends no meter data at all.
+        private bool H1AmpStandbyNow
+        {
+            get { return AmpLanControllerInstance != null && AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate; }
+        }
         private bool H1RigFwdLive
         {
-            get { return _mox && _h1MeterSource == 1 && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000); }
+            get
+            {
+                // H1: with the OM2000A+ selected, the rig supplies the FWD reading while the
+                // amplifier stands by; the rig's SWR meter is what the operator watches
+                // while the remote tuner works through the bypassed amplifier.
+                return _mox && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
+                    && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000);
+            }
         }
         private bool H1RigSwrLive
         {
-            get { return _mox && _h1MeterSource == 1 && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000); }
+            get
+            {
+                return _mox && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
+                    && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000);
+            }
         }
         private bool H1RigRefLive
         {
@@ -21218,12 +21237,16 @@ namespace Thetis
             if (AmpLanControllerInstance == null) return;
             if (!_h1AmpTuneWasOperate)
             {
-                // H1: the state was unknown when TUNE was pressed. The amplifier reports the
-                // state it had before the switch as its first state frame after our request:
-                // OPERATE there means it was working, so put it back. A STANDBY first frame
-                // stays untouched - that was a hand-set stand-by.
-                bool wasOperate;
-                if (!AmpLanControllerInstance.TryGetFirstStateAfter(_h1AmpTuneReqMs, 1500, out wasOperate) || !wasOperate)
+                // H1: the state was unknown when TUNE was pressed (rare - the ST frame
+                // settles the state at connect). The LAST state frame inside the window
+                // decides: it ends in STANDBY only when the amplifier was operating and
+                // our 'O' switched it down; a hand-set stand-by ends in OPERATE once the
+                // toggle (wrongly) brought it up. The earlier first-frame rule read a
+                // missed pre-state frame as "hand-set stand-by" and stranded a working
+                // amplifier in stand-by - seen live 2026-10-02 (09:52 tune, amplifier
+                // parked until manually reset).
+                bool lastWasOperate;
+                if (!AmpLanControllerInstance.TryGetLastStateWithin(_h1AmpTuneReqMs, 1500, out lastWasOperate) || lastWasOperate)
                     return;
             }
             AmpLanControllerInstance.RequestOperate();
@@ -28018,9 +28041,9 @@ namespace Thetis
                                 break;
                             case MeterTXMode.FORWARD_POWER:
                             case MeterTXMode.SWR_POWER:
-                                if (H1RigFwdLive)
+                                if (H1AmpFwdLive || H1RigFwdLive)
                                 {
-                                    new_meter_data = H1TxFwdW; // H1: the rig's own forward power
+                                    new_meter_data = H1TxFwdW; // H1: amplifier or rig forward power, whichever is live
                                     if (mode == MeterTXMode.SWR_POWER) new_swrmeter_data = H1TxSwr;
                                     break;
                                 }
@@ -28048,9 +28071,9 @@ namespace Thetis
                                 if (mode == MeterTXMode.SWR_POWER) new_swrmeter_data = H1TxSwr; // H1: rig SWR when live
                                 break;
                             case MeterTXMode.REVERSE_POWER:
-                                    if (H1RigRefLive)
+                                    if (H1AmpRefLive || H1RigRefLive)
                                 {
-                                    new_meter_data = H1TxRefW; // H1: the rig's reflected power
+                                    new_meter_data = H1TxRefW; // H1: amplifier or rig reflected power
                                     }
                                     else if (alexpresent || apollopresent)
                                     {
@@ -28532,9 +28555,9 @@ namespace Thetis
                                 break;
                             case MeterTXMode.FORWARD_POWER:
                             case MeterTXMode.SWR_POWER:
-                                if (H1RigFwdLive)
+                                if (H1AmpFwdLive || H1RigFwdLive)
                                 {
-                                    rx2_meter_new_data = H1TxFwdW; // H1: the rig's own forward power
+                                    rx2_meter_new_data = H1TxFwdW; // H1: amplifier or rig forward power, whichever is live
                                     break;
                                 }
                                 if (alexpresent || apollopresent)
@@ -28553,9 +28576,9 @@ namespace Thetis
                                     rx2_meter_new_data = drivepwr;
                                 break;
                             case MeterTXMode.REVERSE_POWER:
-                                    if (H1RigRefLive)
+                                    if (H1AmpRefLive || H1RigRefLive)
                                 {
-                                    rx2_meter_new_data = H1TxRefW; // H1: the rig's reflected power
+                                    rx2_meter_new_data = H1TxRefW; // H1: amplifier or rig reflected power
                                     }
                                     else if (alexpresent || apollopresent)
                                     {
