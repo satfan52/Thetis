@@ -530,16 +530,16 @@ namespace Thetis
         }
 
         // H1: the OM2000A+ group - standby during tune plus the amplifier address. On
-        // the Audio tab, TX Output subpage, beside the processed TX output setup, because
-        // this is the route the amplifier serves.
+        // the General tab, Other H/W sub-tab, Amp page, in its own category below the
+        // Ganymede Amplifier Control group.
         private void H1BuildAmpLanOptions()
         {
-            if (h1GrpAmp != null || tpProcessedTXOutput == null) return;
+            if (h1GrpAmp != null || tpOtherHW_amp == null) return;
 
             h1GrpAmp = new GroupBoxTS();
             h1GrpAmp.Text = "OM2000A+";
-            h1GrpAmp.Location = new Point(448, 8);
-            h1GrpAmp.Size = new Size(258, 133);
+            h1GrpAmp.Location = new Point(6, 219);
+            h1GrpAmp.Size = new Size(556, 114);
 
             h1ChkAmpTuneStandby = new CheckBoxTS();
             h1ChkAmpTuneStandby.AutoSize = false;
@@ -548,7 +548,7 @@ namespace Thetis
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
             h1ChkAmpTuneStandby.Text = "standby during tune";
             h1ChkAmpTuneStandby.Location = new Point(10, 20);
-            h1ChkAmpTuneStandby.Size = new Size(238, 22);
+            h1ChkAmpTuneStandby.Size = new Size(300, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
                 "When checked, the OM2000A+ is switched to stand-by the moment TUNE is engaged" + System.Environment.NewLine +
                 "and back to operate when tune ends. An amplifier switched to stand-by by hand" + System.Environment.NewLine +
@@ -558,13 +558,13 @@ namespace Thetis
             h1LblAmpAddr.AutoSize = true;
             h1LblAmpAddr.Image = null;
             h1LblAmpAddr.Text = "Address:";
-            h1LblAmpAddr.Location = new Point(10, 49);
+            h1LblAmpAddr.Location = new Point(10, 50);
 
             h1TxtAmpAddress = new TextBoxTS();
             h1TxtAmpAddress.Name = "txtH1AmpAddress";
             h1TxtAmpAddress.MaxLength = 40;
             h1TxtAmpAddress.Size = new Size(150, 20);
-            h1TxtAmpAddress.Location = new Point(70, 46);
+            h1TxtAmpAddress.Location = new Point(72, 47);
             h1TxtAmpAddress.Text = "192.168.129.124";
             toolTip1.SetToolTip(h1TxtAmpAddress, "The amplifier's network address, as set in its own network settings. One connection at a time; the OM Power manager cannot share it.");
 
@@ -572,13 +572,13 @@ namespace Thetis
             h1LblAmpPort.AutoSize = true;
             h1LblAmpPort.Image = null;
             h1LblAmpPort.Text = "Port:";
-            h1LblAmpPort.Location = new Point(10, 73);
+            h1LblAmpPort.Location = new Point(240, 50);
 
             h1TxtAmpPort = new TextBoxTS();
             h1TxtAmpPort.Name = "txtH1AmpPort";
             h1TxtAmpPort.MaxLength = 5;
             h1TxtAmpPort.Size = new Size(52, 20);
-            h1TxtAmpPort.Location = new Point(70, 70);
+            h1TxtAmpPort.Location = new Point(284, 47);
             h1TxtAmpPort.Text = "10001";
 
             LabelTS h1LblAmpInfo = new LabelTS();
@@ -586,8 +586,8 @@ namespace Thetis
             h1LblAmpInfo.Image = null;
             h1LblAmpInfo.ForeColor = System.Drawing.SystemColors.GrayText;
             h1LblAmpInfo.Text = "The link opens with this option or the OM2000A+ meter source.";
-            h1LblAmpInfo.Location = new Point(10, 92);
-            h1LblAmpInfo.Size = new Size(238, 36);
+            h1LblAmpInfo.Location = new Point(10, 74);
+            h1LblAmpInfo.Size = new Size(536, 30);
 
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
@@ -599,7 +599,7 @@ namespace Thetis
             h1GrpAmp.Controls.Add(h1LblAmpPort);
             h1GrpAmp.Controls.Add(h1TxtAmpPort);
             h1GrpAmp.Controls.Add(h1LblAmpInfo);
-            tpProcessedTXOutput.Controls.Add(h1GrpAmp);
+            tpOtherHW_amp.Controls.Add(h1GrpAmp);
         }
 
         private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
