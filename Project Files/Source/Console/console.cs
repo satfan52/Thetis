@@ -6774,7 +6774,7 @@ namespace Thetis
         {
             if (h1AmpMode == null) return;
             // H1 round 4: the block is opt-in - hidden by default (user requirement 2026-10-02)
-            bool on = _h1AmpBlockVisible && (_h1MeterSource == 2 || _h1AmpTuneStandbyEnabled);
+            bool on = _h1AmpBlockVisible && (_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled);
             if (h1AmpMode.Visible != on) h1AmpMode.Visible = on;
             if (h1AmpPower != null && h1AmpPower.Visible != on) h1AmpPower.Visible = on;
             if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
@@ -6803,6 +6803,7 @@ namespace Thetis
             _h1AmpBtnSync = true;
             try
             {
+                H1UpdateMeterSource(); // H1 round 5: the source follows the amplifier's state
                 bool known = AmpLanControllerInstance.StateKnown;
                 bool oper = known && AmpLanControllerInstance.IsOperate;
                 string txt = !known ? "AMP ?" : (oper ? "OPER" : "STBY");
@@ -21405,7 +21406,11 @@ namespace Thetis
                 // H1: with the OM2000A+ selected, the rig supplies the FWD reading while the
                 // amplifier stands by; the rig's SWR meter is what the operator watches
                 // while the remote tuner works through the bypassed amplifier.
-                return _mox && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
+                // H1 round 5: the rig supplies the transmit readings while its option is
+                // ticked and it is the source - either selected, or the fall-back while
+                // the amplifier stands by (also bridging the one-second derived-source
+                // cache). Untick it and the SDR readings stay for the whole episode.
+                return _mox && _h1TrxMeterIC7100 && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
                     && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000);
             }
         }
@@ -21413,7 +21418,7 @@ namespace Thetis
         {
             get
             {
-                return _mox && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
+                return _mox && _h1TrxMeterIC7100 && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
                     && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000);
             }
         }
@@ -21486,17 +21491,46 @@ namespace Thetis
         // Either option opens the network link; both off closes it. The amp accepts only
         // one connection at a time, so the OM Power manager must stay closed then.
         // ---------------------------------------------------------------------------------
-        // H1: where the TX transmit readings come from. 0 = Red Pitaya sensing (normal),
-        // 1 = IC-7100 CI-V meters, 2 = OM2000A+ over the network. Chosen by the three-way
-        // "TX Meter Source" radio group in Setup on the Display tab.
+        // H1 round 5 (user 2026-10-02): the effective TX meter source is derived, never
+        // chosen directly. 0 = the SDR connected to Thetis - the default for everyone;
+        // 1 = the IC-7100 over CI-V; 2 = the OM2000A+. The amplifier's readings win while
+        // it operates; with the amplifier standing by they fall back to the IC-7100 when
+        // that option is ticked, otherwise to the SDR. The two options live on the
+        // Transceivers page (IC-7100) and the Amp page (OM2000A+).
         private int _h1MeterSource = 0;
-        public int H1MeterSource
+        public int H1MeterSource { get { return _h1MeterSource; } }
+
+        private bool _h1AmpMeterEnabled = false; // Amp page: TX meter uses the OM2000A+
+        public bool H1AmpMeterEnabled
         {
-            get { return _h1MeterSource; }
+            get { return _h1AmpMeterEnabled; }
             set
             {
-                _h1MeterSource = value;
+                _h1AmpMeterEnabled = value;
                 H1AmpUpdateRoute();
+                H1UpdateMeterSource();
+            }
+        }
+        private bool _h1TrxMeterIC7100 = false;  // Transceivers page: TX meter uses the IC-7100
+        public bool H1TrxMeterIC7100
+        {
+            get { return _h1TrxMeterIC7100; }
+            set
+            {
+                _h1TrxMeterIC7100 = value;
+                H1UpdateMeterSource();
+            }
+        }
+        private void H1UpdateMeterSource()
+        {
+            int s = 0;
+            if (_h1AmpMeterEnabled && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen
+                && AmpLanControllerInstance.StateKnown && AmpLanControllerInstance.IsOperate) s = 2;
+            else if (_h1TrxMeterIC7100) s = 1;
+            if (s != _h1MeterSource)
+            {
+                _h1MeterSource = s;
+                H1InvalidateMeterTx();
             }
         }
         private bool _h1AmpTuneStandbyEnabled = false;
@@ -21545,7 +21579,8 @@ namespace Thetis
         {
             if (AmpLanControllerInstance == null) return;
             AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
-            AmpLanControllerInstance.SetEnabled(_h1MeterSource == 2 || _h1AmpTuneStandbyEnabled);
+            AmpLanControllerInstance.SetEnabled(_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled);
+            H1UpdateMeterSource(); // H1 round 5: keep the derived meter source current
             H1AmpButtonsVis(); // H1: the console amp controls follow the same enable condition
         }
         private bool H1AmpFwdLive

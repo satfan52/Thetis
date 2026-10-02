@@ -454,80 +454,81 @@ namespace Thetis
             console.H1RigPowerMetersEnabled = h1ChkRigPowerMeters != null && h1ChkRigPowerMeters.Checked;
         }
 
-        private GroupBoxTS grpH1MeterSource;
-        private RadioButtonTS radH1MeterRp;
-        private RadioButtonTS radH1MeterCiv;
-        private RadioButtonTS radH1MeterAmp;
+        private TabPage tpOtherHW_trx;
+        private GroupBoxTS h1GrpTrx;
+        private CheckBoxTS h1ChkTrxMeterCiv;
+        private CheckBoxTS h1ChkAmpMeterAmp;
         private GroupBoxTS h1GrpAmp;
         private CheckBoxTS h1ChkAmpTuneStandby;
         private CheckBoxTS h1ChkAmpBlockVis;
         private TextBoxTS h1TxtAmpAddress;
         private TextBoxTS h1TxtAmpPort;
 
-        // H1: the TX meter source - one three-way choice for where the FWD / REF / SWR
-        // transmit readings come from: the Red-Pitaya sensing (normal), the IC-7100 CI-V
-        // meters, or the OM2000A+ over the network. Built in code onto the Display tab,
-        // right beside the Multimeter group that owns the other meter display settings.
-        private void H1BuildMeterSourceOption()
+        // H1 round 5 (user 2026-10-02): the Transceivers page under Other H/W, right next to
+        // the Amp page, for hybrid operation - the SDR receives while an external transceiver
+        // such as the IC-7100 transmits. The TX meter source is no longer a three-way radio
+        // on Display/General; it is two checkboxes, here for the IC-7100 and on the Amp page
+        // for the OM2000A+, and the default for everyone is the SDR connected to Thetis.
+        private void H1BuildTransceiverOptions()
         {
-            if (grpH1MeterSource != null || tpDisplayGeneral == null) return;
+            if (h1GrpTrx != null || tpOtherHW_amp == null) return;
 
-            grpH1MeterSource = new GroupBoxTS();
-            grpH1MeterSource.Text = "TX Meter Source";
-            grpH1MeterSource.Location = new Point(394, 148);
-            grpH1MeterSource.Size = new Size(170, 142);
+            tpOtherHW_trx = new TabPage();
+            tpOtherHW_trx.BackColor = System.Drawing.SystemColors.Control;
+            tpOtherHW_trx.Padding = new System.Windows.Forms.Padding(3);
+            tpOtherHW_trx.Size = tpOtherHW_amp.Size;
+            tpOtherHW_trx.Name = "tpOtherHW_trx";
+            tpOtherHW_trx.Text = "Transceivers";
+            TabControl h1trxparent = TabOtherHW;
+            if (h1trxparent != null)
+            {
+                // Plain Add - TabPages.Insert at the end index silently orphans the page
+                // in this build: it gets a parent but never joins the collection and never
+                // draws. The Amp page is the last one, so Add lands Transceivers right
+                // next to it, as asked.
+                h1trxparent.TabPages.Add(tpOtherHW_trx);
+            }
 
-            radH1MeterRp = new RadioButtonTS();
-            radH1MeterRp.AutoSize = false;
-            radH1MeterRp.Image = null;
-            radH1MeterRp.Name = "radH1MeterRp";
-            radH1MeterRp.Text = "Red Pitaya";
-            radH1MeterRp.Location = new Point(12, 20);
-            radH1MeterRp.Size = new Size(145, 22);
-            toolTip1.SetToolTip(radH1MeterRp, "Normal operation: the FWD, REF and SWR transmit readings come from the hardware power sensing.");
-            radH1MeterRp.CheckedChanged += h1MeterSource_CheckedChanged;
+            h1GrpTrx = new GroupBoxTS();
+            h1GrpTrx.Text = "IC-7100";
+            h1GrpTrx.Location = new Point(6, 17);
+            h1GrpTrx.Size = new Size(556, 150);
 
-            radH1MeterCiv = new RadioButtonTS();
-            radH1MeterCiv.AutoSize = false;
-            radH1MeterCiv.Image = null;
-            radH1MeterCiv.Name = "radH1MeterCiv";
-            radH1MeterCiv.Text = "IC-7100";
-            radH1MeterCiv.Location = new Point(12, 44);
-            radH1MeterCiv.Size = new Size(145, 22);
-            toolTip1.SetToolTip(radH1MeterCiv, "The transmit readings come from the IC-7100's own meters over CI-V. Needs the option in CAT1 Protocol & CI-V Settings; falls back to Red Pitaya when the rig is silent.");
-            radH1MeterCiv.CheckedChanged += h1MeterSource_CheckedChanged;
+            h1ChkTrxMeterCiv = new CheckBoxTS();
+            h1ChkTrxMeterCiv.AutoSize = false;
+            h1ChkTrxMeterCiv.UseVisualStyleBackColor = true;
+            h1ChkTrxMeterCiv.Image = null;
+            h1ChkTrxMeterCiv.Name = "chkH1TrxMeterIC7100";
+            h1ChkTrxMeterCiv.Text = "TX meter uses the IC-7100 data";
+            h1ChkTrxMeterCiv.Location = new Point(10, 20);
+            h1ChkTrxMeterCiv.Size = new Size(300, 22);
+            toolTip1.SetToolTip(h1ChkTrxMeterCiv,
+                "When checked, the FWD, REF and SWR transmit readings come from the IC-7100 over CI-V" + System.Environment.NewLine +
+                "while it is the transmitting radio. Unchecked, they come from the SDR connected to" + System.Environment.NewLine +
+                "Thetis. The OM2000A+ readings take over when its option on the Amp page is ticked and" + System.Environment.NewLine +
+                "the amplifier operates; while the amplifier stands by the fall-back is to this option" + System.Environment.NewLine +
+                "first, otherwise to the SDR.");
 
-            radH1MeterAmp = new RadioButtonTS();
-            radH1MeterAmp.AutoSize = false;
-            radH1MeterAmp.Image = null;
-            radH1MeterAmp.Name = "radH1MeterAmp";
-            radH1MeterAmp.Text = "OM2000A+";
-            radH1MeterAmp.Location = new Point(12, 68);
-            radH1MeterAmp.Size = new Size(145, 22);
-            toolTip1.SetToolTip(radH1MeterAmp, "The transmit readings come from the OM2000A+ over the network. While the amplifier stands by - for instance during Tune - they come from the IC-7100 instead. Opens the amplifier link; the OM Power manager cannot connect while it is open.");
-            radH1MeterAmp.CheckedChanged += h1MeterSource_CheckedChanged;
+            LabelTS h1LblTrxInfo = new LabelTS();
+            h1LblTrxInfo.AutoSize = false;
+            h1LblTrxInfo.Image = null;
+            h1LblTrxInfo.ForeColor = System.Drawing.SystemColors.GrayText;
+            h1LblTrxInfo.Text = "Hybrid operation: the SDR receives while the IC-7100 transmits. The CI-V power and" + System.Environment.NewLine +
+                "meters link is enabled on the CAT1 page; the option above only picks which readings" + System.Environment.NewLine +
+                "the TX meter shows.";
+            h1LblTrxInfo.Location = new Point(10, 50);
+            h1LblTrxInfo.Size = new Size(536, 44);
 
-            LabelTS h1LblMeterSourceInfo = new LabelTS();
-            h1LblMeterSourceInfo.AutoSize = false;
-            h1LblMeterSourceInfo.Image = null;
-            h1LblMeterSourceInfo.ForeColor = System.Drawing.SystemColors.GrayText;
-            h1LblMeterSourceInfo.Text = "Falls back to the IC-7100 while the amp stands by.";
-            h1LblMeterSourceInfo.Location = new Point(12, 94);
-            h1LblMeterSourceInfo.Size = new Size(148, 42);
+            h1ChkTrxMeterCiv.CheckedChanged += h1ChkTrxMeterCiv_CheckedChanged;
 
-            grpH1MeterSource.Controls.Add(radH1MeterRp);
-            grpH1MeterSource.Controls.Add(radH1MeterCiv);
-            grpH1MeterSource.Controls.Add(radH1MeterAmp);
-            grpH1MeterSource.Controls.Add(h1LblMeterSourceInfo);
-            tpDisplayGeneral.Controls.Add(grpH1MeterSource);
+            h1GrpTrx.Controls.Add(h1ChkTrxMeterCiv);
+            h1GrpTrx.Controls.Add(h1LblTrxInfo);
+            tpOtherHW_trx.Controls.Add(h1GrpTrx);
         }
 
-        private void h1MeterSource_CheckedChanged(object sender, EventArgs e)
+        private void h1ChkTrxMeterCiv_CheckedChanged(object sender, EventArgs e)
         {
-            if (radH1MeterRp == null) return;
-            if (radH1MeterRp.Checked) console.H1MeterSource = 0;
-            else if (radH1MeterCiv.Checked) console.H1MeterSource = 1;
-            else if (radH1MeterAmp.Checked) console.H1MeterSource = 2;
+            console.H1TrxMeterIC7100 = h1ChkTrxMeterCiv != null && h1ChkTrxMeterCiv.Checked;
         }
 
         // H1: the OM2000A+ group - standby during tune plus the amplifier address. On
@@ -573,6 +574,19 @@ namespace Thetis
                 "on the console, left of the MON/TUN/MOX buttons. Hidden by default. The amplifier" + System.Environment.NewLine +
                 "link and the meters work either way.");
 
+            h1ChkAmpMeterAmp = new CheckBoxTS();
+            h1ChkAmpMeterAmp.AutoSize = false;
+            h1ChkAmpMeterAmp.UseVisualStyleBackColor = true;
+            h1ChkAmpMeterAmp.Image = null;
+            h1ChkAmpMeterAmp.Name = "chkH1AmpMeterOM2000A";
+            h1ChkAmpMeterAmp.Text = "TX meter uses the OM2000A+";
+            h1ChkAmpMeterAmp.Location = new Point(346, 47);
+            h1ChkAmpMeterAmp.Size = new Size(200, 22);
+            toolTip1.SetToolTip(h1ChkAmpMeterAmp,
+                "When checked, the FWD, REF and SWR transmit readings come from the OM2000A+ while" + System.Environment.NewLine +
+                "the amplifier operates. While it stands by they fall back to the IC-7100 when its" + System.Environment.NewLine +
+                "option is ticked on the Transceivers page, otherwise to the SDR connected to Thetis.");
+
             LabelTS h1LblAmpAddr = new LabelTS();
             h1LblAmpAddr.AutoSize = true;
             h1LblAmpAddr.Image = null;
@@ -610,11 +624,13 @@ namespace Thetis
 
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1ChkAmpBlockVis.CheckedChanged += h1ChkAmpBlockVis_CheckedChanged;
+            h1ChkAmpMeterAmp.CheckedChanged += h1ChkAmpMeterAmp_CheckedChanged;
             h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
             h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
 
             h1GrpAmp.Controls.Add(h1ChkAmpTuneStandby);
             h1GrpAmp.Controls.Add(h1ChkAmpBlockVis);
+            h1GrpAmp.Controls.Add(h1ChkAmpMeterAmp);
             h1GrpAmp.Controls.Add(h1LblAmpAddr);
             h1GrpAmp.Controls.Add(h1TxtAmpAddress);
             h1GrpAmp.Controls.Add(h1LblAmpPort);
@@ -631,6 +647,11 @@ namespace Thetis
         private void h1ChkAmpBlockVis_CheckedChanged(object sender, EventArgs e)
         {
             console.H1AmpBlockVisible = h1ChkAmpBlockVis != null && h1ChkAmpBlockVis.Checked;
+        }
+
+        private void h1ChkAmpMeterAmp_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1AmpMeterEnabled = h1ChkAmpMeterAmp != null && h1ChkAmpMeterAmp.Checked;
         }
 
         private void h1TxtAmpAddress_TextChanged(object sender, EventArgs e)
@@ -665,7 +686,7 @@ namespace Thetis
             H1BuildDimUnusedOption(); // H1: the dim-unused receiver option, built in code
             H1BuildCivRigMetersOption(); // H1: the CI-V rig power & meters option, built in code
             H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
-            H1BuildMeterSourceOption(); // H1: the three-way TX meter source, built in code
+            H1BuildTransceiverOptions(); // H1: the three-way TX meter source, built in code
 
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;
@@ -10899,13 +10920,8 @@ namespace Thetis
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
             chkCIVSyncPTT.Checked = console.CIVSyncPTT;
             if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Checked = console.H1RigPowerMetersEnabled;
-            if (radH1MeterAmp != null) // H1: mirror the TX meter source choice
-            {
-                int h1src = console.H1MeterSource;
-                if (h1src == 2) radH1MeterAmp.Checked = true;
-                else if (h1src == 1) radH1MeterCiv.Checked = true;
-                else radH1MeterRp.Checked = true;
-            }
+            if (h1ChkTrxMeterCiv != null) h1ChkTrxMeterCiv.Checked = console.H1TrxMeterIC7100; // H1 round 5
+            if (h1ChkAmpMeterAmp != null) h1ChkAmpMeterAmp.Checked = console.H1AmpMeterEnabled; // H1 round 5
             if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
             if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
             if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
