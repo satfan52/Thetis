@@ -21346,7 +21346,7 @@ namespace Thetis
                 // is sent; releasing before the advance leaves the amplifier in stand-by.
                 _h1AmpTuneArmed = true;
                 _h1AmpTuneReqMs = AmpLanControllerInstance.ClockMs;
-                AmpLanControllerInstance.LogNote("TUNE: amplifier already in stand-by - two-phase tune armed");
+                AmpLanControllerInstance.LogNote("amplifier already in stand-by - two-phase tune armed");
                 return;
             }
             _h1AmpTuneWasOperate = AmpLanControllerInstance.IsOperate; // when the state is unknown the end reads the first state frame
@@ -34319,7 +34319,7 @@ namespace Thetis
                     _h1TuneOperationalPhase = true;  // the drive follows the main slider, not the tune level
                     if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
                         AmpLanControllerInstance.RequestOperate();
-                    AmpLanControllerInstance.LogNote("TUNE: amplifier autotune active - tune at the drive value, amplifier left untouched");
+                    AmpLanControllerInstance.LogNote("amplifier autotune active - tune at the drive value, amplifier left untouched");
                 }
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 if (!ampAutoTune)
