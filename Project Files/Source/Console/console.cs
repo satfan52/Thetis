@@ -6739,6 +6739,8 @@ namespace Thetis
             h1AmpStatus.Font = new Font("Microsoft Sans Serif", 6.75f, FontStyle.Regular); // H1: the amp's longest message (WAITING FOR INPUT POWER) measures 135 px - the readout shares the Auto tune row
             h1AmpStatus.TextAlign = ContentAlignment.MiddleLeft;
             h1AmpStatus.Size = new Size(140, 14);
+            h1AmpStatus.Cursor = Cursors.Hand; // H1: click clears a fault notice
+            h1AmpStatus.Click += h1AmpStatus_Click;
             this.Controls.Add(h1AmpStatus);
 
             if (toolTip1 != null)
@@ -6746,7 +6748,7 @@ namespace Thetis
                 toolTip1.SetToolTip(h1AmpMode, "Amplifier mode. OPER = the OM2000A+ is in OPERATE, STBY = stand-by, AMP ? = the state is not known yet." + Environment.NewLine + Environment.NewLine + "Click to switch the amplifier between stand-by and operate.");
                 toolTip1.SetToolTip(h1AmpPower, "Amplifier PA power. PA ON starts the tube heating, PA OFF cools the PA and switches it off." + Environment.NewLine + Environment.NewLine + "The button shows HEATING or COOLING while either process runs. Click to toggle.");
                 toolTip1.SetToolTip(h1AmpAutoTune, "Starts the amplifier's own automatic tune. The button stays lit while the autotune is on; click it again to stop the autotune and return the amplifier to stand-by." + Environment.NewLine + Environment.NewLine + "Right-click returns the amplifier to manual tuning.");
-                toolTip1.SetToolTip(h1AmpStatus, "What the OM2000A+ is doing right now: its autotune messages, the heating or cooling countdown, or the state.");
+                toolTip1.SetToolTip(h1AmpStatus, "What the OM2000A+ is doing right now: its autotune messages, the heating or cooling countdown, or the state." + Environment.NewLine + Environment.NewLine + "A red FAULT with a code stays for ten minutes or until clicked; clicking clears the notice. To cancel a fault at the amplifier itself, toggle it stand-by and back, as the OM Power manual describes.");
             }
 
             h1AmpMode.Visible = false; h1AmpPower.Visible = false; h1AmpAutoTune.Visible = false; h1AmpStatus.Visible = false;
@@ -6887,6 +6889,13 @@ namespace Thetis
             finally { _h1AmpBtnSync = false; }
         }
 
+        private void h1AmpStatus_Click(object sender, EventArgs e)
+        {
+            // H1: clear the fault notice; the amplifier itself is left as it is
+            AmpLanController amp = AmpLanControllerInstance;
+            if (amp != null) amp.ClearFaultNotice();
+        }
+
         private void H1AmpStatusUpdate()
         {
             // H1: one line telling what the amplifier is doing, in its own words where it
@@ -6897,7 +6906,7 @@ namespace Thetis
             Color col = Color.White;
             if (amp == null) { text = ""; col = Color.Gray; }
             else if (!amp.IsOpen || !amp.StateKnown) { text = "AMP LINK DOWN"; col = Color.Gray; }
-            else if (amp.FaultFresh) { text = "FAULT"; col = Color.Red; }
+            else if (amp.FaultFresh) { text = amp.FaultCode.Length > 0 ? "FAULT " + amp.FaultCode : "FAULT"; col = Color.Red; }
             else if (amp.AutoTuneBusy)
             {
                 if (amp.AutoTuneStopping) { text = "AUTOTUNE STOPPING"; col = Color.Orange; }

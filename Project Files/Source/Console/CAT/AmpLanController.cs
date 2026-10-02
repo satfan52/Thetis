@@ -173,6 +173,7 @@ namespace Thetis
         private long _lastCoolMs = 0; // H1: last COON/CO/CT frame (cooling)
         private volatile bool _fault = false;
         private long _faultMs = 0;
+        private volatile string _faultCode = "";
         private volatile string _autoText = "";      // the amplifier's own AUTO: wording
         private volatile string _autoResult = "";    // DONE / ABORTED / FAILED / STOPPED / EXITED
         private long _autoResultMs = 0;
@@ -311,6 +312,16 @@ namespace Thetis
             catch { return false; }
         }
         public bool FaultFresh { get { return _fault && NowMs() - _faultMs <= 600000; } }
+        /// <summary>H1: the code of the last fault, e.g. "FA12"; empty when none.</summary>
+        public string FaultCode { get { return _faultCode; } }
+        /// <summary>H1: dismiss the fault notice (the console read-out click). The amplifier
+        /// itself is untouched - a parked amplifier is recovered with the mode pill:
+        /// stand-by shortly, then operate, as the OM Power manual describes.</summary>
+        public void ClearFaultNotice()
+        {
+            _fault = false;
+            _faultCode = "";
+        }
 
         public float AmpForwardWatts
         {
@@ -1321,6 +1332,7 @@ namespace Thetis
                 {
                     _fault = true;
                     _faultMs = NowMs();
+                    _faultCode = "FA" + fa;
                     LogText("FAULT from amplifier: FA{0}", fa);
                 }
                 return;
@@ -1334,6 +1346,7 @@ namespace Thetis
             {
                 _fault = true;
                 _faultMs = NowMs();
+                _faultCode = token;
                 LogText("fault frame: {0}", token);
                 return;
             }
