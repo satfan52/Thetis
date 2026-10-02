@@ -21423,9 +21423,9 @@ namespace Thetis
         {
             get { return _h1RigPowerMetersEnabled && CIVControllerInstance != null && CIVControllerInstance.IsOpen; }
         }
-        // H1: the CI-V option in Setup > Serial > CAT1 Protocol & CI-V Settings. When on, the
-        // drive/tune sliders also set the IC-7100 RF power and the SWR / FWD / REF transmit
-        // readings come from the rig's own meters instead of the Red-Pitaya power sensing.
+        // H1: the CI-V link option. When on, the drive/tune sliders also set the IC-7100 RF
+        // power and the rig's SWR / FWD / REF readings are collected for the transmit meter.
+        // Whether the meter displays them is chosen by the TX meter source options.
         private bool _h1RigPowerMetersEnabled = false;
         public bool H1RigPowerMetersEnabled
         {

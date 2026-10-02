@@ -443,8 +443,9 @@ namespace Thetis
             h1ChkRigPowerMeters.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkRigPowerMeters,
                 "When checked, the Drive and Tune sliders also set the IC-7100 RF power over CI-V," + System.Environment.NewLine +
-                "and the SWR, FWD and REF transmit readings come from the IC-7100's own meters" + System.Environment.NewLine +
-                "instead of the Red-Pitaya values. When unchecked, both behave as before.");
+                "and the rig's own SWR, FWD and REF readings are collected for the transmit meter." + System.Environment.NewLine +
+                "When unchecked, the rig keeps its own power setting and the rig readings are" + System.Environment.NewLine +
+                "unavailable to the transmit meter.");
             h1ChkRigPowerMeters.CheckedChanged += h1ChkRigPowerMeters_CheckedChanged;
             grpCIVControl.Controls.Add(h1ChkRigPowerMeters);
         }
@@ -515,10 +516,10 @@ namespace Thetis
             h1ChkTrxMeterCiv.Location = new Point(300, 20);
             h1ChkTrxMeterCiv.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkTrxMeterCiv,
-                "When ticked, the FWD, REF and SWR transmit readings come from the IC-7100 over CI-V" + System.Environment.NewLine +
-                "while it is the transmitting radio. Unchecked, they come from the SDR connected to" + System.Environment.NewLine +
-                "Thetis. The OM2000A+ readings take over when its option on the Amp page is ticked and" + System.Environment.NewLine +
-                "the amplifier operates; while the amplifier stands by the fall-back is to this option" + System.Environment.NewLine +
+                "When checked, the transmit meter reads the IC-7100 while it is the transmitting" + System.Environment.NewLine +
+                "radio. This needs the option above, IC-7100 power & meters via CI-V, checked. The" + System.Environment.NewLine +
+                "OM2000A+ readings take over when its option on the Amp page is checked and the" + System.Environment.NewLine +
+                "amplifier operates; while the amplifier stands by the fall-back is to this option" + System.Environment.NewLine +
                 "first, otherwise to the SDR.");
 
             LabelTS h1LblTrxInfo = new LabelTS();
@@ -526,8 +527,8 @@ namespace Thetis
             h1LblTrxInfo.Image = null;
             h1LblTrxInfo.ForeColor = System.Drawing.SystemColors.GrayText;
             h1LblTrxInfo.Text = "Hybrid operation: the SDR receives while the IC-7100 transmits. These settings apply" + System.Environment.NewLine +
-                "to the CI-V link on CAT1; the TX meter option only picks which readings the transmit" + System.Environment.NewLine +
-                "meter shows.";
+                "to the CI-V link, whichever CAT it is enabled on; the TX meter option only picks which" + System.Environment.NewLine +
+                "readings the transmit meter shows.";
             h1LblTrxInfo.Location = new Point(10, 114);
             h1LblTrxInfo.Size = new Size(536, 44);
 
