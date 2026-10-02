@@ -7166,14 +7166,15 @@ namespace Thetis
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
             // H1 round 2: the amplifier controls. The mode pill stays right of the Drive
             // slider; the OM2000A+ block (title, PA power pill, Auto tune toggle and the
-            // activity readout) sits right of the central transmit block (user request
+            // activity readout) sits LEFT of the central transmit block, in the free pocket
+            // between the display's pan controls and the Master AF slider (user correction
             // 2026-10-02). Shown only while the OM2000A+ link is enabled (meter source or
             // the stand-by option).
             H1Put(h1AmpMode, this, mxR + 92, sy, 84, 22);
-            H1Cap("om2000a", "OM2000A+", mxR + 184, sy + 24, 192);
-            H1Put(h1AmpPower, this, mxR + 184, sy + 42, 84, 22);
-            H1Put(h1AmpAutoTune, this, mxR + 276, sy + 42, 84, 22);
-            H1Put(h1AmpStatus, this, mxR + 184, sy + 66, 192, 14);
+            H1Cap("om2000a", "OM2000A+", 474, sy, 224);
+            H1Put(h1AmpPower, this, 474, sy + 18, 84, 22);
+            H1Put(h1AmpAutoTune, this, 566, sy + 18, 84, 22);
+            H1Put(h1AmpStatus, this, 474, sy + 42, 224, 14);
             foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune })
                 if (ac != null)
                 {
