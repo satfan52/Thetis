@@ -710,6 +710,18 @@ namespace Thetis
             H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
             H1BuildTransceiverOptions(); // H1: the three-way TX meter source, built in code
 
+            // H1 round 7c (user): the four CAT boxes must look the same - CAT1 carries the
+            // same Protocol row in its own group and the old standalone group is retired.
+            if (comboCAT1Protocol != null && grpCatControlBox != null)
+            {
+                grpCatControlBox.Controls.Add(lblCAT1Protocol);
+                grpCatControlBox.Controls.Add(comboCAT1Protocol);
+                lblCAT1Protocol.Location = new System.Drawing.Point(12, 178);
+                comboCAT1Protocol.Location = new System.Drawing.Point(10, 192);
+                comboCAT1Protocol.Size = new System.Drawing.Size(142, 21);
+                if (grpCIVControl != null) grpCIVControl.Visible = false;
+            }
+
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;
             ucVAC1VARGrapherOut.MaxPoints = ucVAC1VARGrapherOut.Width;
@@ -920,6 +932,9 @@ namespace Thetis
             comboCATstopbits.Text = "1";
             comboCATRigType.Text = "TS-2000";
             if (comboCAT1Protocol.Text == "") comboCAT1Protocol.Text = "Kenwood TS-2000";
+            if (comboCAT2Protocol != null && comboCAT2Protocol.Text == "") comboCAT2Protocol.Text = "Kenwood TS-2000";
+            if (comboCAT3Protocol != null && comboCAT3Protocol.Text == "") comboCAT3Protocol.Text = "Kenwood TS-2000";
+            if (comboCAT4Protocol != null && comboCAT4Protocol.Text == "") comboCAT4Protocol.Text = "Kenwood TS-2000";
             if (txtCIVAddress.Text == "") txtCIVAddress.Text = "88";
             updateCIVControlsEnabled();
             comboFocusMasterMode.Text = "None";
@@ -4735,6 +4750,45 @@ namespace Thetis
             set
             {
                 if (comboCAT1Protocol != null) comboCAT1Protocol.Text = value;
+            }
+        }
+
+        public string CAT2Protocol
+        {
+            get
+            {
+                if (comboCAT2Protocol != null) return comboCAT2Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT2Protocol != null) comboCAT2Protocol.Text = value;
+            }
+        }
+
+        public string CAT3Protocol
+        {
+            get
+            {
+                if (comboCAT3Protocol != null) return comboCAT3Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT3Protocol != null) comboCAT3Protocol.Text = value;
+            }
+        }
+
+        public string CAT4Protocol
+        {
+            get
+            {
+                if (comboCAT4Protocol != null) return comboCAT4Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT4Protocol != null) comboCAT4Protocol.Text = value;
             }
         }
 
@@ -10937,6 +10991,9 @@ namespace Thetis
             if (comboCATPTTPort.Items.Contains(port))
                 comboCATPTTPort.Text = port;
             comboCAT1Protocol.Text = console.CATProtocol;
+            if (comboCAT2Protocol != null) comboCAT2Protocol.Text = console.CAT2Protocol;
+            if (comboCAT3Protocol != null) comboCAT3Protocol.Text = console.CAT3Protocol;
+            if (comboCAT4Protocol != null) comboCAT4Protocol.Text = console.CAT4Protocol;
             txtCIVAddress.Text = console.CIVAddress.ToString("X2");
             chkCIVTransceive.Checked = console.CIVTransceive;
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
@@ -11335,7 +11392,10 @@ namespace Thetis
 
         private void updateCIVControlsEnabled()
         {
-            bool isCIV = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
+            bool isCIV = (comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)")
+                || (comboCAT2Protocol != null && comboCAT2Protocol.Text == "Icom CI-V (IC-7100)")
+                || (comboCAT3Protocol != null && comboCAT3Protocol.Text == "Icom CI-V (IC-7100)")
+                || (comboCAT4Protocol != null && comboCAT4Protocol.Text == "Icom CI-V (IC-7100)");
             if (lblCIVAddress != null) lblCIVAddress.Enabled = isCIV;
             // the address is read live when each CI-V frame is built (and TextChanged pushes
             // it into the running controller), so it stays editable even while CAT1 is open
@@ -11745,6 +11805,81 @@ namespace Thetis
                     chkCATEnable.Checked = false;
                     MessageBox.Show("Could not re-initialize CAT control for selected protocol. Exception:\n\n" + ex.Message,
                         "Error Initializing CAT control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void comboCAT2Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CAT2Protocol = comboCAT2Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCAT2Enable.Checked)
+            {
+                console.CAT2Enabled = false;
+                try
+                {
+                    console.CAT2Enabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CAT2Enabled = false;
+                    chkCAT2Enable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT2 control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT2 control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void comboCAT3Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CAT3Protocol = comboCAT3Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCAT3Enable.Checked)
+            {
+                console.CAT3Enabled = false;
+                try
+                {
+                    console.CAT3Enabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CAT3Enabled = false;
+                    chkCAT3Enable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT3 control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT3 control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void comboCAT4Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CAT4Protocol = comboCAT4Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCAT4Enable.Checked)
+            {
+                console.CAT4Enabled = false;
+                try
+                {
+                    console.CAT4Enabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CAT4Enabled = false;
+                    chkCAT4Enable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT4 control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT4 control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
                 }
             }
         }

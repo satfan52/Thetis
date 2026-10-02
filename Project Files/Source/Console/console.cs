@@ -2039,7 +2039,8 @@ namespace Thetis
             AndromedaSiolisten = new SIO5ListenerII(this);
             AriesSiolisten = new SIO6ListenerII(this);
             GanymedeSiolisten = new SIO7ListenerII(this);
-            CIVControllerInstance = new CIVController(this);
+            civ_slot_controllers[1] = new CIVController(this);
+            CIVControllerInstance = civ_slot_controllers[1];
             AmpLanControllerInstance = new AmpLanController(this); // H1: OM2000A+ LAN link
             // H1 round 3: the console is the authority on whether anything transmits - a
             // pending stand-by return waits on this, not on the amplifier's own PTT report
@@ -20075,40 +20076,7 @@ namespace Thetis
                 try
                 {
                     cat_enabled = value;
-                    if (cat_protocol == "Icom CI-V (IC-7100)")
-                    {
-                        if (Siolisten != null)
-                            Siolisten.disableCAT();
-
-                        if (CIVControllerInstance != null)
-                        {
-                            if (cat_enabled)
-                            {
-                                CIVControllerInstance.Open("COM" + cat_port, cat_baud_rate, civ_address, civ_transceive, civ_sync_split, civ_sync_ptt);
-                            }
-                            else
-                            {
-                                CIVControllerInstance.Close();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
-                            CIVControllerInstance.Close();
-
-                        if (Siolisten != null)  // if we've got a listener tell them about state change 
-                        {
-                            if (cat_enabled)
-                            {
-                                Siolisten.enableCAT();
-                            }
-                            else
-                            {
-                                Siolisten.disableCAT();
-                            }
-                        }
-                    }
+                    CivSlotRoute(1, value);
                 }
                 catch (Exception)
                 {
@@ -20246,21 +20214,11 @@ namespace Thetis
                 try
                 {
                     cat2_enabled = value;
-                    if (Sio2listen != null)  // if we've got a listener tell them about state change 
-                    {
-                        if (cat2_enabled)
-                        {
-                            Sio2listen.enableCAT2();
-                        }
-                        else
-                        {
-                            Sio2listen.disableCAT2();
-                        }
-                    }
+                    CivSlotRoute(2, value);
                 }
                 catch (Exception)
                 {
-                    MessageBox.Show("Error enabling CAT2 on COM" + cat_port + ".\n" +
+                    MessageBox.Show("Error enabling CAT2 on COM" + cat2_port + ".\n" +
                         "Please check CAT2 settings and try again.",
                         "CAT2 Error",
                         MessageBoxButtons.OK,
@@ -20279,21 +20237,11 @@ namespace Thetis
                 try
                 {
                     cat3_enabled = value;
-                    if (Sio3listen != null)  // if we've got a listener tell them about state change 
-                    {
-                        if (cat3_enabled)
-                        {
-                            Sio3listen.enableCAT3();
-                        }
-                        else
-                        {
-                            Sio3listen.disableCAT3();
-                        }
-                    }
+                    CivSlotRoute(3, value);
                 }
                 catch (Exception)
                 {
-                    MessageBox.Show("Error enabling CAT3 on COM" + cat_port + ".\n" +
+                    MessageBox.Show("Error enabling CAT3 on COM" + cat3_port + ".\n" +
                         "Please check CAT3 settings and try again.",
                         "CAT3 Error",
                         MessageBoxButtons.OK,
@@ -20312,21 +20260,11 @@ namespace Thetis
                 try
                 {
                     cat4_enabled = value;
-                    if (Sio4listen != null)  // if we've got a listener tell them about state change 
-                    {
-                        if (cat4_enabled)
-                        {
-                            Sio4listen.enableCAT4();
-                        }
-                        else
-                        {
-                            Sio4listen.disableCAT4();
-                        }
-                    }
+                    CivSlotRoute(4, value);
                 }
                 catch (Exception)
                 {
-                    MessageBox.Show("Error enabling CAT4 on COM" + cat_port + ".\n" +
+                    MessageBox.Show("Error enabling CAT4 on COM" + cat4_port + ".\n" +
                         "Please check CAT4 settings and try again.",
                         "CAT4 Error",
                         MessageBoxButtons.OK,
@@ -20337,13 +20275,112 @@ namespace Thetis
             get { return cat4_enabled; }
         }
 
+        // H1 round 7 (user 2026-10-02): each CAT slot may speak Kenwood TS-2000 or Icom
+        // CI-V. One CIVController per CI-V slot; CIVControllerInstance always points at
+        // the live CI-V slot, so the whole CI-V feature set - rig power, meters, tune,
+        // VFO tracking - follows the slot the IC-7100 is actually wired to.
+        private CIVController[] civ_slot_controllers = new CIVController[5];
+
+        private void CivRebindInstance()
+        {
+            CIVControllerInstance = null;
+            for (int h1s = 1; h1s <= 4; h1s++)
+            {
+                if (civ_slot_controllers[h1s] != null && civ_slot_controllers[h1s].IsOpen)
+                {
+                    CIVControllerInstance = civ_slot_controllers[h1s];
+                    break;
+                }
+            }
+        }
+        private string CatProtocolForSlot(int s)
+        {
+            switch (s)
+            {
+                case 1: return cat_protocol;
+                case 2: return cat2_protocol;
+                case 3: return cat3_protocol;
+                default: return cat4_protocol;
+            }
+        }
+        private int CatPortForSlot(int s)
+        {
+            switch (s)
+            {
+                case 1: return cat_port;
+                case 2: return cat2_port;
+                case 3: return cat3_port;
+                default: return cat4_port;
+            }
+        }
+        private int CatBaudForSlot(int s)
+        {
+            switch (s)
+            {
+                case 1: return cat_baud_rate;
+                case 2: return cat2_baud_rate;
+                case 3: return cat3_baud_rate;
+                default: return cat4_baud_rate;
+            }
+        }
+        private void LegacyCatListener(int slot, bool enable)
+        {
+            if (slot == 1 && Siolisten != null) { if (enable) Siolisten.enableCAT(); else Siolisten.disableCAT(); }
+            else if (slot == 2 && Sio2listen != null) { if (enable) Sio2listen.enableCAT2(); else Sio2listen.disableCAT2(); }
+            else if (slot == 3 && Sio3listen != null) { if (enable) Sio3listen.enableCAT3(); else Sio3listen.disableCAT3(); }
+            else if (slot == 4 && Sio4listen != null) { if (enable) Sio4listen.enableCAT4(); else Sio4listen.disableCAT4(); }
+        }
+        private void CivSlotRoute(int slot, bool enable)
+        {
+            bool civ = CatProtocolForSlot(slot) == "Icom CI-V (IC-7100)";
+            CIVController ic = civ_slot_controllers[slot];
+            if (!civ)
+            {
+                if (ic != null && ic.IsOpen) ic.Close();
+                if (ic != null && CIVControllerInstance == ic) CivRebindInstance();
+                LegacyCatListener(slot, enable);
+                return;
+            }
+            LegacyCatListener(slot, false);
+            if (enable)
+            {
+                if (ic == null) { ic = new CIVController(this); civ_slot_controllers[slot] = ic; }
+                if (ic.IsOpen) ic.Close();
+                ic.Open("COM" + CatPortForSlot(slot), CatBaudForSlot(slot), civ_address, civ_transceive, civ_sync_split, civ_sync_ptt);
+                CIVControllerInstance = ic;
+            }
+            else
+            {
+                if (ic != null && ic.IsOpen) ic.Close();
+                if (ic != null && CIVControllerInstance == ic) CivRebindInstance();
+            }
+        }
+
         private string cat_protocol = "Kenwood TS-2000";
         public string CATProtocol
         {
             get { return cat_protocol; }
-            set { cat_protocol = value; }
+            set { cat_protocol = value; if (cat_enabled) CivSlotRoute(1, true); }
         }
 
+        private string cat2_protocol = "Kenwood TS-2000";
+        private string cat3_protocol = "Kenwood TS-2000";
+        private string cat4_protocol = "Kenwood TS-2000";
+        public string CAT2Protocol
+        {
+            get { return cat2_protocol; }
+            set { cat2_protocol = value; if (cat2_enabled) CivSlotRoute(2, true); }
+        }
+        public string CAT3Protocol
+        {
+            get { return cat3_protocol; }
+            set { cat3_protocol = value; if (cat3_enabled) CivSlotRoute(3, true); }
+        }
+        public string CAT4Protocol
+        {
+            get { return cat4_protocol; }
+            set { cat4_protocol = value; if (cat4_enabled) CivSlotRoute(4, true); }
+        }
         private byte civ_address = 0x88;
         public byte CIVAddress
         {
