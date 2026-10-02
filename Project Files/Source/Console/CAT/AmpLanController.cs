@@ -151,6 +151,34 @@ namespace Thetis
         private volatile bool _wantAutoTune = false; // H1: console Auto tune button asked for it
         private volatile int _wantAutoTuneMs = 0;    // H1: when the operate-first nudge started
         private volatile bool _wantAutoTuneStop = false; // H1: right-click on Auto tune, back to manual
+        // H1 (2026-10-02 round 2): amplifier power, thermal state and the autotune
+        // session surface, decoded from the amplifier's own frames:
+        //   'Y' PA on (tube heating) -> WA<n>; countdown -> PAON; when up
+        //   'Z' PA off (cooling)     -> COON; / CO<n>; / CT<n>;   -> PAOFF; when down
+        //   'L' arm autotune         -> AUTO; then AUTO:<text>;   -> AUTOESC; / STOP;
+        //   '8' stop the autotune    -> STOP;   'M' back to manual -> MAN;
+        private volatile bool _paKnown = false;
+        private volatile bool _paOn = false;
+        private volatile bool _heating = false;
+        private volatile int _heatSeconds = 0;
+        private volatile bool _cooling = false;
+        private volatile int _coolSeconds = 0;
+        private volatile int _coolTemp = -1;
+        private volatile bool _fault = false;
+        private long _faultMs = 0;
+        private volatile string _autoText = "";      // the amplifier's own AUTO: wording
+        private volatile string _autoResult = "";    // DONE / ABORTED / FAILED / STOPPED / EXITED
+        private long _autoResultMs = 0;
+        private volatile bool _wantPaOn = false;     // PA ON request ('Y')
+        private volatile bool _wantPaOff = false;    // PA OFF request ('Z')
+        private volatile bool _wantAutoTuneAbort = false; // stop request ('8')
+        private volatile bool _stopActive = false;   // an '8' stop is being chased
+        private int _stopTries = 0;
+        private long _stopNextMs = 0;
+        private long _lastArmSentMs = 0;
+        private volatile bool _autoStandby = false;  // return the amp to stand-by after a tuning session
+        private long _autoStandbyMs = 0;
+        private long _autoStandbyFireMs = 0;
         private volatile bool _sawCon = false;
         private volatile bool _sawStatus = false;
         private volatile bool _sawInfo = false;
@@ -201,6 +229,49 @@ namespace Thetis
                 return true;
             }
         }
+
+        /// <summary>H1: true while an autotune episode is on - from the click (arming, the
+        /// operate-first nudge) through the amplifier's WAITING / IN PROGRESS frames until
+        /// the console stops chasing a stop request. Drives the Auto tune pill's lit state.</summary>
+        public bool AutoTuneBusy
+        {
+            get
+            {
+                if (IsAutoTune) return true;
+                if (_wantAutoTune || _wantAutoTuneMs != 0) return true;
+                if (_stopActive) return true;
+                if (_lastArmSentMs != 0 && NowMs() - _lastArmSentMs < 2000) return true;
+                return false;
+            }
+        }
+
+        /// <summary>H1: a stop was requested and the console is waiting for the amp to confirm.</summary>
+        public bool AutoTuneStopping
+        {
+            get { return _stopActive; }
+        }
+
+        /// <summary>H1: the amplifier's own wording of its autotune state ("" when idle).</summary>
+        public string AutoTuneText
+        {
+            get { return _autoText; }
+        }
+
+        /// <summary>H1: final autotune outcome text, fresh for two minutes.</summary>
+        public string AutoTuneResult
+        {
+            get { return (NowMs() - _autoResultMs <= 120000) ? _autoResult : ""; }
+        }
+
+        public bool PaKnown { get { return _paKnown; } }
+        public bool PaOn { get { return _paOn; } }
+        public bool IsHeating { get { return _heating; } }
+        public int HeatSeconds { get { return _heatSeconds; } }
+        public bool IsCooling { get { return _cooling; } }
+        public int CoolSeconds { get { return _coolSeconds; } }
+        public int CoolTemp { get { return _coolTemp; } }
+        public bool IsPtt { get { return _pttOn; } }
+        public bool FaultFresh { get { return _fault && NowMs() - _faultMs <= 600000; } }
 
         public float AmpForwardWatts
         {
@@ -293,6 +364,46 @@ namespace Thetis
             }
             _wantAutoTuneStop = true;
             LogText("AUTOTUNE: back to manual requested");
+        }
+
+        /// <summary>H1: power the amplifier's PA on ('Y' - starts the tube heating) or off
+        /// ('Z' - cools down and switches off). Both are the commands behind the official
+        /// manager's PA ON / PA OFF button.</summary>
+        public void RequestPaOn()
+        {
+            if (!IsOpen)
+            {
+                LogText("AMP: PA ON skipped, amplifier link is not open");
+                return;
+            }
+            _wantPaOn = true;
+            LogText("AMP: PA ON requested");
+        }
+
+        public void RequestPaOff()
+        {
+            if (!IsOpen)
+            {
+                LogText("AMP: PA OFF skipped, amplifier link is not open");
+                return;
+            }
+            _wantPaOff = true;
+            LogText("AMP: PA OFF requested");
+        }
+
+        /// <summary>H1: stop the amplifier's own autotune ('8' - the official manager's stop
+        /// button on its automatic-tuning panel) and let the console return the amplifier to
+        /// stand-by once the session ends. Retried, and finally exited with '*' (the
+        /// manager's EXIT key), for remote operation without walking to the amplifier.</summary>
+        public void RequestAutoTuneAbort()
+        {
+            if (!IsOpen)
+            {
+                LogText("AUTOTUNE: stop skipped, amplifier link is not open");
+                return;
+            }
+            _wantAutoTuneAbort = true;
+            LogText("AUTOTUNE: stop requested (Auto tune toggled off)");
         }
 
         /// <summary>Ask for stand-by. No-op when the state is already known to be stand-by.</summary>
@@ -470,6 +581,7 @@ namespace Thetis
                             _wantAutoTune = false;
                             _wantAutoTuneMs = 0;
                             Send("L");
+                            _lastArmSentMs = NowMs();
                             PumpReads(150);
                             LogText("AUTOTUNE: 'L' sent to the amplifier (automatic tuning armed)");
                         }
@@ -480,6 +592,103 @@ namespace Thetis
                         Send("M");
                         PumpReads(150);
                         LogText("AUTOTUNE: 'M' sent to the amplifier (back to manual)");
+                    }
+
+                    // H1 round 2: the amplifier's PA power switch ('Y' / 'Z') - the two
+                    // commands behind the official manager's PA ON / PA OFF button
+                    if (_wantPaOn)
+                    {
+                        _wantPaOn = false;
+                        Send("Y");
+                        PumpReads(200);
+                        LogText("AMP: 'Y' sent (PA ON, tube heating starts)");
+                    }
+                    if (_wantPaOff)
+                    {
+                        _wantPaOff = false;
+                        Send("Z");
+                        PumpReads(200);
+                        LogText("AMP: 'Z' sent (PA OFF, cooling starts)");
+                    }
+
+                    // H1 round 2: the Auto tune pill toggled off - chase the stop until the
+                    // amplifier leaves its tuning session ('8' is the manager's stop; three
+                    // attempts, then 'M' back to manual as the last resort)
+                    if (_wantAutoTuneAbort)
+                    {
+                        _wantAutoTuneAbort = false;
+                        _stopActive = true;
+                        _stopTries = 0;
+                        _stopNextMs = 0;
+                    }
+                    if (_stopActive)
+                    {
+                        if (!IsAutoTune && _stopTries > 0)
+                        {
+                            _stopActive = false;
+                            LogText("AUTOTUNE: amplifier confirmed the stop (left the tuning session)");
+                        }
+                        else if (NowMs() >= _stopNextMs)
+                        {
+                            if (_stopTries == 0)
+                            {
+                                // '8' = the manager's STOP button on the automatic tuning panel
+                                // (acts on a running tune; the amplifier ignores it while it is
+                                // only waiting for input power - probed live 2026-10-02)
+                                _stopTries = 1;
+                                Send("8");
+                                PumpReads(200);
+                                LogText("AUTOTUNE: '8' sent (stop the tuning process)");
+                                _stopNextMs = NowMs() + 3000;
+                            }
+                            else if (_stopTries == 1)
+                            {
+                                // '*' = the manager's EXIT button (all three of its tuning
+                                // panels) - the session exit, the remote equivalent of the
+                                // amplifier panel's own EXIT key
+                                _stopTries = 2;
+                                Send("*");
+                                PumpReads(250);
+                                LogText("AUTOTUNE: '*' sent (exit the tuning session)");
+                                _stopNextMs = NowMs() + 3000;
+                            }
+                            else if (_stopTries == 2)
+                            {
+                                _stopTries = 3;
+                                Send("*");
+                                PumpReads(250);
+                                LogText("AUTOTUNE: '*' repeated (exit the tuning session)");
+                                _stopNextMs = NowMs() + 6000;
+                            }
+                            else
+                            {
+                                _stopActive = false;
+                                LogText("AUTOTUNE: stop NOT confirmed - the amplifier still reports its autotune");
+                            }
+                        }
+                    }
+
+                    // H1 round 2: a tuning episode ended - the amplifier must not linger in
+                    // OPERATE. Return it to stand-by (hold while transmitting; give up after
+                    // two minutes so a deaf amplifier cannot latch a stale intention).
+                    if (_autoStandby)
+                    {
+                        if (NowMs() - _autoStandbyMs > 120000)
+                        {
+                            _autoStandby = false;
+                            LogText("AMP: stand-by return gave up (timed out)");
+                        }
+                        else if (_stateKnown && _ampState != 2)
+                        {
+                            _autoStandby = false;
+                            LogText("AMP: amplifier is in stand-by");
+                        }
+                        else if (_stateKnown && !_pttOn && NowMs() >= _autoStandbyFireMs)
+                        {
+                            _autoStandbyFireMs = NowMs() + 5000;
+                            RequestStandby();
+                            LogText("AMP: returning the amplifier to stand-by after the tuning session");
+                        }
                     }
 
                     // H1: the 'I' fallback poll was REMOVED 2026-10-02. Confirmed live: this
@@ -779,10 +988,25 @@ namespace Thetis
                     LogText("PTT off");
                     return;
                 case "PAON":
-                    LogText("amplifier PA ON");
+                    _paKnown = true; _paOn = true; _heating = false; _heatSeconds = 0;
+                    LogText("amplifier PA ON (heating complete, ready)");
                     return;
                 case "PAOFF":
-                    LogText("amplifier PA OFF");
+                    _paKnown = true; _paOn = false; _cooling = false; _coolSeconds = 0; _coolTemp = -1;
+                    LogText("amplifier PA OFF (cooling complete)");
+                    return;
+                case "COON":
+                    _cooling = true;
+                    LogText("amp: cooling started");
+                    return;
+                case "STOP":
+                    LogText("amp: STOP acknowledged");
+                    return;
+                case "AGAIN":
+                    LogText("amp: AGAIN acknowledged");
+                    return;
+                case "MAN":
+                    LogText("amp: MAN (manual tuning mode)");
                     return;
             }
 
@@ -803,47 +1027,100 @@ namespace Thetis
             if (token.StartsWith("WA", StringComparison.Ordinal))
             {
                 int wa;
-                if (int.TryParse(token.Substring(2), out wa) && wa != _lastWa)
+                if (int.TryParse(token.Substring(2), out wa))
                 {
-                    _lastWa = wa;
-                    if (wa % 30 == 0 || wa < 10) LogText("heating, {0} to go", wa);
+                    _heating = wa > 0;
+                    _heatSeconds = wa;
+                    if (wa != _lastWa)
+                    {
+                        _lastWa = wa;
+                        if (wa % 30 == 0 || wa < 10) LogText("heating, {0} to go", wa);
+                    }
+                }
+                return;
+            }
+            if (token.StartsWith("CO", StringComparison.Ordinal) && token.Length > 2 && char.IsDigit(token[2]))
+            {
+                // "CO<nn>;" - the cooling countdown while the amplifier powers the PA down
+                int co;
+                if (int.TryParse(token.Substring(2), out co))
+                {
+                    _cooling = true;
+                    _coolSeconds = co;
+                    if (co % 30 == 0 || co < 10) LogText("cooling, {0} to go", co);
+                }
+                return;
+            }
+            if (token.StartsWith("CT", StringComparison.Ordinal) && token.Length > 2 && char.IsDigit(token[2]))
+            {
+                // "CT<nn>;" - the cooling temperature; the PA powers off below 40 C
+                int ct;
+                if (int.TryParse(token.Substring(2), out ct))
+                {
+                    _cooling = true;
+                    _coolTemp = ct;
+                    if (ct % 10 == 0) LogText("cooling, {0} C", ct);
                 }
                 return;
             }
             if (token.StartsWith("AUTO", StringComparison.Ordinal))
             {
                 // H1: the amplifier's own automatics - "AUTO:AUTOTUNE IN PROGRESS;",
-                // "AUTO:WAITING FOR INPUT POWER;", "AUTO:AUTOTUNE ABORTED;". While that
-                // state machine runs the controller is unresponsive to mode commands -
-                // live 2026-10-02: the stand-by toggle landed 13 s late and every tune
-                // press cancelled during the "ABORTED" storm. Surface it (rate limited)
-                // so a cancelled tune is explainable from amp_lan.log.
+                // "AUTO:WAITING FOR INPUT POWER;", "AUTO:AUTOTUNE ABORTED;", "AUTOESC;".
+                // While that state machine runs the controller ignores mode commands, so
+                // the console leaves the amplifier alone and only supplies the carrier.
+                // The amplifier's own wording is kept for the OM2000A+ block.
                 int n2 = Environment.TickCount;
                 if (n2 - _lastAutoLog >= 1000)
                 {
                     _lastAutoLog = n2;
                     LogText("amp: {0}", token);
                 }
-                // H1: track the state for the tune logic - third tune type: the carrier is
-                // sent at the drive value with the amplifier left alone. IN PROGRESS /
-                // WAITING FOR INPUT POWER = active; ABORTED / DONE / COMPLETE = finished.
-                // A silent cancellation on the amplifier panel expires via the 10-minute
-                // rule in IsAutoTune.
+                string autoText = token.StartsWith("AUTO:", StringComparison.Ordinal)
+                    ? token.Substring(5).Trim() : "";
+                if (autoText.Length > 0) _autoText = autoText;
                 bool was = _autoTune;
                 if (token.IndexOf("IN PROGRESS", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     token.IndexOf("WAITING", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     _autoTune = true;
                     _autoTuneMs = n2;
+                    if (!was)
+                    {
+                        _stopTries = 0;
+                    }
                 }
                 else if (token.IndexOf("ABORTED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         token.IndexOf("FAILED", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          token.IndexOf("DONE", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          token.IndexOf("COMPLETE", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         token.IndexOf("ESC", StringComparison.OrdinalIgnoreCase) >= 0) // AUTOESC = the amp left its tuning session (seen live 2026-10-02)
+                         token.IndexOf("ESC", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     _autoTune = false;
                 }
-                if (_autoTune != was) LogText("amp: autotune {0}", _autoTune ? "active" : "finished");
+                if (_autoTune != was)
+                {
+                    LogText("amp: autotune {0}", _autoTune ? "active" : "finished");
+                    if (!_autoTune)
+                    {
+                        // the session ended: name the outcome and return the amplifier to
+                        // stand-by (user requirement 2026-10-02) - a tuning episode must
+                        // not leave the amplifier parked in OPERATE
+                        string res;
+                        if (_autoText.IndexOf("FAILED", StringComparison.OrdinalIgnoreCase) >= 0) res = "AUTOTUNE FAILED";
+                        else if (_stopTries > 0 || _stopActive) res = "AUTOTUNE STOPPED";
+                        else if (_autoText.IndexOf("ABORTED", StringComparison.OrdinalIgnoreCase) >= 0) res = "AUTOTUNE ABORTED";
+                        else if (_autoText.IndexOf("DONE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 _autoText.IndexOf("COMPLETE", StringComparison.OrdinalIgnoreCase) >= 0) res = "AUTOTUNE DONE";
+                        else res = "AUTOTUNE EXITED";
+                        _autoResult = res;
+                        _autoResultMs = NowMs();
+                        _autoStandby = true;
+                        _autoStandbyMs = NowMs();
+                        _autoStandbyFireMs = 0;
+                        LogText("AUTOTUNE: session ended - {0}", res);
+                    }
+                }
                 return;
             }
             if (token.StartsWith("ST", StringComparison.Ordinal))
@@ -858,6 +1135,17 @@ namespace Thetis
                 if (token.Length >= 8 && (token[3] == '0' || token[3] == '1')
                     && (token[4] == '0' || token[4] == '1') && (token[5] == '0' || token[5] == '1'))
                 {
+                    _paKnown = true;
+                    if (token[3] == '1')
+                    {
+                        _paOn = true;
+                        if (_heating) { _heating = false; _heatSeconds = 0; LogText("amp: PA ready (heating complete)"); }
+                    }
+                    else if (!_heating)
+                    {
+                        _paOn = false;
+                        if (_cooling) { _cooling = false; _coolSeconds = 0; _coolTemp = -1; }
+                    }
                     SetState(token[4] == '1' ? 2 : 1);
                     LogText("ST: {0} -> PA {1}, {2}, PTT {3}", token,
                         token[3] == '1' ? "on" : "off",
@@ -891,10 +1179,29 @@ namespace Thetis
                 }
                 return;
             }
-            if (token.StartsWith("FR", StringComparison.Ordinal) || token.StartsWith("FA", StringComparison.Ordinal))
+            if (token.StartsWith("FR", StringComparison.Ordinal))
                 return;
+            if (token.StartsWith("FA", StringComparison.Ordinal))
+            {
+                // "FA<1-15>;" are the amplifier's fault codes (the manager's CFau table)
+                int fa;
+                if (token.Length <= 4 && int.TryParse(token.Substring(2), out fa))
+                {
+                    _fault = true;
+                    _faultMs = NowMs();
+                    LogText("FAULT from amplifier: FA{0}", fa);
+                }
+                return;
+            }
+            if (token.StartsWith("WG", StringComparison.Ordinal))
+            {
+                LogText("warning from amplifier: {0}", token);
+                return;
+            }
             if (token.StartsWith("FERROR", StringComparison.Ordinal) || token == "HVF" || token == "HF")
             {
+                _fault = true;
+                _faultMs = NowMs();
                 LogText("fault frame: {0}", token);
                 return;
             }

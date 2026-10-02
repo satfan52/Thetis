@@ -6700,48 +6700,68 @@ namespace Thetis
         // answers AUTO; then AUTO:WAITING FOR INPUT POWER, exactly like selecting A Tune on
         // the panel ('9' is only a softkey inside that page and does nothing alone).
         // Right-click on the button sends 'M' back to manual (the amp answers MAN;).
+        // H1 round 2 (2026-10-02): the console's OM2000A+ controls. The mode pill stays
+        // right of the Drive slider; the OM2000A+ block right of the central transmit block
+        // carries the PA power pill, the Auto tune toggle (lit while a tuning session is on,
+        // a second click stops it) and a one-line activity readout of the amplifier.
         private CheckBoxTS h1AmpMode;
-        private ButtonTS h1AmpAutoTune;
+        private CheckBoxTS h1AmpPower;
+        private CheckBoxTS h1AmpAutoTune;
+        private Label h1AmpStatus;
         private bool _h1AmpBtnSync = false;
 
         private void H1CreateAmpButtons()
         {
             if (chkMUT == null) return;
 
-            h1AmpMode = new CheckBoxTS();
-            h1AmpMode.Name = "chkH1AmpMode";
-            h1AmpMode.Text = "AMP ?";
-            h1AmpMode.Appearance = chkMUT.Appearance;
-            h1AmpMode.FlatStyle = chkMUT.FlatStyle;
-            h1AmpMode.FlatAppearance.BorderSize = 0;
-            h1AmpMode.Font = chkMUT.Font;
-            h1AmpMode.ForeColor = chkMUT.ForeColor;
-            h1AmpMode.BackColor = chkMUT.BackColor;
-            h1AmpMode.TextAlign = chkMUT.TextAlign;
-            h1AmpMode.Size = chkMUT.Size;
-            h1AmpMode.TabStop = false;
-            h1AmpMode.CheckedChanged += H1AmpModeClick;
+            h1AmpMode = NewAmpPill("chkH1AmpMode", "AMP ?", H1AmpModeClick);
             this.Controls.Add(h1AmpMode);
 
-            h1AmpAutoTune = new ButtonTS();
-            h1AmpAutoTune.Name = "btnH1AmpAutoTune";
-            h1AmpAutoTune.Text = "Auto tune";
-            if (btnFilterShiftReset != null)
-            {
-                h1AmpAutoTune.Size = btnFilterShiftReset.Size;
-                h1AmpAutoTune.Font = btnFilterShiftReset.Font;
-                h1AmpAutoTune.ForeColor = btnFilterShiftReset.ForeColor;
-                h1AmpAutoTune.FlatStyle = btnFilterShiftReset.FlatStyle;
-                h1AmpAutoTune.BackColor = btnFilterShiftReset.BackColor;
-                h1AmpAutoTune.UseVisualStyleBackColor = btnFilterShiftReset.UseVisualStyleBackColor;
-            }
-            h1AmpAutoTune.FlatAppearance.BorderSize = 0;
-            h1AmpAutoTune.TabStop = false;
-            h1AmpAutoTune.Click += H1AmpAutoTuneClick;
+            h1AmpPower = NewAmpPill("chkH1AmpPower", "PA ?", H1AmpPowerClick);
+            this.Controls.Add(h1AmpPower);
+
+            h1AmpAutoTune = NewAmpPill("chkH1AmpAutoTune", "Auto tune", H1AmpAutoTuneClick);
             h1AmpAutoTune.MouseUp += H1AmpAutoTuneMouseUp;
             this.Controls.Add(h1AmpAutoTune);
 
-            h1AmpMode.Visible = false; h1AmpAutoTune.Visible = false;
+            h1AmpStatus = new Label();
+            h1AmpStatus.Name = "lblH1AmpStatus";
+            h1AmpStatus.Text = "";
+            h1AmpStatus.AutoSize = false;
+            h1AmpStatus.BackColor = Color.Transparent;
+            h1AmpStatus.ForeColor = Color.White;
+            h1AmpStatus.Font = new Font("Microsoft Sans Serif", 7.5f, FontStyle.Bold);
+            h1AmpStatus.TextAlign = ContentAlignment.MiddleLeft;
+            h1AmpStatus.Size = new Size(192, 14);
+            this.Controls.Add(h1AmpStatus);
+
+            if (toolTip1 != null)
+            {
+                toolTip1.SetToolTip(h1AmpMode, "Amplifier mode. OPER = the OM2000A+ is in OPERATE, STBY = stand-by, AMP ? = the state is not known yet." + Environment.NewLine + Environment.NewLine + "Click to switch the amplifier between stand-by and operate.");
+                toolTip1.SetToolTip(h1AmpPower, "Amplifier PA power. PA ON starts the tube heating, PA OFF cools the PA and switches it off." + Environment.NewLine + Environment.NewLine + "The button shows HEATING or COOLING while either process runs. Click to toggle.");
+                toolTip1.SetToolTip(h1AmpAutoTune, "Starts the amplifier's own automatic tune. The button stays lit while the autotune is on; click it again to stop the autotune and return the amplifier to stand-by." + Environment.NewLine + Environment.NewLine + "Right-click returns the amplifier to manual tuning.");
+                toolTip1.SetToolTip(h1AmpStatus, "What the OM2000A+ is doing right now: its autotune messages, the heating or cooling countdown, or the state.");
+            }
+
+            h1AmpMode.Visible = false; h1AmpPower.Visible = false; h1AmpAutoTune.Visible = false; h1AmpStatus.Visible = false;
+        }
+
+        private CheckBoxTS NewAmpPill(string name, string text, EventHandler onClick)
+        {
+            CheckBoxTS pill = new CheckBoxTS();
+            pill.Name = name;
+            pill.Text = text;
+            pill.Appearance = chkMUT.Appearance;
+            pill.FlatStyle = chkMUT.FlatStyle;
+            pill.FlatAppearance.BorderSize = 0;
+            pill.Font = chkMUT.Font;
+            pill.ForeColor = chkMUT.ForeColor;
+            pill.BackColor = chkMUT.BackColor;
+            pill.TextAlign = chkMUT.TextAlign;
+            pill.Size = chkMUT.Size;
+            pill.TabStop = false;
+            pill.CheckedChanged += onClick;
+            return pill;
         }
 
         internal void H1AmpButtonsVis()
@@ -6749,12 +6769,18 @@ namespace Thetis
             if (h1AmpMode == null) return;
             bool on = _h1MeterSource == 2 || _h1AmpTuneStandbyEnabled;
             if (h1AmpMode.Visible != on) h1AmpMode.Visible = on;
+            if (h1AmpPower != null && h1AmpPower.Visible != on) h1AmpPower.Visible = on;
             if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
+            if (h1AmpStatus != null && h1AmpStatus.Visible != on) h1AmpStatus.Visible = on;
+            Control cap, rule;
+            if (h1Caps.TryGetValue("om2000a", out cap) && cap != null && cap.Visible != on) cap.Visible = on;
+            if (h1Caps.TryGetValue("om2000a_r", out rule) && rule != null && rule.Visible != on) rule.Visible = on;
         }
 
         internal void H1AmpButtonsSync()
         {
-            // H1: mirror the real amplifier state onto the toggle pill (called from the 1 s watchdog)
+            // H1: mirror the real amplifier state onto the pills and the activity readout
+            // (called from the 1 s watchdog; idempotent)
             if (h1AmpMode == null || !h1AmpMode.Visible) return;
             if (AmpLanControllerInstance == null) return;
             _h1AmpBtnSync = true;
@@ -6765,8 +6791,76 @@ namespace Thetis
                 string txt = !known ? "AMP ?" : (oper ? "OPER" : "STBY");
                 if (h1AmpMode.Text != txt) h1AmpMode.Text = txt;
                 if (h1AmpMode.Checked != oper) h1AmpMode.Checked = oper;
+
+                if (h1AmpPower != null)
+                {
+                    bool paKnown = AmpLanControllerInstance.PaKnown;
+                    bool heating = AmpLanControllerInstance.IsHeating;
+                    bool cooling = AmpLanControllerInstance.IsCooling;
+                    bool paOn = AmpLanControllerInstance.PaOn;
+                    string ptxt = heating ? "HEATING"
+                                : cooling ? "COOLING"
+                                : !paKnown ? "PA ?"
+                                : paOn ? "PA ON" : "PA OFF";
+                    if (h1AmpPower.Text != ptxt) h1AmpPower.Text = ptxt;
+                    bool pchk = heating || cooling || (paKnown && paOn);
+                    if (h1AmpPower.Checked != pchk) h1AmpPower.Checked = pchk;
+                }
+
+                if (h1AmpAutoTune != null)
+                {
+                    bool busy = AmpLanControllerInstance.AutoTuneBusy;
+                    if (h1AmpAutoTune.Checked != busy) h1AmpAutoTune.Checked = busy;
+                }
+
+                H1AmpStatusUpdate();
             }
             finally { _h1AmpBtnSync = false; }
+        }
+
+        private void H1AmpStatusUpdate()
+        {
+            // H1: one line telling what the amplifier is doing, in its own words where it
+            // has them - the autotune messages, the heating/cooling countdowns, the state
+            if (h1AmpStatus == null) return;
+            AmpLanController amp = AmpLanControllerInstance;
+            string text = "";
+            Color col = Color.White;
+            if (amp == null || !amp.IsOpen) { text = ""; col = Color.Gray; }
+            else if (amp.FaultFresh) { text = "FAULT"; col = Color.Red; }
+            else if (amp.AutoTuneBusy)
+            {
+                if (amp.AutoTuneStopping) { text = "AUTOTUNE STOPPING"; col = Color.Orange; }
+                else if (amp.IsAutoTune && amp.AutoTuneText.Length > 0)
+                {
+                    text = amp.AutoTuneText;
+                    col = text.IndexOf("WAIT", StringComparison.OrdinalIgnoreCase) >= 0 ? Color.Orange : Color.Yellow;
+                }
+                else { text = "AUTOTUNE"; col = Color.Yellow; }
+            }
+            else if (amp.AutoTuneResult.Length > 0)
+            {
+                string ar = amp.AutoTuneResult;
+                text = ar;
+                if (ar.IndexOf("DONE", StringComparison.OrdinalIgnoreCase) >= 0) col = Color.LightGreen;
+                else if (ar.IndexOf("FAIL", StringComparison.OrdinalIgnoreCase) >= 0) col = Color.Red;
+                else if (ar.IndexOf("STOPPED", StringComparison.OrdinalIgnoreCase) >= 0) col = Color.Orange;
+                else if (ar.IndexOf("ABORTED", StringComparison.OrdinalIgnoreCase) >= 0) col = Color.Orange;
+                else col = Color.Gray;
+            }
+            else if (amp.IsHeating) { text = string.Format("HEATING - {0} s", amp.HeatSeconds); col = Color.Orange; }
+            else if (amp.IsCooling)
+            {
+                text = amp.CoolTemp >= 0 ? string.Format("COOLING - {0} C", amp.CoolTemp) : string.Format("COOLING - {0} s", amp.CoolSeconds);
+                col = Color.LightSkyBlue;
+            }
+            else if (amp.IsPtt) { text = "TRANSMIT"; col = Color.Red; }
+            else if (!amp.StateKnown) { text = "AMP ?"; col = Color.Gray; }
+            else if (amp.IsOperate) { text = "OPERATE"; col = Color.LightGreen; }
+            else if (amp.PaKnown && !amp.PaOn) { text = "STANDBY, PA OFF"; col = Color.Gray; }
+            else { text = "STANDBY"; col = Color.White; }
+            if (h1AmpStatus.Text != text) h1AmpStatus.Text = text;
+            if (h1AmpStatus.ForeColor != col) h1AmpStatus.ForeColor = col;
         }
 
         private void H1AmpModeClick(object sender, EventArgs e)
@@ -6777,10 +6871,25 @@ namespace Thetis
             else AmpLanControllerInstance.RequestStandby();
         }
 
+        private void H1AmpPowerClick(object sender, EventArgs e)
+        {
+            if (initializing || _h1AmpBtnSync) return; // a state restore/sync is not a command
+            if (h1AmpPower == null || AmpLanControllerInstance == null) return;
+            // the manager's PA ON / PA OFF behaviour: heating aborts with PA OFF, cooling can
+            // be interrupted back to PA ON, otherwise toggle against the amplifier's state
+            if (AmpLanControllerInstance.IsCooling) AmpLanControllerInstance.RequestPaOn();
+            else if (AmpLanControllerInstance.IsHeating) AmpLanControllerInstance.RequestPaOff();
+            else if (AmpLanControllerInstance.PaOn) AmpLanControllerInstance.RequestPaOff();
+            else AmpLanControllerInstance.RequestPaOn();
+        }
+
         private void H1AmpAutoTuneClick(object sender, EventArgs e)
         {
-            if (AmpLanControllerInstance == null) return;
-            AmpLanControllerInstance.RequestAutoTune();
+            if (initializing || _h1AmpBtnSync) return; // sync/restore writes are not commands
+            if (h1AmpAutoTune == null || AmpLanControllerInstance == null) return;
+            // toggle: lit -> stop the autotune and return the amp to stand-by; unlit -> arm it
+            if (h1AmpAutoTune.Checked) AmpLanControllerInstance.RequestAutoTune();
+            else AmpLanControllerInstance.RequestAutoTuneAbort();
         }
 
         private void H1AmpAutoTuneMouseUp(object sender, MouseEventArgs e)
@@ -7055,18 +7164,23 @@ namespace Thetis
             H1Put(lblPWR, this, mxR, sy);
             H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
-            // H1: the amplifier toggle and its autotune button sit right of the Drive slider on
-            // the cluster's rows. VAC2 AUDIO moved down to the VFO line (user 2026-10-02) to
-            // open this pocket. Shown only while the OM2000A+ link is enabled (meter source or
-            // the stand-by option). The pill reads OPER / STBY / AMP ? and switches on click.
+            // H1 round 2: the amplifier controls. The mode pill stays right of the Drive
+            // slider; the OM2000A+ block (title, PA power pill, Auto tune toggle and the
+            // activity readout) sits right of the central transmit block (user request
+            // 2026-10-02). Shown only while the OM2000A+ link is enabled (meter source or
+            // the stand-by option).
             H1Put(h1AmpMode, this, mxR + 92, sy, 84, 22);
-            H1Put(h1AmpAutoTune, this, mxR + 92, sy + 24, 84, 22);
-            foreach (Control ac in new Control[] { h1AmpMode, h1AmpAutoTune })
+            H1Cap("om2000a", "OM2000A+", mxR + 184, sy + 24, 192);
+            H1Put(h1AmpPower, this, mxR + 184, sy + 42, 84, 22);
+            H1Put(h1AmpAutoTune, this, mxR + 276, sy + 42, 84, 22);
+            H1Put(h1AmpStatus, this, mxR + 184, sy + 66, 192, 14);
+            foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune })
                 if (ac != null)
                 {
                     if (ac.BackgroundImageLayout != ImageLayout.Stretch) ac.BackgroundImageLayout = ImageLayout.Stretch;
                     ac.BringToFront();
                 }
+            if (h1AmpStatus != null) h1AmpStatus.BringToFront();
             H1AmpButtonsVis();
             // H1: the Tune slider rides directly under the Drive slider and appears there only
             // when the tune power source is the tune slider (user 2026-10-02); the TX step

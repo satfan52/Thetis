@@ -1055,6 +1055,8 @@ namespace Thetis
                 else if (skinName == "chkSubRX1Follow") skinName = "chkMUT";
                 else if (skinName == "chkSubRX2Follow") skinName = "chkMUT";
                 else if (skinName == "chkH1AmpMode") skinName = "chkMUT";
+                else if (skinName == "chkH1AmpPower") skinName = "chkMUT";
+                else if (skinName == "chkH1AmpAutoTune") skinName = "chkMUT";
             }
 
             string skey = "";
