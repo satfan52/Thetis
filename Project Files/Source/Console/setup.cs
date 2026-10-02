@@ -458,6 +458,7 @@ namespace Thetis
         private CheckBoxTS h1ChkAmpMeterAmp;
         private GroupBoxTS h1GrpAmp;
         private CheckBoxTS h1ChkAmpTuneStandby;
+        private CheckBoxTS h1ChkBandGuard;
         private CheckBoxTS h1ChkAmpBlockVis;
         private TextBoxTS h1TxtAmpAddress;
         private TextBoxTS h1TxtAmpPort;
@@ -577,6 +578,19 @@ namespace Thetis
             h1ChkAmpBlockVis.Size = new Size(190, 22);
             toolTip1.SetToolTip(h1ChkAmpBlockVis,
                 "Shows the OM2000A+ block in the GUI.");
+            h1ChkBandGuard = new CheckBoxTS();
+            h1ChkBandGuard.AutoSize = false;
+            h1ChkBandGuard.UseVisualStyleBackColor = true;
+            h1ChkBandGuard.Image = null;
+            h1ChkBandGuard.Name = "chkH1BandGuard";
+            h1ChkBandGuard.Text = "Band change: bypass and retune at ANT Tune";
+            h1ChkBandGuard.Location = new Point(210, 74);
+            h1ChkBandGuard.Size = new Size(336, 22);
+            toolTip1.SetToolTip(h1ChkBandGuard,
+                "When checked, every band change bypasses the OM2000A+ and the PA" + System.Environment.NewLine +
+                "level runs at the ANT Tune value, so the next transmission retunes" + System.Environment.NewLine +
+                "the antenna. When the SWR settles below 2, the PA level returns to" + System.Environment.NewLine +
+                "its band value and the amplifier comes back in line.");
 
             h1ChkAmpMeterAmp = new CheckBoxTS();
             h1ChkAmpMeterAmp.AutoSize = false;
@@ -621,18 +635,20 @@ namespace Thetis
             h1LblAmpInfo.AutoSize = false;
             h1LblAmpInfo.Image = null;
             h1LblAmpInfo.ForeColor = System.Drawing.SystemColors.GrayText;
-            h1LblAmpInfo.Text = "The link opens with this option or the OM2000A+ meter source.";
-            h1LblAmpInfo.Location = new Point(210, 74);
-            h1LblAmpInfo.Size = new Size(336, 22);
+            h1LblAmpInfo.Text = "The amplifier link opens with the tune, the TX meter or the band-change option.";
+            h1LblAmpInfo.Location = new Point(10, 94);
+            h1LblAmpInfo.Size = new Size(536, 16);
 
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1ChkAmpBlockVis.CheckedChanged += h1ChkAmpBlockVis_CheckedChanged;
+            h1ChkBandGuard.CheckedChanged += h1ChkBandGuard_CheckedChanged;
             h1ChkAmpMeterAmp.CheckedChanged += h1ChkAmpMeterAmp_CheckedChanged;
             h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
             h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
 
             h1GrpAmp.Controls.Add(h1ChkAmpTuneStandby);
             h1GrpAmp.Controls.Add(h1ChkAmpBlockVis);
+            h1GrpAmp.Controls.Add(h1ChkBandGuard);
             h1GrpAmp.Controls.Add(h1ChkAmpMeterAmp);
             h1GrpAmp.Controls.Add(h1LblAmpAddr);
             h1GrpAmp.Controls.Add(h1TxtAmpAddress);
@@ -645,6 +661,11 @@ namespace Thetis
         private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
         {
             console.H1AmpTuneStandbyEnabled = h1ChkAmpTuneStandby != null && h1ChkAmpTuneStandby.Checked;
+        }
+
+        private void h1ChkBandGuard_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1BandGuardEnabled = h1ChkBandGuard != null && h1ChkBandGuard.Checked;
         }
 
         private void h1ChkAmpBlockVis_CheckedChanged(object sender, EventArgs e)
@@ -10983,6 +11004,7 @@ namespace Thetis
             if (h1ChkTrxMeterCiv != null) h1ChkTrxMeterCiv.Checked = console.H1TrxMeterIC7100; // H1 round 5
             if (h1ChkAmpMeterAmp != null) h1ChkAmpMeterAmp.Checked = console.H1AmpMeterEnabled; // H1 round 5
             if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
+            if (h1ChkBandGuard != null) h1ChkBandGuard.Checked = console.H1BandGuardEnabled;
             if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
             if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
             updateCIVControlsEnabled();

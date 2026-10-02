@@ -6777,7 +6777,7 @@ namespace Thetis
         {
             if (h1AmpMode == null) return;
             // H1 round 4: the block is opt-in - hidden by default (user requirement 2026-10-02)
-            bool on = _h1AmpBlockVisible && (_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled);
+            bool on = _h1AmpBlockVisible && (_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled || _h1BandGuardEnabled);
             if (h1AmpMode.Visible != on) h1AmpMode.Visible = on;
             if (h1AmpPower != null && h1AmpPower.Visible != on) h1AmpPower.Visible = on;
             if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
@@ -6918,6 +6918,12 @@ namespace Thetis
                 }
                 else { text = "AUTOTUNE"; col = Color.Yellow; }
             }
+            else if (_h1BandGuardArmed)
+            {
+                if (_h1BandGuardLevelHeld) { text = "BYPASS PENDING"; col = Color.Orange; }
+                else if (_h1BandGuardRestoring) { text = "MATCHED - RESTORING"; col = Color.LightGreen; }
+                else { text = "BYPASSED - ANT TUNE"; col = Color.Orange; }
+            }
             else if (amp.AutoTuneResult.Length > 0)
             {
                 string ar = amp.AutoTuneResult;
@@ -6954,6 +6960,7 @@ namespace Thetis
                 try { H1AmpButtonsSync(); } finally { _h1AmpBtnSync = false; }
                 return;
             }
+            H1BandGuardCancel("amplifier mode changed by hand");
             if (h1AmpMode.Checked) AmpLanControllerInstance.RequestOperate();
             else AmpLanControllerInstance.RequestStandby();
         }
@@ -6993,6 +7000,7 @@ namespace Thetis
             // toggle: lit -> stop the autotune and return the amp to stand-by; unlit -> arm it
             if (h1AmpAutoTune.Checked)
             {
+                H1BandGuardCancel("Auto tune pressed");
                 AmpLanControllerInstance.RequestAutoTune();
                 // H1 round 3: this autotune will run its own Tune carrier - engage it when the
                 // amplifier reports it waits for input power, release it when the session ends
@@ -20825,6 +20833,7 @@ namespace Thetis
                     PWR = power_by_band[(int)value];
                     TunePWR = tunePower_by_band[(int)value]; //MW0LGE_22b
                     H1SaveBandPower(true); // H1 round 2: bank the whole table at a band switch
+                    if (!initializing) H1BandGuardArm(); // H1: band-change guard - bypass the amp, PA level to the ANT Tune value
 
                     // save FM TX Offset
                     if (!initializing)
@@ -21518,6 +21527,16 @@ namespace Thetis
                     default: return ptbPWR.Value;
                 }
             }
+            // H1: after a band change the guard runs the rig at the ANT Tune level so the next
+            // transmission retunes the antenna with the amplifier bypassed. While the bypass is
+            // not yet confirmed the level stays at 0 W - a racing transmission must never reach
+            // an amplifier that may still be operating.
+            if (_h1BandGuardArmed)
+            {
+                if (_h1BandGuardLevelHeld) return 0;
+                if (_h1BandGuardRestoring) return _h1BandGuardRestorePwr;
+                return ptbTune.Value;
+            }
             return ptbPWR.Value;
         }
         // H1: also set the IC-7100 output power. Rides the drive handlers and is deduped, so a
@@ -21622,6 +21641,26 @@ namespace Thetis
                 H1AmpUpdateRoute();
             }
         }
+        private bool _h1BandGuardEnabled = false; // H1: band-change guard option
+        public bool H1BandGuardEnabled
+        {
+            get { return _h1BandGuardEnabled; }
+            set
+            {
+                _h1BandGuardEnabled = value;
+                if (!value) H1BandGuardCancel("option turned off");
+                H1AmpUpdateRoute();
+            }
+        }
+        private bool _h1BandGuardArmed = false;
+        private bool _h1BandGuardLevelHeld = false;  // rig held at 0 W until the bypass is confirmed
+        private bool _h1BandGuardRestoring = false;
+        private bool _h1BandGuardRunning = false;
+        private bool _h1BandGuardNoBypassWarned = false;
+        private bool _h1BandGuardNoSwrWarned = false;
+        private long _h1BandGuardReqTick = 0;
+        private long _h1BandGuardArmTick = 0;
+        private int _h1BandGuardRestorePwr = 0;
         private bool _h1AmpBlockVisible = false; // H1 round 4: the block in the console, off by default
         public bool H1AmpBlockVisible
         {
@@ -21658,7 +21697,7 @@ namespace Thetis
         {
             if (AmpLanControllerInstance == null) return;
             AmpLanControllerInstance.Configure(_h1AmpAddress, _h1AmpPort);
-            AmpLanControllerInstance.SetEnabled(_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled);
+            AmpLanControllerInstance.SetEnabled(_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled || _h1BandGuardEnabled);
             H1UpdateMeterSource(); // H1 round 5: keep the derived meter source current
             H1AmpButtonsVis(); // H1: the console amp controls follow the same enable condition
         }
@@ -21746,6 +21785,178 @@ namespace Thetis
             chkTUN.Checked = false; // never run the tune carrier with the amplifier possibly operating
         }
 
+        // H1 (user requirement 2026-10-02): the band-change guard. After every band change the
+        // OM2000A+ is bypassed and the rig runs at the ANT Tune level so the antenna can retune
+        // on the next transmission, in any mode. When the rig SWR settles below 2 the PA Drive
+        // value goes back first, the rig meter confirms the drop, and only then the amplifier
+        // returns in line - the proven two-step order, triggered by the band change instead of
+        // a Tune press. Manual actions (the PA Drive slider, the mode pill, Auto tune) clear
+        // the guard; a successful two-step tune clears it too.
+        internal void H1BandGuardArm()
+        {
+            H1BandGuardDisarm();
+            if (!_h1BandGuardEnabled) return;
+            if (AmpLanControllerInstance == null) return;
+            if (!AmpLanControllerInstance.IsOpen)
+            {
+                AmpLanControllerInstance.LogNote("band change guard skipped: the amplifier link is not open");
+                return;
+            }
+            if (AmpLanControllerInstance.IsAutoTune || AmpLanControllerInstance.AutoTuneBusy)
+            {
+                AmpLanControllerInstance.LogNote("band change guard skipped: the amplifier is running its own autotune");
+                return;
+            }
+            _h1BandGuardArmed = true;
+            _h1BandGuardRestoring = false;
+            _h1BandGuardNoBypassWarned = false;
+            _h1BandGuardNoSwrWarned = false;
+            _h1BandGuardRestorePwr = ptbPWR.Value; // the band's own PA Drive value
+            _h1BandGuardArmTick = Environment.TickCount;
+            _h1BandGuardReqTick = Environment.TickCount;
+            bool bypassed = AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate;
+            _h1BandGuardLevelHeld = !bypassed; // 0 W until the bypass is confirmed
+            if (!bypassed) AmpLanControllerInstance.RequestStandby();
+            if (!H1RigRouteActive)
+                AmpLanControllerInstance.LogNote("band change guard: the IC-7100 route is off - the PA level cannot follow");
+            AmpLanControllerInstance.LogNote("band change: amplifier to stand-by, PA level to the ANT Tune value until the SWR settles below 2.0 (PA drive {0}% banked)", _h1BandGuardRestorePwr);
+            H1RigDriveSync(_h1BandGuardLevelHeld ? 0 : ptbTune.Value);
+            if (!_h1BandGuardRunning) H1BandGuardRun();
+        }
+
+        private void H1BandGuardDisarm()
+        {
+            _h1BandGuardArmed = false;
+            _h1BandGuardLevelHeld = false;
+            _h1BandGuardRestoring = false;
+        }
+
+        internal void H1BandGuardCancel(string reason)
+        {
+            if (!_h1BandGuardArmed) return;
+            _h1BandGuardArmed = false;
+            _h1BandGuardLevelHeld = false;
+            _h1BandGuardRestoring = false;
+            if (AmpLanControllerInstance != null)
+            {
+                AmpLanControllerInstance.LogNote("band-change guard cleared - {0}", reason);
+                H1RigDriveSync(ptbPWR.Value); // the rig must not stay at the guard level
+            }
+        }
+
+        private async void H1BandGuardRun()
+        {
+            if (_h1BandGuardRunning) return;
+            _h1BandGuardRunning = true;
+            DateTime stableSince = DateTime.MinValue;
+            try
+            {
+                while (_h1BandGuardArmed)
+                {
+                    await Task.Delay(100);
+                    if (!_h1BandGuardArmed) break;
+                    AmpLanController amp = AmpLanControllerInstance;
+                    if (amp == null || !amp.IsOpen)
+                    {
+                        H1BandGuardCancel("the amplifier link dropped");
+                        break;
+                    }
+                    if (_h1BandGuardLevelHeld)
+                    {
+                        bool bypassed = amp.StateKnown && !amp.IsOperate;
+                        if (bypassed)
+                        {
+                            _h1BandGuardLevelHeld = false;
+                            H1RigDriveSync(ptbTune.Value);
+                            amp.LogNote("amplifier bypassed - PA level now at the ANT Tune value");
+                        }
+                        else
+                        {
+                            if (Environment.TickCount - _h1BandGuardReqTick > 2000)
+                            {
+                                _h1BandGuardReqTick = Environment.TickCount;
+                                amp.RequestStandby();
+                            }
+                            if (!_h1BandGuardNoBypassWarned && Environment.TickCount - _h1BandGuardArmTick > 6000)
+                            {
+                                _h1BandGuardNoBypassWarned = true;
+                                amp.LogNote("amplifier has not confirmed stand-by - transmissions stay at 0 W");
+                            }
+                        }
+                        stableSince = DateTime.MinValue;
+                        continue;
+                    }
+                    if (chkTUN.Checked) { stableSince = DateTime.MinValue; continue; } // the Tune press runs its own two-step
+                    if (amp.IsAutoTune || amp.AutoTuneBusy) { stableSince = DateTime.MinValue; continue; } // the amplifier's own autotune owns the show
+                    if (!(MOX || _tuning)) { stableSince = DateTime.MinValue; continue; }
+                    if (CIVControllerInstance == null || !CIVControllerInstance.RigSwrFresh(1500))
+                    {
+                        if (!_h1BandGuardNoSwrWarned)
+                        {
+                            _h1BandGuardNoSwrWarned = true;
+                            amp.LogNote("no fresh SWR from the rig - check the IC-7100 meter route while the guard waits");
+                        }
+                        stableSince = DateTime.MinValue;
+                        continue;
+                    }
+                    if (CIVControllerInstance.RigSwrRatio <= H1TuneMatchSwr)
+                    {
+                        if (stableSince == DateTime.MinValue) stableSince = DateTime.UtcNow;
+                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1TuneMatchHoldMs)
+                        {
+                            await H1BandGuardRestore();
+                            stableSince = DateTime.MinValue;
+                        }
+                    }
+                    else stableSince = DateTime.MinValue;
+                }
+            }
+            finally
+            {
+                _h1BandGuardRunning = false;
+            }
+        }
+
+        private async Task H1BandGuardRestore()
+        {
+            // The amplifier must never come back in line at the ANT Tune level: restore the
+            // PA Drive value first, wait for the rig's own meter to confirm the drop, and
+            // only then switch the amplifier to OPERATE (the proven two-step order).
+            _h1BandGuardRestoring = true;
+            int target = _h1BandGuardRestorePwr;
+            H1RigDriveSync(target);
+            bool dropped = false;
+            if (CIVControllerInstance != null)
+            {
+                DateTime dl = DateTime.UtcNow.AddMilliseconds(1500);
+                while (DateTime.UtcNow < dl)
+                {
+                    if (!_h1BandGuardArmed) return;
+                    if (CIVControllerInstance.RigPoFresh(1500) &&
+                        CIVControllerInstance.RigForwardWatts <= target + 20.0f)
+                    {
+                        dropped = true;
+                        break;
+                    }
+                    await Task.Delay(80);
+                }
+            }
+            if (!dropped)
+            {
+                if (AmpLanControllerInstance != null)
+                    AmpLanControllerInstance.LogNote("rig power {0:F0} W has not dropped to the PA Drive level {1}% - staying bypassed",
+                        CIVControllerInstance != null ? CIVControllerInstance.RigForwardWatts : 0f, target);
+                return; // stay armed and bypassed; the monitor retries while the match holds
+            }
+            _h1BandGuardArmed = false;
+            _h1BandGuardLevelHeld = false;
+            _h1BandGuardRestoring = false;
+            if (AmpLanControllerInstance != null)
+            {
+                AmpLanControllerInstance.RequestOperate();
+                AmpLanControllerInstance.LogNote("SWR settled below 2.0 - PA level back at {0}%, amplifier to OPERATE", target);
+            }
+        }
         // H1: two-phase tune (user requirement 2026-10-02). Phase 1: the amplifier is
         // bypassed and the rig tunes the remote tuner at the Tune power level; when the
         // rig's SWR through the bypass holds at or below H1TuneMatchSwr for
@@ -21848,6 +22059,7 @@ namespace Thetis
             {
                 AmpLanControllerInstance.RequestOperate();
                 AmpLanControllerInstance.LogNote("tuner settled, operating tune at {0}%, amplifier to OPERATE", operational);
+                H1BandGuardCancel("two-step tune completed");
             }
         }
 
@@ -33279,6 +33491,8 @@ namespace Thetis
 
             if (lc != null)
                 limitPower_by_band[(int)_tx_band] = lc.LimitValue; // store the adjusted limit level
+            if (lc == null && e != EventArgs.Empty && _h1BandGuardArmed)
+                H1BandGuardCancel("PA Drive slider moved");
 
             int new_pwr = setPowerFromDriveSlider(out bool bUseConstrain, e != EventArgs.Empty);
             power_by_band[(int)_tx_band] = ptbPWR.Value;
