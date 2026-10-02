@@ -442,10 +442,9 @@ namespace Thetis
             h1ChkRigPowerMeters.Location = new Point(300, 44);
             h1ChkRigPowerMeters.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkRigPowerMeters,
-                "When checked, the Drive and Tune sliders also set the IC-7100 RF power over CI-V," + System.Environment.NewLine +
-                "and the rig's own SWR, FWD and REF readings are collected for the transmit meter." + System.Environment.NewLine +
-                "When unchecked, the rig keeps its own power setting and the rig readings are" + System.Environment.NewLine +
-                "unavailable to the transmit meter.");
+                "When checked, the Drive and Tune sliders also set the IC-7100's RF power, and the" + System.Environment.NewLine +
+                "rig's SWR, FWD and REF readings are fetched over CI-V. When unchecked, the rig" + System.Environment.NewLine +
+                "keeps its own power setting and no readings are fetched.");
             h1ChkRigPowerMeters.CheckedChanged += h1ChkRigPowerMeters_CheckedChanged;
             grpCIVControl.Controls.Add(h1ChkRigPowerMeters);
         }
@@ -516,11 +515,10 @@ namespace Thetis
             h1ChkTrxMeterCiv.Location = new Point(300, 20);
             h1ChkTrxMeterCiv.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkTrxMeterCiv,
-                "When checked, the transmit meter reads the IC-7100 while it is the transmitting" + System.Environment.NewLine +
-                "radio. This needs the option above, IC-7100 power & meters via CI-V, checked. The" + System.Environment.NewLine +
-                "OM2000A+ readings take over when its option on the Amp page is checked and the" + System.Environment.NewLine +
-                "amplifier operates; while the amplifier stands by the fall-back is to this option" + System.Environment.NewLine +
-                "first, otherwise to the SDR.");
+                "When checked, the transmit meter shows the IC-7100's readings while the rig" + System.Environment.NewLine +
+                "transmits, fetched over CI-V by the option above. When the amplifier operates" + System.Environment.NewLine +
+                "and its Amp page option is checked, its readings take over. When unchecked," + System.Environment.NewLine +
+                "the meter stays on the SDR.");
 
             LabelTS h1LblTrxInfo = new LabelTS();
             h1LblTrxInfo.AutoSize = false;
