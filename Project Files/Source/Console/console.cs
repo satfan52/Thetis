@@ -6730,9 +6730,9 @@ namespace Thetis
             h1AmpStatus.AutoSize = false;
             h1AmpStatus.BackColor = Color.Transparent;
             h1AmpStatus.ForeColor = Color.White;
-            h1AmpStatus.Font = new Font("Microsoft Sans Serif", 7.5f, FontStyle.Bold);
+            h1AmpStatus.Font = new Font("Microsoft Sans Serif", 6.75f, FontStyle.Regular); // H1: the amp's longest message (WAITING FOR INPUT POWER) measures 135 px - the readout shares the Auto tune row
             h1AmpStatus.TextAlign = ContentAlignment.MiddleLeft;
-            h1AmpStatus.Size = new Size(192, 14);
+            h1AmpStatus.Size = new Size(140, 14);
             this.Controls.Add(h1AmpStatus);
 
             if (toolTip1 != null)
@@ -6827,7 +6827,7 @@ namespace Thetis
             string text = "";
             Color col = Color.White;
             if (amp == null) { text = ""; col = Color.Gray; }
-            else if (!amp.IsOpen) { text = "AMP LINK DOWN"; col = Color.Gray; }
+            else if (!amp.IsOpen || !amp.StateKnown) { text = "AMP LINK DOWN"; col = Color.Gray; }
             else if (amp.FaultFresh) { text = "FAULT"; col = Color.Red; }
             else if (amp.AutoTuneBusy)
             {
@@ -6856,7 +6856,6 @@ namespace Thetis
                 col = Color.LightSkyBlue;
             }
             else if (amp.IsPtt) { text = "TRANSMIT"; col = Color.Red; }
-            else if (!amp.StateKnown) { text = "AMP ?"; col = Color.Gray; }
             else if (amp.IsOperate) { text = "OPERATE"; col = Color.LightGreen; }
             else if (amp.PaKnown && !amp.PaOn) { text = "STANDBY, PA OFF"; col = Color.Gray; }
             else { text = "STANDBY"; col = Color.White; }
@@ -6868,6 +6867,14 @@ namespace Thetis
         {
             if (initializing || _h1AmpBtnSync) return; // a state restore is not a command
             if (h1AmpMode == null || AmpLanControllerInstance == null) return;
+            if (!AmpLanControllerInstance.IsOpen)
+            {
+                // link down - the click cannot be actioned; drop the visual flip at once,
+                // the readout's AMP LINK DOWN is the explanation (no on/off blink)
+                _h1AmpBtnSync = true;
+                try { H1AmpButtonsSync(); } finally { _h1AmpBtnSync = false; }
+                return;
+            }
             if (h1AmpMode.Checked) AmpLanControllerInstance.RequestOperate();
             else AmpLanControllerInstance.RequestStandby();
         }
@@ -6876,6 +6883,14 @@ namespace Thetis
         {
             if (initializing || _h1AmpBtnSync) return; // a state restore/sync is not a command
             if (h1AmpPower == null || AmpLanControllerInstance == null) return;
+            if (!AmpLanControllerInstance.IsOpen)
+            {
+                // link down - the click cannot be actioned; drop the visual flip at once,
+                // the readout's AMP LINK DOWN is the explanation (no on/off blink)
+                _h1AmpBtnSync = true;
+                try { H1AmpButtonsSync(); } finally { _h1AmpBtnSync = false; }
+                return;
+            }
             // the manager's PA ON / PA OFF behaviour: heating aborts with PA OFF, cooling can
             // be interrupted back to PA ON, otherwise toggle against the amplifier's state
             if (AmpLanControllerInstance.IsCooling) AmpLanControllerInstance.RequestPaOn();
@@ -6888,6 +6903,14 @@ namespace Thetis
         {
             if (initializing || _h1AmpBtnSync) return; // sync/restore writes are not commands
             if (h1AmpAutoTune == null || AmpLanControllerInstance == null) return;
+            if (!AmpLanControllerInstance.IsOpen)
+            {
+                // link down - the click cannot be actioned; drop the visual flip at once,
+                // the readout's AMP LINK DOWN is the explanation (no on/off blink)
+                _h1AmpBtnSync = true;
+                try { H1AmpButtonsSync(); } finally { _h1AmpBtnSync = false; }
+                return;
+            }
             // toggle: lit -> stop the autotune and return the amp to stand-by; unlit -> arm it
             if (h1AmpAutoTune.Checked) AmpLanControllerInstance.RequestAutoTune();
             else AmpLanControllerInstance.RequestAutoTuneAbort();
@@ -7176,7 +7199,7 @@ namespace Thetis
             H1Put(h1AmpMode, this, 474, sy + 18, 84, 22);
             H1Put(h1AmpPower, this, 566, sy + 18, 84, 22);
             H1Put(h1AmpAutoTune, this, 474, sy + 42, 84, 22);
-            H1Put(h1AmpStatus, this, 474, sy + 66, 224, 14);
+            H1Put(h1AmpStatus, this, 566, sy + 46, 140, 14);
             foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune })
                 if (ac != null)
                 {
