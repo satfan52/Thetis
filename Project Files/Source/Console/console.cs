@@ -21190,21 +21190,33 @@ namespace Thetis
         }
         private bool _h1AmpTuneArmed = false;
         private bool _h1AmpTuneWasOperate = false;
+        private long _h1AmpTuneReqMs = 0;
         internal void H1AmpTuneStandbyBegin()
         {
             _h1AmpTuneArmed = false;
             _h1AmpTuneWasOperate = false;
             if (!_h1AmpTuneStandbyEnabled || AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
             if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate) return; // a hand-set stand-by stays untouched
-            _h1AmpTuneWasOperate = AmpLanControllerInstance.IsOperate; // false when the state is unknown: nothing to restore later
+            _h1AmpTuneWasOperate = AmpLanControllerInstance.IsOperate; // when the state is unknown the end reads the first state frame
             _h1AmpTuneArmed = true;
+            _h1AmpTuneReqMs = AmpLanControllerInstance.ClockMs;
             AmpLanControllerInstance.RequestStandby();
         }
         internal void H1AmpTuneStandbyEnd()
         {
             if (!_h1AmpTuneArmed) return;
             _h1AmpTuneArmed = false;
-            if (!_h1AmpTuneWasOperate || AmpLanControllerInstance == null) return;
+            if (AmpLanControllerInstance == null) return;
+            if (!_h1AmpTuneWasOperate)
+            {
+                // H1: the state was unknown when TUNE was pressed. The amplifier reports the
+                // state it had before the switch as its first state frame after our request:
+                // OPERATE there means it was working, so put it back. A STANDBY first frame
+                // stays untouched - that was a hand-set stand-by.
+                bool wasOperate;
+                if (!AmpLanControllerInstance.TryGetFirstStateAfter(_h1AmpTuneReqMs, 1500, out wasOperate) || !wasOperate)
+                    return;
+            }
             AmpLanControllerInstance.RequestOperate();
         }
 

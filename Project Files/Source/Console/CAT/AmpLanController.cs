@@ -98,6 +98,8 @@ namespace Thetis
         private volatile bool _sawInfo = false;
         private long _verboseUntil = 0;
         private int _pollCount = 0;
+        private readonly System.Collections.Generic.List<long> _stateEventMs = new System.Collections.Generic.List<long>();
+        private readonly System.Collections.Generic.List<bool> _stateEventOperate = new System.Collections.Generic.List<bool>();
 
         public AmpLanController(Console console)
         {
@@ -214,6 +216,34 @@ namespace Thetis
             }
             _wantState = 2;
             LogText("TUNE: operate restore requested (amp state {0})", StateName(_ampState));
+        }
+
+        /// <summary>The monotonic clock the state-frame windows are measured on.</summary>
+        public long ClockMs
+        {
+            get { return NowMs(); }
+        }
+
+        /// <summary>The first state frame sent inside [sinceMs, sinceMs + windowMs], with the
+        /// state it carried. After an 'O' request the amplifier reports the state it had
+        /// before the switch first, which is how a state that was unknown at TUNE press can
+        /// still be restored properly.</summary>
+        public bool TryGetFirstStateAfter(long sinceMs, long windowMs, out bool wasOperate)
+        {
+            lock (_sync)
+            {
+                for (int i = 0; i < _stateEventMs.Count; i++)
+                {
+                    long t = _stateEventMs[i];
+                    if (t >= sinceMs && t - sinceMs <= windowMs)
+                    {
+                        wasOperate = _stateEventOperate[i];
+                        return true;
+                    }
+                }
+            }
+            wasOperate = false;
+            return false;
         }
 
         public void Dispose()
@@ -610,6 +640,13 @@ namespace Thetis
                 _ampState = state;
                 _stateKnown = true;
                 _stateStamp = NowMs();
+                _stateEventMs.Add(_stateStamp);
+                _stateEventOperate.Add(state == 2);
+                if (_stateEventMs.Count > 16)
+                {
+                    _stateEventMs.RemoveAt(0);
+                    _stateEventOperate.RemoveAt(0);
+                }
             }
             if (changed) LogText("STATE {0}", StateName(state));
         }
