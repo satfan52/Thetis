@@ -534,18 +534,20 @@ namespace Thetis
             h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
             h1ChkAmpTuneStandby.Image = null;
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
-            h1ChkAmpTuneStandby.Text = "TUNE: amplifier stands by, then operates";
+            h1ChkAmpTuneStandby.Text = "Smart Tune for optimal ATU antenna matching and Linear Amp operation";
             h1ChkAmpTuneStandby.Location = new Point(10, 20);
-            h1ChkAmpTuneStandby.Size = new Size(300, 22);
+            h1ChkAmpTuneStandby.Size = new Size(536, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
-                "When ticked, the TUNE button runs in two steps. Step 1: the OM2000A+ is put in" + System.Environment.NewLine +
-                "stand-by and the rig transmits at the Tune power, so the antenna tuner matches with" + System.Environment.NewLine +
-                "the amplifier bypassed. Step 2: once the rig SWR holds at 2.0:1 or better for one" + System.Environment.NewLine +
-                "second, the drive returns to the Drive Level, the amplifier switches to operate, and" + System.Environment.NewLine +
-                "the same carrier continues as the operating tune. Releasing TUNE before step 2 leaves" + System.Environment.NewLine +
-                "the amplifier in stand-by. Unticked, TUNE is a plain carrier and the amplifier is" + System.Environment.NewLine +
-                "not touched at all. While the amplifier runs its own autotune, TUNE only sends a" + System.Environment.NewLine +
-                "carrier at the selected tune power and the amplifier is left alone.");
+                "Smart Tune for optimal ATU antenna matching and Linear Amp operation." + System.Environment.NewLine +
+                System.Environment.NewLine +
+                "If the TUNE button is hit, the amp is put in stand-by and Thetis generates a TUNE signal at" + System.Environment.NewLine +
+                "the power level set by the \"Tune slider\" for optimal ATU antenna matching. Once the SWR holds" + System.Environment.NewLine +
+                "at 2.0:1 or better for one second, Thetis switches the amp to operate and generates a TUNE" + System.Environment.NewLine +
+                "signal at the power level set by the \"driver slider\" for optimally driving the amp." + System.Environment.NewLine +
+                System.Environment.NewLine +
+                "If the Auto tune button is hit, an automatic autotune sequence is initiated in the amp, and a" + System.Environment.NewLine +
+                "TUNE signal is generated at the power level set by the \"driver slider\" for optimally tuning" + System.Environment.NewLine +
+                "the amp.");
 
             h1ChkAmpBlockVis = new CheckBoxTS();
             h1ChkAmpBlockVis.AutoSize = false;
@@ -553,8 +555,8 @@ namespace Thetis
             h1ChkAmpBlockVis.Image = null;
             h1ChkAmpBlockVis.Name = "chkH1AmpBlockVis";
             h1ChkAmpBlockVis.Text = "show the block in the console";
-            h1ChkAmpBlockVis.Location = new Point(316, 20);
-            h1ChkAmpBlockVis.Size = new Size(230, 22);
+            h1ChkAmpBlockVis.Location = new Point(10, 74);
+            h1ChkAmpBlockVis.Size = new Size(190, 22);
             toolTip1.SetToolTip(h1ChkAmpBlockVis,
                 "Shows the OM2000A+ panel - mode, PA power, Auto tune and the activity readout -" + System.Environment.NewLine +
                 "on the console, left of the MON/TUN/MOX buttons. Hidden by default. The amplifier" + System.Environment.NewLine +
@@ -605,8 +607,8 @@ namespace Thetis
             h1LblAmpInfo.Image = null;
             h1LblAmpInfo.ForeColor = System.Drawing.SystemColors.GrayText;
             h1LblAmpInfo.Text = "The link opens with this option or the OM2000A+ meter source.";
-            h1LblAmpInfo.Location = new Point(10, 74);
-            h1LblAmpInfo.Size = new Size(536, 30);
+            h1LblAmpInfo.Location = new Point(210, 74);
+            h1LblAmpInfo.Size = new Size(336, 22);
 
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1ChkAmpBlockVis.CheckedChanged += h1ChkAmpBlockVis_CheckedChanged;
