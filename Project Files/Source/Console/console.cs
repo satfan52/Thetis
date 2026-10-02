@@ -21750,14 +21750,15 @@ namespace Thetis
         private async void H1TuneAutoPhaseAdvance()
         {
             if (!chkTUN.Checked) return;
-            // H1 round 2: the IC-7100 power for the WHOLE tune follows the SELECTED
-            // source (tune slider / fixed level / drive slider) - the rig has been at
-            // exactly this level since the tune started, so phase 2 only brings the
-            // amplifier inline: no slider moves and no level change happen here.
-            // (User requirement 2026-10-02: "the IC-7100 ... tuned to the power level
-            // indicated by the Tune slider if I selected that option, or the fixed
-            // level ..., or the drive slider if I selected that option".)
-            int operational = H1ActiveDriveValue();
+            // H1 round 6 (user 2026-10-02): the matching phase ran at the SELECTED tune
+            // source; the OPERATING phase - the amplified part of the tune - now runs at
+            // the DRIVE slider level, which is the level the amplifier is driven at in
+            // normal operation. The rig drops to that level while the amplifier is still
+            // bypassed and only then the amplifier comes inline, so the tune power is
+            // never amplified. (User spec: "Once the SWR holds ... Thetis switches to the
+            // amp operate and it generates a TUNE signal at the power level set by the
+            // driver slider for optimally driving the amp.")
+            int operational = ptbPWR.Value;
             H1RigDriveSync(operational);
             if (CIVControllerInstance != null)
             {
