@@ -437,10 +437,10 @@ namespace Thetis
             h1ChkRigPowerMeters.AutoSize = false;
             h1ChkRigPowerMeters.UseVisualStyleBackColor = true;
             h1ChkRigPowerMeters.Image = null;
-            h1ChkRigPowerMeters.Name = "chkH1RigPowerMeters";
+            h1ChkRigPowerMeters.Name = "chkH1RigPowerMeters"; // stored name - the DB key uses this spelling
             h1ChkRigPowerMeters.Text = "IC-7100 power & meters via CI-V";
-            h1ChkRigPowerMeters.Location = new Point(240, 68);
-            h1ChkRigPowerMeters.Size = new Size(268, 22);
+            h1ChkRigPowerMeters.Location = new Point(300, 44);
+            h1ChkRigPowerMeters.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkRigPowerMeters,
                 "When checked, the Drive and Tune sliders also set the IC-7100 RF power over CI-V," + System.Environment.NewLine +
                 "and the SWR, FWD and REF transmit readings come from the IC-7100's own meters" + System.Environment.NewLine +
@@ -478,7 +478,33 @@ namespace Thetis
             h1GrpTrx = new GroupBoxTS();
             h1GrpTrx.Text = "IC-7100";
             h1GrpTrx.Location = new Point(6, 17);
-            h1GrpTrx.Size = new Size(556, 150);
+            h1GrpTrx.Size = new Size(556, 172);
+
+            // H1 round 7 (user 2026-10-02): everything that serves the IC-7100 moves here
+            // from the CAT1 page, so the Serial CAT pages stay generic and free for other
+            // rigs and other purposes. The CAT1 page keeps only the protocol selector.
+            if (grpCIVControl != null)
+            {
+                Control[] h1ci = new Control[] { chkCIVTransceive, chkCIVSyncSplit, chkCIVSyncPTT, lblCIVAddress, txtCIVAddress, lblCIVInfo };
+                foreach (Control h1c in h1ci)
+                {
+                    if (h1c != null) { grpCIVControl.Controls.Remove(h1c); h1GrpTrx.Controls.Add(h1c); }
+                }
+                if (h1ChkRigPowerMeters != null)
+                {
+                    grpCIVControl.Controls.Remove(h1ChkRigPowerMeters);
+                    h1GrpTrx.Controls.Add(h1ChkRigPowerMeters);
+                }
+                grpCIVControl.Text = "CAT1 Protocol"; // the protocol selector stays generic
+                grpCIVControl.Size = new Size(520, 54);
+
+                if (chkCIVTransceive != null) { chkCIVTransceive.Location = new Point(10, 20); chkCIVTransceive.Size = new Size(240, 22); }
+                if (chkCIVSyncSplit != null) { chkCIVSyncSplit.Location = new Point(10, 44); chkCIVSyncSplit.Size = new Size(240, 22); }
+                if (chkCIVSyncPTT != null) { chkCIVSyncPTT.Location = new Point(10, 68); chkCIVSyncPTT.Size = new Size(240, 22); }
+                if (lblCIVAddress != null) lblCIVAddress.Location = new Point(300, 72);
+                if (txtCIVAddress != null) txtCIVAddress.Location = new Point(394, 68);
+                if (lblCIVInfo != null) lblCIVInfo.Location = new Point(10, 94);
+            }
 
             h1ChkTrxMeterCiv = new CheckBoxTS();
             h1ChkTrxMeterCiv.AutoSize = false;
@@ -486,8 +512,8 @@ namespace Thetis
             h1ChkTrxMeterCiv.Image = null;
             h1ChkTrxMeterCiv.Name = "chkH1TrxMeterIC7100";
             h1ChkTrxMeterCiv.Text = "TX meter uses the IC-7100 data";
-            h1ChkTrxMeterCiv.Location = new Point(10, 20);
-            h1ChkTrxMeterCiv.Size = new Size(300, 22);
+            h1ChkTrxMeterCiv.Location = new Point(300, 20);
+            h1ChkTrxMeterCiv.Size = new Size(246, 22);
             toolTip1.SetToolTip(h1ChkTrxMeterCiv,
                 "When ticked, the FWD, REF and SWR transmit readings come from the IC-7100 over CI-V" + System.Environment.NewLine +
                 "while it is the transmitting radio. Unchecked, they come from the SDR connected to" + System.Environment.NewLine +
@@ -499,10 +525,10 @@ namespace Thetis
             h1LblTrxInfo.AutoSize = false;
             h1LblTrxInfo.Image = null;
             h1LblTrxInfo.ForeColor = System.Drawing.SystemColors.GrayText;
-            h1LblTrxInfo.Text = "Hybrid operation: the SDR receives while the IC-7100 transmits. The CI-V power and" + System.Environment.NewLine +
-                "meters link is enabled on the CAT1 page; the option above only picks which readings" + System.Environment.NewLine +
-                "the TX meter shows.";
-            h1LblTrxInfo.Location = new Point(10, 50);
+            h1LblTrxInfo.Text = "Hybrid operation: the SDR receives while the IC-7100 transmits. These settings apply" + System.Environment.NewLine +
+                "to the CI-V link on CAT1; the TX meter option only picks which readings the transmit" + System.Environment.NewLine +
+                "meter shows.";
+            h1LblTrxInfo.Location = new Point(10, 114);
             h1LblTrxInfo.Size = new Size(536, 44);
 
             h1ChkTrxMeterCiv.CheckedChanged += h1ChkTrxMeterCiv_CheckedChanged;
