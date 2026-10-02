@@ -7238,32 +7238,35 @@ namespace Thetis
             // widen both flanks for the sub receiver control groups that come later.
             int cYm = 676;                                    // MASTER caption line, level with the cluster
             int mx = bx + cw + g2;                            // MASTER, right of the cluster
-            // H1: Master AF and Drive flank the MON-2TON block, one each side at the same distance and
-            // the same height, centred in the free band between the panadapter's bottom edge (y720) and
-            // the VFO/TRANSMIT caption line (y776), clear of the display
-            int sy = r1;                                      // H1: the Master AF and Drive pairs ride up level with the cluster's top row (user 2026-10-02) - the whole band reads as one line
-            int mxL = bx - 16 - 84;                          // Master AF, left of the cluster
-            int mxR = bx + cw + 16;                           // Drive, right of the cluster
+            // H1 round 4 (user 2026-10-02): the right flank reads as one column - Drive and
+            // Tune stacked at the cluster's right gutter, Master AF to their right. The AF
+            // column is centred on the height of the two sliders: the pair spans sy..sy+78,
+            // centre sy+39, and the 38 px AF unit lands its label at sy+20 and its track at
+            // sy+36, squarely between the two slider rows.
+            int sy = r1;                                      // H1: the slider columns ride up level with the cluster's top row (user 2026-10-02) - the whole band reads as one line
+            int mxR = bx + cw + 16;                           // Drive and Tune, right of the cluster
+            int mxAF = mxR + 84 + 16;                         // Master AF, right of the Tune slider (user 2026-10-02)
             H1Cap("split", "VFO", sx, cY, 130);
             H1Cap("tx", "TRANSMIT", tx, cY, 336);
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
-            H1Put(lblAF, this, mxL, sy);
-            H1Put(ptbAF, this, mxL, sy + 16, 84, 22);
+            H1Put(lblAF, this, mxAF, sy + 20);
+            H1Put(ptbAF, this, mxAF, sy + 36, 84, 22);
             H1Put(lblPWR, this, mxR, sy);
             H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
-            // H1 round 2: ALL the amplifier controls live in the OM2000A+ block LEFT of the
-            // central transmit block (user correction 2026-10-02) - the mode pill, the PA
-            // power pill and the Auto tune toggle on the two rows under the title, the
-            // activity readout along the bottom. The pocket between the display's pan row
-            // (Center button ends x463) and the Master AF slider column (x711) was verified
-            // free by a full child enumeration before placing. Shown only while the
-            // OM2000A+ link is enabled (meter source or the stand-by option).
-            H1Cap("om2000a", "OM2000A+", 474, sy, 224);
-            H1Put(h1AmpMode, this, 474, sy + 18, 84, 22);
-            H1Put(h1AmpPower, this, 566, sy + 18, 84, 22);
-            H1Put(h1AmpAutoTune, this, 474, sy + 42, 84, 22);
-            H1Put(h1AmpStatus, this, 566, sy + 46, 140, 14);
+            // H1 round 4 (user 2026-10-02): the block hugs the central cluster - its right
+            // edge now sits 16 px from the cluster's left edge, the same gutter the slider
+            // columns use, so the band reads [amp block][16][cluster][16][Drive/Tune][16][AF].
+            // It takes the space the Master AF column used to occupy; the pocket was
+            // verified free by a full child enumeration. The mode pill, the PA power pill
+            // and the Auto tune toggle sit on the two rows under the title, the activity
+            // readout along the bottom. Shown only while the OM2000A+ link is enabled
+            // (meter source or the stand-by option).
+            H1Cap("om2000a", "OM2000A+", bx - 240, sy, 224);
+            H1Put(h1AmpMode, this, bx - 240, sy + 18, 84, 22);
+            H1Put(h1AmpPower, this, bx - 148, sy + 18, 84, 22);
+            H1Put(h1AmpAutoTune, this, bx - 240, sy + 42, 84, 22);
+            H1Put(h1AmpStatus, this, bx - 148, sy + 46, 140, 14);
             foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune })
                 if (ac != null)
                 {
