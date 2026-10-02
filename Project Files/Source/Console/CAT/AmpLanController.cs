@@ -184,6 +184,7 @@ namespace Thetis
         private volatile bool _autoStandby = false;  // return the amp to stand-by after a tuning session
         private long _autoStandbyMs = 0;
         private long _autoStandbyFireMs = 0;
+        private long _autoStandbyLogMs = 0;   // H1 round 2: log throttle for the return
         private volatile bool _sawCon = false;
         private volatile int _clientAck = 0; // H1: +1 last client ack was CON, -1 was COFF, 0 none yet
         private volatile bool _sawStatus = false;
@@ -348,7 +349,7 @@ namespace Thetis
         /// <summary>H1: enable the amplifier's own autotune (the third tune type). 'L' is the
         /// command behind the official manager's "Automatic" menu; the amplifier answers AUTO;
         /// and reports it is waiting for input power, which the console's Tune press supplies
-        /// at the drive level.</summary>
+        /// at the selected tune power (tune slider, fixed level or drive slider).</summary>
         public void RequestAutoTune()
         {
             if (!IsOpen)
@@ -357,6 +358,7 @@ namespace Thetis
                 return;
             }
             _wantAutoTune = true;
+            _autoStandby = false; // a fresh arm supersedes any pending stand-by return
             LogText("AUTOTUNE: enable requested");
         }
 
@@ -675,10 +677,38 @@ namespace Thetis
                             }
                             else
                             {
+                                // H1 round 2: the full manager sequence produced no terminal
+                                // frame - treat the session as over from the console side so
+                                // the pill lights off, the outcome is named and the stand-by
+                                // return runs (never stay in OPERATE after the autotune is off).
                                 _stopActive = false;
-                                LogText("AUTOTUNE: stop NOT confirmed - the amplifier still reports its autotune");
+                                _autoTune = false;
+                                _autoResult = "AUTOTUNE STOPPED";
+                                _autoResultMs = NowMs();
+                                _autoStandby = true;
+                                _autoStandbyMs = NowMs();
+                                _autoStandbyFireMs = 0;
+                                LogText("AUTOTUNE: stop not confirmed by the amplifier - session treated as stopped");
+                                LogText("AUTOTUNE: session ended - AUTOTUNE STOPPED");
                             }
                         }
+                    }
+
+                    // H1 round 2: an armed or working autotune that went quiet - the amplifier
+                    // EXITed (ours or its own key) without a terminal message. Two minutes
+                    // with no autotune frame at all end the session so the pill lights off
+                    // and the stand-by return runs (covers the remote-stop path whose EXIT
+                    // key produces no terminal AUTO: frame - never stay in OPERATE after
+                    // the autotune is off, user requirement 2026-10-02).
+                    if (_autoTune && !_stopActive && Environment.TickCount - _autoTuneMs > 120000)
+                    {
+                        _autoTune = false;
+                        _autoResult = "AUTOTUNE EXITED";
+                        _autoResultMs = NowMs();
+                        _autoStandby = true;
+                        _autoStandbyMs = NowMs();
+                        _autoStandbyFireMs = 0;
+                        LogText("AUTOTUNE: session ended - AUTOTUNE EXITED (no frames for two minutes)");
                     }
 
                     // H1 round 2: the thermal states latch only while their frames keep
@@ -698,25 +728,28 @@ namespace Thetis
                     }
 
                     // H1 round 2: a tuning episode ended - the amplifier must not linger in
-                    // OPERATE. Return it to stand-by (hold while transmitting; give up after
-                    // two minutes so a deaf amplifier cannot latch a stale intention).
+                    // OPERATE. Return it to stand-by and NEVER give up: the only hold is
+                    // an active transmission. Retry every 5 s, decaying to once a minute
+                    // after the first two minutes so a deaf amplifier cannot flood the log
+                    // while the intention stays armed (user requirement 2026-10-02:
+                    // "systematically go to Standby").
                     if (_autoStandby)
                     {
-                        if (NowMs() - _autoStandbyMs > 120000)
-                        {
-                            _autoStandby = false;
-                            LogText("AMP: stand-by return gave up (timed out)");
-                        }
-                        else if (_stateKnown && _ampState != 2)
+                        if (_stateKnown && _ampState != 2)
                         {
                             _autoStandby = false;
                             LogText("AMP: amplifier is in stand-by");
                         }
                         else if (_stateKnown && !_pttOn && NowMs() >= _autoStandbyFireMs)
                         {
-                            _autoStandbyFireMs = NowMs() + 5000;
+                            long since = NowMs() - _autoStandbyMs;
+                            _autoStandbyFireMs = NowMs() + (since > 120000 ? 60000 : 5000);
                             RequestStandby();
-                            LogText("AMP: returning the amplifier to stand-by after the tuning session");
+                            if (since < 1000 || NowMs() - _autoStandbyLogMs > 60000)
+                            {
+                                _autoStandbyLogMs = NowMs();
+                                LogText("AMP: returning the amplifier to stand-by after the tuning session");
+                            }
                         }
                     }
 

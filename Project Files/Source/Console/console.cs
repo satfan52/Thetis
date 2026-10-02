@@ -2081,6 +2081,7 @@ namespace Thetis
 
             LogTool.AddLogEntry("    Recovering setup config...", "CONFIG");
             GetState(); // recall saved state
+            H1LoadBandPower(); // H1 round 2: overlay the per-band mirror (survives task-kill restarts)
             LogTool.Completed("CONFIG");
 
             // setup additional spectrum analysers, used by meter system
@@ -20695,6 +20696,7 @@ namespace Thetis
 
                     PWR = power_by_band[(int)value];
                     TunePWR = tunePower_by_band[(int)value]; //MW0LGE_22b
+                    H1SaveBandPower(true); // H1 round 2: bank the whole table at a band switch
 
                     // save FM TX Offset
                     if (!initializing)
@@ -21367,7 +21369,9 @@ namespace Thetis
                     default: return ptbPWR.Value;
                 }
             }
-            if (chkTUN.Checked && !_h1TuneOperationalPhase)
+            // H1 round 2: during Tune the rig power follows the SELECTED source at
+            // every phase - tune slider, fixed level or drive slider (user requirement).
+            if (chkTUN.Checked)
             {
                 switch (_tuneDrivePowerSource)
                 {
@@ -21550,7 +21554,6 @@ namespace Thetis
         private const float H1TuneMatchSwr = 2.0f;
         private const int H1TuneMatchHoldMs = 1000;
         private bool _h1TuneAutoRunning = false;
-        private bool _h1TuneOperationalPhase = false;
 
         private void H1TuneAutoPhaseStart()
         {
@@ -21602,16 +21605,14 @@ namespace Thetis
         private async void H1TuneAutoPhaseAdvance()
         {
             if (!chkTUN.Checked) return;
-            // 1) the drive to the operational level WHILE the amplifier is still bypassed.
-            // The PWR property alone did NOT reach the rig: while TUNE is active the drive
-            // sync maps to the TUNE level and the dedupe then swallowed the value - the rig
-            // kept 70% and the amp keyed into it (~1.4 kW, user report live 2026-10-02).
-            // Push the value explicitly and WAIT until the rig's own forward meter shows
-            // the power actually dropped before letting the amplifier key.
-            int operational = _tuneDrivePowerSource == DrivePowerSource.FIXED ? PreviousPWR : ptbPWR.Value;
-            _h1TuneOperationalPhase = true; // the drive sync maps to the operational value from here
-            PWRSliderLimitEnabled = true;
-            PWR = operational;
+            // H1 round 2: the IC-7100 power for the WHOLE tune follows the SELECTED
+            // source (tune slider / fixed level / drive slider) - the rig has been at
+            // exactly this level since the tune started, so phase 2 only brings the
+            // amplifier inline: no slider moves and no level change happen here.
+            // (User requirement 2026-10-02: "the IC-7100 ... tuned to the power level
+            // indicated by the Tune slider if I selected that option, or the fixed
+            // level ..., or the drive slider if I selected that option".)
+            int operational = H1ActiveDriveValue();
             H1RigDriveSync(operational);
             if (CIVControllerInstance != null)
             {
@@ -21631,7 +21632,7 @@ namespace Thetis
                 if (!dropped)
                 {
                     if (AmpLanControllerInstance != null)
-                        AmpLanControllerInstance.LogNote("rig power {0:F0} W did not drop toward drive {1}% - staying bypassed",
+                        AmpLanControllerInstance.LogNote("rig power {0:F0} W is not at the selected tune power {1}% - staying bypassed",
                             CIVControllerInstance.RigForwardWatts, operational);
                     return; // never amplify the tune power
                 }
@@ -21641,7 +21642,7 @@ namespace Thetis
             if (AmpLanControllerInstance != null)
             {
                 AmpLanControllerInstance.RequestOperate();
-                AmpLanControllerInstance.LogNote("tuner settled, operating tune: drive {0}%, amplifier to OPERATE", operational);
+                AmpLanControllerInstance.LogNote("tuner settled, operating tune at {0}%, amplifier to OPERATE", operational);
             }
         }
 
@@ -21661,6 +21662,82 @@ namespace Thetis
             txtMultiText.Invalidate();
             txtRX2Meter.Invalidate();
         }
+        // -----------------------------------------------------------------------------
+        // H1 round 2: per-band drive, tune and limit values in a sidecar file. The
+        // database records them only at a clean exit or at power-down, and both devel-
+        // opment and deployment often end this console by task kill - so the four per-
+        // band arrays are mirrored to H1_BandPower.txt on every change (throttled),
+        // forced at band switches and shutdown, and re-applied at start-up right after
+        // the database restore. (User requirement 2026-10-02: "The settings of the Tune
+        // slider and the driver slider must be remembered across band changes as well
+        // as after a restart (and this includes the limits)".)
+        // -----------------------------------------------------------------------------
+        private string H1BandPowerFile
+        {
+            get { return System.IO.Path.Combine(AppDataPath, "H1_BandPower.txt"); }
+        }
+        private int _h1BandPowerSaveTick = Environment.TickCount - 10000;
+        private bool _h1BandPowerLoaded = false; // nothing may write before the load has run
+        internal void H1SaveBandPower(bool force)
+        {
+            if (!_h1BandPowerLoaded) return;
+            if (!force && Environment.TickCount - _h1BandPowerSaveTick < 2000) return;
+            _h1BandPowerSaveTick = Environment.TickCount;
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                int last = (int)Band.LAST - 1;
+                sb.Append("power=");
+                for (int i = 0; i <= last; i++) sb.Append(power_by_band[i]).Append(i == last ? "" : "|");
+                sb.Append("\ntune=");
+                for (int i = 0; i <= last; i++) sb.Append(tunePower_by_band[i]).Append(i == last ? "" : "|");
+                sb.Append("\nlimit=");
+                for (int i = 0; i <= last; i++) sb.Append(limitPower_by_band[i]).Append(i == last ? "" : "|");
+                sb.Append("\nlimittune=");
+                for (int i = 0; i <= last; i++) sb.Append(limitTunePower_by_band[i]).Append(i == last ? "" : "|");
+                System.IO.File.WriteAllText(H1BandPowerFile, sb.ToString());
+            }
+            catch { }
+        }
+        private void H1LoadBandPower()
+        {
+            try
+            {
+                if (System.IO.File.Exists(H1BandPowerFile))
+                {
+                    foreach (string line in System.IO.File.ReadAllLines(H1BandPowerFile))
+                    {
+                        int eq = line.IndexOf('=');
+                        if (eq < 1) continue;
+                        string k = line.Substring(0, eq).Trim();
+                        int[] vals = null;
+                        if (k == "power") vals = power_by_band;
+                        else if (k == "tune") vals = tunePower_by_band;
+                        else if (k == "limit") vals = limitPower_by_band;
+                        else if (k == "limittune") vals = limitTunePower_by_band;
+                        if (vals == null) continue;
+                        string[] parts = line.Substring(eq + 1).Trim().Split('|');
+                        for (int i = 0; i < vals.Length && i < parts.Length; i++)
+                        {
+                            int v;
+                            if (int.TryParse(parts[i], out v) && v >= 0 && v <= 100) vals[i] = v;
+                        }
+                    }
+                }
+            }
+            catch { }
+            _h1BandPowerLoaded = true;
+            // refresh the live controls for the current band with the merged values
+            try
+            {
+                ptbPWR.LimitValue = limitPower_by_band[(int)_tx_band];
+                ptbTune.LimitValue = limitTunePower_by_band[(int)_tx_band];
+                PWR = power_by_band[(int)_tx_band];
+                TunePWR = tunePower_by_band[(int)_tx_band];
+            }
+            catch { }
+        }
+
         private void H1SaveMeterTxModes()
         {
             // H1: nothing may write the file before the load has run - the form init paths fire
@@ -32548,6 +32625,7 @@ namespace Thetis
 
             shutdownLogStringToPath("Before SaveState()");
             SaveState();
+            try { H1SaveBandPower(true); } catch { } // H1 round 2: the per-band mirror must also survive a task kill
 
             shutdownLogStringToPath("Before MemoryList.Save()");
             MemoryList.Save();
@@ -32999,6 +33077,7 @@ namespace Thetis
 
             int new_pwr = setPowerFromDriveSlider(out bool bUseConstrain, e != EventArgs.Empty);
             power_by_band[(int)_tx_band] = ptbPWR.Value;
+            H1SaveBandPower(false); // H1 round 2: mirror the per-band table on every change
 
             UpdateDriveLabel(lc != null && bUseConstrain, e);
             H1RigDriveSync(new_pwr); // H1: also set the IC-7100 output power on the TX Output route
@@ -34444,22 +34523,20 @@ namespace Thetis
                 //
 
                 _tuning = true;                                                  // used for a few things
-                _h1TuneOperationalPhase = false;                                 // H1: two-phase tune starts bypassed
                 // H1: third tune type - the amplifier runs its OWN autotune (its controller
                 // reports AUTOTUNE IN PROGRESS / WAITING FOR INPUT POWER). While that state
                 // machine runs, mode toggles are ignored, so a stand-by request would only
                 // cancel the press and the amp would stay "waiting for input power" forever
-                // (user report 2026-10-02). Instead: carrier at the DRIVE value, no stand-by
+                // (user report 2026-10-02). Instead: carrier at the selected tune power, no stand-by
                 // request, no two-phase - the amplifier is left exactly as it is so its own
                 // autotune can see the RF. If it is parked in stand-by, ask for operate once
                 // (best effort - it may be ignored until its automatics finish).
                 bool ampAutoTune = AmpLanControllerInstance != null && AmpLanControllerInstance.IsAutoTune;
                 if (ampAutoTune)
                 {
-                    _h1TuneOperationalPhase = true;  // the drive follows the main slider, not the tune level
                     if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
                         AmpLanControllerInstance.RequestOperate();
-                    AmpLanControllerInstance.LogNote("amplifier autotune active - tune at the drive value, amplifier left untouched");
+                    AmpLanControllerInstance.LogNote("amplifier autotune active - tune at the selected tune power, amplifier left untouched");
                 }
                 H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 if (!ampAutoTune)
@@ -34583,7 +34660,6 @@ namespace Thetis
                         break;
                 }
                 _tuning = false;
-                _h1TuneOperationalPhase = false; // H1: back to the tune drive mapping
                 H1AmpTuneStandbyEnd(); // H1: OM2000A+ back to operate after tune
 
                 updateVFOFreqs(chkTUN.Checked, true);
@@ -53506,6 +53582,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
             int new_pwr = setPowerFromTuneSlider(out bool bUseConstrain, e != EventArgs.Empty);
             tunePower_by_band[(int)_tx_band] = ptbTune.Value;
+            H1SaveBandPower(false); // H1 round 2: mirror the per-band table on every change
 
             UpdateTuneLabel(lc != null && bUseConstrain, e);
             H1RigDriveSync(new_pwr); // H1: also set the IC-7100 output power on the TX Output route
