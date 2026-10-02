@@ -136,6 +136,8 @@ namespace Thetis
         // requested state change: 0 none, 1 stand-by, 2 operate
         private volatile int _wantState = 0;
         private volatile bool _pttOn = false;
+        private long _lastTxFrameMs = 0;             // H1 round 3: last frame that proves the amp transmits
+        internal Func<bool> ConsoleTransmitting;     // H1 round 3: the console's own transmit state
 
         // worker-thread private receive buffer - may hold raw binary frame bytes, so
         // it is a byte list, NOT the decoded string the first version used
@@ -286,6 +288,28 @@ namespace Thetis
         public int CoolSeconds { get { return _coolSeconds; } }
         public int CoolTemp { get { return _coolTemp; } }
         public bool IsPtt { get { return _pttOn; } }
+
+        /// <summary>H1 round 3: the console's carrier stopped - clear the transmit gate at
+        /// once so a pending stand-by return does not wait for the amplifier's own PTT-off
+        /// report, which it only sends when it switches to stand-by anyway.</summary>
+        public void PTTReleased()
+        {
+            if (_pttOn)
+            {
+                _pttOn = false;
+                LogText("PTT off (console carrier released)");
+            }
+        }
+
+        private bool H1ConsoleTransmitting()
+        {
+            try
+            {
+                Func<bool> f = ConsoleTransmitting;
+                return f != null && f();
+            }
+            catch { return false; }
+        }
         public bool FaultFresh { get { return _fault && NowMs() - _faultMs <= 600000; } }
 
         public float AmpForwardWatts
@@ -734,6 +758,18 @@ namespace Thetis
                         LogText("amp: cooling state expired (no CO/CT frames for 45 s)");
                     }
 
+                    // H1 round 3: the amplifier reports PTT-ON but only ever reports PTT-OFF as
+                    // part of a stand-by transition - a stale transmit flag used to strand the
+                    // stand-by return forever (checked live 2026-10-02: the return never fired
+                    // once in a whole day of testing; every stand-down was manual). The '='
+                    // meter frames flow only while the amplifier transmits, so five seconds
+                    // without one clear the flag.
+                    if (_pttOn && NowMs() - _lastTxFrameMs > 5000)
+                    {
+                        _pttOn = false;
+                        LogText("PTT off (no transmit frames for 5 s)");
+                    }
+
                     // H1 round 2: a tuning episode ended - the amplifier must not linger in
                     // OPERATE. Return it to stand-by and NEVER give up: the only hold is
                     // an active transmission. Retry every 5 s, decaying to once a minute
@@ -747,7 +783,7 @@ namespace Thetis
                             _autoStandby = false;
                             LogText("AMP: amplifier is in stand-by");
                         }
-                        else if (_stateKnown && !_pttOn && NowMs() >= _autoStandbyFireMs)
+                        else if (_stateKnown && !_pttOn && !H1ConsoleTransmitting() && NowMs() >= _autoStandbyFireMs)
                         {
                             long since = NowMs() - _autoStandbyMs;
                             _autoStandbyFireMs = NowMs() + (since > 120000 ? 60000 : 5000);
@@ -1072,6 +1108,7 @@ namespace Thetis
                     return;
                 case "PTTON":
                     _pttOn = true;
+                    _lastTxFrameMs = NowMs();
                     LogText("PTT on");
                     return;
                 case "PTTOFF":
@@ -1310,6 +1347,7 @@ namespace Thetis
         /// </summary>
         private void ParseBinaryFrame(byte[] f, int len)
         {
+            _lastTxFrameMs = NowMs(); // this frame only ever arrives while the amplifier transmits
             int po = f[1] + f[2] * 256;
             int pr = f[3] * 2;
             int pi = f[4];

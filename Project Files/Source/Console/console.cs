@@ -2041,6 +2041,9 @@ namespace Thetis
             GanymedeSiolisten = new SIO7ListenerII(this);
             CIVControllerInstance = new CIVController(this);
             AmpLanControllerInstance = new AmpLanController(this); // H1: OM2000A+ LAN link
+            // H1 round 3: the console is the authority on whether anything transmits - a
+            // pending stand-by return waits on this, not on the amplifier's own PTT report
+            AmpLanControllerInstance.ConsoleTransmitting = delegate { return MOX || _tuning || chkTUN.Checked; };
 
             EQForm = new EQForm(this);
 
@@ -34715,6 +34718,7 @@ namespace Thetis
                         break;
                 }
                 _tuning = false;
+                if (AmpLanControllerInstance != null) AmpLanControllerInstance.PTTReleased(); // H1 round 3: carrier off - unblock the stand-by return at once
                 H1AmpTuneStandbyEnd(); // H1: OM2000A+ back to operate after tune
 
                 updateVFOFreqs(chkTUN.Checked, true);
