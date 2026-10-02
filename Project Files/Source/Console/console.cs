@@ -6834,7 +6834,12 @@ namespace Thetis
                         _h1AutoTuneCarrierArmed = false;
                         if (chkTUN.Checked) chkTUN.Checked = false; // no link, no carrier
                     }
-                    else if (!AmpLanControllerInstance.IsAutoTune || AmpLanControllerInstance.AutoTuneStopping)
+                    // H1 round 3 fix: judge the session with AutoTuneBusy, not IsAutoTune -
+                    // IsAutoTune only turns true when the amplifier's own answer arrives, so
+                    // a sync tick landing in the click-to-answer window disarmed the carrier
+                    // silently and no Tune was ever engaged (seen live 2026-10-02, a
+                    // one-in-few coin flip on the one-second tick cadence)
+                    else if (!AmpLanControllerInstance.AutoTuneBusy || AmpLanControllerInstance.AutoTuneStopping)
                     {
                         // the session ended, or a stop is being chased: release the carrier
                         // at once so the amplifier can go to stand-by, and disarm so the
