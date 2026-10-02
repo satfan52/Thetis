@@ -460,6 +460,7 @@ namespace Thetis
         private RadioButtonTS radH1MeterAmp;
         private GroupBoxTS h1GrpAmp;
         private CheckBoxTS h1ChkAmpTuneStandby;
+        private CheckBoxTS h1ChkAmpBlockVis;
         private TextBoxTS h1TxtAmpAddress;
         private TextBoxTS h1TxtAmpPort;
 
@@ -559,6 +560,19 @@ namespace Thetis
                 "is running its own autotune, TUNE always sends a carrier at the Drive Level and" + System.Environment.NewLine +
                 "leaves the amplifier alone.");
 
+            h1ChkAmpBlockVis = new CheckBoxTS();
+            h1ChkAmpBlockVis.AutoSize = false;
+            h1ChkAmpBlockVis.UseVisualStyleBackColor = true;
+            h1ChkAmpBlockVis.Image = null;
+            h1ChkAmpBlockVis.Name = "chkH1AmpBlockVis";
+            h1ChkAmpBlockVis.Text = "show the block in the console";
+            h1ChkAmpBlockVis.Location = new Point(316, 20);
+            h1ChkAmpBlockVis.Size = new Size(230, 22);
+            toolTip1.SetToolTip(h1ChkAmpBlockVis,
+                "Shows the OM2000A+ panel - mode, PA power, Auto tune and the activity readout -" + System.Environment.NewLine +
+                "on the console, left of the MON/TUN/MOX buttons. Hidden by default. The amplifier" + System.Environment.NewLine +
+                "link and the meters work either way.");
+
             LabelTS h1LblAmpAddr = new LabelTS();
             h1LblAmpAddr.AutoSize = true;
             h1LblAmpAddr.Image = null;
@@ -595,10 +609,12 @@ namespace Thetis
             h1LblAmpInfo.Size = new Size(536, 30);
 
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
+            h1ChkAmpBlockVis.CheckedChanged += h1ChkAmpBlockVis_CheckedChanged;
             h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
             h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
 
             h1GrpAmp.Controls.Add(h1ChkAmpTuneStandby);
+            h1GrpAmp.Controls.Add(h1ChkAmpBlockVis);
             h1GrpAmp.Controls.Add(h1LblAmpAddr);
             h1GrpAmp.Controls.Add(h1TxtAmpAddress);
             h1GrpAmp.Controls.Add(h1LblAmpPort);
@@ -610,6 +626,11 @@ namespace Thetis
         private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
         {
             console.H1AmpTuneStandbyEnabled = h1ChkAmpTuneStandby != null && h1ChkAmpTuneStandby.Checked;
+        }
+
+        private void h1ChkAmpBlockVis_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1AmpBlockVisible = h1ChkAmpBlockVis != null && h1ChkAmpBlockVis.Checked;
         }
 
         private void h1TxtAmpAddress_TextChanged(object sender, EventArgs e)

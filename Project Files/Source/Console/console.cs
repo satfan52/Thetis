@@ -6773,7 +6773,8 @@ namespace Thetis
         internal void H1AmpButtonsVis()
         {
             if (h1AmpMode == null) return;
-            bool on = _h1MeterSource == 2 || _h1AmpTuneStandbyEnabled;
+            // H1 round 4: the block is opt-in - hidden by default (user requirement 2026-10-02)
+            bool on = _h1AmpBlockVisible && (_h1MeterSource == 2 || _h1AmpTuneStandbyEnabled);
             if (h1AmpMode.Visible != on) h1AmpMode.Visible = on;
             if (h1AmpPower != null && h1AmpPower.Visible != on) h1AmpPower.Visible = on;
             if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
@@ -6787,7 +6788,17 @@ namespace Thetis
         {
             // H1: mirror the real amplifier state onto the pills and the activity readout
             // (called from the 1 s watchdog; idempotent)
-            if (h1AmpMode == null || !h1AmpMode.Visible) return;
+            if (h1AmpMode == null || !h1AmpMode.Visible)
+            {
+                // H1 round 4: keep the caption and its rule down with the block - some
+                // startup pass re-shows them after the layout hid everything, and only
+                // here is a guaranteed every-second re-assert (user requirement: the
+                // block disappears completely when the option is off)
+                Control cap4, rule4;
+                if (h1Caps.TryGetValue("om2000a", out cap4) && cap4 != null && cap4.Visible) cap4.Visible = false;
+                if (h1Caps.TryGetValue("om2000a_r", out rule4) && rule4 != null && rule4.Visible) rule4.Visible = false;
+                return;
+            }
             if (AmpLanControllerInstance == null) return;
             _h1AmpBtnSync = true;
             try
@@ -21496,6 +21507,16 @@ namespace Thetis
             {
                 _h1AmpTuneStandbyEnabled = value;
                 H1AmpUpdateRoute();
+            }
+        }
+        private bool _h1AmpBlockVisible = false; // H1 round 4: the block in the console, off by default
+        public bool H1AmpBlockVisible
+        {
+            get { return _h1AmpBlockVisible; }
+            set
+            {
+                _h1AmpBlockVisible = value;
+                H1AmpButtonsVis(); // the console block follows this option at once
             }
         }
         private string _h1AmpAddress = "192.168.129.124";
@@ -48185,8 +48206,11 @@ namespace Thetis
             if (!_iscollapsed && _isexpanded)
             {
                 // use panelModeSpecificPhone even though might not be shown, it is still repositioned
-                x = panelModeSpecificPhone.Left + 4;
-                y = panelModeSpecificPhone.Bottom - lblPAProfile.Height + 4; // H1: a clear band under the EQ row above
+                // H1 round 4 (user 2026-10-02): the label rides the EQ button row itself -
+                // level with the three pills, its right edge 10 px left of RX EQ, so the row
+                // reads [PA Profile: ...] [RX EQ] [TX EQ] [TX FL] as one line
+                x = panelModeSpecificPhone.Left + 81 - 10 - lblPAProfile.Width;
+                y = panelModeSpecificPhone.Top + 121 + (23 - lblPAProfile.Height) / 2;
             }
             else if (_iscollapsed && !_isexpanded)
             {
@@ -48201,6 +48225,7 @@ namespace Thetis
             if (x > -1 && y > -1)
             {
                 lblPAProfile.Location = new Point(x, y);
+                lblPAProfile.BringToFront(); // H1 round 4: the label now spills left of its panel - keep it over the neighbours
                 lblPAProfile.Visible = true;
             }
             else

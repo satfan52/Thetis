@@ -121,6 +121,18 @@ namespace Thetis
                     break;
             }
 
+            // H1 round 4: the head must stay inside the control. At the top of its range the
+            // drawn position could push the art past the right edge and cut it in half (seen
+            // live 2026-10-02 on the SUBRX2 AGC gain slider at 90 dB). No-op at normal values.
+            int h1maxX = this.Width - _head_rect.Width - 2; // the 2 px keeps the art off the hard edge
+            if (h1maxX < 0) h1maxX = 0;
+            if (head_x > h1maxX) head_x = h1maxX;
+            if (head_x < 0) head_x = 0;
+            int h1maxY = this.Height - _head_rect.Height - 2;
+            if (h1maxY < 0) h1maxY = 0;
+            if (head_y > h1maxY) head_y = h1maxY;
+            if (head_y < 0) head_y = 0;
+
             _head_rect.X = head_x;
             _head_rect.Y = head_y;
         }
