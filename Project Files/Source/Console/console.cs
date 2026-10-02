@@ -8530,6 +8530,12 @@ namespace Thetis
             {
                 if (h1ConsoleReady && !initializing && PowerOn)
                     H1RigDriveSync(H1ActiveDriveValue());
+                // H1: the moment the CI-V link opens, pin the rig power at once instead of
+                // waiting up to a second for the next tick - a quick TUNE right after start-up
+                // must never go out at the rig's own retained power.
+                bool rigActive = H1RigRouteActive;
+                if (rigActive && !_h1RigRouteWasActive) H1RigDriveForceSync();
+                _h1RigRouteWasActive = rigActive;
             }
             catch { }
         }
@@ -21007,7 +21013,9 @@ namespace Thetis
                 if (comboMeterTXMode.Text != value)
                 {
                     comboMeterTXMode.Text = value;
-                    if (_h1MeterTxModesLoaded) H1DistributeMeterTxDefault(CurrentMeterTXMode);
+                    // H1: only a live change disturbs the meters - during the start-up restore or
+                    // the option replay this must never wipe the recalled selections.
+                    if (_h1MeterTxModesLoaded && h1ConsoleReady && !initializing) H1DistributeMeterTxDefault(CurrentMeterTXMode);
                 }
                 UpdateButtonBarButtons();
             }
@@ -21076,6 +21084,7 @@ namespace Thetis
             get { return H1AmpRefLive ? AmpLanControllerInstance.AmpReflectedWatts : (H1RigRefLive ? CIVControllerInstance.RigReflectedWatts : alex_rev); }
         }
         private int _h1RigPowerLastSent = -1;
+        private bool _h1RigRouteWasActive = false;
         private int H1ActiveDriveValue()
         {
             if (chk2TONE.Checked)
@@ -31069,6 +31078,8 @@ namespace Thetis
                 txtVFOAFreq.ForeColor = vfo_text_light_color;
                 txtVFOAMSD.ForeColor = vfo_text_light_color;
                 txtVFOALSD.ForeColor = small_vfo_color;
+                H1RigDriveForceSync(); // H1: pin the IC-7100 output power the moment the console powers up
+                H1LoadMeterTxModes(); // H1: re-pin the meters' selections at power-up
 
                 UpdateDDCs(rx2_enabled);
                 UpdateVFOASub();
@@ -31337,6 +31348,14 @@ namespace Thetis
             }
             else
             {
+                // H1: bank the state at power-down too. The database otherwise records the
+                // drive values, the per-band table and the tune level only at a clean exit -
+                // and the user's own sequence is power-down first, quit second, so a quit
+                // that never happens (or the deploy routine's taskkill) would lose them.
+                if (h1ConsoleReady && !initializing)
+                {
+                    try { SaveState(); } catch { }
+                }
                 DataFlowing = false;
                 SetupForm.TestIMD = false;
 
@@ -34009,6 +34028,7 @@ namespace Thetis
                 //
 
                 _tuning = true;                                                  // used for a few things
+                H1RigDriveForceSync(); // H1: the tune level to the IC-7100 before any RF
                 H1AmpTuneStandbyBegin(); // H1: OM2000A+ to stand-by for tune
                 chkTUN.BackColor = button_selected_color;
 
@@ -34140,6 +34160,7 @@ namespace Thetis
 
                 if (current_meter_tx_mode != old_meter_tx_mode_before_tune) //MW0LGE_21j
                     CurrentMeterTXMode = old_meter_tx_mode_before_tune;
+                H1RigDriveForceSync(); // H1: back to the drive level on the IC-7100 after tune
 
                 NetworkIO.SetUserOut0(0);      // why this?? CHECK
                 NetworkIO.SetUserOut2(0);
@@ -51021,6 +51042,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 await Task.Delay(300);
             }
 
+            H1RigDriveForceSync(); // H1: the 2-tone level before its carrier, the drive level after it
             SetupForm.TestIMD = chk2TONE.Checked; // this will start/stop the test
 
             if (SetupForm.TestIMD && chk2TONE.Checked)
