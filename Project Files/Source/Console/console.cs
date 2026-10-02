@@ -6748,7 +6748,7 @@ namespace Thetis
             {
                 toolTip1.SetToolTip(h1AmpMode, "Amplifier mode. OPER = the OM2000A+ is in OPERATE, STBY = stand-by, AMP ? = the state is not known yet." + Environment.NewLine + Environment.NewLine + "Click to switch the amplifier between stand-by and operate.");
                 toolTip1.SetToolTip(h1AmpPower, "Amplifier PA power. PA ON starts the tube heating, PA OFF cools the PA and switches it off." + Environment.NewLine + Environment.NewLine + "The button shows HEATING or COOLING while either process runs. Click to toggle.");
-                toolTip1.SetToolTip(h1AmpAutoTune, "Starts the amplifier's own automatic tune. The button stays lit while the autotune is on; click it again to stop the autotune and return the amplifier to stand-by." + Environment.NewLine + Environment.NewLine + "Right-click returns the amplifier to manual tuning.");
+                toolTip1.SetToolTip(h1AmpAutoTune, "Enables AutoTune on the amp and generates a Tune signal at the RF power set by the \"PA Drive\" level.");
                 toolTip1.SetToolTip(h1AmpStatus, "What the OM2000A+ is doing right now: its autotune messages, the heating or cooling countdown, or the state." + Environment.NewLine + Environment.NewLine + "A red FAULT with a code stays for ten minutes or until clicked; clicking clears the notice. To cancel a fault at the amplifier itself, toggle it stand-by and back, as the OM Power manual describes.");
             }
 
@@ -7302,6 +7302,10 @@ namespace Thetis
             // attenuator shows only in its own mode and keeps its slot beside the PA line.
             H1Put(lblTune, this, mxR, sy + 40);
             H1Put(ptbTune, this, mxR, sy + 56, 84, 22);
+            // H1 (user 2026-10-02): the value labels carry the longer words now - "PA Drive"
+            // and "ANT Tune" - let them size to their text so nothing clips at any font.
+            if (lblPWR != null) lblPWR.AutoSize = true;
+            if (lblTune != null) lblTune.AutoSize = true;
             H1Put(udTXStepAttData, this, 1074, cYm + 273);
             panelSoundControls.Size = new Size(1, 1);
             panelSoundControls.Location = new Point(0, 0);
@@ -33242,9 +33246,9 @@ namespace Thetis
             if (!bShowLimitValue)
             {
                 if (ptbPWR.IsConstrained)
-                    lblPWR.Text = "Drive:  (" + sValue + ")";
+                    lblPWR.Text = "PA Drive:  (" + sValue + ")";
                 else
-                    lblPWR.Text = "Drive:  " + sValue;
+                    lblPWR.Text = "PA Drive:  " + sValue;
             }
             else
             {
@@ -53727,8 +53731,8 @@ private void incrementMutliMeterDisplayModeRX2()
         {
             if (IsSetupFormNull) return;
 
-            string sHeader = "Tu | 2T";
-            if (_tuneDrivePowerSource == DrivePowerSource.TUNE_SLIDER && _2ToneDrivePowerSource != DrivePowerSource.TUNE_SLIDER) sHeader = "Tune";
+            string sHeader = "ANT Tune | 2T";
+            if (_tuneDrivePowerSource == DrivePowerSource.TUNE_SLIDER && _2ToneDrivePowerSource != DrivePowerSource.TUNE_SLIDER) sHeader = "ANT Tune";
             if (_tuneDrivePowerSource != DrivePowerSource.TUNE_SLIDER && _2ToneDrivePowerSource == DrivePowerSource.TUNE_SLIDER) sHeader = "2Tone";
 
             bool bUsePower = SetupForm.GetPABandUsesMaxPower(TXBand);
