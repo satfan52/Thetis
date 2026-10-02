@@ -21481,6 +21481,29 @@ namespace Thetis
             _h1RigPowerLastSent = -1;
             H1RigDriveSync(H1ActiveDriveValue());
         }
+        // H1 (user report 2026-10-02): both sliders were commanding the IC-7100 at once -
+        // every move of either one pushed its own value to the rig. The rig has exactly
+        // one owner at any moment: while Tune is engaged it is the selected tune source,
+        // while 2-Tone is engaged the selected 2-tone source, otherwise the Drive slider.
+        // A move of the slider that does not own the level must leave the rig alone.
+        private bool H1RigOwnsDriveSlider
+        {
+            get
+            {
+                if (chk2TONE.Checked) return _2ToneDrivePowerSource == DrivePowerSource.DRIVE_SLIDER;
+                if (chkTUN.Checked) return _tuneDrivePowerSource == DrivePowerSource.DRIVE_SLIDER;
+                return true;
+            }
+        }
+        private bool H1RigOwnsTuneSlider
+        {
+            get
+            {
+                if (chk2TONE.Checked) return _2ToneDrivePowerSource == DrivePowerSource.TUNE_SLIDER;
+                if (chkTUN.Checked) return _tuneDrivePowerSource == DrivePowerSource.TUNE_SLIDER;
+                return false;
+            }
+        }
 
         // ---------------------------------------------------------------------------------
         // H1: OM2000A+ LAN link. Two separate Setup options, both in the OM2000A+ group:
@@ -33202,7 +33225,7 @@ namespace Thetis
             H1SaveBandPower(false); // H1 round 2: mirror the per-band table on every change
 
             UpdateDriveLabel(lc != null && bUseConstrain, e);
-            H1RigDriveSync(new_pwr); // H1: also set the IC-7100 output power on the TX Output route
+            if (H1RigOwnsDriveSlider) H1RigDriveSync(new_pwr); // H1: only the owning slider commands the rig
 
             if (sender.GetType() == typeof(PrettyTrackBar))
             {
@@ -53712,7 +53735,7 @@ private void incrementMutliMeterDisplayModeRX2()
             H1SaveBandPower(false); // H1 round 2: mirror the per-band table on every change
 
             UpdateTuneLabel(lc != null && bUseConstrain, e);
-            H1RigDriveSync(new_pwr); // H1: also set the IC-7100 output power on the TX Output route
+            if (H1RigOwnsTuneSlider) H1RigDriveSync(new_pwr); // H1: only the owning slider commands the rig
 
             if (sender.GetType() == typeof(PrettyTrackBar))
                 ptbTune.Focus();
