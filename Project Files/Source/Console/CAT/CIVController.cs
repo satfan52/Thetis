@@ -1694,6 +1694,17 @@ namespace Thetis
                 {
                     _pttVerifyActive = false;
                     PttTrace("VERIFY rig confirms {0}", tx ? "TX" : "RX");
+                    if (tx)
+                    {
+                        // H1 round 3: re-assert the rig power on every confirmed key. A
+                        // power frame that lands inside a keying transition can be dropped
+                        // by the rig (seen live 2026-10-02: the 30% tune-power frame
+                        // arrived during a failed KEY window, the rig stayed at its old
+                        // level and the amplifier asked for more input power for the whole
+                        // session). The dedupe used to make such a state permanent - now
+                        // the next service tick re-sends the wanted value)
+                        _h1LastSentRigPower = -1;
+                    }
                     return;
                 }
 
