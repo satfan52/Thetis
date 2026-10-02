@@ -6826,7 +6826,8 @@ namespace Thetis
             AmpLanController amp = AmpLanControllerInstance;
             string text = "";
             Color col = Color.White;
-            if (amp == null || !amp.IsOpen) { text = ""; col = Color.Gray; }
+            if (amp == null) { text = ""; col = Color.Gray; }
+            else if (!amp.IsOpen) { text = "AMP LINK DOWN"; col = Color.Gray; }
             else if (amp.FaultFresh) { text = "FAULT"; col = Color.Red; }
             else if (amp.AutoTuneBusy)
             {
@@ -7164,17 +7165,18 @@ namespace Thetis
             H1Put(lblPWR, this, mxR, sy);
             H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
-            // H1 round 2: the amplifier controls. The mode pill stays right of the Drive
-            // slider; the OM2000A+ block (title, PA power pill, Auto tune toggle and the
-            // activity readout) sits LEFT of the central transmit block, in the free pocket
-            // between the display's pan controls and the Master AF slider (user correction
-            // 2026-10-02). Shown only while the OM2000A+ link is enabled (meter source or
-            // the stand-by option).
-            H1Put(h1AmpMode, this, mxR + 92, sy, 84, 22);
+            // H1 round 2: ALL the amplifier controls live in the OM2000A+ block LEFT of the
+            // central transmit block (user correction 2026-10-02) - the mode pill, the PA
+            // power pill and the Auto tune toggle on the two rows under the title, the
+            // activity readout along the bottom. The pocket between the display's pan row
+            // (Center button ends x463) and the Master AF slider column (x711) was verified
+            // free by a full child enumeration before placing. Shown only while the
+            // OM2000A+ link is enabled (meter source or the stand-by option).
             H1Cap("om2000a", "OM2000A+", 474, sy, 224);
-            H1Put(h1AmpPower, this, 474, sy + 18, 84, 22);
-            H1Put(h1AmpAutoTune, this, 566, sy + 18, 84, 22);
-            H1Put(h1AmpStatus, this, 474, sy + 42, 224, 14);
+            H1Put(h1AmpMode, this, 474, sy + 18, 84, 22);
+            H1Put(h1AmpPower, this, 566, sy + 18, 84, 22);
+            H1Put(h1AmpAutoTune, this, 474, sy + 42, 84, 22);
+            H1Put(h1AmpStatus, this, 474, sy + 66, 224, 14);
             foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune })
                 if (ac != null)
                 {

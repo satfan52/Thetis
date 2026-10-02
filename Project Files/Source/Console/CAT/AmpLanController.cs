@@ -185,6 +185,7 @@ namespace Thetis
         private long _verboseUntil = 0;
         private int _pollCount = 0;
         private long _lastIFast = 0;
+        private int _connectFails = 0; // H1 round 2: slower retries after repeated handshake failures
         private readonly System.Collections.Generic.List<long> _stateEventMs = new System.Collections.Generic.List<long>();
         private readonly System.Collections.Generic.List<bool> _stateEventOperate = new System.Collections.Generic.List<bool>();
 
@@ -530,11 +531,17 @@ namespace Thetis
                         _lastWa = -1;
                         _tracedPo = false;
                         _tracedTe = false;
+                        _connectFails = 0;
                     }
                     else
                     {
                         CloseSocket(null);
-                        Thread.Sleep(5000);
+                        // H1 round 2: after three failed handshakes slow the retries down
+                        // (5 s x3, then 12 s) - the amplifier's network board is
+                        // connection-shy and needs its keepalive window to settle; the
+                        // 5 s hammering kept re-entering a slot that was still closing.
+                        _connectFails++;
+                        Thread.Sleep(_connectFails <= 3 ? 5000 : 12000);
                         continue;
                     }
                 }
@@ -1321,8 +1328,20 @@ namespace Thetis
                 // the link died - any request that was never actioned is void and must
                 // not fire after the next reconnect (user hit this live 2026-10-02:
                 // a tune press during a half handshake parked the amp in stand-by
-                // minutes later on an unrelated session)
+                // minutes later on an unrelated session). Round 2: the same rule covers
+                // the amplifier's own commands - a click on a dead link must not arm
+                // the autotune or power the PA minutes later, and the Auto tune pill
+                // must not stay lit from an unsent request.
                 _wantState = 0;
+                _wantAutoTune = false;
+                _wantAutoTuneMs = 0;
+                _wantAutoTuneAbort = false;
+                _wantPaOn = false;
+                _wantPaOff = false;
+                _stopActive = false;
+                _stopTries = 0;
+                _stopNextMs = 0;
+                _lastArmSentMs = 0;
             }
             if (was)
             {
