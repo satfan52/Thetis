@@ -10982,6 +10982,13 @@ namespace Thetis
                 console.GanymedeCATPort = port;
             console.GanymedeCATEnabled = chkEnableGanymede.Checked;
 
+            // H1 (2026-10-03): refresh the CI-V options here, after the options are restored.
+            // The defaults pass early in the start-up disables them while the protocol
+            // selectors are still empty, and nothing re-enabled them until a selector or
+            // CAT1's enable was touched - seen live as greyed options once the per-slot
+            // protocol-load fix removed the usual selector touches.
+            updateCIVControlsEnabled();
+
         }
 
         // called in error cases to set the dialiog vars from 
@@ -11423,6 +11430,7 @@ namespace Thetis
             comboCAT2parity.Enabled = enable;
             comboCAT2databits.Enabled = enable;
             comboCAT2stopbits.Enabled = enable;
+            updateCIVControlsEnabled(); // H1: the CI-V options follow the slot enable/disable
         }
 
         private void enableCAT3_HardwareFields(bool enable)
@@ -11431,6 +11439,7 @@ namespace Thetis
             comboCAT3parity.Enabled = enable;
             comboCAT3databits.Enabled = enable;
             comboCAT3stopbits.Enabled = enable;
+            updateCIVControlsEnabled(); // H1: the CI-V options follow the slot enable/disable
         }
 
         private void enableCAT4_HardwareFields(bool enable)
@@ -11439,6 +11448,7 @@ namespace Thetis
             comboCAT4parity.Enabled = enable;
             comboCAT4databits.Enabled = enable;
             comboCAT4stopbits.Enabled = enable;
+            updateCIVControlsEnabled(); // H1: the CI-V options follow the slot enable/disable
         }
 
         private void doEnablementOnBitBangEnable()
