@@ -466,6 +466,19 @@ namespace Thetis
         private CheckBoxTS h1ChkMfjBurst;
         private NumericUpDownTS h1UdMfjBurstLen;
         private NumericUpDownTS h1UdSwrHold;
+        private LabelTS lblCIVAddr1;
+        private LabelTS lblCIVAddr2;
+        private LabelTS lblCIVAddr3;
+        private LabelTS lblCIVAddr4;
+        private TextBoxTS txtCIVAddr1;
+        private TextBoxTS txtCIVAddr2;
+        private TextBoxTS txtCIVAddr3;
+        private TextBoxTS txtCIVAddr4;
+        private RadioButtonTS radCIVMaster1;
+        private RadioButtonTS radCIVMaster2;
+        private RadioButtonTS radCIVMaster3;
+        private RadioButtonTS radCIVMaster4;
+        private bool h1CivSlotBuilt = false;
 
         // H1 round 5 (user 2026-10-02): the Transceivers page under Other H/W, right next to
         // the Amp page, for hybrid operation - the SDR receives while an external transceiver
@@ -489,7 +502,7 @@ namespace Thetis
             // rigs and other purposes. The CAT1 page keeps only the protocol selector.
             if (grpCIVControl != null)
             {
-                Control[] h1ci = new Control[] { chkCIVTransceive, chkCIVSyncSplit, chkCIVSyncPTT, lblCIVAddress, txtCIVAddress, lblCIVInfo };
+                Control[] h1ci = new Control[] { chkCIVTransceive, chkCIVSyncSplit, chkCIVSyncPTT, lblCIVInfo };
                 foreach (Control h1c in h1ci)
                 {
                     if (h1c != null) { grpCIVControl.Controls.Remove(h1c); h1GrpTrx.Controls.Add(h1c); }
@@ -499,14 +512,14 @@ namespace Thetis
                     grpCIVControl.Controls.Remove(h1ChkRigPowerMeters);
                     h1GrpTrx.Controls.Add(h1ChkRigPowerMeters);
                 }
+                if (lblCIVAddress != null) grpCIVControl.Controls.Remove(lblCIVAddress); // H1 2026-10-03: the address moved to the CAT pages
+                if (txtCIVAddress != null) grpCIVControl.Controls.Remove(txtCIVAddress);
                 grpCIVControl.Text = "CAT1 Protocol"; // the protocol selector stays generic
                 grpCIVControl.Size = new Size(520, 54);
 
                 if (chkCIVTransceive != null) { chkCIVTransceive.Location = new Point(10, 20); chkCIVTransceive.Size = new Size(240, 22); }
                 if (chkCIVSyncSplit != null) { chkCIVSyncSplit.Location = new Point(10, 44); chkCIVSyncSplit.Size = new Size(240, 22); }
                 if (chkCIVSyncPTT != null) { chkCIVSyncPTT.Location = new Point(10, 68); chkCIVSyncPTT.Size = new Size(240, 22); }
-                if (lblCIVAddress != null) lblCIVAddress.Location = new Point(300, 72);
-                if (txtCIVAddress != null) txtCIVAddress.Location = new Point(394, 68);
                 if (lblCIVInfo != null) lblCIVInfo.Location = new Point(10, 94);
             }
 
@@ -745,6 +758,107 @@ namespace Thetis
             h1GrpMfj.Controls.Add(h1LblSwrSec);
             tpApolloATU.Controls.Add(h1GrpMfj);
         }
+
+        // -----------------------------------------------------------------------------
+        // H1 (user 2026-10-03): one CI-V address per CAT slot and one master tick per
+        // slot speaking Icom CI-V. On separate serial ports the address cannot collide,
+        // so the slot - not the address - identifies the master radio. The controls sit
+        // with their slot: CAT1 in its protocol group, CAT2-4 in their control boxes.
+        // -----------------------------------------------------------------------------
+        private void H1BuildCivSlotOptions()
+        {
+            if (h1CivSlotBuilt || grpCatControlBox == null) return;
+            h1CivSlotBuilt = true;
+
+            // H1 round 7c makes the four boxes look the same; the address and master rows
+            // join the Protocol row in each slot's own box (CAT1 in the CAT1 Control box).
+            H1BuildCivSlotBox(1, grpCatControlBox);
+            H1BuildCivSlotBox(2, grpCat2ControlBox);
+            H1BuildCivSlotBox(3, grpCat3ControlBox);
+            H1BuildCivSlotBox(4, grpCat4ControlBox);
+
+            if (txtCIVAddr1 != null) txtCIVAddr1.TextChanged += h1CivSlotAddr_TextChanged;
+            if (txtCIVAddr2 != null) txtCIVAddr2.TextChanged += h1CivSlotAddr_TextChanged;
+            if (txtCIVAddr3 != null) txtCIVAddr3.TextChanged += h1CivSlotAddr_TextChanged;
+            if (txtCIVAddr4 != null) txtCIVAddr4.TextChanged += h1CivSlotAddr_TextChanged;
+            if (radCIVMaster1 != null) radCIVMaster1.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+            if (radCIVMaster2 != null) radCIVMaster2.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+            if (radCIVMaster3 != null) radCIVMaster3.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+            if (radCIVMaster4 != null) radCIVMaster4.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+        }
+
+        private void H1BuildCivSlotBox(int slot, GroupBoxTS box)
+        {
+            if (box == null) return;
+            box.Size = new Size(160, 262);
+
+            LabelTS lbl = new LabelTS();
+            lbl.AutoSize = true;
+            lbl.Image = null;
+            lbl.Text = "CI-V Addr (Hex):";
+            lbl.Location = new Point(10, 220);
+            TextBoxTS txt = new TextBoxTS();
+            txt.Name = "txtCIVAddr" + slot;
+            txt.MaxLength = 2;
+            txt.Text = "88";
+            txt.Location = new Point(116, 217);
+            txt.Size = new Size(38, 20);
+            RadioButtonTS rad = new RadioButtonTS();
+            rad.Name = "radCIVMaster" + slot;
+            rad.Text = "is master";
+            rad.Location = new Point(10, 240);
+            rad.Size = new Size(100, 20);
+            toolTip1.SetToolTip(rad, "This slot's radio carries the IC-7100 duties: the drive and tune power, the meters, PTT, and the tune and band-change supervision.");
+            box.Controls.Add(lbl);
+            box.Controls.Add(txt);
+            box.Controls.Add(rad);
+
+            if (slot == 1) { lblCIVAddr1 = lbl; txtCIVAddr1 = txt; radCIVMaster1 = rad; }
+            else if (slot == 2) { lblCIVAddr2 = lbl; txtCIVAddr2 = txt; radCIVMaster2 = rad; }
+            else if (slot == 3) { lblCIVAddr3 = lbl; txtCIVAddr3 = txt; radCIVMaster3 = rad; }
+            else { lblCIVAddr4 = lbl; txtCIVAddr4 = txt; radCIVMaster4 = rad; }
+        }
+
+        private void h1ChkMfjBurst_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1MfjBurstEnabled = h1ChkMfjBurst != null && h1ChkMfjBurst.Checked;
+        }
+
+        private void h1UdMfjBurstLen_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjBurstLen != null) console.H1MfjBurstSeconds = (int)h1UdMfjBurstLen.Value;
+        }
+
+        private void h1UdSwrHold_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdSwrHold != null) console.H1SwrHoldSeconds = (int)h1UdSwrHold.Value;
+        }
+
+        private void h1CivSlotAddr_TextChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            TextBoxTS tb = sender as TextBoxTS;
+            if (tb == null) return;
+            byte addr;
+            if (!byte.TryParse(tb.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out addr)) return;
+            int slot = tb == txtCIVAddr1 ? 1 : tb == txtCIVAddr2 ? 2 : tb == txtCIVAddr3 ? 3 : 4;
+            console.H1SetCivSlotAddress(slot, addr);
+        }
+
+        private void h1CivSlotMaster_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            RadioButtonTS rb = sender as RadioButtonTS;
+            if (rb == null || !rb.Checked) return; // only the tick being set acts; the cascade clears the rest
+            RadioButtonTS[] all = new RadioButtonTS[] { null, radCIVMaster1, radCIVMaster2, radCIVMaster3, radCIVMaster4 };
+            for (int h1s = 1; h1s <= 4; h1s++)
+            {
+                if (all[h1s] != null && all[h1s] != rb && all[h1s].Checked) all[h1s].Checked = false;
+            }
+            int slot = rb == radCIVMaster1 ? 1 : rb == radCIVMaster2 ? 2 : rb == radCIVMaster3 ? 3 : 4;
+            console.H1CivMaster = slot;
+        }
+
         private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
         {
             console.H1AmpTuneStandbyEnabled = h1ChkAmpTuneStandby != null && h1ChkAmpTuneStandby.Checked;
@@ -799,6 +913,7 @@ namespace Thetis
             H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
             H1BuildTransceiverOptions(); // H1: the three-way TX meter source, built in code
             H1BuildMfj998Options(); // H1: the MFJ998R tune and band-change options, built in code
+            H1BuildCivSlotOptions(); // H1: per-slot CI-V address and master, built in code
 
             // H1 round 7c (user): the four CAT boxes must look the same - CAT1 carries the
             // same Protocol row in its own group and the old standalone group is retired.
@@ -11016,8 +11131,11 @@ namespace Thetis
             if (comboCAT2Protocol != null) console.CAT2Protocol = comboCAT2Protocol.Text;
             if (comboCAT3Protocol != null) console.CAT3Protocol = comboCAT3Protocol.Text;
             if (comboCAT4Protocol != null) console.CAT4Protocol = comboCAT4Protocol.Text;
-            if (byte.TryParse(txtCIVAddress.Text, System.Globalization.NumberStyles.HexNumber, null, out byte civAddr))
-                console.CIVAddress = civAddr;
+            // H1 (2026-10-03): one CI-V address per slot; the fields live on the CAT pages
+            if (txtCIVAddr1 != null && byte.TryParse(txtCIVAddr1.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a1)) console.H1SetCivSlotAddress(1, h1a1);
+            if (txtCIVAddr2 != null && byte.TryParse(txtCIVAddr2.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a2)) console.H1SetCivSlotAddress(2, h1a2);
+            if (txtCIVAddr3 != null && byte.TryParse(txtCIVAddr3.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a3)) console.H1SetCivSlotAddress(3, h1a3);
+            if (txtCIVAddr4 != null && byte.TryParse(txtCIVAddr4.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a4)) console.H1SetCivSlotAddress(4, h1a4);
             console.CIVTransceive = chkCIVTransceive.Checked;
             console.CIVSyncSplit = chkCIVSyncSplit.Checked;
             console.CIVSyncPTT = chkCIVSyncPTT.Checked;
@@ -11070,6 +11188,14 @@ namespace Thetis
                 console.GanymedeCATPort = port;
             console.GanymedeCATEnabled = chkEnableGanymede.Checked;
 
+            // H1 (2026-10-03): the master radio - exactly one slot may carry it
+            int h1mst = 0;
+            if (radCIVMaster1 != null && radCIVMaster1.Checked) h1mst = 1;
+            else if (radCIVMaster2 != null && radCIVMaster2.Checked) h1mst = 2;
+            else if (radCIVMaster3 != null && radCIVMaster3.Checked) h1mst = 3;
+            else if (radCIVMaster4 != null && radCIVMaster4.Checked) h1mst = 4;
+            console.H1CivMaster = h1mst;
+
             // H1 (2026-10-03): refresh the CI-V options here, after the options are restored.
             // The defaults pass early in the start-up disables them while the protocol
             // selectors are still empty, and nothing re-enabled them until a selector or
@@ -11098,7 +11224,14 @@ namespace Thetis
             if (comboCAT2Protocol != null) comboCAT2Protocol.Text = console.CAT2Protocol;
             if (comboCAT3Protocol != null) comboCAT3Protocol.Text = console.CAT3Protocol;
             if (comboCAT4Protocol != null) comboCAT4Protocol.Text = console.CAT4Protocol;
-            txtCIVAddress.Text = console.CIVAddress.ToString("X2");
+            if (txtCIVAddr1 != null) txtCIVAddr1.Text = console.CAT1CIVAddress.ToString("X2");
+            if (txtCIVAddr2 != null) txtCIVAddr2.Text = console.CAT2CIVAddress.ToString("X2");
+            if (txtCIVAddr3 != null) txtCIVAddr3.Text = console.CAT3CIVAddress.ToString("X2");
+            if (txtCIVAddr4 != null) txtCIVAddr4.Text = console.CAT4CIVAddress.ToString("X2");
+            if (radCIVMaster1 != null) radCIVMaster1.Checked = console.H1CivMaster == 1;
+            if (radCIVMaster2 != null) radCIVMaster2.Checked = console.H1CivMaster == 2;
+            if (radCIVMaster3 != null) radCIVMaster3.Checked = console.H1CivMaster == 3;
+            if (radCIVMaster4 != null) radCIVMaster4.Checked = console.H1CivMaster == 4;
             chkCIVTransceive.Checked = console.CIVTransceive;
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
             chkCIVSyncPTT.Checked = console.CIVSyncPTT;
@@ -11513,6 +11646,23 @@ namespace Thetis
             if (chkCIVSyncPTT != null) chkCIVSyncPTT.Enabled = isCIV;
             if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Enabled = isCIV;
             if (lblCIVInfo != null) lblCIVInfo.Enabled = isCIV;
+            // H1 (2026-10-03): the per-slot address and master follow that slot's protocol
+            bool civ1 = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
+            bool civ2 = comboCAT2Protocol != null && comboCAT2Protocol.Text == "Icom CI-V (IC-7100)";
+            bool civ3 = comboCAT3Protocol != null && comboCAT3Protocol.Text == "Icom CI-V (IC-7100)";
+            bool civ4 = comboCAT4Protocol != null && comboCAT4Protocol.Text == "Icom CI-V (IC-7100)";
+            if (lblCIVAddr1 != null) lblCIVAddr1.Enabled = civ1;
+            if (txtCIVAddr1 != null) txtCIVAddr1.Enabled = civ1;
+            if (radCIVMaster1 != null) radCIVMaster1.Enabled = civ1;
+            if (lblCIVAddr2 != null) lblCIVAddr2.Enabled = civ2;
+            if (txtCIVAddr2 != null) txtCIVAddr2.Enabled = civ2;
+            if (radCIVMaster2 != null) radCIVMaster2.Enabled = civ2;
+            if (lblCIVAddr3 != null) lblCIVAddr3.Enabled = civ3;
+            if (txtCIVAddr3 != null) txtCIVAddr3.Enabled = civ3;
+            if (radCIVMaster3 != null) radCIVMaster3.Enabled = civ3;
+            if (lblCIVAddr4 != null) lblCIVAddr4.Enabled = civ4;
+            if (txtCIVAddr4 != null) txtCIVAddr4.Enabled = civ4;
+            if (radCIVMaster4 != null) radCIVMaster4.Enabled = civ4;
         }
 
         private void enableCAT2_HardwareFields(bool enable)

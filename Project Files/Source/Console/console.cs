@@ -20296,6 +20296,13 @@ namespace Thetis
         private void CivRebindInstance()
         {
             CIVControllerInstance = null;
+            if (_h1CivMasterSlot >= 1 && _h1CivMasterSlot <= 4)
+            {
+                // with a master chosen the rig duties live only on the master slot
+                CIVController h1master = civ_slot_controllers[_h1CivMasterSlot];
+                if (h1master != null && h1master.IsOpen) CIVControllerInstance = h1master;
+                return;
+            }
             for (int h1s = 1; h1s <= 4; h1s++)
             {
                 if (civ_slot_controllers[h1s] != null && civ_slot_controllers[h1s].IsOpen)
@@ -20358,8 +20365,13 @@ namespace Thetis
             {
                 if (ic == null) { ic = new CIVController(this); civ_slot_controllers[slot] = ic; }
                 if (ic.IsOpen) ic.Close();
-                ic.Open("COM" + CatPortForSlot(slot), CatBaudForSlot(slot), civ_address, civ_transceive, civ_sync_split, civ_sync_ptt);
-                CIVControllerInstance = ic;
+                // H1 (2026-10-03): each slot opens with its own CI-V address; the IC-7100
+                // options and the rig duties belong to the master slot only. Without a
+                // master chosen the previous behaviour stands unchanged.
+                bool h1master = _h1CivMasterSlot == 0 || _h1CivMasterSlot == slot;
+                ic.Open("COM" + CatPortForSlot(slot), CatBaudForSlot(slot), _h1civ_slot_addr[slot],
+                    h1master && civ_transceive, h1master && civ_sync_split, h1master && civ_sync_ptt);
+                if (h1master) CIVControllerInstance = ic;
             }
             else
             {
@@ -21657,6 +21669,8 @@ namespace Thetis
         private int _h1MfjBurstSeconds = 2;        // its length, 1 to 20 s
         private bool _h1MfjBurstActive = false;    // a burst is running
         private int _h1SwrHoldSeconds = 1;         // the SWR hold, 1 to 10 s
+        private int _h1CivMasterSlot = 0;          // 0 = none chosen (the pre-master behaviour)
+        private readonly byte[] _h1civ_slot_addr = new byte[] { 0, 0x88, 0x88, 0x88, 0x88 };
         public bool H1MfjBurstEnabled
         {
             get { return _h1MfjBurstEnabled; }
@@ -21672,6 +21686,30 @@ namespace Thetis
             get { return _h1SwrHoldSeconds; }
             set { if (value >= 1 && value <= 10) _h1SwrHoldSeconds = value; }
         }
+        // H1: on separate serial ports an address cannot collide, so the slot - not the
+        // address - identifies the master radio. Without a master chosen the old rule
+        // stands: every CI-V slot carries the options and the last enabled holds the duties.
+        public int H1CivMaster
+        {
+            get { return _h1CivMasterSlot; }
+            set
+            {
+                if (value < 0 || value > 4) return;
+                _h1CivMasterSlot = value;
+                CivRebindInstance(); // the rig duties follow the master slot
+            }
+        }
+        public void H1SetCivSlotAddress(int slot, byte addr)
+        {
+            if (slot < 1 || slot > 4) return;
+            _h1civ_slot_addr[slot] = addr;
+            CIVController ic = civ_slot_controllers[slot];
+            if (ic != null && ic.IsOpen) ic.RadioAddress = addr;
+        }
+        public byte CAT1CIVAddress { get { return _h1civ_slot_addr[1]; } }
+        public byte CAT2CIVAddress { get { return _h1civ_slot_addr[2]; } }
+        public byte CAT3CIVAddress { get { return _h1civ_slot_addr[3]; } }
+        public byte CAT4CIVAddress { get { return _h1civ_slot_addr[4]; } }
         private bool _h1BandGuardArmed = false;
         private bool _h1BandGuardLevelHeld = false;  // rig held at 0 W until the bypass is confirmed
         private bool _h1BandGuardRestoring = false;

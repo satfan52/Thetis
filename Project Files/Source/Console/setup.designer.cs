@@ -57405,40 +57405,40 @@
             // txtCAT1
             // 
             this.txtCAT1.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT1.Location = new System.Drawing.Point(14, 237);
+            this.txtCAT1.Location = new System.Drawing.Point(14, 272);
             this.txtCAT1.Multiline = true;
             this.txtCAT1.Name = "txtCAT1";
-            this.txtCAT1.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT1.Size = new System.Drawing.Size(160, 38);
             this.txtCAT1.TabIndex = 108;
             this.toolTip1.SetToolTip(this.txtCAT1, "You can add a discription for that CAT port.");
             // 
             // txtCAT4
             // 
             this.txtCAT4.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT4.Location = new System.Drawing.Point(512, 237);
+            this.txtCAT4.Location = new System.Drawing.Point(512, 272);
             this.txtCAT4.Multiline = true;
             this.txtCAT4.Name = "txtCAT4";
-            this.txtCAT4.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT4.Size = new System.Drawing.Size(160, 38);
             this.txtCAT4.TabIndex = 96;
             this.toolTip1.SetToolTip(this.txtCAT4, "You can add a discription for that CAT port.");
             // 
             // txtCAT3
             // 
             this.txtCAT3.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT3.Location = new System.Drawing.Point(346, 237);
+            this.txtCAT3.Location = new System.Drawing.Point(346, 272);
             this.txtCAT3.Multiline = true;
             this.txtCAT3.Name = "txtCAT3";
-            this.txtCAT3.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT3.Size = new System.Drawing.Size(160, 38);
             this.txtCAT3.TabIndex = 95;
             this.toolTip1.SetToolTip(this.txtCAT3, "You can add a discription for that CAT port.");
             // 
             // txtCAT2
             // 
             this.txtCAT2.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT2.Location = new System.Drawing.Point(180, 237);
+            this.txtCAT2.Location = new System.Drawing.Point(180, 272);
             this.txtCAT2.Multiline = true;
             this.txtCAT2.Name = "txtCAT2";
-            this.txtCAT2.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT2.Size = new System.Drawing.Size(160, 38);
             this.txtCAT2.TabIndex = 94;
             this.toolTip1.SetToolTip(this.txtCAT2, "You can add a discription for that CAT port.");
             // 
@@ -57449,9 +57449,9 @@
             this.grpPTTBitBang.Controls.Add(this.chkCATPTT_RTS);
             this.grpPTTBitBang.Controls.Add(this.chkCATPTT_DTR);
             this.grpPTTBitBang.Controls.Add(this.chkCATPTTEnabled);
-            this.grpPTTBitBang.Location = new System.Drawing.Point(12, 289);
+            this.grpPTTBitBang.Location = new System.Drawing.Point(12, 312);
             this.grpPTTBitBang.Name = "grpPTTBitBang";
-            this.grpPTTBitBang.Size = new System.Drawing.Size(160, 112);
+            this.grpPTTBitBang.Size = new System.Drawing.Size(160, 94);
             this.grpPTTBitBang.TabIndex = 91;
             this.grpPTTBitBang.TabStop = false;
             this.grpPTTBitBang.Text = "PTT Control";
@@ -57481,7 +57481,7 @@
             // chkCATPTT_RTS
             // 
             this.chkCATPTT_RTS.Image = null;
-            this.chkCATPTT_RTS.Location = new System.Drawing.Point(16, 74);
+            this.chkCATPTT_RTS.Location = new System.Drawing.Point(16, 67);
             this.chkCATPTT_RTS.Name = "chkCATPTT_RTS";
             this.chkCATPTT_RTS.Size = new System.Drawing.Size(56, 24);
             this.chkCATPTT_RTS.TabIndex = 0;
@@ -57491,7 +57491,7 @@
             // chkCATPTT_DTR
             // 
             this.chkCATPTT_DTR.Image = null;
-            this.chkCATPTT_DTR.Location = new System.Drawing.Point(74, 78);
+            this.chkCATPTT_DTR.Location = new System.Drawing.Point(74, 71);
             this.chkCATPTT_DTR.Name = "chkCATPTT_DTR";
             this.chkCATPTT_DTR.Size = new System.Drawing.Size(60, 16);
             this.chkCATPTT_DTR.TabIndex = 1;
@@ -58337,7 +58337,7 @@
             this.lblCIVInfo.Name = "lblCIVInfo";
             this.lblCIVInfo.Size = new System.Drawing.Size(490, 13);
             this.lblCIVInfo.TabIndex = 7;
-            this.lblCIVInfo.Text = "CI-V IC-7100: Addr 0x88, Host 0xE0. VFO dial & mode tracking work with or without PTT sync.";
+            this.lblCIVInfo.Text = "CI-V IC-7100: Host 0xE0. The CI-V address and the master tick are set on the CAT pages. VFO dial & mode tracking work with or without PTT sync.";
             // 
             // tpTCITCPIPN1MM
             // 
