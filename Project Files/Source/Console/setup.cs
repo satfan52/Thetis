@@ -462,6 +462,10 @@ namespace Thetis
         private CheckBoxTS h1ChkAmpBlockVis;
         private TextBoxTS h1TxtAmpAddress;
         private TextBoxTS h1TxtAmpPort;
+        private GroupBoxTS h1GrpMfj;
+        private CheckBoxTS h1ChkMfjBurst;
+        private NumericUpDownTS h1UdMfjBurstLen;
+        private NumericUpDownTS h1UdSwrHold;
 
         // H1 round 5 (user 2026-10-02): the Transceivers page under Other H/W, right next to
         // the Amp page, for hybrid operation - the SDR receives while an external transceiver
@@ -552,22 +556,6 @@ namespace Thetis
             h1GrpAmp.Location = new Point(6, 219);
             h1GrpAmp.Size = new Size(556, 114);
 
-            h1ChkAmpTuneStandby = new CheckBoxTS();
-            h1ChkAmpTuneStandby.AutoSize = false;
-            h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
-            h1ChkAmpTuneStandby.Image = null;
-            h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
-            h1ChkAmpTuneStandby.Text = "Two-step tune for easy operation with an ATU and a linear amplifier";
-            h1ChkAmpTuneStandby.Location = new Point(10, 20);
-            h1ChkAmpTuneStandby.Size = new Size(536, 22);
-            toolTip1.SetToolTip(h1ChkAmpTuneStandby,
-                "When checked, the OM2000A+ is bypassed for as long as the Antenna SWR has not" + System.Environment.NewLine +
-                "stabilised below 2, and the Tuning power is set by the \"Tune\" level." + System.Environment.NewLine +
-                "When the antenna is matched, the amp comes in line and the Tuning power changes to" + System.Environment.NewLine +
-                "the \"Drive\" level instead of the \"Tune\" level." + System.Environment.NewLine +
-                "When unchecked, the Tuning power is always set by the \"Tune\" level regardless of" + System.Environment.NewLine +
-                "the Antenna SWR value, or whether the amp is in line or switched to standby.");
-
             h1ChkAmpBlockVis = new CheckBoxTS();
             h1ChkAmpBlockVis.AutoSize = false;
             h1ChkAmpBlockVis.UseVisualStyleBackColor = true;
@@ -578,20 +566,6 @@ namespace Thetis
             h1ChkAmpBlockVis.Size = new Size(190, 22);
             toolTip1.SetToolTip(h1ChkAmpBlockVis,
                 "Shows the OM2000A+ block in the GUI.");
-            h1ChkBandGuard = new CheckBoxTS();
-            h1ChkBandGuard.AutoSize = false;
-            h1ChkBandGuard.UseVisualStyleBackColor = true;
-            h1ChkBandGuard.Image = null;
-            h1ChkBandGuard.Name = "chkH1BandGuard";
-            h1ChkBandGuard.Text = "Band change: bypass and retune at ANT Tune";
-            h1ChkBandGuard.Location = new Point(210, 74);
-            h1ChkBandGuard.Size = new Size(336, 22);
-            toolTip1.SetToolTip(h1ChkBandGuard,
-                "When checked, every band change bypasses the OM2000A+ and the PA" + System.Environment.NewLine +
-                "level runs at the ANT Tune value, so the next transmission retunes" + System.Environment.NewLine +
-                "the antenna. When the SWR settles below 2, the PA level returns to" + System.Environment.NewLine +
-                "its band value and the amplifier comes back in line.");
-
             h1ChkAmpMeterAmp = new CheckBoxTS();
             h1ChkAmpMeterAmp.AutoSize = false;
             h1ChkAmpMeterAmp.UseVisualStyleBackColor = true;
@@ -639,16 +613,12 @@ namespace Thetis
             h1LblAmpInfo.Location = new Point(10, 94);
             h1LblAmpInfo.Size = new Size(536, 16);
 
-            h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1ChkAmpBlockVis.CheckedChanged += h1ChkAmpBlockVis_CheckedChanged;
-            h1ChkBandGuard.CheckedChanged += h1ChkBandGuard_CheckedChanged;
             h1ChkAmpMeterAmp.CheckedChanged += h1ChkAmpMeterAmp_CheckedChanged;
             h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
             h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
 
-            h1GrpAmp.Controls.Add(h1ChkAmpTuneStandby);
             h1GrpAmp.Controls.Add(h1ChkAmpBlockVis);
-            h1GrpAmp.Controls.Add(h1ChkBandGuard);
             h1GrpAmp.Controls.Add(h1ChkAmpMeterAmp);
             h1GrpAmp.Controls.Add(h1LblAmpAddr);
             h1GrpAmp.Controls.Add(h1TxtAmpAddress);
@@ -658,6 +628,123 @@ namespace Thetis
             tpOtherHW_amp.Controls.Add(h1GrpAmp);
         }
 
+        // -----------------------------------------------------------------------------
+        // H1 round 8 (user 2026-10-03): the MFJ998R options. These serve a slow remote
+        // antenna tuner such as the MFJ998R. The two-step tune has moved here and now runs
+        // only on CTRL+click; the band-change procedure is bypass + ANT Tune level + watch;
+        // the burst sub-option prepends a short TUNE at the ANT Tune level. On the General
+        // tab, Other H/W sub-tab, ATU page, below the Aries ATU Control group.
+        // -----------------------------------------------------------------------------
+        private void H1BuildMfj998Options()
+        {
+            if (h1GrpMfj != null || tpApolloATU == null) return;
+
+            h1GrpMfj = new GroupBoxTS();
+            h1GrpMfj.Text = "MFJ998R";
+            h1GrpMfj.Location = new Point(6, 219);
+            h1GrpMfj.Size = new Size(556, 114);
+
+            h1ChkAmpTuneStandby = new CheckBoxTS();
+            h1ChkAmpTuneStandby.AutoSize = false;
+            h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
+            h1ChkAmpTuneStandby.Image = null;
+            h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
+            h1ChkAmpTuneStandby.Text = "Two-step tune for easy operation with an ATU and a linear amplifier";
+            h1ChkAmpTuneStandby.Location = new Point(10, 18);
+            h1ChkAmpTuneStandby.Size = new Size(536, 22);
+            toolTip1.SetToolTip(h1ChkAmpTuneStandby,
+                "The TUNE button always switches the OM2000A+ to stand-by while it is held." + System.Environment.NewLine +
+                "With this option ticked, holding CTRL while clicking Tune runs the two-step tune:" + System.Environment.NewLine +
+                "the antenna is matched with the amplifier bypassed, the PA Drive level returns" + System.Environment.NewLine +
+                "first, and the amplifier comes back in line. A band change never runs the two-step tune.");
+
+            h1ChkBandGuard = new CheckBoxTS();
+            h1ChkBandGuard.AutoSize = false;
+            h1ChkBandGuard.UseVisualStyleBackColor = true;
+            h1ChkBandGuard.Image = null;
+            h1ChkBandGuard.Name = "chkH1BandGuard";
+            h1ChkBandGuard.Text = "Band Change: bypass amp and set PA Drive level to ANT Tune level until Antenna SWR stabilises <2";
+            h1ChkBandGuard.Location = new Point(10, 40);
+            h1ChkBandGuard.Size = new Size(536, 22);
+            toolTip1.SetToolTip(h1ChkBandGuard,
+                "When checked, every band change bypasses the OM2000A+ and the PA level runs at" + System.Environment.NewLine +
+                "the ANT Tune value, so the antenna tuner can retune on the next transmission." + System.Environment.NewLine +
+                "When the SWR holds below 2, the PA Drive value returns first and the amplifier" + System.Environment.NewLine +
+                "comes back in line. These options serve a slow remote antenna tuner such as the MFJ998R.");
+
+            h1ChkMfjBurst = new CheckBoxTS();
+            h1ChkMfjBurst.AutoSize = false;
+            h1ChkMfjBurst.UseVisualStyleBackColor = true;
+            h1ChkMfjBurst.Image = null;
+            h1ChkMfjBurst.Name = "chkH1MfjBurst";
+            h1ChkMfjBurst.Text = "Band change: start with a TUNE burst at \"ANT tune\" power level";
+            h1ChkMfjBurst.Location = new Point(10, 62);
+            h1ChkMfjBurst.Size = new Size(536, 22);
+            toolTip1.SetToolTip(h1ChkMfjBurst,
+                "With the band-change option ticked, the console first keys its own tune carrier at" + System.Environment.NewLine +
+                "the ANT Tune level for the burst length while the amplifier is bypassed. When the" + System.Environment.NewLine +
+                "SWR settles below 2 inside the burst, the carrier is released and the amplifier" + System.Environment.NewLine +
+                "returns in line. Otherwise the carrier stops and the waiting procedure continues.");
+
+            LabelTS h1LblBurstLen = new LabelTS();
+            h1LblBurstLen.AutoSize = true;
+            h1LblBurstLen.Image = null;
+            h1LblBurstLen.Text = "Tune burst length:";
+            h1LblBurstLen.Location = new Point(10, 88);
+
+            h1UdMfjBurstLen = new NumericUpDownTS();
+            h1UdMfjBurstLen.Name = "udH1MfjBurstLen";
+            h1UdMfjBurstLen.Minimum = 1;
+            h1UdMfjBurstLen.Maximum = 20;
+            h1UdMfjBurstLen.Value = 2;
+            h1UdMfjBurstLen.Location = new Point(122, 85);
+            h1UdMfjBurstLen.Size = new Size(48, 20);
+            toolTip1.SetToolTip(h1UdMfjBurstLen, "The length of the TUNE burst that starts a band change, in seconds (1 to 20).");
+
+            LabelTS h1LblBurstSec = new LabelTS();
+            h1LblBurstSec.AutoSize = true;
+            h1LblBurstSec.Image = null;
+            h1LblBurstSec.Text = "s";
+            h1LblBurstSec.Location = new Point(174, 88);
+
+            LabelTS h1LblSwrHold = new LabelTS();
+            h1LblSwrHold.AutoSize = true;
+            h1LblSwrHold.Image = null;
+            h1LblSwrHold.Text = "SWR hold:";
+            h1LblSwrHold.Location = new Point(214, 88);
+
+            h1UdSwrHold = new NumericUpDownTS();
+            h1UdSwrHold.Name = "udH1SwrHold";
+            h1UdSwrHold.Minimum = 1;
+            h1UdSwrHold.Maximum = 10;
+            h1UdSwrHold.Value = 1;
+            h1UdSwrHold.Location = new Point(274, 85);
+            h1UdSwrHold.Size = new Size(48, 20);
+            toolTip1.SetToolTip(h1UdSwrHold, "How long the SWR must stay below 2 before a match is accepted, in seconds (1 to 10).");
+
+            LabelTS h1LblSwrSec = new LabelTS();
+            h1LblSwrSec.AutoSize = true;
+            h1LblSwrSec.Image = null;
+            h1LblSwrSec.Text = "s";
+            h1LblSwrSec.Location = new Point(326, 88);
+
+            h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
+            h1ChkBandGuard.CheckedChanged += h1ChkBandGuard_CheckedChanged;
+            h1ChkMfjBurst.CheckedChanged += h1ChkMfjBurst_CheckedChanged;
+            h1UdMfjBurstLen.ValueChanged += h1UdMfjBurstLen_ValueChanged;
+            h1UdSwrHold.ValueChanged += h1UdSwrHold_ValueChanged;
+
+            h1GrpMfj.Controls.Add(h1ChkAmpTuneStandby);
+            h1GrpMfj.Controls.Add(h1ChkBandGuard);
+            h1GrpMfj.Controls.Add(h1ChkMfjBurst);
+            h1GrpMfj.Controls.Add(h1LblBurstLen);
+            h1GrpMfj.Controls.Add(h1UdMfjBurstLen);
+            h1GrpMfj.Controls.Add(h1LblBurstSec);
+            h1GrpMfj.Controls.Add(h1LblSwrHold);
+            h1GrpMfj.Controls.Add(h1UdSwrHold);
+            h1GrpMfj.Controls.Add(h1LblSwrSec);
+            tpApolloATU.Controls.Add(h1GrpMfj);
+        }
         private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
         {
             console.H1AmpTuneStandbyEnabled = h1ChkAmpTuneStandby != null && h1ChkAmpTuneStandby.Checked;
@@ -711,6 +798,7 @@ namespace Thetis
             H1BuildCivRigMetersOption(); // H1: the CI-V rig power & meters option, built in code
             H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
             H1BuildTransceiverOptions(); // H1: the three-way TX meter source, built in code
+            H1BuildMfj998Options(); // H1: the MFJ998R tune and band-change options, built in code
 
             // H1 round 7c (user): the four CAT boxes must look the same - CAT1 carries the
             // same Protocol row in its own group and the old standalone group is retired.
@@ -11019,6 +11107,9 @@ namespace Thetis
             if (h1ChkAmpMeterAmp != null) h1ChkAmpMeterAmp.Checked = console.H1AmpMeterEnabled; // H1 round 5
             if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
             if (h1ChkBandGuard != null) h1ChkBandGuard.Checked = console.H1BandGuardEnabled;
+            if (h1ChkMfjBurst != null) h1ChkMfjBurst.Checked = console.H1MfjBurstEnabled;
+            if (h1UdMfjBurstLen != null) h1UdMfjBurstLen.Value = console.H1MfjBurstSeconds;
+            if (h1UdSwrHold != null) h1UdSwrHold.Value = console.H1SwrHoldSeconds;
             if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
             if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
             updateCIVControlsEnabled();

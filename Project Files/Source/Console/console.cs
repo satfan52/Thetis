@@ -21652,6 +21652,26 @@ namespace Thetis
                 H1AmpUpdateRoute();
             }
         }
+        // H1 (user 2026-10-03): the MFJ998R options and the per-slot CI-V identity
+        private bool _h1MfjBurstEnabled = false;   // the tune burst at a band change
+        private int _h1MfjBurstSeconds = 2;        // its length, 1 to 20 s
+        private bool _h1MfjBurstActive = false;    // a burst is running
+        private int _h1SwrHoldSeconds = 1;         // the SWR hold, 1 to 10 s
+        public bool H1MfjBurstEnabled
+        {
+            get { return _h1MfjBurstEnabled; }
+            set { _h1MfjBurstEnabled = value; }
+        }
+        public int H1MfjBurstSeconds
+        {
+            get { return _h1MfjBurstSeconds; }
+            set { if (value >= 1 && value <= 20) _h1MfjBurstSeconds = value; }
+        }
+        public int H1SwrHoldSeconds
+        {
+            get { return _h1SwrHoldSeconds; }
+            set { if (value >= 1 && value <= 10) _h1SwrHoldSeconds = value; }
+        }
         private bool _h1BandGuardArmed = false;
         private bool _h1BandGuardLevelHeld = false;  // rig held at 0 W until the bypass is confirmed
         private bool _h1BandGuardRestoring = false;
@@ -21722,7 +21742,7 @@ namespace Thetis
             _h1AmpTuneArmed = false;
             _h1AmpTuneWasOperate = false;
             _h1TunePhase2 = false;
-            if (!_h1AmpTuneStandbyEnabled || AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
+            if (AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return; // H1: the bypass runs for every tune press
             if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
             {
                 // H1: already in stand-by (hand-set, or left over from a cancelled tune).
@@ -21732,7 +21752,7 @@ namespace Thetis
                 // is sent; releasing before the advance leaves the amplifier in stand-by.
                 _h1AmpTuneArmed = true;
                 _h1AmpTuneReqMs = AmpLanControllerInstance.ClockMs;
-                AmpLanControllerInstance.LogNote("amplifier already in stand-by - two-phase tune armed");
+                AmpLanControllerInstance.LogNote("amplifier already in stand-by - Tune armed");
                 return;
             }
             _h1AmpTuneWasOperate = AmpLanControllerInstance.IsOperate; // when the state is unknown the end reads the first state frame
@@ -21744,6 +21764,9 @@ namespace Thetis
         {
             if (!_h1AmpTuneArmed) return;
             _h1AmpTuneArmed = false;
+            // H1 (user 2026-10-03): the band-change guard owns the amplifier state; a tune
+            // release must not bring the amplifier in line while the guard is still parked
+            if (_h1BandGuardArmed) return;
             if (AmpLanControllerInstance == null) return;
             if (!_h1AmpTuneWasOperate)
             {
@@ -21768,7 +21791,7 @@ namespace Thetis
         // its first few hundred milliseconds). Waits at most maxMs; releases on timeout.
         private async Task H1AmpTuneStandbySettle(int maxMs)
         {
-            if (AmpLanControllerInstance == null || !_h1AmpTuneStandbyEnabled || !_h1AmpTuneArmed) return;
+            if (AmpLanControllerInstance == null || !_h1AmpTuneArmed) return;
             if (!AmpLanControllerInstance.IsOpen) return;
             DateTime start = DateTime.UtcNow;
             DateTime deadline = start.AddMilliseconds(maxMs);
@@ -21822,6 +21845,7 @@ namespace Thetis
             AmpLanControllerInstance.LogNote("band change: amplifier to stand-by, PA level to the ANT Tune value until the SWR settles below 2.0 (PA drive {0}% banked)", _h1BandGuardRestorePwr);
             H1RigDriveSync(_h1BandGuardLevelHeld ? 0 : ptbTune.Value);
             if (!_h1BandGuardRunning) H1BandGuardRun();
+            if (_h1MfjBurstEnabled) H1MfjBurstRun(); // H1: the MFJ998R burst runs first
         }
 
         private void H1BandGuardDisarm()
@@ -21841,6 +21865,59 @@ namespace Thetis
             {
                 AmpLanControllerInstance.LogNote("band-change guard cleared - {0}", reason);
                 H1RigDriveSync(ptbPWR.Value); // the rig must not stay at the guard level
+            }
+            if (_h1MfjBurstActive)
+            {
+                _h1MfjBurstActive = false;
+                if (chkTUN.Checked) chkTUN.Checked = false; // the burst carrier never outlives its guard
+            }
+        }
+
+        // H1 (user 2026-10-03): the MFJ998R band-change tune burst. With the sub-option
+        // ticked the console first keys its own tune carrier at the ANT Tune level for up
+        // to the burst length, the amplifier bypassed. A match inside the burst completes
+        // through the two-phase machinery (carrier released before the amplifier returns);
+        // otherwise the carrier stops and the normal waiting procedure continues.
+        private void H1MfjBurstRun()
+        {
+            if (_h1MfjBurstActive) return;
+            if (!H1RigRouteActive)
+            {
+                if (AmpLanControllerInstance != null)
+                    AmpLanControllerInstance.LogNote("band-change tune burst skipped: the IC-7100 route is off");
+                return;
+            }
+            _h1MfjBurstActive = true;
+            H1MfjBurstRunAsync();
+        }
+
+        private async void H1MfjBurstRunAsync()
+        {
+            try
+            {
+                // no carrier until the bypass is confirmed - the same rule as the tune press
+                DateTime h1dl = DateTime.UtcNow.AddMilliseconds(8000);
+                while (_h1BandGuardArmed && _h1BandGuardLevelHeld && DateTime.UtcNow < h1dl)
+                    await Task.Delay(50);
+                if (!_h1BandGuardArmed || _h1BandGuardLevelHeld) return;
+                if (AmpLanControllerInstance != null)
+                    AmpLanControllerInstance.LogNote("band-change tune burst: Tune at the ANT Tune level for up to {0} s", _h1MfjBurstSeconds);
+                chkTUN.Checked = true; // the usual Tune press carries the burst; the phase machinery watches the SWR
+                DateTime h1start = DateTime.UtcNow;
+                while (_h1MfjBurstActive && _h1BandGuardArmed && chkTUN.Checked &&
+                       DateTime.UtcNow < h1start.AddSeconds(_h1MfjBurstSeconds))
+                    await Task.Delay(100);
+                if (_h1MfjBurstActive && _h1BandGuardArmed && chkTUN.Checked)
+                {
+                    // the full burst without a match - stop the carrier, stay parked, keep watching
+                    chkTUN.Checked = false;
+                    if (AmpLanControllerInstance != null)
+                        AmpLanControllerInstance.LogNote("tune burst ended, the SWR has not settled below {0:0.0} - keeping the amplifier in stand-by, still watching", H1TuneMatchSwr);
+                }
+            }
+            finally
+            {
+                _h1MfjBurstActive = false;
             }
         }
 
@@ -21902,7 +21979,7 @@ namespace Thetis
                     if (CIVControllerInstance.RigSwrRatio <= H1TuneMatchSwr)
                     {
                         if (stableSince == DateTime.MinValue) stableSince = DateTime.UtcNow;
-                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1TuneMatchHoldMs)
+                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1SwrHoldMs)
                         {
                             await H1BandGuardRestore();
                             stableSince = DateTime.MinValue;
@@ -21966,16 +22043,27 @@ namespace Thetis
         // sequence only runs when the tune begin actually put the amplifier in stand-by
         // (a hand-set stand-by tunes bypassed and stays untouched, as before).
         private const float H1TuneMatchSwr = 2.0f;
-        private const int H1TuneMatchHoldMs = 1000;
+        // H1 (user 2026-10-03): the SWR hold is settable - how long the SWR must stay
+        // below H1TuneMatchSwr before a match is accepted, on every path.
+        private int H1SwrHoldMs
+        {
+            get
+            {
+                int h1s = _h1SwrHoldSeconds;
+                if (h1s < 1) h1s = 1;
+                if (h1s > 10) h1s = 10;
+                return h1s * 1000;
+            }
+        }
         private bool _h1TuneAutoRunning = false;
 
         private void H1TuneAutoPhaseStart()
         {
             if (_h1TuneAutoRunning) return;
-            if (!_h1AmpTuneStandbyEnabled || !_h1AmpTuneArmed) return;
+            if ((!_h1AmpTuneStandbyEnabled && !_h1MfjBurstActive) || !_h1AmpTuneArmed) return;
             if (AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
             _h1TuneAutoRunning = true;
-            AmpLanControllerInstance.LogNote("two-phase tune armed: waiting for the tuner (SWR {0:0.0} or better for {1} s)", H1TuneMatchSwr, H1TuneMatchHoldMs / 1000);
+            AmpLanControllerInstance.LogNote("two-phase tune armed: waiting for the tuner (SWR {0:0.0} or better for {1} s)", H1TuneMatchSwr, H1SwrHoldMs / 1000);
             H1TuneAutoPhaseRun();
         }
 
@@ -22001,7 +22089,7 @@ namespace Thetis
                     if (swr <= H1TuneMatchSwr)
                     {
                         if (stableSince == DateTime.MinValue) stableSince = DateTime.UtcNow;
-                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1TuneMatchHoldMs)
+                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1SwrHoldMs)
                         {
                             H1TuneAutoPhaseAdvance();
                             break;
@@ -22054,6 +22142,16 @@ namespace Thetis
                 }
             }
             if (!chkTUN.Checked) return;
+            if (_h1MfjBurstActive)
+            {
+                // the automatic burst never leaves an amplified carrier on the air: the guard
+                // cancel stops the carrier (see H1BandGuardCancel) and the tune release then
+                // returns the amplifier in line, the PA Drive level already restored
+                if (AmpLanControllerInstance != null)
+                    AmpLanControllerInstance.LogNote("tune burst matched - carrier released, amplifier back in line");
+                H1BandGuardCancel("tune burst completed");
+                return;
+            }
             // 2) the amplifier to OPERATE - the same carrier continues as the operating tune
             if (AmpLanControllerInstance != null)
             {
@@ -34951,6 +35049,11 @@ namespace Thetis
                 // autotune can see the RF. If it is parked in stand-by, ask for operate once
                 // (best effort - it may be ignored until its automatics finish).
                 bool ampAutoTune = AmpLanControllerInstance != null && AmpLanControllerInstance.IsAutoTune;
+                // H1 (user 2026-10-03): the plain Tune click switches the amplifier to
+                // stand-by for the press and returns it on release; the two-step tune runs
+                // only with CTRL held, with its option on.
+                bool h1TwoStep = !ampAutoTune && _h1AmpTuneStandbyEnabled &&
+                    (Control.ModifierKeys & Keys.Control) == Keys.Control;
                 if (ampAutoTune)
                 {
                     if (AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate)
@@ -35053,7 +35156,8 @@ namespace Thetis
                     chkTUN.Checked = false;
                     return;
                 }
-                H1TuneAutoPhaseStart(); // H1: two-phase tune - switch to the operating tune once the tuner settles
+                if (h1TwoStep || ampAutoTune || _h1MfjBurstActive)
+                    H1TuneAutoPhaseStart(); // H1: the operating-tune machinery - the CTRL two-step, the amp autotune, or the band-change burst
                 // MW0LGE_21k8 moved below mox
                 updateVFOFreqs(chkTUN.Checked, true);
 
