@@ -1979,7 +1979,69 @@ namespace Thetis
 
         private void SendFrame(byte[] frame)
         {
-            TrySendFrame(frame);
+            // H1 (2026-10-03): a set command that the IC-7100 never acknowledged was lost on the
+            // CI-V line - traced live: SPLIT ON and SET FREQ frames with no echo and no ACK while
+            // the rig's own CI-V output traffic ran, leaving the rig in simplex or on a stale VFO B.
+            // Set commands now wait for the rig's ACK and are re-sent up to twice without one.
+            if (!H1NeedsAck(frame) || System.Threading.Monitor.IsEntered(_portLock))
+            {
+                TrySendFrame(frame);
+                return;
+            }
+            for (int attempt = 1; attempt <= H1_ACK_ATTEMPTS; attempt++)
+            {
+                int ack0, nak0;
+                lock (_ackLock) { ack0 = _ackCount; nak0 = _nakCount; }
+                if (!TrySendFrame(frame)) return;
+                bool acked = false, naked = false;
+                lock (_ackLock)
+                {
+                    long deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency * H1_ACK_TIMEOUT_MS / 1000;
+                    while (_ackCount == ack0 && _nakCount == nak0)
+                    {
+                        long left = (deadline - Stopwatch.GetTimestamp()) * 1000 / Stopwatch.Frequency;
+                        if (left <= 0) break;
+                        System.Threading.Monitor.Wait(_ackLock, (int)left);
+                    }
+                    acked = _ackCount != ack0;
+                    naked = !acked && _nakCount != nak0;
+                }
+                if (acked) return;
+                string d = SplitTraceFrame(frame);
+                if (attempt < H1_ACK_ATTEMPTS)
+                    SplitTrace(string.Format("RESEND {0}/{1} - {2} for {3}", attempt + 1, H1_ACK_ATTEMPTS, naked ? "NAK" : "no ACK", d));
+                else
+                    SplitTrace(string.Format("GAVE UP after {0} attempts - {1} for {2}", H1_ACK_ATTEMPTS, naked ? "NAK" : "no ACK", d));
+            }
+        }
+
+        private const int H1_ACK_ATTEMPTS = 3;
+        private const int H1_ACK_TIMEOUT_MS = 80;
+        private readonly object _ackLock = new object();
+        private int _ackCount = 0;
+        private int _nakCount = 0;
+
+        // H1: the VFO and split set commands the frequency sync depends on. Reads are answered
+        // with data, not ACK; PTT keeps its own retry loop; power and meter frames are untouched.
+        private static bool H1NeedsAck(byte[] f)
+        {
+            if (f == null || f.Length < 7) return false;
+            byte c = f[4];
+            if (c == CIVProtocol.CMD_SEND_FREQ || c == CIVProtocol.CMD_SEND_MODE || c == CIVProtocol.CMD_VFO_SEL) return true;
+            if (c == CIVProtocol.CMD_SPLIT) return true;          // length >= 7: carries the on/off byte
+            if (c == CIVProtocol.CMD_VFO_FREQ_25) return f.Length > 8; // subcommand plus frequency
+            return false;
+        }
+
+        private void H1SignalAck(byte[] frame)
+        {
+            if (frame.Length != 6 || frame[3] != _radioAddr) return;
+            if (frame[4] != CIVProtocol.ACK && frame[4] != CIVProtocol.NAK) return;
+            lock (_ackLock)
+            {
+                if (frame[4] == CIVProtocol.ACK) _ackCount++; else _nakCount++;
+                System.Threading.Monitor.PulseAll(_ackLock);
+            }
         }
 
         /// <summary>
@@ -2112,6 +2174,7 @@ namespace Thetis
                 _rxBuffer.RemoveRange(0, frameLen);
 
                 Log("[RX] {0}", HexDump(frame));
+                H1SignalAck(frame);
                 HandleCIVFrame(frame);
             }
         }
