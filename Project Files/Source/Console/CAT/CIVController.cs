@@ -1453,7 +1453,11 @@ namespace Thetis
 
                 try
                 {
-                    SendFrame(selOther);
+                    if (!SendFrame(selOther) && selectOther)
+                    {
+                        H1AbortVfoBWrite("VFO B frequency update");
+                        return;
+                    }
                     Thread.Sleep(50);
                     SendFrame(setFreq);
                     Thread.Sleep(70); // 70ms allows IC-7100 PLL synthesizer to fully lock
@@ -1510,7 +1514,16 @@ namespace Thetis
                     // Setting VFO B first guarantees Split will not be immediately cancelled.
                     if (vfoBFreq > 0)
                     {
-                        SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
+                        if (!SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true)))
+                        {
+                            // H1: no split with an unknown transmit frequency - leave the rig in
+                            // simplex and let the next flood tick run the whole activation again.
+                            H1AbortVfoBWrite("split activation");
+                            _lastSentSplit = false;
+                            _actualRadioSplit = false;
+                            lock (_stateLock) { _splitChangePending = true; }
+                            return;
+                        }
                         Thread.Sleep(50);
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
                         _lastSentVfoBFreq = vfoBFreq;
@@ -1587,12 +1600,18 @@ namespace Thetis
                         double vfoBFreq = _console.VFOBFreq;
                         if (vfoBFreq > 0)
                         {
-                            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true));
-                            Thread.Sleep(40);
-                            SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
-                            Thread.Sleep(40);
-                            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                            _lastSentVfoBFreq = vfoBFreq;
+                            if (!SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, true)))
+                            {
+                                H1AbortVfoBWrite("VFO B coherence after split off");
+                            }
+                            else
+                            {
+                                Thread.Sleep(40);
+                                SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
+                                Thread.Sleep(40);
+                                SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+                                _lastSentVfoBFreq = vfoBFreq;
+                            }
                         }
                     }
                 }
@@ -1980,7 +1999,9 @@ namespace Thetis
 
         private long _lastFrameSentTime = 0;
 
-        private void SendFrame(byte[] frame)
+        // Returns true when the rig acknowledged the frame (or the frame needs no ACK and reached
+        // the port); false when it was never confirmed after all attempts.
+        private bool SendFrame(byte[] frame)
         {
             // H1 (2026-10-03): a set command that the IC-7100 never acknowledged was lost on the
             // CI-V line - traced live: SPLIT ON and SET FREQ frames with no echo and no ACK while
@@ -1988,14 +2009,13 @@ namespace Thetis
             // Set commands now wait for the rig's ACK and are re-sent up to twice without one.
             if (!H1NeedsAck(frame) || System.Threading.Monitor.IsEntered(_portLock))
             {
-                TrySendFrame(frame);
-                return;
+                return TrySendFrame(frame);
             }
             for (int attempt = 1; attempt <= H1_ACK_ATTEMPTS; attempt++)
             {
                 int ack0, nak0;
                 lock (_ackLock) { ack0 = _ackCount; nak0 = _nakCount; }
-                if (!TrySendFrame(frame)) return;
+                if (!TrySendFrame(frame)) return false;
                 bool acked = false, naked = false;
                 lock (_ackLock)
                 {
@@ -2009,12 +2029,29 @@ namespace Thetis
                     acked = _ackCount != ack0;
                     naked = !acked && _nakCount != nak0;
                 }
-                if (acked) return;
+                if (acked) return true;
                 string d = SplitTraceFrame(frame);
                 if (attempt < H1_ACK_ATTEMPTS)
                     SplitTrace(string.Format("RESEND {0}/{1} - {2} for {3}", attempt + 1, H1_ACK_ATTEMPTS, naked ? "NAK" : "no ACK", d));
                 else
                     SplitTrace(string.Format("GAVE UP after {0} attempts - {1} for {2}", H1_ACK_ATTEMPTS, naked ? "NAK" : "no ACK", d));
+            }
+            return false;
+        }
+
+        // H1 (2026-10-03): a VFO B write whose 'select VFO B' was never confirmed must not send the
+        // frequency - the rig may still be on VFO A and would take the transmit frequency there.
+        // The write is abandoned, VFO A is reselected, and the next flood tick redoes it.
+        private void H1AbortVfoBWrite(string where)
+        {
+            SplitTrace("ABORT " + where + " - select VFO B not confirmed, frequency NOT sent, VFO A reselected, retry on the next update");
+            SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
+            _currentRadioSelectedVfo = CIVProtocol.VFO_A;
+            lock (_stateLock)
+            {
+                _lastSentVfoBFreq = 0;
+                _vfoBChangePending = true;
+                _lastVfoBTuneTime = 0;
             }
         }
 
