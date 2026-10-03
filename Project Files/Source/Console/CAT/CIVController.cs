@@ -1365,7 +1365,10 @@ namespace Thetis
                 SendVfoAFrequency(targetVfoAFreq, force: true);
             }
 
-            if (doVfoB && !doSplit && _console != null && (_console.VFOBTX || _console.TXOnSubVFOB))
+            // H1 (2026-10-03): SPLIT on SubVFOA is a transmit source too - with RX2 off neither
+            // VFOBTX nor TXOnSubVFOB is set, so SubVFOA frequency changes were computed here and
+            // then never sent; the rig kept its VFO B at the value loaded when split was entered.
+            if (doVfoB && !doSplit && _console != null && (_console.VFOBTX || _console.TXOnSubVFOB || (_console.VFOSplit && IsSplitRequired())))
             {
                 SendVfoBFrequency(targetVfoBFreq);
             }
