@@ -121,18 +121,91 @@ namespace Thetis
 
         #region Debug Logging
 
-        [System.Diagnostics.Conditional("DEBUG")]
+        // H1 (2026-10-03): Log runs in release builds too, so the split/VFO lines can be
+        // mirrored to civ_split.log while the transmit-tick race is being traced.
         public static void Log(string format, params object[] args)
         {
             try
             {
+                if (!SplitTraceWanted(format)) return;
                 string text = (args != null && args.Length > 0) ? string.Format(format, args) : format;
-                System.Diagnostics.Debug.WriteLine(string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] [CIV] {1}", DateTime.Now, text));
+                SplitTrace(text);
             }
             catch
             {
                 // Never crash caller
             }
+        }
+
+        // H1 (2026-10-03): always-on trace for the transmit-tick / split race. One line per
+        // split-relevant event: console tick changes, notices to this controller, flood
+        // decisions, frames sent to the rig and the rig's split / VFO / ACK / NAK replies.
+        private static readonly object _splitTraceLock = new object();
+        private static readonly string[] _splitTraceTags = {
+            "[TX]", "[HANDLE:SPLIT", "[UI:SPLIT", "[NotifySplitChanged", "[HANDLE:NAK", "[HANDLE:ACK",
+            "[UI:FREQ_SWAP", "[TRACE" };
+        private static bool SplitTraceWanted(string format)
+        {
+            if (format == null) return false;
+            for (int i = 0; i < _splitTraceTags.Length; i++)
+                if (format.StartsWith(_splitTraceTags[i], StringComparison.Ordinal)) return true;
+            return false;
+        }
+        public static void SplitTrace(string text)
+        {
+            try
+            {
+                lock (_splitTraceLock)
+                {
+                    string path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "civ_split.log");
+                    if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 4 * 1024 * 1024)
+                    {
+                        System.IO.File.Copy(path, path + ".old", true);
+                        System.IO.File.Delete(path);
+                    }
+                    System.IO.File.AppendAllText(path, string.Format("[{0:HH:mm:ss.fff}] T{1} {2}", DateTime.Now,
+                        System.Threading.Thread.CurrentThread.ManagedThreadId, text) + Environment.NewLine);
+                }
+            }
+            catch { }
+        }
+        private static string SplitTraceFrame(byte[] f)
+        {
+            try
+            {
+                if (f == null || f.Length < 6) return "<short>";
+                byte c = f[4];
+                string what;
+                if (c == 0x07 && f.Length >= 7) what = f[5] == 0x00 ? "SELECT VFO A" : f[5] == 0x01 ? "SELECT VFO B" : f[5] == 0xB0 ? "SWAP A/B" : f[5] == 0xA0 ? "A=B" : "VFO 0x" + f[5].ToString("X2");
+                else if (c == 0x0F && f.Length >= 7) what = f[5] == 0x01 ? "SPLIT ON" : f[5] == 0x00 ? "SPLIT OFF" : "SPLIT 0x" + f[5].ToString("X2");
+                else if (c == 0x0F) what = "SPLIT READ";
+                else if ((c == 0x05 || c == 0x00 || c == 0x03) && f.Length >= 10) what = (c == 0x05 ? "SET FREQ " : c == 0x00 ? "FREQ BROADCAST " : "FREQ REPLY ") + CIVProtocol.DecodeFrequency(f, 5).ToString("F6");
+                else if (c == 0x03) what = "FREQ READ";
+                else if (c == 0x25) what = "VFO FREQ 25";
+                else if (c == 0xFB) what = "ACK";
+                else if (c == 0xFA) what = "NAK";
+                else return null;
+                return what + "  (" + HexDump(f) + ")";
+            }
+            catch { return "?"; }
+        }
+
+        private static string SplitTraceCallers()
+        {
+            try
+            {
+                var st = new System.Diagnostics.StackTrace(2, false);
+                var sb = new System.Text.StringBuilder();
+                for (int i = 0; i < st.FrameCount && i < 4; i++)
+                {
+                    var m = st.GetFrame(i).GetMethod();
+                    if (m == null) continue;
+                    if (sb.Length > 0) sb.Append(" < ");
+                    sb.Append(m.Name);
+                }
+                return sb.ToString();
+            }
+            catch { return "?"; }
         }
 
         public static string HexDump(byte[] bytes)
@@ -824,6 +897,10 @@ namespace Thetis
                 _console != null && _console.VFOBTX,
                 _console != null && _console.FullDuplex);
 
+            if (_console != null)
+                SplitTrace(string.Format("NOTIFY split-change from {0} | suppress={1} SplitReq={2} VFOSplit={3} VFOATX={4} VFOBTX={5} SubB={6} A={7:F6} SubA={8:F6} TX={9:F6} lastSentSplit={10} radioSplit={11}",
+                    SplitTraceCallers(), _suppressOutgoingUpdates, IsSplitRequired(), _console.VFOSplit, _console.VFOATX, _console.VFOBTX, _console.TXOnSubVFOB,
+                    _console.VFOAFreq, _console.VFOASubFreq, _console.TXFreq, _lastSentSplit, _actualRadioSplit));
             if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
 
             lock (_stateLock)
@@ -1265,6 +1342,11 @@ namespace Thetis
                 }
             }
 
+            if (doSplit || doVfoB)
+                SplitTrace(string.Format("FLOOD doSplit={0} targetSplit={1} doVfoA={2} doVfoB={3} targetA={4:F6} targetB={5:F6} | console A={6:F6} SubA={7:F6} TX={8:F6} VFOSplit={9}",
+                    doSplit, targetSplit, doVfoA, doVfoB, targetVfoAFreq, targetVfoBFreq,
+                    _console != null ? _console.VFOAFreq : 0, _console != null ? _console.VFOASubFreq : 0, _console != null ? _console.TXFreq : 0, _console != null && _console.VFOSplit));
+
             // Dispatch pending commands sequentially
             if (doSplit)
             {
@@ -1351,6 +1433,7 @@ namespace Thetis
             lock (_vfoSwapLock)
             {
                 if (!force && Math.Abs(freqMHz - _lastSentVfoBFreq) < 0.0000005) return;
+                SplitTrace(string.Format("SendVfoBFrequency B={0:F6} from {1}", freqMHz, SplitTraceCallers()));
                 _lastSentVfoBFreq = freqMHz;
 
                 // Set unselected VFO on the IC-7100:
@@ -1398,6 +1481,7 @@ namespace Thetis
 
         private void ActivateSplit(double vfoAFreq, double vfoBFreq)
         {
+            SplitTrace(string.Format("ActivateSplit A={0:F6} B={1:F6} from {2}", vfoAFreq, vfoBFreq, SplitTraceCallers()));
             lock (_vfoSwapLock)
             {
                 if (vfoAFreq <= 0 && _console != null) vfoAFreq = _console.VFOAFreq;
@@ -1464,6 +1548,7 @@ namespace Thetis
 
         private void DeactivateSplit(double vfoAFreq)
         {
+            SplitTrace(string.Format("DeactivateSplit A={0:F6} from {1}", vfoAFreq, SplitTraceCallers()));
             lock (_vfoSwapLock)
             {
                 if (vfoAFreq <= 0 && _console != null) vfoAFreq = _console.VFOAFreq;
@@ -1935,7 +2020,7 @@ namespace Thetis
 
                     _serialPort.Write(frame, 0, frame.Length);
                     _lastFrameSentTime = Stopwatch.GetTimestamp();
-                    Log("[TX] {0}", HexDump(frame));
+                    { string d = SplitTraceFrame(frame); if (d != null) SplitTrace("SEND  " + d); }
                     return true;
                 }
                 catch (Exception ex)
@@ -2039,6 +2124,8 @@ namespace Thetis
                 Log("[HANDLE:DROP] Frame too short: len={0}", frame != null ? frame.Length : 0);
                 return;
             }
+
+            { string d = SplitTraceFrame(frame); if (d != null) SplitTrace("RECV  " + d + (frame[3] == _hostAddr ? "  [own echo]" : "")); }
 
             // Check for echo of our own sent command
             if (IsLocalEcho(frame))
