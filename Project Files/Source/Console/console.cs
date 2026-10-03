@@ -22675,6 +22675,7 @@ namespace Thetis
             get { return chkEnableMultiRX.Checked || chkVFOSplit.Checked; }
         }
         private double m_dVFOASubFreq = 0;
+        private int m_nVFOASubCommitDepth = 0; // H1: one nested apply pass is by design, deeper chains are the crash pattern
         public double VFOASubFreq //rx2
         {
             get
@@ -22738,6 +22739,7 @@ namespace Thetis
         }
 
         private double m_dVFOBSubFreq = 0;
+        private int m_nVFOBSubCommitDepth = 0; // H1: one nested apply pass is by design, deeper chains are the crash pattern
         public double VFOBSubFreq //rx2 sub
         {
             get
@@ -37327,171 +37329,189 @@ namespace Thetis
 
         private void txtVFOABand_LostFocus(object sender, System.EventArgs e)
         {
-            // H1: this row is SubVFOA, the sub receiver of RX1, and it is tuned by that sub's own
-            // frequency whether RX2 is on or off. It is only tunable while the sub is in use.
-            if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
-            if (txtVFOABand.Text == "." || string.IsNullOrEmpty(txtVFOABand.Text))
+            VFOASubCommit(); // H1: the commit below carries the re-entrancy guard
+        }
+
+        // H1 (2026-10-03): the same guard as the SubVFOB commit - VFOASubUpdate calls
+        // this commit back whenever the console writes the sub frequency, and the commit
+        // writes VFOASubFreq in its empty-text and clamp paths, which calls the update
+        // again. One commit per entry, whatever the chain.
+        private void VFOASubCommit()
+        {
+            // H1 (2026-10-03): the update calls this commit back after every write -
+            // that nested call is the apply pass and must run. Only chains deeper than
+            // one nesting are the crash pattern (see the SubVFOB commit above).
+            if (m_nVFOASubCommitDepth >= 2) return;
+            m_nVFOASubCommitDepth++;
+            try
             {
-                VFOASubFreq = VFOAFreq;
-                return;
-            }
-
-            if (m_bVFOABandChangedByKeys)
-            {
-                m_bVFOABandChangedByKeys = false;
-                string text = txtVFOABand.Text.Trim();
-                double typedFreq;
-                string normalizedText = text.Replace(',', '.');
-                if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
-                    double.TryParse(text, out typedFreq))
+                // H1: this row is SubVFOA, the sub receiver of RX1, and it is tuned by that sub's own
+                // frequency whether RX2 is on or off. It is only tunable while the sub is in use.
+                if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
+                if (txtVFOABand.Text == "." || string.IsNullOrEmpty(txtVFOABand.Text))
                 {
-                    VFOASubFreq = typedFreq;
-                    return;
-                }
-                else
-                {
-                    txtVFOABand.Text = (chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq.ToString("f6") : "";
-                    return;
-                }
-            }
-
-            double vfoa = VFOAFreq;
-            double freq = VFOASubFreq;
-
-            Display.VFOASub = (long)(freq * 1e6);
-            if (chkTUN.Checked && chkVFOATX.Checked && chkVFOSplit.Checked)
-            {
-                switch (radio.GetDSPTX(0).CurrentDSPMode)
-                {
-                    case DSPMode.CWL:
-                    case DSPMode.LSB:
-                    case DSPMode.DIGL:
-                        Display.VFOASub += cw_pitch;
-                        break;
-                    case DSPMode.CWU:
-                    case DSPMode.USB:
-                    case DSPMode.DIGU:
-                    case DSPMode.AM:
-                    case DSPMode.SAM:
-                    case DSPMode.FM:
-                    case DSPMode.DSB:
-                        Display.VFOASub -= cw_pitch;
-                        break;
-                }
-            }
-            saved_vfoa_sub_freq = freq;
-
-            if (!CheckValidTXFreq(current_region, freq, radio.GetDSPTX(0).CurrentDSPMode, chkTUN.Checked))
-            {
-                if (chkVFOSplit.Checked && _mox && !extended)
-                    chkMOX.Checked = false;
-            }
-
-            if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
-            {
-                int diff = (int)((freq - vfoa) * 1e6);
-                double sub_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
-
-                // H1: never park the sub from an unsettled oscillator. At start-up this
-                // finaliser runs while the receiver's DDS is still mid-restore, the
-                // computed sub_osc is garbage, and the park below synthesised a wrong sub
-                // frequency from it - which the later checks then snapped onto VFO A. The
-                // trace: restore 7.169957, this park made 7.136509, the span check made
-                // VFO A. The clamps stay live for every runtime edit.
-                if (!initializing && sub_osc < SubOscMin)
-                {
-                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubOscMin - 1) * 0.0000010;
-                    return;
-                }
-                else if (!initializing && sub_osc > SubOscMax)
-                {
-                    VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubOscMax + 1) * 0.0000010;
+                    VFOASubFreq = VFOAFreq;
                     return;
                 }
 
-                if (sub_osc > SubOscMin && sub_osc < SubOscMax)
+                if (m_bVFOABandChangedByKeys)
                 {
-                    radio.GetDSPRX(0, 1).RXOsc = sub_osc;
-                }
-            }
-
-            if (chkVFOSplit.Checked && chkSubVFOATX.Checked) // H1: only the armed sub A tick transmits from this row
-            {
-                tx_xvtr_index = XVTRForm.XVTRFreq(freq);
-                Band old_tx_band = _tx_band;
-                Band b = BandByFreq(freq, tx_xvtr_index, current_region);
-
-                Band b1 = getTXBandWhenExtended(b, freq);
-
-                if (chkVFOSplit.Checked && old_tx_band != b1)
-                    SetTXBand(b1, b != b1); // ke9ns mod b1
-
-                //tx
-                if (last_tx_xvtr_index != tx_xvtr_index)
-                {
-                    if (tx_xvtr_index >= 0)
+                    m_bVFOABandChangedByKeys = false;
+                    string text = txtVFOABand.Text.Trim();
+                    double typedFreq;
+                    string normalizedText = text.Replace(',', '.');
+                    if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
+                        double.TryParse(text, out typedFreq))
                     {
-                        SetupForm.RXOnly = XVTRForm.GetRXOnly(tx_xvtr_index);
-                    }
-                }
-
-                if (tx_xvtr_index >= 0)
-                    freq = XVTRForm.TranslateFreq(freq);
-
-                if (old_tx_band != _tx_band)
-                {
-                    if (_tx_band == Band.B60M)
-                    {
-                        chkXIT.Enabled = false;
-                        chkXIT.Checked = false;
+                        VFOASubFreq = typedFreq;
+                        return;
                     }
                     else
-                        chkXIT.Enabled = true;
+                    {
+                        txtVFOABand.Text = (chkEnableMultiRX.Checked || chkVFOSplit.Checked) ? VFOASubFreq.ToString("f6") : "";
+                        return;
+                    }
                 }
 
-                if (chkXIT.Checked)
-                    freq += (int)udXIT.Value * 0.000001;
+                double vfoa = VFOAFreq;
+                double freq = VFOASubFreq;
 
-                if (freq < min_freq) freq = min_freq;
-                else if (freq > max_freq) freq = max_freq;
-
-                switch (radio.GetDSPTX(0).CurrentDSPMode)
+                Display.VFOASub = (long)(freq * 1e6);
+                if (chkTUN.Checked && chkVFOATX.Checked && chkVFOSplit.Checked)
                 {
-                    case DSPMode.AM:
-                    case DSPMode.SAM:
-                    case DSPMode.FM:
-                    case DSPMode.USB:
-                    case DSPMode.DIGU:
-                        if (chkTUN.Checked) freq -= (double)cw_pitch * 1e-6;
-                        break;
-                    case DSPMode.LSB:
-                    case DSPMode.DIGL:
-                        if (chkTUN.Checked) freq += (double)cw_pitch * 1e-6;
-                        break;
-                    case DSPMode.CWL:
-                        freq += (double)cw_pitch * 0.0000010;
-                        break;
-                    case DSPMode.CWU:
-                        freq -= (double)cw_pitch * 0.0000010;
-                        break;
+                    switch (radio.GetDSPTX(0).CurrentDSPMode)
+                    {
+                        case DSPMode.CWL:
+                        case DSPMode.LSB:
+                        case DSPMode.DIGL:
+                            Display.VFOASub += cw_pitch;
+                            break;
+                        case DSPMode.CWU:
+                        case DSPMode.USB:
+                        case DSPMode.DIGU:
+                        case DSPMode.AM:
+                        case DSPMode.SAM:
+                        case DSPMode.FM:
+                        case DSPMode.DSB:
+                            Display.VFOASub -= cw_pitch;
+                            break;
+                    }
                 }
+                saved_vfoa_sub_freq = freq;
 
-                if (!rx1_sub_drag)
+                if (!CheckValidTXFreq(current_region, freq, radio.GetDSPTX(0).CurrentDSPMode, chkTUN.Checked))
                 {
-                    tx_dds_freq_mhz = freq;
-                    UpdateTXDDSFreq();
+                    if (chkVFOSplit.Checked && _mox && !extended)
+                        chkMOX.Checked = false;
                 }
-                last_tx_xvtr_index = tx_xvtr_index;
-            }
 
-            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
-            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
-            {
-                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
-                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
-                _old_tx_freq = TXFreq;
-                _old_tx_band = TXBand;
+                if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                {
+                    int diff = (int)((freq - vfoa) * 1e6);
+                    double sub_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
+
+                    // H1: never park the sub from an unsettled oscillator. At start-up this
+                    // finaliser runs while the receiver's DDS is still mid-restore, the
+                    // computed sub_osc is garbage, and the park below synthesised a wrong sub
+                    // frequency from it - which the later checks then snapped onto VFO A. The
+                    // trace: restore 7.169957, this park made 7.136509, the span check made
+                    // VFO A. The clamps stay live for every runtime edit.
+                    if (!initializing && sub_osc < SubOscMin)
+                    {
+                        VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubOscMin - 1) * 0.0000010;
+                        return;
+                    }
+                    else if (!initializing && sub_osc > SubOscMax)
+                    {
+                        VFOASubFreq = vfoa + (radio.GetDSPRX(0, 0).RXOsc - SubOscMax + 1) * 0.0000010;
+                        return;
+                    }
+
+                    if (sub_osc > SubOscMin && sub_osc < SubOscMax)
+                    {
+                        radio.GetDSPRX(0, 1).RXOsc = sub_osc;
+                    }
+                }
+
+                if (chkVFOSplit.Checked && chkSubVFOATX.Checked) // H1: only the armed sub A tick transmits from this row
+                {
+                    tx_xvtr_index = XVTRForm.XVTRFreq(freq);
+                    Band old_tx_band = _tx_band;
+                    Band b = BandByFreq(freq, tx_xvtr_index, current_region);
+
+                    Band b1 = getTXBandWhenExtended(b, freq);
+
+                    if (chkVFOSplit.Checked && old_tx_band != b1)
+                        SetTXBand(b1, b != b1); // ke9ns mod b1
+
+                    //tx
+                    if (last_tx_xvtr_index != tx_xvtr_index)
+                    {
+                        if (tx_xvtr_index >= 0)
+                        {
+                            SetupForm.RXOnly = XVTRForm.GetRXOnly(tx_xvtr_index);
+                        }
+                    }
+
+                    if (tx_xvtr_index >= 0)
+                        freq = XVTRForm.TranslateFreq(freq);
+
+                    if (old_tx_band != _tx_band)
+                    {
+                        if (_tx_band == Band.B60M)
+                        {
+                            chkXIT.Enabled = false;
+                            chkXIT.Checked = false;
+                        }
+                        else
+                            chkXIT.Enabled = true;
+                    }
+
+                    if (chkXIT.Checked)
+                        freq += (int)udXIT.Value * 0.000001;
+
+                    if (freq < min_freq) freq = min_freq;
+                    else if (freq > max_freq) freq = max_freq;
+
+                    switch (radio.GetDSPTX(0).CurrentDSPMode)
+                    {
+                        case DSPMode.AM:
+                        case DSPMode.SAM:
+                        case DSPMode.FM:
+                        case DSPMode.USB:
+                        case DSPMode.DIGU:
+                            if (chkTUN.Checked) freq -= (double)cw_pitch * 1e-6;
+                            break;
+                        case DSPMode.LSB:
+                        case DSPMode.DIGL:
+                            if (chkTUN.Checked) freq += (double)cw_pitch * 1e-6;
+                            break;
+                        case DSPMode.CWL:
+                            freq += (double)cw_pitch * 0.0000010;
+                            break;
+                        case DSPMode.CWU:
+                            freq -= (double)cw_pitch * 0.0000010;
+                            break;
+                    }
+
+                    if (!rx1_sub_drag)
+                    {
+                        tx_dds_freq_mhz = freq;
+                        UpdateTXDDSFreq();
+                    }
+                    last_tx_xvtr_index = tx_xvtr_index;
+                }
+
+                double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+                if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+                {
+                    double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                    TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                    _old_tx_freq = TXFreq;
+                    _old_tx_band = TXBand;
+                }
             }
+            finally { m_nVFOASubCommitDepth--; }
         }
 
         private void txtVFOABand_KeyPress(object sender, System.Windows.Forms.KeyPressEventArgs e)
@@ -37541,143 +37561,163 @@ namespace Thetis
         // H1: the SubVFOB row - the frequency of RX2's sub receiver, typed or wheel tuned
         private void txtVFOBSub_LostFocus(object sender, System.EventArgs e)
         {
-            if (!rx2_enabled || !chkEnableMultiRX2.Checked) return;
-            if (txtVFOBSub.Text == "." || string.IsNullOrEmpty(txtVFOBSub.Text))
-            {
-                VFOBSubFreq = VFOBFreq;
-                return;
-            }
+            VFOBSubCommit(); // H1: the commit below carries the re-entrancy guard
+        }
 
-            if (m_bVFOBSubChangedByKeys)
+        // H1 (2026-10-03, stack-overflow fix): VFOBSubUpdate calls this commit back whenever
+        // the console writes a sub frequency, and the commit itself sets VFOBSubFreq in its
+        // empty-text and clamp paths - which calls VFOBSubUpdate again. If the clamped value
+        // did not settle the pair bounced until the stack overflowed (crash 16:56:57, dump
+        // Thetis.exe.43952). The guard allows one commit per entry, whatever the chain.
+        private void VFOBSubCommit()
+        {
+            // H1 (2026-10-03): the update calls this commit back after every write -
+            // that nested call is the apply pass and must run. Only chains deeper than
+            // one nesting are the crash pattern (a clamp that does not settle bounced
+            // between update and commit until the stack overflowed).
+            if (m_nVFOBSubCommitDepth >= 2) return;
+            m_nVFOBSubCommitDepth++;
+            try
             {
-                m_bVFOBSubChangedByKeys = false;
-                string text = txtVFOBSub.Text.Trim();
-                double typedFreq;
-                string normalizedText = text.Replace(',', '.');
-                if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
-                    double.TryParse(text, out typedFreq))
+                if (!rx2_enabled || !chkEnableMultiRX2.Checked) return;
+                if (txtVFOBSub.Text == "." || string.IsNullOrEmpty(txtVFOBSub.Text))
                 {
-                    VFOBSubFreq = typedFreq;
+                    VFOBSubFreq = VFOBFreq;
                     return;
                 }
-                else
+
+                if (m_bVFOBSubChangedByKeys)
                 {
-                    txtVFOBSub.Text = (rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq.ToString("f6") : "";
-                    return;
-                }
-            }
-
-            double vfob = VFOBFreq;
-            double freq = VFOBSubFreq;
-
-            Display.VFOBSub = (long)(freq * 1e6);
-            saved_vfob_sub_freq = freq;
-
-            // H1: while the sub transmitter tick is armed this row drives the transmit
-            // oscillator and band, exactly like the SubVFOA row does for its tick
-            if (chkSubVFOBTX.Checked)
-            {
-                tx_xvtr_index = XVTRForm.XVTRFreq(freq);
-                Band old_tx_band_svb = _tx_band;
-                Band b_svb = BandByFreq(freq, tx_xvtr_index, current_region);
-                Band b1_svb = getTXBandWhenExtended(b_svb, freq);
-
-                if (chkVFOSplit.Checked && old_tx_band_svb != b1_svb)
-                    SetTXBand(b1_svb, b_svb != b1_svb);
-
-                if (last_tx_xvtr_index != tx_xvtr_index)
-                {
-                    if (tx_xvtr_index >= 0)
-                        SetupForm.RXOnly = XVTRForm.GetRXOnly(tx_xvtr_index);
-                }
-
-                if (tx_xvtr_index >= 0)
-                    freq = XVTRForm.TranslateFreq(freq);
-
-                if (old_tx_band_svb != _tx_band)
-                {
-                    if (_tx_band == Band.B60M)
+                    m_bVFOBSubChangedByKeys = false;
+                    string text = txtVFOBSub.Text.Trim();
+                    double typedFreq;
+                    string normalizedText = text.Replace(',', '.');
+                    if (double.TryParse(normalizedText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out typedFreq) ||
+                        double.TryParse(text, out typedFreq))
                     {
-                        chkXIT.Enabled = false;
-                        chkXIT.Checked = false;
+                        VFOBSubFreq = typedFreq;
+                        return;
                     }
                     else
-                        chkXIT.Enabled = true;
+                    {
+                        txtVFOBSub.Text = (rx2_enabled && chkEnableMultiRX2.Checked) ? VFOBSubFreq.ToString("f6") : "";
+                        return;
+                    }
                 }
 
-                if (chkXIT.Checked)
-                    freq += (int)udXIT.Value * 0.000001;
+                double vfob = VFOBFreq;
+                double freq = VFOBSubFreq;
 
-                if (freq < min_freq) freq = min_freq;
-                else if (freq > max_freq) freq = max_freq;
+                Display.VFOBSub = (long)(freq * 1e6);
+                saved_vfob_sub_freq = freq;
 
-                switch (radio.GetDSPTX(0).CurrentDSPMode)
+                // H1: while the sub transmitter tick is armed this row drives the transmit
+                // oscillator and band, exactly like the SubVFOA row does for its tick
+                if (chkSubVFOBTX.Checked)
                 {
-                    case DSPMode.AM:
-                    case DSPMode.SAM:
-                    case DSPMode.FM:
-                    case DSPMode.USB:
-                    case DSPMode.DIGU:
-                        if (chkTUN.Checked) freq -= (double)cw_pitch * 1e-6;
-                        break;
-                    case DSPMode.LSB:
-                    case DSPMode.DIGL:
-                        if (chkTUN.Checked) freq += (double)cw_pitch * 1e-6;
-                        break;
-                    case DSPMode.CWL:
-                        freq += (double)cw_pitch * 0.0000010;
-                        break;
-                    case DSPMode.CWU:
-                        freq -= (double)cw_pitch * 0.0000010;
-                        break;
+                    tx_xvtr_index = XVTRForm.XVTRFreq(freq);
+                    Band old_tx_band_svb = _tx_band;
+                    Band b_svb = BandByFreq(freq, tx_xvtr_index, current_region);
+                    Band b1_svb = getTXBandWhenExtended(b_svb, freq);
+
+                    if (chkVFOSplit.Checked && old_tx_band_svb != b1_svb)
+                        SetTXBand(b1_svb, b_svb != b1_svb);
+
+                    if (last_tx_xvtr_index != tx_xvtr_index)
+                    {
+                        if (tx_xvtr_index >= 0)
+                            SetupForm.RXOnly = XVTRForm.GetRXOnly(tx_xvtr_index);
+                    }
+
+                    if (tx_xvtr_index >= 0)
+                        freq = XVTRForm.TranslateFreq(freq);
+
+                    if (old_tx_band_svb != _tx_band)
+                    {
+                        if (_tx_band == Band.B60M)
+                        {
+                            chkXIT.Enabled = false;
+                            chkXIT.Checked = false;
+                        }
+                        else
+                            chkXIT.Enabled = true;
+                    }
+
+                    if (chkXIT.Checked)
+                        freq += (int)udXIT.Value * 0.000001;
+
+                    if (freq < min_freq) freq = min_freq;
+                    else if (freq > max_freq) freq = max_freq;
+
+                    switch (radio.GetDSPTX(0).CurrentDSPMode)
+                    {
+                        case DSPMode.AM:
+                        case DSPMode.SAM:
+                        case DSPMode.FM:
+                        case DSPMode.USB:
+                        case DSPMode.DIGU:
+                            if (chkTUN.Checked) freq -= (double)cw_pitch * 1e-6;
+                            break;
+                        case DSPMode.LSB:
+                        case DSPMode.DIGL:
+                            if (chkTUN.Checked) freq += (double)cw_pitch * 1e-6;
+                            break;
+                        case DSPMode.CWL:
+                            freq += (double)cw_pitch * 0.0000010;
+                            break;
+                        case DSPMode.CWU:
+                            freq -= (double)cw_pitch * 0.0000010;
+                            break;
+                    }
+
+                    if (!rx2_sub_drag)
+                    {
+                        tx_dds_freq_mhz = freq;
+                        UpdateTXDDSFreq();
+                    }
+                    last_tx_xvtr_index = tx_xvtr_index;
                 }
 
-                if (!rx2_sub_drag)
+                if (chkEnableMultiRX2.Checked)
                 {
-                    tx_dds_freq_mhz = freq;
-                    UpdateTXDDSFreq();
+                    int diff = (int)((freq - vfob) * 1e6);
+                    double sub_osc = radio.GetDSPRX(1, 0).RXOsc - diff;
+
+                    // H1: never park the sub from an unsettled oscillator, exactly like the SubVFOA
+                    // row's clamp. At start-up the VFOs and the RX2 DDS are still mid-restore, the
+                    // computed sub_osc is garbage, and the park moved a restored SubVFOB frequency
+                    // away from its saved value.
+                    if (!initializing && sub_osc < SubOscMinRX2)
+                    {
+                        VFOBSubFreq = vfob + (radio.GetDSPRX(1, 0).RXOsc - SubOscMinRX2 - 1) * 0.0000010;
+                        return;
+                    }
+                    else if (!initializing && sub_osc > SubOscMaxRX2)
+                    {
+                        VFOBSubFreq = vfob + (radio.GetDSPRX(1, 0).RXOsc - SubOscMaxRX2 + 1) * 0.0000010;
+                        return;
+                    }
+
+                    if (sub_osc > SubOscMinRX2 && sub_osc < SubOscMaxRX2)
+                    {
+                        radio.GetDSPRX(1, 1).RXOsc = sub_osc;
+                    }
                 }
-                last_tx_xvtr_index = tx_xvtr_index;
+
+                // H1: the SubVFOA row reports transmit-frequency moves through the
+                // TXFrequncyChangedHandlers and this row must do the same - the CI-V layer has
+                // no SubVFOB event of its own, and without this the transmitter keeps the
+                // frequency it held when the tick was armed while the sub row tunes on.
+                double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
+                if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
+                {
+                    double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
+                    TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
+                    _old_tx_freq = TXFreq;
+                    _old_tx_band = TXBand;
+                }
             }
-
-            if (chkEnableMultiRX2.Checked)
-            {
-                int diff = (int)((freq - vfob) * 1e6);
-                double sub_osc = radio.GetDSPRX(1, 0).RXOsc - diff;
-
-                // H1: never park the sub from an unsettled oscillator, exactly like the SubVFOA
-                // row's clamp. At start-up the VFOs and the RX2 DDS are still mid-restore, the
-                // computed sub_osc is garbage, and the park moved a restored SubVFOB frequency
-                // away from its saved value.
-                if (!initializing && sub_osc < SubOscMinRX2)
-                {
-                    VFOBSubFreq = vfob + (radio.GetDSPRX(1, 0).RXOsc - SubOscMinRX2 - 1) * 0.0000010;
-                    return;
-                }
-                else if (!initializing && sub_osc > SubOscMaxRX2)
-                {
-                    VFOBSubFreq = vfob + (radio.GetDSPRX(1, 0).RXOsc - SubOscMaxRX2 + 1) * 0.0000010;
-                    return;
-                }
-
-                if (sub_osc > SubOscMinRX2 && sub_osc < SubOscMaxRX2)
-                {
-                    radio.GetDSPRX(1, 1).RXOsc = sub_osc;
-                }
-            }
-
-            // H1: the SubVFOA row reports transmit-frequency moves through the
-            // TXFrequncyChangedHandlers and this row must do the same - the CI-V layer has
-            // no SubVFOB event of its own, and without this the transmitter keeps the
-            // frequency it held when the tick was armed while the sub row tunes on.
-            double old_tx_freq_rounded = Math.Round(_old_tx_freq, 6);
-            if (old_tx_freq_rounded != TXFreq || _old_tx_band != TXBand)
-            {
-                double centre_freq = RX2Enabled && VFOBTX ? CentreRX2Frequency : CentreFrequency;
-                TXFrequncyChangedHandlers?.Invoke(old_tx_freq_rounded, TXFreq, _old_tx_band, TXBand, RX2Enabled, VFOBTX, centre_freq);
-                _old_tx_freq = TXFreq;
-                _old_tx_band = TXBand;
-            }
+            finally { m_nVFOBSubCommitDepth--; }
         }
 
         private void txtVFOBSub_KeyPress(object sender, System.Windows.Forms.KeyPressEventArgs e)
