@@ -20845,7 +20845,11 @@ namespace Thetis
                     PWR = power_by_band[(int)value];
                     TunePWR = tunePower_by_band[(int)value]; //MW0LGE_22b
                     H1SaveBandPower(true); // H1 round 2: bank the whole table at a band switch
-                    if (!initializing) H1BandGuardArm(); // H1: band-change guard - bypass the amp, PA level to the ANT Tune value
+                    // H1 (2026-10-03): a real band change with the power on only. The start-up
+                    // restore re-sets the band after initializing drops, and arming there bypassed
+                    // the amplifier at every launch and - with the burst ticked - engaged Tune with
+                    // the power off, raising the power-off notice at start-up.
+                    if (!initializing && _tx_band != old_band && PowerOn) H1BandGuardArm();
 
                     // save FM TX Offset
                     if (!initializing)
@@ -21938,6 +21942,7 @@ namespace Thetis
                 while (_h1BandGuardArmed && _h1BandGuardLevelHeld && DateTime.UtcNow < h1dl)
                     await Task.Delay(50);
                 if (!_h1BandGuardArmed || _h1BandGuardLevelHeld) return;
+                if (!PowerOn) return; // H1: never engage Tune with the power off - it would raise the power-off notice
                 if (AmpLanControllerInstance != null)
                     AmpLanControllerInstance.LogNote("band-change tune burst: Tune at the ANT Tune level for up to {0} s", _h1MfjBurstSeconds);
                 chkTUN.Checked = true; // the usual Tune press carries the burst; the phase machinery watches the SWR
