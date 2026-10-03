@@ -10921,6 +10921,13 @@ namespace Thetis
             console.CATDataBits = int.Parse((string)comboCATdatabits.SelectedItem);
             console.CATStopBits = SDRSerialPort.StringToStopBits((string)comboCATstopbits.SelectedItem);
             console.CATProtocol = comboCAT1Protocol.Text;
+            // H1 (2026-10-03): every slot loads its saved protocol at start-up. Only CAT1 was
+            // loaded here; slots 2-4 kept the Kenwood default until their selector was touched,
+            // so enabling e.g. CAT3 as Icom CI-V after a restart silently routed it down the
+            // Kenwood path. Load all four the same way.
+            if (comboCAT2Protocol != null) console.CAT2Protocol = comboCAT2Protocol.Text;
+            if (comboCAT3Protocol != null) console.CAT3Protocol = comboCAT3Protocol.Text;
+            if (comboCAT4Protocol != null) console.CAT4Protocol = comboCAT4Protocol.Text;
             if (byte.TryParse(txtCIVAddress.Text, System.Globalization.NumberStyles.HexNumber, null, out byte civAddr))
                 console.CIVAddress = civAddr;
             console.CIVTransceive = chkCIVTransceive.Checked;
