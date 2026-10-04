@@ -41627,7 +41627,13 @@ namespace Thetis
                     VFOASubFreq = saved_vfoa_sub_freq;
 
                     tx_xvtr_index = XVTRForm.XVTRFreq(VFOASubFreq);
-                    TXBand = BandByFreq(VFOASubFreq, tx_xvtr_index, current_region);
+                    // H1 (user 2026-10-04): only the A side writes the transmit band here. SPLIT is
+                    // lit for the B-side ticks too, and writing the transmit band from VFO A's sub
+                    // frequency made the guard fire a band-change tune at a VFOB to SubVFOB move
+                    // with no band change (traced 00:34:08) and left the band stale afterwards
+                    // (00:34:39). The B-side rows set the transmit band themselves.
+                    if (chkVFOATX.Checked || chkSubVFOATX.Checked)
+                        TXBand = BandByFreq(VFOASubFreq, tx_xvtr_index, current_region);
                     // H1: red only while SubVFOA actually carries the transmit frequency -
                     // SPLIT can also be lit for the VFO B and SubVFOB ticks
                     if (_mox && chkSubVFOATX.Checked)
@@ -41877,7 +41883,8 @@ namespace Thetis
                     // H1: with RX2 off SPLIT sends the transmitter to SubVFOA, the sub receiver of
                     // RX1. That row carries the transmit frequency and turns red; VFO B keeps its
                     // own role and its own tick box, so SPLIT no longer ticks it.
-                    TXBand = BandByFreq(VFOASubFreq, tx_xvtr_index, current_region);
+                    if (chkVFOATX.Checked || chkSubVFOATX.Checked) // H1 (user 2026-10-04): A side only, see UpdateVFOASub
+                        TXBand = BandByFreq(VFOASubFreq, tx_xvtr_index, current_region);
 
                     if (chkPower.Checked)
                     {
