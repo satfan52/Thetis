@@ -8298,6 +8298,7 @@ namespace Thetis
 
             _sub2_dsp_mode = new_mode;
             SyncSubModeCombo(2, new_mode);
+            if (chkSubVFOBTX.Checked) H1ApplyTxSourceMode("SubRX2 mode"); // H1: SubVFOB holds the tick
         }
 
         /// <summary>Set the RX2 sub channel's own passband, mirroring SetSubFilter.</summary>
@@ -14896,6 +14897,13 @@ namespace Thetis
             get { return rx2_enabled && chkSubVFOBTX.Checked; }
         }
 
+        // H1 (user 2026-10-03): the SubVFOA tick, so the CI-V layer can tell that a sub tick holds
+        // the transmit frequency (the A/B-press detection must stand down in that state).
+        public bool TXOnSubVFOA
+        {
+            get { return chkSubVFOATX.Checked; }
+        }
+
         private bool vac2_on_split = true;
         public bool VAC2onSplit
         {
@@ -21456,6 +21464,75 @@ namespace Thetis
         // power and the rig's SWR / FWD / REF readings are collected for the transmit meter.
         // Whether the meter displays them is chosen by the TX meter source options.
         private bool _h1RigPowerMetersEnabled = false;
+        // H1 (2026-10-03): the IC-7100 VFO B update rule, set on the Transceivers page.
+        // Continuous: every tuning step goes out at once. Otherwise the update waits until
+        // tuning has paused for H1CivVfoBPauseMs; the pre-key check sends anything left.
+        private volatile bool _h1CivVfoBContinuous = false;
+        private volatile int _h1CivVfoBPauseMs = 400;
+        public bool H1CivVfoBContinuous
+        {
+            get { return _h1CivVfoBContinuous; }
+            set { _h1CivVfoBContinuous = value; }
+        }
+        public int H1CivVfoBPauseMs
+        {
+            get { return _h1CivVfoBPauseMs; }
+            set { _h1CivVfoBPauseMs = value < 50 ? 50 : value; }
+        }
+
+        // H1 (user 2026-10-03): the transmit mode follows the receiver that holds the TX tick -
+        // RX1 for VFOA, RX2 for VFOB (RX1 while RX2 is off), SubRX1 for SubVFOA, SubRX2 for
+        // SubVFOB. Read by the CI-V layer from its own threads; CheckBox.Checked is a plain field.
+        public DSPMode H1TxSourceMode
+        {
+            get
+            {
+                if (chkSubVFOATX.Checked) return _sub_dsp_mode;
+                if (chkSubVFOBTX.Checked && rx2_enabled) return _sub2_dsp_mode;
+                if (chkVFOBTX.Checked && rx2_enabled) return _rx2_dsp_mode;
+                return _rx1_dsp_mode;
+            }
+        }
+        public int H1TxSourceFilterWidth
+        {
+            get
+            {
+                try
+                {
+                    if (chkSubVFOATX.Checked) { RadioDSPRX s = radio.GetDSPRX(0, 1); return Math.Abs(s.RXFilterHigh - s.RXFilterLow); }
+                    if (chkSubVFOBTX.Checked && rx2_enabled) { RadioDSPRX s = radio.GetDSPRX(1, 1); return Math.Abs(s.RXFilterHigh - s.RXFilterLow); }
+                    if (chkVFOBTX.Checked && rx2_enabled) return Math.Abs(RX2FilterHigh - RX2FilterLow);
+                    return Math.Abs(RX1FilterHigh - RX1FilterLow);
+                }
+                catch { return 2700; }
+            }
+        }
+        private bool _h1ApplyingTxMode = false;
+        // Sets the Thetis transmit mode and passband from the receiver that holds the tick and
+        // tells the CI-V layer. Used for the sub ticks; the VFOA / VFOB ticks keep their stock
+        // SetRX1Mode / SetRX2Mode paths, which already follow their own receiver.
+        private void H1ApplyTxSourceMode(string why)
+        {
+            if (initializing || _h1ApplyingTxMode) return;
+            _h1ApplyingTxMode = true;
+            try
+            {
+                DSPMode m = H1TxSourceMode;
+                if (m == DSPMode.FIRST || m == DSPMode.LAST || m == DSPMode.SPEC || m == DSPMode.DRM) return;
+                Audio.TXDSPMode = m;
+                radio.GetDSPTX(0).CurrentDSPMode = m;
+                radio.GetDSPTX(0).TXOsc = 0.0;
+                SetTXFilters(m, tx_filter_low, tx_filter_high);
+                CIVController.SplitTrace("TXMODE " + m + " (" + why + ")");
+                if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
+                    CIVControllerInstance.NotifyTxModeChanged();
+                else
+                    CIVController.SplitTrace("TXMODE not sent to the rig - CI-V instance " + (CIVControllerInstance == null ? "null" : "closed"));
+            }
+            catch (Exception ex) { CIVController.SplitTrace("TXMODE exception " + ex.GetType().Name + ": " + ex.Message); }
+            finally { _h1ApplyingTxMode = false; }
+        }
+
         public bool H1RigPowerMetersEnabled
         {
             get { return _h1RigPowerMetersEnabled; }
@@ -40200,6 +40277,8 @@ namespace Thetis
             if (bTurnOffSettingsForDigimode) SetDigiMode(1, DigiMode.DigiModeSettingState.dmssTurnOffSettings);
 
             //MW0LGE_21b
+            // H1: a sub tick owns the transmit mode - the stock RX1 path (RX2 off) must not keep it
+            if (chkSubVFOATX.Checked || chkSubVFOBTX.Checked) H1ApplyTxSourceMode("RX1 mode change, sub tick holds");
             if (old_mode != new_mode) ModeChangeHandlers?.Invoke(1, old_mode, new_mode, oldBand, RX1Band);
         }
 
@@ -44173,6 +44252,7 @@ namespace Thetis
             SyncSubModeCombo(1, new_mode);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
+            if (chkSubVFOATX.Checked) H1ApplyTxSourceMode("SubRX1 mode"); // H1: SubVFOA holds the tick
         }
 
         public void SetSubFilter(int low, int high, bool from_console = false)
@@ -44941,6 +45021,7 @@ namespace Thetis
             }
 
             //MW0LGE_21b
+            if (chkSubVFOATX.Checked || chkSubVFOBTX.Checked) H1ApplyTxSourceMode("RX2 mode change, sub tick holds");
             if (old_mode != new_mode) ModeChangeHandlers?.Invoke(2, old_mode, new_mode, oldBand, RX2Band);
         }
 
@@ -46779,6 +46860,7 @@ namespace Thetis
                 if (!initializing)
                 {
                     txtVFOABand_LostFocus(this, EventArgs.Empty);
+                    H1ApplyTxSourceMode("SubVFOA tick"); // H1: transmit in the SubRX1 mode
                 }
             }
 
@@ -46816,9 +46898,8 @@ namespace Thetis
                 {
                     txtVFOBSub_LostFocus(this, EventArgs.Empty);
 
-                    Audio.TXDSPMode = _rx2_dsp_mode;
-                    radio.GetDSPTX(0).CurrentDSPMode = _rx2_dsp_mode;
-                    SetRX2Mode(_rx2_dsp_mode);
+                    SetRX2Mode(_rx2_dsp_mode); // RX2 side rates and filters as before
+                    H1ApplyTxSourceMode("SubVFOB tick"); // H1: transmit in the SubRX2 mode, not the RX2 mode
                 }
             }
 

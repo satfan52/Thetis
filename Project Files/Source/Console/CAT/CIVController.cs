@@ -905,6 +905,12 @@ namespace Thetis
 
             lock (_stateLock)
             {
+                // H1: a tick move changes the transmit source - its mode follows
+                _pendingMode = _console.H1TxSourceMode;
+                _pendingFilterWidth = _console.H1TxSourceFilterWidth;
+                _modeChangePending = true;
+                if (IsSplitRequired()) _vfoBModePending = true;
+
                 _pendingVfoAFreq = _console.VFOAFreq;
                 bool splitRequired = IsSplitRequired();
                 _pendingSplit = splitRequired;
@@ -1173,12 +1179,66 @@ namespace Thetis
         {
             if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
 
+            // H1 (user 2026-10-03): the rig transmits in the mode of the receiver that holds the
+            // TX tick. A mode change elsewhere re-evaluates to the same source and is deduplicated.
+            NotifyTxModeChanged();
+        }
+
+        // H1: IC-7100 VFO B mode tracking. Mode commands act on the SELECTED rig VFO, so the
+        // split transmit mode is written inside the VFO B select / set / reselect sequence.
+        private bool _vfoBModePending = false;
+        private CIVMode _lastSentVfoBCivMode = (CIVMode)0xFF;
+        private CIVFilter _lastSentVfoBCivFilter = (CIVFilter)0xFF;
+        private CIVDataMode _lastSentVfoBDataMode = (CIVDataMode)0xFF;
+
+        /// <summary>H1: the transmit source mode changed (tick move, or a mode change on the
+        /// receiver that holds the tick). Simplex: rig VFO A gets it. Split: rig VFO B gets it.</summary>
+        public void NotifyTxModeChanged()
+        {
+            SplitTrace(string.Format("NOTIFY tx-mode inst={0} port={1} open={2} suppress={3} swapping={4} radioSwap={5} digital={6} splitReq={7} mode={8}",
+                GetHashCode(), PortName, IsOpen, _suppressOutgoingUpdates, _isSwappingVfo, _radioInitiatedSwapInProgress, _isDigitalSliceTxActive,
+                IsSplitRequired(), _console != null ? _console.H1TxSourceMode.ToString() : "?"));
+            if (_suppressOutgoingUpdates || !IsOpen || _console == null) return;
             lock (_stateLock)
             {
-                _pendingMode = newMode;
-                _pendingFilterWidth = Math.Abs(_console.RX1FilterHigh - _console.RX1FilterLow);
-                _modeChangePending = true;
+                _pendingMode = _console.H1TxSourceMode;
+                _pendingFilterWidth = _console.H1TxSourceFilterWidth;
+                _modeChangePending = true; // rig VFO A always takes the transmit mode
+                if (IsSplitRequired())
+                {
+                    _vfoBModePending = true;
+                    _vfoBChangePending = true;
+                    _lastVfoBTuneTime = 0;
+                }
             }
+            try { _floodTimer?.Change(0, FLOOD_INTERVAL_MS); } catch { }
+        }
+
+        // H1: called inside a VFO B sequence while rig VFO B is selected.
+        private void H1WriteVfoBMode(bool force)
+        {
+            if (_console == null) return;
+            CIVMode civMode; CIVFilter civFilter; CIVDataMode dataMode;
+            CIVProtocol.MapThetisMode(_console.H1TxSourceMode, _console.H1TxSourceFilterWidth, out civMode, out civFilter, out dataMode);
+            if (force || civMode != _lastSentVfoBCivMode || civFilter != _lastSentVfoBCivFilter)
+            {
+                if (SendFrame(CIVProtocol.SetModeFrame(_radioAddr, _hostAddr, civMode, civFilter)))
+                {
+                    _lastSentVfoBCivMode = civMode;
+                    _lastSentVfoBCivFilter = civFilter;
+                    _h1LastVfoBModeStamp = Stopwatch.GetTimestamp();
+                }
+                else _lastSentVfoBCivMode = (CIVMode)0xFF;
+                Thread.Sleep(30);
+            }
+            if (force || dataMode != _lastSentVfoBDataMode)
+            {
+                SendFrame(CIVProtocol.SetDataModeFrame(_radioAddr, _hostAddr, dataMode, civFilter));
+                _lastSentVfoBDataMode = dataMode;
+                Thread.Sleep(30);
+            }
+            SplitTrace(string.Format("VFO B MODE {0} data={1} ({2})", civMode, dataMode, _console.H1TxSourceMode));
+            _vfoBModePending = false;
         }
 
         private void OnFilterEdgesChanged(int rx, Filter filter, Band band, int low, int high, string sName, int max_width, int max_shift)
@@ -1296,11 +1356,16 @@ namespace Thetis
                         ? (double)(Stopwatch.GetTimestamp() - _lastVfoBTuneTime) / Stopwatch.Frequency * 1000.0 
                         : 9999.0;
 
-                    // Bypass the debounce when VFOBTX is active (RX2/WSJT-X TX scenario) or when in RX2+SPLIT mode:
+                    // H1 (user 2026-10-03): one rule for every transmit tick, set on the Transceivers
+                    // page. Formerly VFOBTX and the RX2+SPLIT SubVFOA case bypassed the pause and
+                    // sent every tuning step (continuous VFO switching, relay clicks), while SubVFOB
+                    // and SubVFOA with RX2 off waited 400 ms. The pre-key check in SendImmediatePtt
+                    // still sends any transmit frequency the rig does not hold yet.
                     bool rx2Split = _console != null && _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX && !_console.TXOnSubVFOB;
-                    bool urgentVfoBUpdate = splitRequired && _console != null && (_console.VFOBTX || rx2Split);
+                    bool urgentVfoBUpdate = splitRequired && _console != null && _console.H1CivVfoBContinuous;
+                    double pauseMs = _console != null ? _console.H1CivVfoBPauseMs : 400.0;
 
-                    if (msSinceTune >= 400.0 || urgentVfoBUpdate)
+                    if (msSinceTune >= pauseMs || urgentVfoBUpdate)
                     {
                         if (splitRequired)
                         {
@@ -1333,6 +1398,16 @@ namespace Thetis
                     }
                 }
 
+                if (_modeChangePending && splitRequired && _console != null)
+                {
+                    // H1: in split the rig transmits on VFO B - the transmit mode goes there in the
+                    // VFO B sequence, and VFO A takes the same mode (the rig receives nothing used)
+                    _vfoBModePending = true;
+                    _vfoBChangePending = true;
+                    _lastVfoBTuneTime = 0;
+                    _pendingMode = _console.H1TxSourceMode;
+                    _pendingFilterWidth = _console.H1TxSourceFilterWidth;
+                }
                 if (_modeChangePending)
                 {
                     doMode = true;
@@ -1342,8 +1417,8 @@ namespace Thetis
                 }
             }
 
-            if (doSplit || doVfoB)
-                SplitTrace(string.Format("FLOOD doSplit={0} targetSplit={1} doVfoA={2} doVfoB={3} targetA={4:F6} targetB={5:F6} | console A={6:F6} SubA={7:F6} TX={8:F6} VFOSplit={9}",
+            if (doSplit || doVfoB || doMode)
+                SplitTrace(string.Format("FLOOD doMode=" + doMode + " vfoBModePending=" + _vfoBModePending + " doSplit={0} targetSplit={1} doVfoA={2} doVfoB={3} targetA={4:F6} targetB={5:F6} | console A={6:F6} SubA={7:F6} TX={8:F6} VFOSplit={9}",
                     doSplit, targetSplit, doVfoA, doVfoB, targetVfoAFreq, targetVfoBFreq,
                     _console != null ? _console.VFOAFreq : 0, _console != null ? _console.VFOASubFreq : 0, _console != null ? _console.TXFreq : 0, _console != null && _console.VFOSplit));
 
