@@ -495,7 +495,7 @@ namespace Thetis
             h1GrpTrx = new GroupBoxTS();
             h1GrpTrx.Text = "IC-7100";
             h1GrpTrx.Location = new Point(6, 17);
-            h1GrpTrx.Size = new Size(556, 172);
+            h1GrpTrx.Size = new Size(556, 196);
 
             // H1 round 7 (user 2026-10-02): everything that serves the IC-7100 moves here
             // from the CAT1 page, so the Serial CAT pages stay generic and free for other
@@ -520,7 +520,7 @@ namespace Thetis
                 if (chkCIVTransceive != null) { chkCIVTransceive.Location = new Point(10, 20); chkCIVTransceive.Size = new Size(240, 22); }
                 if (chkCIVSyncSplit != null) { chkCIVSyncSplit.Location = new Point(10, 44); chkCIVSyncSplit.Size = new Size(240, 22); }
                 if (chkCIVSyncPTT != null) { chkCIVSyncPTT.Location = new Point(10, 68); chkCIVSyncPTT.Size = new Size(240, 22); }
-                if (lblCIVInfo != null) lblCIVInfo.Location = new Point(10, 94);
+                if (lblCIVInfo != null) lblCIVInfo.Location = new Point(10, 118);
             }
 
             h1ChkTrxMeterCiv = new CheckBoxTS();
@@ -542,14 +542,67 @@ namespace Thetis
             h1LblTrxInfo.Text = "Hybrid operation: the SDR receives while the IC-7100 transmits. These settings apply" + System.Environment.NewLine +
                 "to the CI-V link, whichever CAT it is enabled on; the TX meter option only picks which" + System.Environment.NewLine +
                 "readings the transmit meter shows.";
-            h1LblTrxInfo.Location = new Point(10, 114);
+            h1LblTrxInfo.Location = new Point(10, 138);
             h1LblTrxInfo.Size = new Size(536, 44);
 
             h1ChkTrxMeterCiv.CheckedChanged += h1ChkTrxMeterCiv_CheckedChanged;
 
+            // H1 (user 2026-10-03): one VFO B update rule for every transmit tick - by
+            // default the IC-7100 VFO B follows once tuning pauses; continuous on request.
+            h1ChkVfoBContinuous = new CheckBoxTS();
+            h1ChkVfoBContinuous.AutoSize = false;
+            h1ChkVfoBContinuous.UseVisualStyleBackColor = true;
+            h1ChkVfoBContinuous.Image = null;
+            h1ChkVfoBContinuous.Name = "chkH1CivVfoBContinuous";
+            h1ChkVfoBContinuous.Text = "VFO B follows tuning continuously";
+            h1ChkVfoBContinuous.Location = new Point(300, 68);
+            h1ChkVfoBContinuous.Size = new Size(246, 22);
+            toolTip1.SetToolTip(h1ChkVfoBContinuous,
+                "When checked, every tuning step of the VFO that holds the TX tick is sent to the IC-7100 VFO B at once." + System.Environment.NewLine +
+                "Each update switches the IC-7100 VFOs, which can be heard as relay clicks.");
+            h1ChkVfoBContinuous.CheckedChanged += h1VfoBRule_Changed;
+
+            h1LblVfoBPause = new LabelTS();
+            h1LblVfoBPause.AutoSize = false;
+            h1LblVfoBPause.Image = null;
+            h1LblVfoBPause.Text = "Pause before VFO B update (ms)";
+            h1LblVfoBPause.Location = new Point(300, 95);
+            h1LblVfoBPause.Size = new Size(170, 16);
+
+            h1UdVfoBPause = new NumericUpDownTS();
+            h1UdVfoBPause.Name = "udH1CivVfoBPause";
+            h1UdVfoBPause.Minimum = 100;
+            h1UdVfoBPause.Maximum = 2000;
+            h1UdVfoBPause.Increment = 50;
+            h1UdVfoBPause.Value = 400;
+            h1UdVfoBPause.Location = new Point(476, 92);
+            h1UdVfoBPause.Size = new Size(60, 20);
+            toolTip1.SetToolTip(h1UdVfoBPause,
+                "How long tuning must pause before the new transmit frequency is sent to the IC-7100 VFO B." + System.Environment.NewLine +
+                "Thetis also sends it before keying the IC-7100.");
+            h1UdVfoBPause.ValueChanged += h1VfoBRule_Changed;
+
             h1GrpTrx.Controls.Add(h1ChkTrxMeterCiv);
+            h1GrpTrx.Controls.Add(h1ChkVfoBContinuous);
+            h1GrpTrx.Controls.Add(h1LblVfoBPause);
+            h1GrpTrx.Controls.Add(h1UdVfoBPause);
             h1GrpTrx.Controls.Add(h1LblTrxInfo);
+            h1VfoBRule_Changed(this, EventArgs.Empty);
             tpOtherHW_trx.Controls.Add(h1GrpTrx);
+        }
+
+        private CheckBoxTS h1ChkVfoBContinuous;
+        private LabelTS h1LblVfoBPause;
+        private NumericUpDownTS h1UdVfoBPause;
+
+        private void h1VfoBRule_Changed(object sender, EventArgs e)
+        {
+            if (h1ChkVfoBContinuous == null || h1UdVfoBPause == null) return;
+            bool cont = h1ChkVfoBContinuous.Checked;
+            h1UdVfoBPause.Enabled = !cont;
+            if (h1LblVfoBPause != null) h1LblVfoBPause.Enabled = !cont;
+            console.H1CivVfoBContinuous = cont;
+            console.H1CivVfoBPauseMs = (int)h1UdVfoBPause.Value;
         }
 
         private void h1ChkTrxMeterCiv_CheckedChanged(object sender, EventArgs e)
@@ -11300,6 +11353,7 @@ namespace Thetis
 
         private void chkCATEnable_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.SplitTrace("Setup: CAT1 Enable tick -> " + chkCATEnable.Checked + " (initializing=" + initializing + ")");
             if (initializing) return;
 
             if (comboCATPort.Text == "" || !comboCATPort.Text.StartsWith("COM"))

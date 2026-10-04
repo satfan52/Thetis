@@ -20095,8 +20095,11 @@ namespace Thetis
             {
                 try
                 {
+                    CIVController.SplitTrace("CAT1 enable -> " + value + " port=COM" + cat_port + " protocol=" + CatProtocolForSlot(1)
+                        + " slotOpenBefore=" + (civ_slot_controllers[1] != null && civ_slot_controllers[1].IsOpen));
                     cat_enabled = value;
                     CivSlotRoute(1, value);
+                    CIVController.SplitTrace("CAT1 enable done: cat_enabled=" + cat_enabled + " slotOpen=" + (civ_slot_controllers[1] != null && civ_slot_controllers[1].IsOpen));
                 }
                 catch (Exception)
                 {
@@ -20301,6 +20304,27 @@ namespace Thetis
         // VFO tracking - follows the slot the IC-7100 is actually wired to.
         private CIVController[] civ_slot_controllers = new CIVController[5];
 
+        // H1 (user 2026-10-03): the master tick only counts when its slot is an enabled CI-V
+        // link. A master on a closed slot used to leave the console with no rig link at all -
+        // traced live: sub mode changes, drive power and meters silently went nowhere while
+        // CAT1 carried the IC-7100 and the tick sat on CAT3. Such a master now falls back to
+        // the enabled CI-V slot, with a warning in civ_split.log.
+        public bool H1CivMasterSlotUsable
+        {
+            get
+            {
+                if (_h1CivMasterSlot < 1 || _h1CivMasterSlot > 4) return true;
+                CIVController m = civ_slot_controllers[_h1CivMasterSlot];
+                return m != null && m.IsOpen;
+            }
+        }
+        private int H1EffectiveCivMaster(int openingSlot)
+        {
+            if (_h1CivMasterSlot < 1 || _h1CivMasterSlot > 4) return 0;
+            if (_h1CivMasterSlot == openingSlot) return _h1CivMasterSlot;
+            return H1CivMasterSlotUsable ? _h1CivMasterSlot : 0;
+        }
+
         private void CivRebindInstance()
         {
             CIVControllerInstance = null;
@@ -20308,8 +20332,8 @@ namespace Thetis
             {
                 // with a master chosen the rig duties live only on the master slot
                 CIVController h1master = civ_slot_controllers[_h1CivMasterSlot];
-                if (h1master != null && h1master.IsOpen) CIVControllerInstance = h1master;
-                return;
+                if (h1master != null && h1master.IsOpen) { CIVControllerInstance = h1master; return; }
+                CIVController.SplitTrace("WARNING the master tick is on CAT" + _h1CivMasterSlot + ", which is not an enabled CI-V link - the rig duties fall back to the enabled CI-V slot");
             }
             for (int h1s = 1; h1s <= 4; h1s++)
             {
@@ -20376,9 +20400,14 @@ namespace Thetis
                 // H1 (2026-10-03): each slot opens with its own CI-V address; the IC-7100
                 // options and the rig duties belong to the master slot only. Without a
                 // master chosen the previous behaviour stands unchanged.
-                bool h1master = _h1CivMasterSlot == 0 || _h1CivMasterSlot == slot;
-                ic.Open("COM" + CatPortForSlot(slot), CatBaudForSlot(slot), _h1civ_slot_addr[slot],
+                int h1eff = H1EffectiveCivMaster(slot);
+                bool h1master = h1eff == 0 || h1eff == slot;
+                if (_h1CivMasterSlot >= 1 && h1eff == 0)
+                    CIVController.SplitTrace("WARNING the master tick is on CAT" + _h1CivMasterSlot + ", which is not an enabled CI-V link - CAT" + slot + " takes the rig duties");
+                bool h1opened = ic.Open("COM" + CatPortForSlot(slot), CatBaudForSlot(slot), _h1civ_slot_addr[slot],
                     h1master && civ_transceive, h1master && civ_sync_split, h1master && civ_sync_ptt);
+                CIVController.SplitTrace("CIV OPEN slot=" + slot + " port=COM" + CatPortForSlot(slot) + " baud=" + CatBaudForSlot(slot)
+                    + " master=" + h1master + " opened=" + h1opened + " isOpen=" + ic.IsOpen);
                 if (h1master) CIVControllerInstance = ic;
             }
             else
