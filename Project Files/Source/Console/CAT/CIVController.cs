@@ -1392,7 +1392,7 @@ namespace Thetis
                             targetVfoBFreq = _pendingVfoBFreq;
                         }
 
-                        if (targetVfoBFreq > 0 && Math.Abs(targetVfoBFreq - _lastSentVfoBFreq) > 0.0000015)
+                        if (targetVfoBFreq > 0 && (Math.Abs(targetVfoBFreq - _lastSentVfoBFreq) > 0.0000015 || (splitRequired && _vfoBModePending)))
                         {
                             doVfoB = true;
                         }
@@ -1447,7 +1447,19 @@ namespace Thetis
             // then never sent; the rig kept its VFO B at the value loaded when split was entered.
             if (doVfoB && !doSplit && _console != null && (_console.VFOBTX || _console.TXOnSubVFOB || (_console.VFOSplit && IsSplitRequired())))
             {
-                SendVfoBFrequency(targetVfoBFreq);
+                // H1 (user 2026-10-04): force only when the rig's VFO B mode really differs. The mode
+                // pending flag is re-armed by every console notification, and forcing on it made the
+                // whole sequence - release split, rewrite VFO B, re-engage split - run a second time
+                // straight after a split activation that had just done exactly that (01:01:04).
+                bool h1ModeNeedsWrite = false;
+                if (_console != null)
+                {
+                    CIVMode h1m; CIVFilter h1f; CIVDataMode h1d;
+                    CIVProtocol.MapThetisMode(_console.H1TxSourceMode, _console.H1TxSourceFilterWidth, out h1m, out h1f, out h1d);
+                    h1ModeNeedsWrite = _lastSentVfoBCivMode == (CIVMode)0xFF ||
+                        h1m != _lastSentVfoBCivMode || h1f != _lastSentVfoBCivFilter;
+                }
+                SendVfoBFrequency(targetVfoBFreq, force: h1ModeNeedsWrite);
             }
 
             if (doMode)
@@ -1548,23 +1560,37 @@ namespace Thetis
                         H1AbortVfoBWrite("VFO B frequency update");
                         return;
                     }
-                    Thread.Sleep(50);
+                    Thread.Sleep(H1_SETTLE_MS);
                     SendFrame(setFreq);
-                    Thread.Sleep(70); // 70ms allows IC-7100 PLL synthesizer to fully lock
+                    Thread.Sleep(H1_SETTLE_MS); // H1 (B): the ACK confirms the frame, so the long pad is gone
+                    if (selectOther && (_vfoBModePending || _lastSentVfoBCivMode == (CIVMode)0xFF)) H1WriteVfoBMode(false); // H1: VFO B carries the transmit mode
                     SendFrame(selOriginal);
-                    Thread.Sleep(50);
+                    Thread.Sleep(H1_SETTLE_MS);
                     // Fail-safe confirmation: Reselect original VFO a second time
                     SendFrame(selOriginal);
-                    Thread.Sleep(30);
+                    Thread.Sleep(H1_SETTLE_MS);
 
                     // On the IC-7100, selecting VFO B (0x07 0x01) causes the radio to exit Split mode.
                     // If Split mode was active, we MUST re-assert Split ON so the radio remains in Split!
-                    if (_actualRadioSplit || _lastSentSplit)
+                    // H1 (user 2026-10-04): tested against the flag saved at the top. The release above
+                    // clears both flags, so the old test here never re-engaged split, and the next
+                    // activation had to restore it - three split cycles and relay clicks per tick move.
+                    if (h1SplitWasOn)
                     {
                         SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, true));
                         _lastSentSplit = true;
                         _actualRadioSplit = true;
-                        Thread.Sleep(40);
+                        lock (_stateLock)
+                        {
+                            // H1 (Q1, user 2026-10-04): record the state and time here as well. Only
+                            // ActivateSplit did, so the activation that follows this frequency update
+                            // could not tell it was a duplicate and repeated the whole sequence -
+                            // three split cycles and relay clicks per VFO B tick move.
+                            _h1LastSplitA = _console != null ? _console.VFOAFreq : 0.0;
+                            _h1LastSplitB = freqMHz;
+                            _h1LastSplitStamp = Stopwatch.GetTimestamp();
+                        }
+                        Thread.Sleep(H1_SETTLE_MS);
                     }
                 }
                 finally
@@ -1783,26 +1809,30 @@ namespace Thetis
                             lock (_stateLock) { _splitChangePending = true; }
                             return;
                         }
-                        Thread.Sleep(50);
+                        Thread.Sleep(H1_SETTLE_MS);
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoBFreq));
                         _lastSentVfoBFreq = vfoBFreq;
-                        Thread.Sleep(80); // Synthesizer lock settling time
+                        Thread.Sleep(H1_SETTLE_MS);
+                        // H1 (A): the mode frame only when it changed since the last write, or after
+                        // 30 s; it used to be force-written on every split activation.
+                        H1WriteVfoBMode(_h1LastVfoBModeStamp == 0 ||
+                            (Stopwatch.GetTimestamp() - _h1LastVfoBModeStamp) > 30 * Stopwatch.Frequency);
                     }
 
                     // 2. Select VFO A and ensure VFO A frequency is set
                     SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
                     _currentRadioSelectedVfo = CIVProtocol.VFO_A;
-                    Thread.Sleep(50);
+                    Thread.Sleep(H1_SETTLE_MS);
                     if (vfoAFreq > 0 && Math.Abs(vfoAFreq - _lastSentVfoAFreq) > 0.0000015)
                     {
                         SendFrame(CIVProtocol.SetFrequencyFrame(_radioAddr, _hostAddr, vfoAFreq));
                         _lastSentVfoAFreq = vfoAFreq;
-                        Thread.Sleep(40);
+                        Thread.Sleep(H1_SETTLE_MS);
                     }
 
                     // 3. Confirm VFO A is selected
                     SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
-                    Thread.Sleep(40);
+                    Thread.Sleep(H1_SETTLE_MS);
 
                     // 4. FINALLY, turn Split ON as the last step!
                     // On the IC-7100, entering Split keeps VFO A as RX and VFO B as TX.
@@ -1810,7 +1840,9 @@ namespace Thetis
                     SendFrame(CIVProtocol.SetSplitFrame(_radioAddr, _hostAddr, true));
                     _lastSentSplit = true;
                     _actualRadioSplit = true;
-                    Thread.Sleep(50);
+                    lock (_stateLock) { _h1LastSplitA = vfoAFreq; _h1LastSplitB = vfoBFreq; _h1LastSplitStamp = Stopwatch.GetTimestamp(); }
+                    Thread.Sleep(H1_SETTLE_MS);
+                    H1VerifyRigVfos(vfoAFreq, vfoBFreq, "split ON");
                 }
                 finally
                 {
@@ -1819,11 +1851,36 @@ namespace Thetis
                     _isSwappingVfo = false;
                 }
             }
+            }
+            finally { System.Threading.Interlocked.Exchange(ref _h1SplitOpRunning, 0); }
         }
 
         private void DeactivateSplit(double vfoAFreq)
         {
             SplitTrace(string.Format("DeactivateSplit A={0:F6} from {1}", vfoAFreq, SplitTraceCallers()));
+            // H1 (user 2026-10-04): the same deactivation arrives twice about half a second apart -
+            // traced at 00:40:20.427 and 00:40:20.910 - and each one runs the whole sequence and
+            // operates the relays. An identical deactivation, already done, is skipped. ActivateSplit
+            // had this from the start; DeactivateSplit did not.
+            if (_h1LastDeactStamp > 0)
+            {
+                lock (_stateLock)
+                {
+                    if (!_actualRadioSplit && !_lastSentSplit && Math.Abs(_h1LastDeactA - vfoAFreq) < 0.0000015 &&
+                        (Stopwatch.GetTimestamp() - _h1LastDeactStamp) < Stopwatch.Frequency)
+                    {
+                        SplitTrace("COALESCE duplicate split deactivation skipped (same A within one second)");
+                        return;
+                    }
+                }
+            }
+            if (System.Threading.Interlocked.CompareExchange(ref _h1SplitOpRunning, 1, 0) != 0)
+            {
+                SplitTrace("SKIP overlapping split deactivation - one is already running");
+                return;
+            }
+            try
+            {
             lock (_vfoSwapLock)
             {
                 if (vfoAFreq <= 0 && _console != null) vfoAFreq = _console.VFOAFreq;
@@ -1880,7 +1937,12 @@ namespace Thetis
                     _lastVfoSwapTime = Stopwatch.GetTimestamp();
                     _isSwappingVfo = false;
                 }
+                H1VerifyRigVfos(vfoAFreq, 0.0, "split OFF");
             }
+            if (!_actualRadioSplit && !_lastSentSplit)
+                lock (_stateLock) { _h1LastDeactA = vfoAFreq; _h1LastDeactStamp = Stopwatch.GetTimestamp(); }
+            }
+            finally { System.Threading.Interlocked.Exchange(ref _h1SplitOpRunning, 0); }
         }
 
         /// <summary>
@@ -2303,7 +2365,7 @@ namespace Thetis
         // H1 (2026-10-03): a VFO B write whose 'select VFO B' was never confirmed must not send the
         // frequency - the rig may still be on VFO A and would take the transmit frequency there.
         // The write is abandoned, VFO A is reselected, and the next flood tick redoes it.
-        private void H1AbortVfoBWrite(string where)
+        private bool H1AbortVfoBWrite(string where)
         {
             SplitTrace("ABORT " + where + " - select VFO B not confirmed, frequency NOT sent, VFO A reselected, retry on the next update");
             SendFrame(CIVProtocol.SelectVfoFrame(_radioAddr, _hostAddr, false));
@@ -2314,10 +2376,11 @@ namespace Thetis
                 _vfoBChangePending = true;
                 _lastVfoBTuneTime = 0;
             }
+            return false;
         }
 
         private const int H1_ACK_ATTEMPTS = 3;
-        private const int H1_ACK_TIMEOUT_MS = 80;
+        private const int H1_ACK_TIMEOUT_MS = 120; // F (user 2026-10-04): widened from 80 ms - the rig was missing the 80 ms window and every miss cost a resend
         private readonly object _ackLock = new object();
         private int _ackCount = 0;
         private int _nakCount = 0;
