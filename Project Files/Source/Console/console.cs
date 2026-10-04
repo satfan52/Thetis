@@ -20831,6 +20831,9 @@ namespace Thetis
                 Band old_band = _tx_band;
                 if (initializing) old_band = value; // we cant use tx_band, because it is unset (GEN), unless we save it out it is irrelevant MW0LGE
 
+                CIVController.SplitTrace(string.Format("TXBAND SetTXBand called: old={0} new={1} init={2} power={3} | ticks A={4} SubA={5} B={6} SubB={7} split={8} | from {9}",
+                    old_band, value, initializing, PowerOn, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, H1TxBandStack()));
+
                 _tx_band = value;
 
                 Band lo_band = Band.FIRST;
@@ -20857,7 +20860,11 @@ namespace Thetis
                     // restore re-sets the band after initializing drops, and arming there bypassed
                     // the amplifier at every launch and - with the burst ticked - engaged Tune with
                     // the power off, raising the power-off notice at start-up.
-                    if (!initializing && _tx_band != old_band && PowerOn) H1BandGuardArm();
+                    bool h1Arm = !initializing && _tx_band != old_band && PowerOn;
+                    CIVController.SplitTrace(string.Format("TXBAND guard arm={0} (init={1} old={2} new={3} power={4} guardEnabled={5} burstEnabled={6}) | ticks A={7} SubA={8} B={9} SubB={10} split={11} | from {12}",
+                        h1Arm, initializing, old_band, _tx_band, PowerOn, _h1BandGuardEnabled, _h1MfjBurstEnabled,
+                        chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, H1TxBandStack()));
+                    if (h1Arm) H1BandGuardArm();
 
                     // save FM TX Offset
                     if (!initializing)
@@ -21934,6 +21941,37 @@ namespace Thetis
         // returns in line - the proven two-step order, triggered by the band change instead of
         // a Tune press. Manual actions (the PA Drive slider, the mode pill, Auto tune) clear
         // the guard; a successful two-step tune clears it too.
+        // H1 diagnostic (user 2026-10-04): the transmit band is in no log, so a tick move that
+        // fires the band-change tune burst cannot be explained from the trace. These write every
+        // transmit band decision with the four tick states - no behaviour change.
+        private static string H1TxBandStack()
+        {
+            try
+            {
+                System.Diagnostics.StackTrace st = new System.Diagnostics.StackTrace(true);
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                for (int i = 1; i < st.FrameCount && i <= 5; i++)
+                {
+                    System.Reflection.MethodBase m = st.GetFrame(i).GetMethod();
+                    if (m != null) sb.Append(m.DeclaringType.Name).Append('.').Append(m.Name).Append(" < ");
+                }
+                return sb.ToString();
+            }
+            catch { return ""; }
+        }
+
+        private void H1TxBandTrace(string where, object oldB, object newB, bool quoted, double freq)
+        {
+            try
+            {
+                CIVController.SplitTrace(string.Format(
+                    "TXBAND {0}: transmit band now={1}, row computed={2}, would change={3}, freq={4:F4} | ticks A={5} SubA={6} B={7} SubB={8} split={9}",
+                    where, oldB, newB, quoted, freq,
+                    chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked));
+            }
+            catch { }
+        }
+
         internal void H1BandGuardArm()
         {
             H1BandGuardDisarm();
@@ -36919,9 +36957,11 @@ namespace Thetis
                 b = BandByFreq(freq, tx_xvtr_index, current_region);
 
                 Band b1 = getTXBandWhenExtended(b, freq);
+                H1TxBandTrace("txtVFOAFreq_LostFocus", old_tx_band, b1, b1 != _tx_band, freq);
                 if (b1 != _tx_band)
                     SetTXBand(b1, b != b1);
             }
+            else H1TxBandTrace("txtVFOAFreq_LostFocus skipped", old_tx_band, "n/a", false, freq);
 
             Band lo_band = Band.FIRST;
             Band lo_bandb = Band.FIRST;
@@ -37522,6 +37562,7 @@ namespace Thetis
                     Band b = BandByFreq(freq, tx_xvtr_index, current_region);
 
                     Band b1 = getTXBandWhenExtended(b, freq);
+                    H1TxBandTrace("VFOASubCommit", old_tx_band, b1, old_tx_band != b1, freq);
 
                     if (chkVFOSplit.Checked && old_tx_band != b1)
                         SetTXBand(b1, b != b1); // ke9ns mod b1
@@ -37701,6 +37742,7 @@ namespace Thetis
                     Band old_tx_band_svb = _tx_band;
                     Band b_svb = BandByFreq(freq, tx_xvtr_index, current_region);
                     Band b1_svb = getTXBandWhenExtended(b_svb, freq);
+                    H1TxBandTrace("VFOBSubCommit", old_tx_band_svb, b1_svb, old_tx_band_svb != b1_svb, freq);
 
                     if (chkVFOSplit.Checked && old_tx_band_svb != b1_svb)
                         SetTXBand(b1_svb, b_svb != b1_svb);
@@ -38271,6 +38313,7 @@ namespace Thetis
             Band b = BandByFreq(tx_freq, tx_xvtr_index, current_region);
 
             Band b1 = getTXBandWhenExtended(b, tx_freq);
+            H1TxBandTrace("txtVFOBFreq_LostFocus", old_tx_band, b1, old_tx_band != b1, tx_freq);
 
             if (old_tx_band != b1)
                 SetTXBand(b1, b != b1); // ke9ns mod b1
@@ -46851,6 +46894,7 @@ namespace Thetis
 
         private void chkSubVFOATX_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.SplitTrace(string.Format("TXBAND at tick SubVFOA: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
             CIVController.SplitTrace(string.Format("CONSOLE chkSubVFOATX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkSubVFOATX).Checked, _bUpdatingTxTicks, initializing, chkSubVFOATX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkSubVFOATX.Focused && !chkSubVFOATX.Checked) chkSubVFOATX.Checked = true;
             if (_bUpdatingTxTicks) return;
@@ -46880,6 +46924,7 @@ namespace Thetis
 
         private void chkSubVFOBTX_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.SplitTrace(string.Format("TXBAND at tick SubVFOB: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
             CIVController.SplitTrace(string.Format("CONSOLE chkSubVFOBTX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkSubVFOBTX).Checked, _bUpdatingTxTicks, initializing, chkSubVFOBTX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkSubVFOBTX.Focused && !chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = true;
             if (_bUpdatingTxTicks) return;
@@ -46921,6 +46966,7 @@ namespace Thetis
 
         private void chkVFOATX_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.SplitTrace(string.Format("TXBAND at tick VFOA: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
             CIVController.SplitTrace(string.Format("CONSOLE chkVFOATX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkVFOATX).Checked, _bUpdatingTxTicks, initializing, chkVFOATX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkVFOATX.Focused && !chkVFOATX.Checked) chkVFOATX.Checked = true;
             if (chkVFOATX.Checked)
@@ -46997,6 +47043,7 @@ namespace Thetis
         private bool m_bLastVFOBTXsetting = false;
         private void chkVFOBTX_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.SplitTrace(string.Format("TXBAND at tick VFOB: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
             CIVController.SplitTrace(string.Format("CONSOLE chkVFOBTX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkVFOBTX).Checked, _bUpdatingTxTicks, initializing, chkVFOBTX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkVFOBTX.Focused && !chkVFOBTX.Checked) chkVFOBTX.Checked = true;
             Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked; // H1: the sub B tick also transmits on the B side
