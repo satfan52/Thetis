@@ -2046,6 +2046,15 @@ namespace Thetis
             _pttVerifyDeadline = Stopwatch.GetTimestamp() + (long)(PTT_VERIFY_TIMEOUT_MS * (Stopwatch.Frequency / 1000.0));
             _lastVerifyPollTime = 0;
             if (tx) _lastPttKeyTime = Stopwatch.GetTimestamp();
+            else
+            {
+                // H1 (user 2026-10-03): arm the post-transmit window HERE, at the moment the unkey
+                // command goes to the rig. It used to arm when the console later reported the key
+                // release, about 80 ms after the rig had already broadcast its transmit frequency -
+                // that broadcast was then read as an A/B press and swapped the console VFOs.
+                _lastTxReleaseTime = Stopwatch.GetTimestamp();
+                PttTrace("release window armed at unkey send");
+            }
 
             if (!_syncPTT)
             {
@@ -2903,7 +2912,7 @@ namespace Thetis
                         byte splitByte = frame[5];
                         bool isSplit = (splitByte == CIVProtocol.SPLIT_ON);
 
-                        Log("[HANDLE:SPLIT] splitByte=0x{0:X2} (isSplit={1}), MOX={2}, isSwapping={3}, swapInProgress={4}, readingVfoB={5}, actualRadioSplit={6}, lastSentSplit={7}, RX2={8}, Split={9}, VFOBTX={10}, VFOATX={11}",
+                        Log("[HANDLE:SPLIT] splitByte=0x{0:X2} (isSplit={1}), MOX={2}, isSwapping={3}, swapInProgress={4}, readingVfoB={5}, actualRadioSplit={6}, lastSentSplit={7}, RX2={8}, Split={9}, VFOBTX={10}, VFOATX={11} | H1: splitOpRunning={12} msSinceOurRelease={13:F1} this={14}",
                             splitByte, isSplit,
                             _console != null && _console.MOX,
                             _isSwappingVfo, _radioInitiatedSwapInProgress, _readingRadioVfoBFreq,
@@ -2911,12 +2920,31 @@ namespace Thetis
                             _console != null && _console.RX2Enabled,
                             _console != null && _console.VFOSplit,
                             _console != null && _console.VFOBTX,
-                            _console != null && _console.VFOATX);
+                            _console != null && _console.VFOATX,
+                            _h1SplitOpRunning,
+                            _h1ExpectedSplitOffStamp > 0 ? (double)(Stopwatch.GetTimestamp() - _h1ExpectedSplitOffStamp) / Stopwatch.Frequency * 1000.0 : -1.0,
+                            GetHashCode());
 
                         if (_console != null && _console.MOX)
                         {
                             Log("[HANDLE:SPLIT] Ignored: MOX active");
                             break;
+                        }
+
+                        // H1 (D, user 2026-10-04): while Thetis itself is releasing split to address a
+                        // VFO, and for 1.5 s afterwards, the rig's own "split off" reports are expected.
+                        // Treating them as news made the flood activate split again - three full
+                        // activations per click, traced at 00:18:30.
+                        if (_h1SplitOpRunning != 0 || _h1ExpectedSplitOffStamp > 0)
+                        {
+                            double msSinceRelease = _h1ExpectedSplitOffStamp > 0
+                                ? (double)(Stopwatch.GetTimestamp() - _h1ExpectedSplitOffStamp) / Stopwatch.Frequency * 1000.0 : -1.0;
+                            if (_h1SplitOpRunning != 0 || (msSinceRelease >= 0.0 && msSinceRelease < 1500.0))
+                            {
+                                Log("[HANDLE:SPLIT] Ignored: report {0:F1} ms after Thetis released split on purpose (split operation running={1})",
+                                    msSinceRelease, _h1SplitOpRunning != 0);
+                                break;
+                            }
                         }
 
                         // Guard against spurious split reports during active VFO swaps or VFO B read:
@@ -2968,6 +2996,19 @@ namespace Thetis
                             if (_console != null)
                             {
                                 double vfoAFreq = _console.VFOAFreq;
+                                // H1 (user 2026-10-04): a "split off" report that Thetis itself caused
+                                // must never be read as the operator tapping SPLIT on the rig. That
+                                // branch runs VFOSwap() and rewrote every VFO frequency at 00:54:28,
+                                // when a mode change on SubRX2 made Thetis release split to write VFO B.
+                                double h1msRel = _h1ExpectedSplitOffStamp > 0
+                                    ? (double)(Stopwatch.GetTimestamp() - _h1ExpectedSplitOffStamp) / Stopwatch.Frequency * 1000.0 : -1.0;
+                                if (_h1SplitOpRunning != 0 || (h1msRel >= 0.0 && h1msRel < 1500.0))
+                                {
+                                    Log("[HANDLE:SPLIT] RX2 snap NOT taken: Thetis released split on purpose {0:F1} ms ago (operation running={1})",
+                                        h1msRel, _h1SplitOpRunning != 0);
+                                    break;
+                                }
+
                                 bool isRX2SplitSnap = !isSplit &&
                                     _console.RX2Enabled && _console.VFOSplit && !_console.VFOBTX;
 
@@ -3245,6 +3286,28 @@ namespace Thetis
 
             bool differsFromVfoA = Math.Abs(freqMHz - _console.VFOAFreq) > 0.0000015 &&
                                    Math.Abs(freqMHz - _lastSentVfoAFreq) > 0.0000015;
+
+            // H1 (user 2026-10-03): two stand-down rules were added here after 5 false VFO swaps
+            // were traced in one evening - each one a frequency broadcast from the rig around
+            // transmit (the band-change guard keys and unkeys the rig), each one moving the
+            // IC-7100 receive VFO onto the other VFO's frequency.
+            //   1. While split is on and a sub tick holds the transmit frequency, an A/B press
+            //      cannot be told apart from the rig reporting its own transmit frequency.
+            //   2. Within one second of our unkey command the rig still broadcasts the transmit
+            //      frequency; nothing in that window is an A/B press.
+            bool h1SubTickHolds = _console.VFOSplit && (_console.TXOnSubVFOB || _console.TXOnSubVFOA);
+            double h1MsSinceRelease = _lastTxReleaseTime > 0
+                ? (double)(Stopwatch.GetTimestamp() - _lastTxReleaseTime) / Stopwatch.Frequency * 1000.0
+                : double.MaxValue;
+            bool h1JustUnkeyed = h1MsSinceRelease < 1000.0;
+
+            if (VfoBHasRole() && matchesVfoB && differsFromVfoA && (h1SubTickHolds || h1JustUnkeyed))
+            {
+                SplitTrace(string.Format("AB PRESS IGNORED freq={0:F6} - {1} (sub tick holds={2}, {3:F0} ms since unkey)",
+                    freqMHz, h1SubTickHolds ? "a sub tick holds the transmit frequency" : "within one second of unkey",
+                    h1SubTickHolds, h1MsSinceRelease));
+                return;
+            }
 
             if (VfoBHasRole() && matchesVfoB && differsFromVfoA)
             {
