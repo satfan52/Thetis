@@ -7769,6 +7769,10 @@ namespace Thetis
             chkSubRX2Follow.CheckedChanged += chkSubRX2Follow_CheckedChanged;
             Controls.Add(chkSubRX2Follow);
 
+            H1FsBuild();  // H1: the full-screen per-panafall control strip
+            pnlDisplay.SizeChanged += H1FsDisplayResized;
+            panelDisplay.SizeChanged += H1FsDisplayResized;
+
             UpdateSubGainReadout(1); UpdateSubGainReadout(2);
             UpdateSubFilterReadout(1); UpdateSubFilterReadout(2);
         }
@@ -7833,6 +7837,492 @@ namespace Thetis
             c.Size = new Size(45, 23);
             c.TabStop = false;
             return c;
+        }
+
+
+        // ===================================================================================
+        // H1 (user 2026-10-05): the full-screen per-panafall control strip.
+        //
+        // In full screen nothing is on screen to reach, so each panafall carries a discrete strip
+        // of its own receiver's everyday controls: band, mode, AGC gain (the RF gain slider, the
+        // only continuous gain in the console's AGC GAIN group), AF volume, and the four noise
+        // toggles NR / ANF / NB / BIN. RX1's strip drives RX1, RX2's drives RX2. Full screen only:
+        // in the normal view the real controls are already there.
+        // ===================================================================================
+
+        // H1 (user 2026-10-05): the strip's own slider.
+        //
+        // PrettyTrackBar proved unusable for a control built in code. Its OnPaint draws only a limit
+        // bar and an optional head image; the track art every design-time slider shows comes from
+        // console.resx via resources.ApplyResources, and borrowing that gave a light grey slab on
+        // the dark panafall. A hand-set HeadImage did not draw either. So the strip draws its own:
+        // a dark track, an amber fill to the value and a small thumb, and it takes its range from
+        // the control it drives - ptbRF and ptbRX2RF run -20..120, not 0..100, which is why the AGC
+        // slider could not move the gain it was pointed at.
+        private class H1FsSlider : Control
+        {
+            private int _v = 0, _min = 0, _max = 100;
+            public event EventHandler ValueChanged;
+
+            public H1FsSlider()
+            {
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                BackColor = Color.FromArgb(22, 26, 32);
+            }
+
+            public int Minimum { get { return _min; } set { _min = value; } }
+            public int Maximum { get { return _max; } set { _max = value; } }
+
+            public int Value
+            {
+                get { return _v; }
+                set { SetValueQuiet(value); if (ValueChanged != null) ValueChanged(this, EventArgs.Empty); }
+            }
+
+            // no event: used when the strip is being painted from the console
+            public void SetValueQuiet(int value)
+            {
+                int n = value;
+                if (n < _min) n = _min;
+                if (n > _max) n = _max;
+                if (n == _v) return;
+                _v = n;
+                Invalidate();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                e.Graphics.Clear(BackColor);
+                e.Graphics.DrawRectangle(new Pen(Color.FromArgb(58, 64, 74)), 0, 0, Width - 1, Height - 1);
+
+                int mid = Height / 2;
+                int span = _max - _min;
+                if (span < 1) span = 1;
+                int usable = Width - 10;
+                if (usable < 1) usable = 1;
+                int x = (int)Math.Round((double)(_v - _min) / span * usable);
+
+                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(48, 54, 64)), 3, mid - 3, usable, 6);
+                if (x > 0) e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(255, 200, 0)), 3, mid - 3, x, 6);
+
+                e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(255, 200, 0)), 3 + x - 4, mid - 8, 9, 16);
+                e.Graphics.DrawRectangle(Pens.Black, 3 + x - 4, mid - 8, 8, 15);
+            }
+
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left) { Capture = true; FromX(e.X); }
+                base.OnMouseDown(e);
+            }
+
+            protected override void OnMouseMove(MouseEventArgs e)
+            {
+                if (Capture) FromX(e.X);
+                base.OnMouseMove(e);
+            }
+
+            protected override void OnMouseUp(MouseEventArgs e) { Capture = false; base.OnMouseUp(e); }
+
+            protected override void OnMouseWheel(MouseEventArgs e)
+            {
+                int step = (_max - _min) / 100 + 1;
+                Value = _v + (e.Delta > 0 ? step : -step);
+                base.OnMouseWheel(e);
+            }
+
+            private void FromX(int px)
+            {
+                int usable = Width - 10;
+                if (usable < 1) usable = 1;
+                int span = _max - _min;
+                if (span < 1) span = 1;
+                Value = _min + (int)Math.Round((double)(px - 3) / usable * span);
+            }
+        }
+
+        private ComboBoxTS h1fsBand1, h1fsMode1, h1fsBand2, h1fsMode2;
+        private H1FsSlider h1fsAgc1, h1fsAf1, h1fsAgc2, h1fsAf2;
+        private CheckBoxTS h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1;
+        private CheckBoxTS h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2;
+        private CheckBoxTS h1fsCtun1, h1fsCtun2;
+        private bool _h1fsBuilt = false;
+        private bool _h1fsSync = false;
+        private const int H1FsW = 194;      // the whole strip
+        private const int H1FsHalf = 94;    // a slider
+        private const int H1FsComboW = 62;  // a dropdown - 94 read as oversized on the panafall
+        private const int H1FsGap = 6;
+        private const int H1FsPillW = 45;
+        private const int H1FsPillGap = 3;
+
+        private static readonly string[] H1FsBandNames = { "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m" };
+        private static readonly Band[] H1FsBands = { Band.B160M, Band.B80M, Band.B60M, Band.B40M, Band.B30M, Band.B20M, Band.B17M, Band.B15M, Band.B12M, Band.B10M, Band.B6M };
+        private static readonly string[] H1FsModeNames = { "LSB", "USB", "DSB", "CWL", "CWU", "FM", "AM", "SAM", "SPEC", "DIGL", "DIGU", "DRM" };
+        private static readonly DSPMode[] H1FsModes = { DSPMode.LSB, DSPMode.USB, DSPMode.DSB, DSPMode.CWL, DSPMode.CWU, DSPMode.FM, DSPMode.AM, DSPMode.SAM, DSPMode.SPEC, DSPMode.DIGL, DSPMode.DIGU, DSPMode.DRM };
+
+        private void H1FsBuild()
+        {
+            if (_h1fsBuilt) return;
+            _h1fsBuilt = true;
+
+            h1fsBand1 = H1FsNewCombo("h1fsBand1", H1FsBandNames);
+            h1fsBand2 = H1FsNewCombo("h1fsBand2", H1FsBandNames);
+            h1fsMode1 = H1FsNewCombo("h1fsMode1", H1FsModeNames);
+            h1fsMode2 = H1FsNewCombo("h1fsMode2", H1FsModeNames);
+
+            h1fsAgc1 = H1FsNewSlider("h1fsAgc1");
+            h1fsAf1 = H1FsNewSlider("h1fsAf1");
+            h1fsAgc2 = H1FsNewSlider("h1fsAgc2");
+            h1fsAf2 = H1FsNewSlider("h1fsAf2");
+
+            h1fsNr1 = H1FsNewPill("h1fsNr1", "NR");
+            h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF");
+            h1fsNb1 = H1FsNewPill("h1fsNb1", "NB");
+            h1fsBin1 = H1FsNewPill("h1fsBin1", "BIN");
+            h1fsNr2 = H1FsNewPill("h1fsNr2", "NR");
+            h1fsAnf2 = H1FsNewPill("h1fsAnf2", "ANF");
+            h1fsNb2 = H1FsNewPill("h1fsNb2", "NB");
+            h1fsBin2 = H1FsNewPill("h1fsBin2", "BIN");
+            // H1 (user 2026-10-05): CTUN belongs on the strip - it is the one display control
+            // that changes what a click on the panafall does. chkFWCATU is RX1's tick, chkX2TR RX2's.
+            h1fsCtun1 = H1FsNewPill("h1fsCtun1", "CTUN");
+            h1fsCtun2 = H1FsNewPill("h1fsCtun2", "CTUN");
+
+            h1fsBand1.SelectedIndexChanged += H1FsBandChanged;
+            h1fsBand2.SelectedIndexChanged += H1FsBandChanged;
+            h1fsMode1.SelectedIndexChanged += H1FsModeChanged;
+            h1fsMode2.SelectedIndexChanged += H1FsModeChanged;
+            h1fsAgc1.ValueChanged += H1FsSliderChanged;
+            h1fsAf1.ValueChanged += H1FsSliderChanged;
+            h1fsAgc2.ValueChanged += H1FsSliderChanged;
+            h1fsAf2.ValueChanged += H1FsSliderChanged;
+            foreach (CheckBoxTS hp in new CheckBoxTS[] { h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun1, h1fsCtun2 })
+            {
+                hp.MouseEnter += H1FsPillHover;
+                hp.MouseLeave += H1FsPillHover;
+            }
+            h1fsNr1.MouseDown += H1FsNrPillMouseDown;
+            h1fsNr2.MouseDown += H1FsNrPillMouseDown;
+            h1fsNr1.CheckedChanged += H1FsPillChanged;
+            h1fsAnf1.CheckedChanged += H1FsPillChanged;
+            h1fsNb1.CheckedChanged += H1FsPillChanged;
+            h1fsBin1.CheckedChanged += H1FsPillChanged;
+            h1fsNr2.CheckedChanged += H1FsPillChanged;
+            h1fsAnf2.CheckedChanged += H1FsPillChanged;
+            h1fsNb2.CheckedChanged += H1FsPillChanged;
+            h1fsBin2.CheckedChanged += H1FsPillChanged;
+            h1fsCtun1.CheckedChanged += H1FsPillChanged;
+            h1fsCtun2.CheckedChanged += H1FsPillChanged;
+
+            H1FsSync();
+        }
+
+        private ComboBoxTS H1FsNewCombo(string name, string[] items)
+        {
+            ComboBoxTS c = new ComboBoxTS();
+            c.Name = name;
+            c.DropDownStyle = ComboBoxStyle.DropDownList;
+            c.FlatStyle = FlatStyle.Flat;
+            c.BackColor = Color.FromArgb(24, 26, 30);
+            c.ForeColor = Color.FromArgb(170, 178, 188);
+            c.Font = new Font("Segoe UI", 8.25f);
+            c.Size = new Size(H1FsComboW, 20);
+            c.Visible = false;
+            c.TabStop = false;
+            foreach (string it in items) c.Items.Add(it);
+            Controls.Add(c);
+            return c;
+        }
+
+        private H1FsSlider H1FsNewSlider(string name)
+        {
+            H1FsSlider t = new H1FsSlider();
+            // H1 (user 2026-10-05): a PrettyTrackBar paints ONLY its limit bar and its HeadImage -
+            // its track art comes from the form's resources, and with no head image a code-built
+            // slider is a blank slab whatever its BackColor. Borrowing the AF slider's resources
+            // only produced a light grey slab on the dark panafall, so the strip dresses its own:
+            // a dark bed and a real thumb, which is the one thing the class knows how to move.
+            t.Name = name;
+            t.Size = new Size(H1FsHalf, 24);
+            t.Visible = false;
+            t.TabStop = false;
+            Controls.Add(t);
+            return t;
+        }
+
+        private CheckBoxTS H1FsNewPill(string name, string text)
+        {
+            CheckBoxTS c = NewSubPill(name, text);
+            // H1 (user 2026-10-05): the pill dress copied from chkNR leaves the checked state as the
+            // flat style's default light fill with near-white text on it - the button went blank
+            // white with no readable label. The strip sets both states explicitly instead.
+            c.Size = new Size(H1FsPillW, 18);
+            c.Font = new Font("Segoe UI", 7.5f);
+            c.UseVisualStyleBackColor = false;
+            c.BackColor = Color.FromArgb(38, 42, 48);
+            c.ForeColor = Color.FromArgb(175, 182, 192);
+            c.FlatAppearance.BorderSize = 1;
+            c.FlatAppearance.BorderColor = Color.FromArgb(70, 76, 86);
+            c.FlatAppearance.CheckedBackColor = Color.FromArgb(255, 200, 0);
+            c.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 64, 74);
+            c.Visible = false;
+            c.TabStop = false;
+            Controls.Add(c);
+            return c;
+        }
+
+        // ---- reading the console into the strip -------------------------------------------
+        private void H1FsSync()
+        {
+            if (!_h1fsBuilt || _h1fsSync) return;
+            _h1fsSync = true;
+            try
+            {
+                int b1 = Array.IndexOf(H1FsBands, rx1_band);
+                if (h1fsBand1.SelectedIndex != b1 && b1 >= 0) h1fsBand1.SelectedIndex = b1;
+                int b2 = Array.IndexOf(H1FsBands, rx2_band);
+                if (h1fsBand2.SelectedIndex != b2 && b2 >= 0) h1fsBand2.SelectedIndex = b2;
+
+                int m1 = Array.IndexOf(H1FsModes, _rx1_dsp_mode);
+                if (h1fsMode1.SelectedIndex != m1 && m1 >= 0) h1fsMode1.SelectedIndex = m1;
+                int m2 = Array.IndexOf(H1FsModes, _rx2_dsp_mode);
+                if (h1fsMode2.SelectedIndex != m2 && m2 >= 0) h1fsMode2.SelectedIndex = m2;
+
+                H1FsSliderFit(h1fsAgc1, ptbRF);
+                H1FsSliderFit(h1fsAf1, ptbAF);
+                H1FsSliderFit(h1fsAgc2, ptbRX2RF);
+                H1FsSliderFit(h1fsAf2, ptbRX2AF);
+
+                // NR is a five-state cycle, so the pill's face is the mode, not a tick
+                int nr1 = GetSelectedNR(1), nr2 = GetSelectedNR(2);
+                H1FsPillFace(h1fsNr1, nr1 > 0, nr1 > 0 ? "NR" + nr1 : "NR");
+                H1FsPillFace(h1fsNr2, nr2 > 0, nr2 > 0 ? "NR" + nr2 : "NR");
+                H1FsPillFace(h1fsAnf1, chkANF.Checked, "ANF");
+                H1FsPillFace(h1fsNb1, chkNB.Checked, "NB");
+                H1FsPillFace(h1fsBin1, chkBIN.Checked, "BIN");
+                H1FsPillFace(h1fsAnf2, chkRX2ANF.Checked, "ANF");
+                H1FsPillFace(h1fsNb2, chkRX2NB.Checked, "NB");
+                H1FsPillFace(h1fsBin2, chkRX2BIN.Checked, "BIN");
+                H1FsPillFace(h1fsCtun1, chkFWCATU.Checked, "CTUN");
+                H1FsPillFace(h1fsCtun2, chkX2TR.Checked, "CTUN");
+                if (h1fsNr1.Checked != chkNR.Checked) h1fsNr1.Checked = chkNR.Checked;
+                if (h1fsAnf1.Checked != chkANF.Checked) h1fsAnf1.Checked = chkANF.Checked;
+                if (h1fsNb1.Checked != chkNB.Checked) h1fsNb1.Checked = chkNB.Checked;
+                if (h1fsBin1.Checked != chkBIN.Checked) h1fsBin1.Checked = chkBIN.Checked;
+                if (h1fsNr2.Checked != chkRX2NR.Checked) h1fsNr2.Checked = chkRX2NR.Checked;
+                if (h1fsAnf2.Checked != chkRX2ANF.Checked) h1fsAnf2.Checked = chkRX2ANF.Checked;
+                if (h1fsNb2.Checked != chkRX2NB.Checked) h1fsNb2.Checked = chkRX2NB.Checked;
+                if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
+            }
+            finally { _h1fsSync = false; }
+        }
+
+        // H1: a strip slider takes its whole range from the control it drives, then shows that
+        // control's value. ptbRF/ptbRX2RF are -20..120 (RF gain in dB); the AF sliders are 0..100.
+        private void H1FsSliderFit(H1FsSlider s, PrettyTrackBar src)
+        {
+            if (s == null || src == null) return;
+            if (s.Minimum != src.Minimum) s.Minimum = src.Minimum;
+            if (s.Maximum != src.Maximum) s.Maximum = src.Maximum;
+            s.SetValueQuiet(src.Value);
+        }
+
+        private static int H1FsClamp(int v, int lo, int hi)
+        {
+            if (v < lo) return lo;
+            if (v > hi) return hi;
+            return v;
+        }
+
+        // H1: paint a pill for its state - bright fill and dark text when on, dim otherwise
+        private void H1FsPillFace(CheckBoxTS p, bool on, string text)
+        {
+            if (p == null) return;
+            if (p.Text != text) p.Text = text;
+            Color want = on ? Color.FromArgb(20, 22, 26) : Color.FromArgb(175, 182, 192);
+            if (p.ForeColor != want) p.ForeColor = want;
+            // H1 (user 2026-10-05): a flat button-style check box paints MouseOverBackColor over
+            // everything while the pointer is on it, so a hovered pill that was ON lost its amber
+            // and read as off. The hover colour is kept in step with the state instead: brighter
+            // amber while the pointer is on a lit pill, a lifted grey while it is on a dark one.
+            Color hov = on ? Color.FromArgb(255, 216, 56) : Color.FromArgb(58, 64, 74);
+            if (p.FlatAppearance.MouseOverBackColor != hov) p.FlatAppearance.MouseOverBackColor = hov;
+            if (p.Checked != on) p.Checked = on;
+        }
+
+        // ---- the strip acting on the console ----------------------------------------------
+        private void H1FsBandChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            ComboBoxTS c = sender as ComboBoxTS;
+            if (c == null || c.SelectedIndex < 0) return;
+            int rx = (c == h1fsBand1) ? 1 : 2;
+            if (rx == 2 && !rx2_enabled) return;
+
+            // H1 (user 2026-10-05): the two receivers do not change band the same way. RX1's band
+            // buttons raise BandPreChangeHandlers; RX2's H1 band buttons call SetupRX2Band with the
+            // band's string tag. Sending RX2 down the RX1 route left its band unchanged - that was
+            // "band selection is broken on RX2 in full screen". Use each receiver's own entry point,
+            // and let the console's own BandToString spell the tag so it cannot drift from the
+            // buttons' tags.
+            if (rx == 2)
+            {
+                SetupRX2Band(BandToString(H1FsBands[c.SelectedIndex]));
+                H1SyncRX2BandButtons();
+            }
+            else
+            {
+                BandPreChangeHandlers?.Invoke(1, H1FsBands[c.SelectedIndex]);
+            }
+            H1SpacePttTrace("fs strip: band rx" + rx + " -> " + H1FsBandNames[c.SelectedIndex]);
+        }
+
+        private void H1FsModeChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            ComboBoxTS c = sender as ComboBoxTS;
+            if (c == null || c.SelectedIndex < 0) return;
+
+            if (c == h1fsMode1) H1FsSetMode(false, H1FsModes[c.SelectedIndex]);
+            else H1FsSetMode(true, H1FsModes[c.SelectedIndex]);
+
+            H1SpacePttTrace("fs strip: mode -> " + H1FsModeNames[c.SelectedIndex]);
+        }
+
+        // H1: the mode radios carry the change; find the one for this mode and arm it
+        private void H1FsSetMode(bool rx2, DSPMode mode)
+        {
+            RadioButtonTS[] rx1 = { radModeLSB, radModeUSB, radModeDSB, radModeCWL, radModeCWU, radModeFMN, radModeAM, radModeSAM, radModeSPEC, radModeDIGL, radModeDIGU, radModeDRM };
+            RadioButtonTS[] r2 = { radRX2ModeLSB, radRX2ModeUSB, radRX2ModeDSB, radRX2ModeCWL, radRX2ModeCWU, radRX2ModeFMN, radRX2ModeAM, radRX2ModeSAM, radRX2ModeSPEC, radRX2ModeDIGL, radRX2ModeDIGU, radRX2ModeDRM };
+            RadioButtonTS[] set = rx2 ? r2 : rx1;
+            int i = Array.IndexOf(H1FsModes, mode);
+            if (i < 0 || i >= set.Length || set[i] == null) return;
+            if (!set[i].Checked) set[i].Checked = true;
+        }
+
+        // H1: keep a pill's dress right for the state it is in when the pointer arrives or leaves
+        private void H1FsPillHover(object sender, EventArgs e)
+        {
+            CheckBoxTS p = sender as CheckBoxTS;
+            if (p == null) return;
+            H1FsPillFace(p, p.Checked, p.Text);
+        }
+
+        // H1: the console's NR button opens the NR setup tab on a right-click - the strip's does too
+        private void H1FsNrPillMouseDown(object sender, MouseEventArgs e)
+        {
+            if (IsRightButton(e)) SetupForm.ShowSetupTab(Setup.SetupTab.NR_Tab);
+        }
+
+        private void H1FsSliderChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            H1FsSlider t = sender as H1FsSlider;
+            if (t == null) return;
+
+            // H1 (user 2026-10-05): a PrettyTrackBar's Value setter only clamps and repaints - it does
+            // NOT raise Scroll, so a programmatic set moved the picture and nothing else. That is why
+            // the sliders slid with no effect. The console's own code sets the value and then calls
+            // the handler by hand; the strip does the same.
+            if (t == h1fsAgc1) { ptbRF.Value = H1FsClamp(t.Value, ptbRF.Minimum, ptbRF.Maximum); ptbRF_Scroll(ptbRF, EventArgs.Empty); }
+            else if (t == h1fsAf1) { ptbAF.Value = H1FsClamp(t.Value, ptbAF.Minimum, ptbAF.Maximum); ptbAF_Scroll(ptbAF, EventArgs.Empty); }
+            else if (t == h1fsAgc2) { ptbRX2RF.Value = H1FsClamp(t.Value, ptbRX2RF.Minimum, ptbRX2RF.Maximum); ptbRX2RF_Scroll(ptbRX2RF, EventArgs.Empty); }
+            else if (t == h1fsAf2) { ptbRX2AF.Value = H1FsClamp(t.Value, ptbRX2AF.Minimum, ptbRX2AF.Maximum); ptbRX2AF_Scroll(ptbRX2AF, EventArgs.Empty); }
+        }
+
+        private void H1FsPillChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            CheckBoxTS p = sender as CheckBoxTS;
+            if (p == null) return;
+
+            // H1 (user 2026-10-05): NR is not a toggle - the console keeps five states (_nr_selected
+            // 0..4 = off, NR1..NR4) and its own button walks them. A pill that only flipped Checked
+            // could never reach NR2..NR4, which is what "no selection of the different modes" was.
+            // Do exactly what the console's NR button does and let the sync paint the result.
+            if (p == h1fsNr1) { incrementNR(1); H1FsSync(); return; }
+            if (p == h1fsNr2) { incrementNR(2); H1FsSync(); return; }
+
+            if (p == h1fsNr1) chkNR.Checked = p.Checked;
+            else if (p == h1fsAnf1) chkANF.Checked = p.Checked;
+            else if (p == h1fsNb1) chkNB.Checked = p.Checked;
+            else if (p == h1fsBin1) chkBIN.Checked = p.Checked;
+            else if (p == h1fsNr2) chkRX2NR.Checked = p.Checked;
+            else if (p == h1fsAnf2) chkRX2ANF.Checked = p.Checked;
+            else if (p == h1fsNb2) chkRX2NB.Checked = p.Checked;
+            else if (p == h1fsBin2) chkRX2BIN.Checked = p.Checked;
+            else if (p == h1fsCtun1) chkFWCATU.Checked = p.Checked;
+            else if (p == h1fsCtun2) chkX2TR.Checked = p.Checked;
+
+            // H1 (user 2026-10-05): dress the pill for the state it is in NOW. A flat button-style
+            // check box paints MouseOverBackColor over the fill while the pointer sits on it, so a
+            // lit pill clicked off kept its amber - the hover colour from when the pointer arrived -
+            // until the pointer moved away. Re-dressing here ends that the moment it is clicked.
+            H1FsPillFace(p, p.Checked, p.Text);
+        }
+
+        // ---- placement and visibility -----------------------------------------------------
+        private void H1FsLayout()
+        {
+            if (!_h1fsBuilt) return;
+
+            int left = panelDisplay.Left + pnlDisplay.Left;
+            int top = panelDisplay.Top + pnlDisplay.Top + H1ListenMargin;
+            int x = left + pnlDisplay.Width - H1ListenMargin - H1FsW;
+            int y2 = top + pnlDisplay.Height / 2;
+
+            H1FsPlace(h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
+            H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
+
+            // RX2's strip is RX2's - nothing to show while RX2 is switched off
+            bool rx2On = rx2_enabled && _h1FullScreenPanafall;
+            foreach (Control c in new Control[] { h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+                if (c != null) c.Visible = rx2On;
+        }
+
+        private void H1FsPlace(ComboBoxTS band, ComboBoxTS mode, H1FsSlider agc, H1FsSlider af,
+            CheckBoxTS nr, CheckBoxTS anf, CheckBoxTS nb, CheckBoxTS bin, int x, int y)
+        {
+            band.Location = new Point(x, y);
+            mode.Location = new Point(x + H1FsComboW + H1FsGap, y);
+            // the CTUN tick takes the rest of the row, level with the dropdowns
+            CheckBoxTS ctun = (band == h1fsBand1) ? h1fsCtun1 : h1fsCtun2;
+            if (ctun != null) ctun.Location = new Point(x + 2 * (H1FsComboW + H1FsGap) + 2, y + 1);
+            agc.Location = new Point(x, y + 23);
+            af.Location = new Point(x + H1FsHalf + H1FsGap, y + 23);
+            int px = x;
+            int py = y + 50;
+            foreach (CheckBoxTS c in new CheckBoxTS[] { nr, anf, nb, bin })
+            {
+                c.Location = new Point(px, py);
+                px += H1FsPillW + H1FsPillGap;
+            }
+        }
+
+        private void H1FsShow()
+        {
+            if (!_h1fsBuilt) return;
+            H1FsSync();
+            foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
+                                                   h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+            {
+                if (c == null) continue;
+                c.Visible = true;
+                c.BringToFront();
+            }
+            H1FsLayout();   // last: it decides whether RX2's strip shows at all
+        }
+
+        private void H1FsHide()
+        {
+            if (!_h1fsBuilt) return;
+            foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
+                                                   h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+                if (c != null) c.Visible = false;
+        }
+
+        private void H1FsDisplayResized(object sender, EventArgs e)
+        {
+            if (_h1FullScreenPanafall) H1FsLayout();
         }
 
         // H1: the twin of the RX1 filter panel's Reset button
