@@ -20990,6 +20990,15 @@ namespace Thetis
             }
         }
 
+        // H1 (user 2026-10-04): the last amateur (transmittable) band the transmit band held.
+        // The band-change guard compares against this, not against a listen-only band such as
+        // B41M or GEN that a VFO passes through when tuned past the regional band edge.
+        private Band _h1LastAmateurTxBand = Band.FIRST;
+        private static bool H1IsAmateurTxBand(Band b)
+        {
+            return (b >= Band.B160M && b <= Band.B2M) || (b >= Band.VHF0 && b <= Band.VHF13);
+        }
+
         private Band _tx_band;
         public Band TXBand
         {
@@ -21031,7 +21040,16 @@ namespace Thetis
                     // restore re-sets the band after initializing drops, and arming there bypassed
                     // the amplifier at every launch and - with the burst ticked - engaged Tune with
                     // the power off, raising the power-off notice at start-up.
-                    bool h1Arm = !initializing && _tx_band != old_band && PowerOn;
+                    // H1 (user 2026-10-04): tuning any of the four VFOs (VFO A, SubVFOA, VFO B,
+                    // SubVFOB) past the regional amateur band edge - e.g. 7.250 MHz in Region 1,
+                    // which BandByFreq maps to the B41M broadcast band - is not a band change for
+                    // the guard: no transmission is possible there, so no burst. Only a move to an
+                    // amateur band different from the last amateur band arms the guard, so coming
+                    // back from 7.250 to 7.100 does not fire a burst either.
+                    bool h1NewIsTx = H1IsAmateurTxBand(_tx_band);
+                    bool h1Arm = !initializing && PowerOn && h1NewIsTx && _tx_band != old_band &&
+                                 (_h1LastAmateurTxBand == Band.FIRST || _tx_band != _h1LastAmateurTxBand);
+                    if (h1NewIsTx) _h1LastAmateurTxBand = _tx_band;
                     CIVController.SplitTrace(string.Format("TXBAND guard arm={0} (init={1} old={2} new={3} power={4} guardEnabled={5} burstEnabled={6}) | ticks A={7} SubA={8} B={9} SubB={10} split={11} | from {12}",
                         h1Arm, initializing, old_band, _tx_band, PowerOn, _h1BandGuardEnabled, _h1MfjBurstEnabled,
                         chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, H1TxBandStack()));
