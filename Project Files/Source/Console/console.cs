@@ -8469,7 +8469,11 @@ namespace Thetis
 
         private void H1FsDisplayResized(object sender, EventArgs e)
         {
-            if (_h1FullScreenPanafall) H1FsLayout();
+            if (_h1FullScreenPanafall)
+            {
+                H1FullScreenFillDisplay();   // H1: keep the display filling the window across layout passes
+                H1FsLayout();
+            }
         }
 
         // H1 (user report 2026-10-05): the display's "which receiver does this point belong to" test.
@@ -26946,11 +26950,13 @@ namespace Thetis
                 _h1FullScreenPanafall = false;
                 H1EightRowsExit();                       // H1: the eight-row view ends with the mode
                 ExpandDisplay(true);
+                H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
             }
             else
             {
                 // set BEFORE collapsing: CollapseDisplay runs the hide, which is gated on this flag
                 _h1FullScreenPanafall = true;
+                H1FullScreenCaptureGeometry();           // H1: remember the normal geometry before the collapse
                 H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
                 CollapseDisplay(true);
             }
@@ -50321,6 +50327,83 @@ namespace Thetis
         private bool _h1BtnHiddenMoved = false;
         private readonly Dictionary<Control, bool> _h1FullScreenHidden = new Dictionary<Control, bool>();
 
+        // H1 (user report 2026-10-05): "use the free space". The full-screen panafall takes the whole
+        // window - the display panel AND the display control inside it get the client area, so the
+        // dead margins the hidden chrome used to leave on top and bottom are actually used. The old
+        // attempt stretched only the outer panel; the inner control kept its old size and the panel's
+        // grey showed through as the bands. Safe to call repeatedly: it writes only when something is
+        // off, and the size-changed handlers settle after one pass.
+        private Rectangle _h1FillPanelHome = Rectangle.Empty;
+        private Rectangle _h1FillDisplayHome = Rectangle.Empty;
+
+        private void H1FullScreenFillDisplay()
+        {
+            if (!_h1FullScreenPanafall) return;
+            try
+            {
+                if (panelDisplay == null || pnlDisplay == null) return;
+                bool changed = false;
+                if (panelDisplay.Location.X != 0 || panelDisplay.Location.Y != 0)
+                {
+                    panelDisplay.Location = new Point(0, 0);
+                    changed = true;
+                }
+                if (panelDisplay.Size.Width != this.ClientSize.Width || panelDisplay.Size.Height != this.ClientSize.Height)
+                {
+                    panelDisplay.Size = new Size(this.ClientSize.Width, this.ClientSize.Height);
+                    changed = true;
+                }
+                Size h1Target = new Size(panelDisplay.ClientSize.Width, panelDisplay.ClientSize.Height);
+                if (pnlDisplay.Location.X != 0 || pnlDisplay.Location.Y != 0)
+                {
+                    pnlDisplay.Location = new Point(0, 0);
+                    changed = true;
+                }
+                if (pnlDisplay.Size != h1Target)
+                {
+                    pnlDisplay.Size = h1Target;
+                    changed = true;
+                }
+                if (changed)
+                    H1SpacePttTrace("h1 fill display: client=" + this.ClientSize.Width + "x" + this.ClientSize.Height
+                        + " panel=" + panelDisplay.Bounds + " pnl=" + pnlDisplay.Bounds);
+            }
+            catch { }
+        }
+
+        // H1 (regression fix 2026-10-05): the geometry capture must run BEFORE the collapse and the
+        // restore AFTER the expand has relaid out - captured mid-collapse and restored into the
+        // normal view, the display came back wrecked. Only the pre-collapse state is worth keeping.
+        private void H1FullScreenCaptureGeometry()
+        {
+            try
+            {
+                if (panelDisplay != null && pnlDisplay != null && _h1FillPanelHome.IsEmpty)
+                {
+                    _h1FillPanelHome = panelDisplay.Bounds;
+                    _h1FillDisplayHome = pnlDisplay.Bounds;
+                    H1SpacePttTrace("h1 geometry captured: panel=" + panelDisplay.Bounds + " pnl=" + pnlDisplay.Bounds);
+                }
+            }
+            catch { }
+        }
+
+        private void H1FullScreenRestoreGeometry()
+        {
+            try
+            {
+                if (!_h1FillPanelHome.IsEmpty && panelDisplay != null && pnlDisplay != null)
+                {
+                    panelDisplay.Bounds = _h1FillPanelHome;
+                    pnlDisplay.Bounds = _h1FillDisplayHome;
+                    _h1FillPanelHome = Rectangle.Empty;
+                    _h1FillDisplayHome = Rectangle.Empty;
+                    H1SpacePttTrace("h1 geometry restored");
+                }
+            }
+            catch { }
+        }
+
         private void H1FullScreenCapture()
         {
             if (_h1FullScreenCaptured) return;
@@ -50371,6 +50454,8 @@ namespace Thetis
 
             // H1 (user 2026-10-05): the per-panafall control strip is part of the full-screen view
             H1FsShow();
+
+            H1FullScreenFillDisplay();   // H1: and the display fills the window from the start
 
             // H1 (user 2026-10-05): keep the focus sink reachable. Windows routes every key AND the
             // mouse wheel to the FOCUSED control, and every recovery path in this console calls
@@ -50732,6 +50817,8 @@ namespace Thetis
             else
                 panelDisplay.Size = new Size(gr_display_size_basis.Width + h_delta, gr_display_size_basis.Height + v_delta);
 
+            if (_h1FullScreenPanafall)
+                H1FullScreenFillDisplay();   // H1: the whole window is the panafall
 
             panelDisplay2.Location = new Point(gr_display2_basis.X + (h_delta / 2), gr_display2_basis.Y + v_delta);
                 panelDSP.Location = new Point(2, 760); // H1: RX1 DSP toggles, left column
