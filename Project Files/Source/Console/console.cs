@@ -2042,6 +2042,25 @@ namespace Thetis
             civ_slot_controllers[1] = new CIVController(this);
             CIVControllerInstance = civ_slot_controllers[1];
             AmpLanControllerInstance = new AmpLanController(this); // H1: OM2000A+ LAN link
+            MfjRelayInstance = new MfjRelayController(this); // H1: MFJ998R power relay on a USB controller
+            // H1 (user 2026-10-04): the controller's PTT out follows MOX or Tune, and the
+            // state is worked out HERE, on the UI thread, the instant the control changes.
+            // The bool is handed to the controller, which is woken by it. Letting the
+            // controller's worker read chkMOX/chkTUN instead costs a Control.Invoke per
+            // read and measured 500-900 ms of PTT delay while the UI thread was busy
+            // handling MOX itself - the delay that mattered most was the one we caused.
+            chkMOX.CheckedChanged += delegate { MfjRelayPttSync(); };
+            chkTUN.CheckedChanged += delegate { MfjRelayPttSync(); };
+            // H1 (user 2026-10-05): PTT out drives a PRE-AMP, so 150 ms is far too slow. That
+            // delay was the console's own MOX handler, which waits on the rig's CI-V
+            // acknowledgement before it returns - and our CheckedChanged hook can only run
+            // after it. MoxPreChangeHandlers is raised at the HEAD of that handler, before
+            // the CI-V wait and before the VAC and network work, so hanging the PTT out line
+            // off this instead moves the pin ~1 ms after MOX rather than ~150 ms. The MOX
+            // value is already the new one when this fires, so the same state function is
+            // correct here.
+            MoxPreChangeHandlers += delegate(int rx, bool currentMox, bool expectedMox) { MfjRelayPttSync(); };
+            MfjRelayPttSync();   // the state at start-up, once the controls exist
             // H1 round 3: the console is the authority on whether anything transmits - a
             // pending stand-by return waits on this, not on the amplifier's own PTT report
             AmpLanControllerInstance.ConsoleTransmitting = delegate { return MOX || _tuning || chkTUN.Checked; };
@@ -6713,6 +6732,27 @@ namespace Thetis
         private CheckBoxTS h1AmpPower;
         private CheckBoxTS h1AmpAutoTune;
         private Label h1AmpStatus;
+        private CheckBoxTS h1MfjPower;   // H1: the MFJ998R power relay, in the console
+        private Label h1MfjStatus;       // H1: the tuner's one-line readout, mirroring the amp's
+        private bool _h1MfjBlockVisible = true;   // H1 (user 2026-10-05): show/hide the whole console block
+        public bool H1MfjBlockVisible
+        {
+            get { return _h1MfjBlockVisible; }
+            set { _h1MfjBlockVisible = value; H1MfjButtonsVis(); }
+        }
+
+        // H1 (user 2026-10-05): the block's visibility, the twin of H1AmpButtonsVis - caption, rule,
+        // pill and readout all follow the one option.
+        internal void H1MfjButtonsVis()
+        {
+            if (h1MfjPower == null) return;
+            bool on = _h1MfjBlockVisible;
+            if (h1MfjPower.Visible != on) h1MfjPower.Visible = on;
+            if (h1MfjStatus != null && h1MfjStatus.Visible != on) h1MfjStatus.Visible = on;
+            Control cap, rule;
+            if (h1Caps.TryGetValue("mfj998r", out cap) && cap != null && cap.Visible != on) cap.Visible = on;
+            if (h1Caps.TryGetValue("mfj998r_r", out rule) && rule != null && rule.Visible != on) rule.Visible = on;
+        }
         private bool _h1AmpBtnSync = false;
         private bool _h1AutoTuneCarrierArmed = false; // H1 round 3: the Auto tune button runs the Tune carrier
         private int _h1AutoTuneCarrierArmMs = 0;
@@ -6744,8 +6784,35 @@ namespace Thetis
             h1AmpStatus.Click += h1AmpStatus_Click;
             this.Controls.Add(h1AmpStatus);
 
+            // H1 (user 2026-10-05): the MFJ998R power relay, moved out of Setup into its own
+            // console block under the Master AF slider. Always visible - it is a manual
+            // control, not an option tied to a link - and its state is never restored, because
+            // energised cuts the remote tuner's DC feed with nobody at the station.
+            h1MfjPower = NewAmpPill("chkH1MfjPower", "Power", H1MfjPowerClick); // H1: same pill design and size as the OM2000A+ block
+            this.Controls.Add(h1MfjPower);
+
+            // H1 (user 2026-10-05): the tuner's readout, the twin of the OM2000A+ status line:
+            // what the relay is doing and what the power-cycle automation is up to.
+            h1MfjStatus = new Label();
+            h1MfjStatus.Name = "lblH1MfjStatus";
+            h1MfjStatus.Text = "";
+            h1MfjStatus.AutoSize = false;
+            h1MfjStatus.BackColor = Color.Transparent;
+            h1MfjStatus.ForeColor = Color.White;
+            h1MfjStatus.Font = new Font("Microsoft Sans Serif", 6.75f, FontStyle.Regular);
+            h1MfjStatus.TextAlign = ContentAlignment.MiddleLeft;
+            h1MfjStatus.Size = new Size(160, 14);
+            this.Controls.Add(h1MfjStatus);
+
             if (toolTip1 != null)
             {
+                toolTip1.SetToolTip(h1MfjPower,
+                    "Energises the relay on the Arduino station controller: the MFJ998R's DC power is" + Environment.NewLine +
+                    "interrupted while this is lit. Cleared, the relay releases and the tuner is powered." + Environment.NewLine +
+                    "Wire the tuner through the relay's normally-closed contact, so a lost link, an" + Environment.NewLine +
+                    "unplugged cable or a killed console all leave the tuner powered. The controller's LED" + Environment.NewLine +
+                    "blinks at 0.5 s while this is lit, holds steady while transmitting, and blinks at 2 s" + Environment.NewLine +
+                    "while the external PTT line is held down.");
                 toolTip1.SetToolTip(h1AmpMode, "Amplifier mode. OPER = the OM2000A+ is in OPERATE, STBY = stand-by, AMP ? = the state is not known yet." + Environment.NewLine + Environment.NewLine + "Click to switch the amplifier between stand-by and operate.");
                 toolTip1.SetToolTip(h1AmpPower, "Amplifier PA power. PA ON starts the tube heating, PA OFF cools the PA and switches it off." + Environment.NewLine + Environment.NewLine + "The button shows HEATING or COOLING while either process runs. Click to toggle.");
                 toolTip1.SetToolTip(h1AmpAutoTune, "Enables AutoTune on the amp and generates a Tune signal at the RF power set by the \"PA Drive\" level.");
@@ -6753,6 +6820,14 @@ namespace Thetis
             }
 
             h1AmpMode.Visible = false; h1AmpPower.Visible = false; h1AmpAutoTune.Visible = false; h1AmpStatus.Visible = false;
+        }
+
+        // H1 (user 2026-10-05): the MFJ998R power relay is a plain request - the operator's
+        // intent - and the controller carries it out and logs what the board answered.
+        private void H1MfjPowerClick(object sender, EventArgs e)
+        {
+            H1MfjRelayEnabled = h1MfjPower != null && h1MfjPower.Checked;
+            H1MfjPillPaint();   // H1: the blue fill follows the click at once, not on the next tick
         }
 
         private CheckBoxTS NewAmpPill(string name, string text, EventHandler onClick)
@@ -6787,10 +6862,76 @@ namespace Thetis
             if (h1Caps.TryGetValue("om2000a_r", out rule) && rule != null && rule.Visible != on) rule.Visible = on;
         }
 
+        private ImageList _h1MfjPillStates = null;   // H1: the pill's own state tiles, colours swapped
+
+        // H1 (user 2026-10-05, rounds 6-8): the MFJ998R pill shows the skin's own tiles with the
+        // colours INVERTED (the relay is wired inverted): blue while the pill is off, dark while
+        // it is on. The skin attaches its state handlers (MouseEnter/MouseLeave/GotFocus/...
+        // CheckedChanged) to every checkbox, including this runtime-created one, and those
+        // handlers repaint from the ImageList on every mouse event - writing the un-inverted
+        // tile and blanking the fill as the pointer passed. So the pill gets its OWN ImageList
+        // with the two tiles swapped: the skin's handlers then paint exactly the inverted
+        // colours, and because it holds no MouseOverUp/MouseOverDown entries a hover leaves the
+        // fill untouched instead of clearing it.
+        // H1 (user 2026-10-05): the tuner readout. Cycle progress and the give-up notice, then
+        // the plain relay state - the pill's colours are inverted, so "cut" there means the
+        // tuner is powered and the readout says it in words.
+        private void H1MfjStatusUpdate()
+        {
+            if (h1MfjStatus == null) return;
+            string text = "";
+            Color col = Color.White;
+            if (_h1PwrCycleRunning)
+            {
+                text = _h1PwrCycleNote.Length > 0 ? _h1PwrCycleNote : "Power Cycle";
+                col = Color.Orange;
+                _h1MfjNoteTick = Environment.TickCount;   // hold the line on the cycle while it runs
+            }
+            else if (_h1MfjNote.Length > 0 && Environment.TickCount - _h1MfjNoteTick <= H1MfjNoteMs)
+            {
+                text = _h1MfjNote;
+                col = _h1MfjNoteCol;
+            }
+            else if (h1MfjPower != null && h1MfjPower.Checked) { text = "TUNER CUT"; col = Color.Orange; }
+            // H1 (user 2026-10-05): WHITE, not the grey this shipped with - the grey was unreadable
+            // on the panel (user report).
+            else if (MfjRelayInstance != null && MfjRelayInstance.LinkOpen) { text = "TUNER POWERED"; col = Color.White; }
+            if (h1MfjStatus.Text != text) h1MfjStatus.Text = text;
+            if (h1MfjStatus.ForeColor != col) h1MfjStatus.ForeColor = col;
+        }
+
+        private void H1MfjPillPaint()
+        {
+            if (h1AmpMode == null || h1MfjPower == null) return;
+            ImageList src = h1AmpMode.ImageList;
+            if (src == null) return;                       // the skin pass has not run yet
+            if (_h1MfjPillStates == null)
+            {
+                int iUp = src.Images.IndexOfKey("NormalUp");       // the dark tile
+                int iDown = src.Images.IndexOfKey("NormalDown");   // the blue tile
+                if (iUp < 0 || iDown < 0) return;
+                ImageList own = new ImageList();
+                own.ImageSize = src.ImageSize;
+                own.ColorDepth = src.ColorDepth;
+                own.TransparentColor = src.TransparentColor;
+                own.Images.Add("NormalUp", src.Images[iDown]);     // OFF  -> blue
+                own.Images.Add("NormalDown", src.Images[iUp]);     // ON   -> dark
+                _h1MfjPillStates = own;
+                h1MfjPower.BackgroundImageLayout = ImageLayout.Stretch;
+                h1MfjPower.FlatAppearance.BorderSize = h1AmpMode.FlatAppearance.BorderSize;
+                h1MfjPower.ImageList = own;
+            }
+            // assert the state the pill is in, in case a skin handler moved it
+            Image want = _h1MfjPillStates.Images[h1MfjPower.Checked ? 1 : 0];
+            if (h1MfjPower.BackgroundImage != want) h1MfjPower.BackgroundImage = want;
+        }
+
         internal void H1AmpButtonsSync()
         {
             // H1: mirror the real amplifier state onto the pills and the activity readout
             // (called from the 1 s watchdog; idempotent)
+            H1MfjPillPaint();
+            H1MfjStatusUpdate();
             if (h1AmpMode == null || !h1AmpMode.Visible)
             {
                 // H1 round 4: keep the caption and its rule down with the block - some
@@ -16558,6 +16699,7 @@ namespace Thetis
         public SIO7ListenerII GanymedeSiolisten { get; set; } = null;
         public CIVController CIVControllerInstance { get; set; } = null;
         public AmpLanController AmpLanControllerInstance { get; set; } = null; // H1: OM2000A+ LAN link
+        public MfjRelayController MfjRelayInstance { get; set; } = null; // H1: MFJ998R power relay
 
         public bool HideTuneStep
         {
@@ -21802,6 +21944,90 @@ namespace Thetis
         {
             get { return _h1SwrHoldSeconds; }
             set { if (value >= 1 && value <= 10) _h1SwrHoldSeconds = value; }
+        }
+        /// <summary>Hands the transmit state to the PTT controller from the UI thread.
+        /// Cheap: these are plain control reads on the thread that owns them.</summary>
+        private void MfjRelayPttSync()
+        {
+            if (MfjRelayInstance == null) return;
+            MfjRelayInstance.PttSet(MOX || _tuning || chkTUN.Checked);
+        }
+
+        // H1 (user 2026-10-04): the MFJ998R power relay on a USB controller. Ticked, the
+        // relay is energised and the tuner's DC power is interrupted. The state is
+        // deliberately NOT restored at start-up: released means the tuner is powered,
+        // which is the state every silent failure has to end in.
+        private bool _h1MfjRelayEnabled = false;    // the MFJ998R Power tick
+        private string _h1MfjRelayPort = "COM7";    // the USB relay board's COM port
+        public bool H1MfjRelayEnabled
+        {
+            get { return _h1MfjRelayEnabled; }
+            set
+            {
+                if (_h1MfjRelayEnabled == value) return;
+                _h1MfjRelayEnabled = value;
+                if (MfjRelayInstance != null) MfjRelayInstance.Enabled = value;
+            }
+        }
+        public string H1MfjRelayPort
+        {
+            get { return _h1MfjRelayPort; }
+            set
+            {
+                if (string.IsNullOrEmpty(value)) return;
+                _h1MfjRelayPort = value;
+                if (MfjRelayInstance != null) MfjRelayInstance.PortName = value;
+            }
+        }
+        // H1 (user 2026-10-04): the external PTT input on the controller's D5. Opt-in, so a
+        // floating or mis-wired line cannot key the transmitter until the operator says so.
+        private bool _h1MfjPttInEnabled = false;
+        private int _h1MfjPttInDebounceMs = 30;
+        public bool H1MfjPttInEnabled
+        {
+            get { return _h1MfjPttInEnabled; }
+            set
+            {
+                if (_h1MfjPttInEnabled == value) return;
+                _h1MfjPttInEnabled = value;
+                if (MfjRelayInstance != null) MfjRelayInstance.PttInEnabled = value;
+            }
+        }
+        public int H1MfjPttInDebounceMs
+        {
+            get { return _h1MfjPttInDebounceMs; }
+            set
+            {
+                if (value < 0 || value > 1000) return;
+                if (_h1MfjPttInDebounceMs == value) return;
+                _h1MfjPttInDebounceMs = value;
+                if (MfjRelayInstance != null) MfjRelayInstance.PttInDebounceMs = value;
+            }
+        }
+
+        /// <summary>Called from the controller's worker when the debounced external PTT line
+        /// moves. Marshals to the UI thread - PowerOn and MOX are control state - and refuses
+        /// to key with the power off. BeginInvoke, so the controller is never blocked.</summary>
+        public void H1MfjPttInSet(bool on)
+        {
+            try
+            {
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action<bool>(H1MfjPttInSet), new object[] { on });
+                    return;
+                }
+            }
+            catch { return; }
+
+            if (on && !PowerOn)
+            {
+                if (MfjRelayInstance != null) MfjRelayInstance.LogNote("external PTT line is down but the power is off - MOX not keyed");
+                return;
+            }
+            if (MOX == on) return;
+            if (MfjRelayInstance != null) MfjRelayInstance.LogNote("external PTT line -> MOX {0}", on ? "on" : "off");
+            MOX = on;
         }
         // H1: on separate serial ports an address cannot collide, so the slot - not the
         // address - identifies the master radio. Without a master chosen the old rule

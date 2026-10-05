@@ -1610,6 +1610,7 @@
             this.chkEnableAries = new System.Windows.Forms.CheckBoxTS();
             this.tpOtherHW_amp = new System.Windows.Forms.TabPage();
             this.tpOtherHW_trx = new System.Windows.Forms.TabPage();
+            this.tpOtherHW_mcu = new System.Windows.Forms.TabPage();
             this.grpGanymedeCtrl = new System.Windows.Forms.GroupBoxTS();
             this.comboGanymedeCATPort = new System.Windows.Forms.ComboBoxTS();
             this.lblGanymedeCAT = new System.Windows.Forms.LabelTS();
@@ -26931,6 +26932,7 @@
             this.tpApolloAmp.Controls.Add(this.tpApolloATU);
             this.tpApolloAmp.Controls.Add(this.tpOtherHW_amp);
             this.tpApolloAmp.Controls.Add(this.tpOtherHW_trx);
+            this.tpApolloAmp.Controls.Add(this.tpOtherHW_mcu);
             this.tpApolloAmp.Location = new System.Drawing.Point(0, 0);
             this.tpApolloAmp.Name = "tpApolloAmp";
             this.tpApolloAmp.SelectedIndex = 0;
@@ -27258,6 +27260,16 @@
             this.tpOtherHW_trx.Size = new System.Drawing.Size(576, 340);
             this.tpOtherHW_trx.TabIndex = 3;
             this.tpOtherHW_trx.Text = "Transceivers";
+            // 
+            // tpOtherHW_mcu
+            // 
+            this.tpOtherHW_mcu.BackColor = System.Drawing.SystemColors.Control;
+            this.tpOtherHW_mcu.Location = new System.Drawing.Point(4, 22);
+            this.tpOtherHW_mcu.Name = "tpOtherHW_mcu";
+            this.tpOtherHW_mcu.Padding = new System.Windows.Forms.Padding(3);
+            this.tpOtherHW_mcu.Size = new System.Drawing.Size(576, 340);
+            this.tpOtherHW_mcu.TabIndex = 4;
+            this.tpOtherHW_mcu.Text = "Microcontroller";
             // 
             // grpGanymedeCtrl
             // 
@@ -75505,6 +75517,7 @@
         private TabPage tpApolloATU;
         private TabPage tpOtherHW_amp;
         private TabPage tpOtherHW_trx;
+        private TabPage tpOtherHW_mcu;
         private TabPage tpAndromeda;
         private GroupBoxTS groupBoxTS15;
         private ButtonTS btnQSOTimerPlaySelectedWAV;

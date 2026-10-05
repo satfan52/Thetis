@@ -465,6 +465,12 @@ namespace Thetis
         private GroupBoxTS h1GrpMfj;
         private CheckBoxTS h1ChkMfjBurst;
         private NumericUpDownTS h1UdMfjBurstLen;
+        private CheckBoxTS h1ChkMfjRelay;
+        private ComboBoxTS h1CmbMfjRelayPort;
+        private GroupBoxTS h1GrpMcu;
+        private CheckBoxTS h1ChkMfjPttIn;
+        private CheckBoxTS h1ChkMfjBlockVis;   // H1: show/hide the console block
+        private NumericUpDownTS h1UdMfjPttDeb;
         private NumericUpDownTS h1UdSwrHold;
         private LabelTS lblCIVAddr1;
         private LabelTS lblCIVAddr2;
@@ -809,7 +815,125 @@ namespace Thetis
             h1GrpMfj.Controls.Add(h1LblSwrHold);
             h1GrpMfj.Controls.Add(h1UdSwrHold);
             h1GrpMfj.Controls.Add(h1LblSwrSec);
+            // H1 (user 2026-10-05): show or hide the console block. It belongs in the tuner's own
+            // group, not the Microcontroller page - it is THIS block the page configures. It sits at
+            // the end of the settings row, which had ~150 px spare.
+            h1ChkMfjBlockVis = new CheckBoxTS();
+            h1ChkMfjBlockVis.AutoSize = false;
+            h1ChkMfjBlockVis.UseVisualStyleBackColor = true;
+            h1ChkMfjBlockVis.Image = null;
+            h1ChkMfjBlockVis.Name = "chkH1MfjBlockVis";
+            h1ChkMfjBlockVis.Text = "Show MFJ998R block";
+            h1ChkMfjBlockVis.Location = new Point(400, 88);
+            h1ChkMfjBlockVis.Size = new Size(145, 20);
+            h1ChkMfjBlockVis.Checked = true;
+            h1ChkMfjBlockVis.CheckedChanged += h1ChkMfjBlockVis_CheckedChanged;
+            toolTip1.SetToolTip(h1ChkMfjBlockVis,
+                "Shows the MFJ998R block (the Power pill and its one-line readout) in the console." +
+                System.Environment.NewLine + "Unticked, the block disappears completely - the relay, the power cycle" +
+                System.Environment.NewLine + "and the PTT lines keep working.");
+
+            h1GrpMfj.Controls.Add(h1ChkMfjBlockVis);
             tpApolloATU.Controls.Add(h1GrpMfj);
+        }
+
+        // H1 (user 2026-10-05): the Microcontroller page. The station controller on a USB
+        // Arduino serves the MFJ998R relay AND the PTT lines, so its own settings live
+        // here rather than in the tuner's group: the COM port it is on, and the external
+        // PTT input on the board's D5 pin, which keys MOX.
+        // On the General tab, Other H/W sub-tab, after Transceivers.
+        // -----------------------------------------------------------------------------
+        private void H1BuildMicrocontrollerOptions()
+        {
+            if (h1GrpMcu != null || tpOtherHW_mcu == null) return;
+
+            h1GrpMcu = new GroupBoxTS();
+            h1GrpMcu.Text = "Arduino station controller";
+            h1GrpMcu.Location = new Point(6, 17);
+            h1GrpMcu.Size = new Size(556, 150);   // H1 (user 2026-10-05): tall enough for a clear description of the board's three functions
+
+            LabelTS h1LblMcuPort = new LabelTS();
+            h1LblMcuPort.AutoSize = true;
+            h1LblMcuPort.Image = null;
+            h1LblMcuPort.Text = "Controller COM port:";
+            h1LblMcuPort.Location = new Point(10, 22);
+
+            h1CmbMfjRelayPort = new ComboBoxTS();
+            h1CmbMfjRelayPort.Name = "cmbH1MfjRelayPort";
+            h1CmbMfjRelayPort.DropDownStyle = ComboBoxStyle.DropDownList;
+            h1CmbMfjRelayPort.Location = new Point(120, 19);
+            h1CmbMfjRelayPort.Size = new Size(96, 21);
+            string[] h1RelayPortNames = System.IO.Ports.SerialPort.GetPortNames();
+            h1CmbMfjRelayPort.Items.AddRange(h1RelayPortNames);
+            if (!h1CmbMfjRelayPort.Items.Contains("COM7")) h1CmbMfjRelayPort.Items.Add("COM7");
+            h1CmbMfjRelayPort.SelectedItem = console.H1MfjRelayPort;
+            toolTip1.SetToolTip(h1CmbMfjRelayPort,
+                "The COM port the Arduino station controller is on (default COM7). Changing it releases the" + System.Environment.NewLine +
+                "relay: the port is closed before the switch, and a released relay is the MFJ998R powered.");
+
+            h1ChkMfjPttIn = new CheckBoxTS();
+            h1ChkMfjPttIn.AutoSize = false;
+            h1ChkMfjPttIn.UseVisualStyleBackColor = true;
+            h1ChkMfjPttIn.Image = null;
+            h1ChkMfjPttIn.Name = "chkH1MfjPttIn";
+            h1ChkMfjPttIn.Text = "Keys MOX from an external PTT line (D5, to ground = transmit)";
+            h1ChkMfjPttIn.Location = new Point(10, 52);
+            h1ChkMfjPttIn.Size = new Size(370, 20);
+            toolTip1.SetToolTip(h1ChkMfjPttIn,
+                "Ticked, holding the controller's D5 pin to ground keys MOX in the console and the PTT out" + System.Environment.NewLine +
+                "line follows it. The line has to hold its new level for the debounce window first, so a" + System.Environment.NewLine +
+                "floating or noisy line cannot key the transmitter. Fit a 4.7k to 10k resistor from D5 to" + System.Environment.NewLine +
+                "+5 V, and 100 nF from D5 to ground on a long cable.");
+
+            LabelTS h1LblMfjPttDeb = new LabelTS();
+            h1LblMfjPttDeb.AutoSize = true;
+            h1LblMfjPttDeb.Image = null;
+            h1LblMfjPttDeb.Text = "Debounce:";
+            h1LblMfjPttDeb.Location = new Point(388, 55);
+
+            h1UdMfjPttDeb = new NumericUpDownTS();
+            h1UdMfjPttDeb.Name = "udH1MfjPttDeb";
+            h1UdMfjPttDeb.Minimum = 0;
+            h1UdMfjPttDeb.Maximum = 1000;
+            h1UdMfjPttDeb.Increment = 10;
+            h1UdMfjPttDeb.Value = 30;
+            h1UdMfjPttDeb.Location = new Point(456, 52);
+            h1UdMfjPttDeb.Size = new Size(58, 20);   // H1: four digits (up to 1000 ms)
+            toolTip1.SetToolTip(h1UdMfjPttDeb,
+                "How long the controller's PTT in line must hold its new level before it is believed," + System.Environment.NewLine +
+                "in milliseconds (0 to 1000). The window runs in the board's own firmware.");
+
+            LabelTS h1LblMfjPttDebMs = new LabelTS();
+            h1LblMfjPttDebMs.AutoSize = true;
+            h1LblMfjPttDebMs.Image = null;
+            h1LblMfjPttDebMs.Text = "ms";
+            h1LblMfjPttDebMs.Location = new Point(520, 55);
+
+            h1GrpMcu.Controls.Add(h1LblMcuPort);
+            h1GrpMcu.Controls.Add(h1CmbMfjRelayPort);
+            h1GrpMcu.Controls.Add(h1ChkMfjPttIn);
+            h1GrpMcu.Controls.Add(h1LblMfjPttDeb);
+            h1GrpMcu.Controls.Add(h1UdMfjPttDeb);
+            h1GrpMcu.Controls.Add(h1LblMfjPttDebMs);
+
+            // H1 (user 2026-10-05): the page has to say what the board is for, not just offer its
+            // one tick. Three functions, named, each on its own line.
+            LabelTS h1LblMcuInfo = new LabelTS();
+            h1LblMcuInfo.AutoSize = false;
+            h1LblMcuInfo.Image = null;
+            h1LblMcuInfo.ForeColor = System.Drawing.SystemColors.GrayText;
+            h1LblMcuInfo.Text =
+                "The board on this COM port drives three station functions:" + System.Environment.NewLine +
+                "      Tuner power - switches the MFJ998R DC feed; the console's MFJ998R block controls it" + System.Environment.NewLine +
+                "      PTT out, D6 - keys a pre-amp, following MOX and Tune" + System.Environment.NewLine +
+                "      PTT in, D5 - keys MOX from an external PTT line, with the option and debounce above";
+            h1LblMcuInfo.Location = new Point(10, 82);
+            h1LblMcuInfo.Size = new Size(536, 60);
+            h1GrpMcu.Controls.Add(h1LblMcuInfo);
+            h1CmbMfjRelayPort.SelectedIndexChanged += h1CmbMfjRelayPort_SelectedIndexChanged;
+            h1ChkMfjPttIn.CheckedChanged += h1ChkMfjPttIn_CheckedChanged;
+            h1UdMfjPttDeb.ValueChanged += h1UdMfjPttDeb_ValueChanged;
+            tpOtherHW_mcu.Controls.Add(h1GrpMcu);
         }
 
         // -----------------------------------------------------------------------------
@@ -877,10 +1001,36 @@ namespace Thetis
             console.H1MfjBurstEnabled = h1ChkMfjBurst != null && h1ChkMfjBurst.Checked;
         }
 
-        private void h1UdMfjBurstLen_ValueChanged(object sender, EventArgs e)
+        // H1 (user 2026-10-04): the MFJ998R power relay. The tick is a REQUEST - the
+        // controller carries it out on its own worker and logs what the board answered,
+        // so a dead link reads in mfj_relay.log rather than in a silent button.
+        private void h1ChkMfjRelay_CheckedChanged(object sender, EventArgs e)
         {
-            if (h1UdMfjBurstLen != null) console.H1MfjBurstSeconds = (int)h1UdMfjBurstLen.Value;
+            console.H1MfjRelayEnabled = h1ChkMfjRelay != null && h1ChkMfjRelay.Checked;
         }
+
+        private void h1CmbMfjRelayPort_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            if (h1CmbMfjRelayPort != null && h1CmbMfjRelayPort.SelectedItem != null)
+                console.H1MfjRelayPort = h1CmbMfjRelayPort.SelectedItem.ToString();
+        }
+
+        private void h1ChkMfjBlockVis_CheckedChanged(object sender, EventArgs e)
+        {
+            if (h1ChkMfjBlockVis != null) console.H1MfjBlockVisible = h1ChkMfjBlockVis.Checked;
+        }
+
+        private void h1ChkMfjPttIn_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1MfjPttInEnabled = h1ChkMfjPttIn != null && h1ChkMfjPttIn.Checked;
+        }
+
+        private void h1UdMfjPttDeb_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjPttDeb != null) console.H1MfjPttInDebounceMs = (int)h1UdMfjPttDeb.Value;
+        }
+
 
         private void h1UdSwrHold_ValueChanged(object sender, EventArgs e)
         {
@@ -966,6 +1116,7 @@ namespace Thetis
             H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
             H1BuildTransceiverOptions(); // H1: the three-way TX meter source, built in code
             H1BuildMfj998Options(); // H1: the MFJ998R tune and band-change options, built in code
+            H1BuildMicrocontrollerOptions(); // H1: the Arduino station controller options, built in code
             H1BuildCivSlotOptions(); // H1: per-slot CI-V address and master, built in code
 
             // H1 round 7c (user): the four CAT boxes must look the same - CAT1 carries the
@@ -2614,6 +2765,13 @@ namespace Thetis
             if (grpWaveRecordItem != null) addToIgnore(ref ignoreList, grpWaveRecordItem);
 
             addToIgnore(ref ignoreList, grpGainByBandPA);
+
+            // H1 (user 2026-10-05): the MFJ998R Power tick is NEVER recovered from the
+            // database. It is stored by name like every other control, so a console left
+            // with it ticked came up with the relay already closed - cutting the DC feed
+            // to a tuner the operator is not standing next to. Off is the only state this
+            // control may start in - the operator re-ticks it deliberately.
+            addToIgnore(ref ignoreList, h1ChkMfjRelay);
 
             foreach (string key in ignoreList)
             {
@@ -11296,6 +11454,16 @@ namespace Thetis
             if (h1ChkMfjBurst != null) h1ChkMfjBurst.Checked = console.H1MfjBurstEnabled;
             if (h1UdMfjBurstLen != null) h1UdMfjBurstLen.Value = console.H1MfjBurstSeconds;
             if (h1UdSwrHold != null) h1UdSwrHold.Value = console.H1SwrHoldSeconds;
+            if (h1ChkMfjRelay != null) h1ChkMfjRelay.Checked = console.H1MfjRelayEnabled;
+            if (h1CmbMfjRelayPort != null && !string.IsNullOrEmpty(console.H1MfjRelayPort))
+            {
+                if (!h1CmbMfjRelayPort.Items.Contains(console.H1MfjRelayPort))
+                    h1CmbMfjRelayPort.Items.Add(console.H1MfjRelayPort);
+                h1CmbMfjRelayPort.SelectedItem = console.H1MfjRelayPort;
+            }
+            if (h1ChkMfjPttIn != null) h1ChkMfjPttIn.Checked = console.H1MfjPttInEnabled;
+            if (h1ChkMfjBlockVis != null) h1ChkMfjBlockVis.Checked = console.H1MfjBlockVisible;
+            if (h1UdMfjPttDeb != null) h1UdMfjPttDeb.Value = console.H1MfjPttInDebounceMs;
             if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
             if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
             updateCIVControlsEnabled();
