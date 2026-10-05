@@ -27022,7 +27022,7 @@
             this.grpAriesCtrl.Controls.Add(this.chkEnableAries);
             this.grpAriesCtrl.Location = new System.Drawing.Point(6, 17);
             this.grpAriesCtrl.Name = "grpAriesCtrl";
-            this.grpAriesCtrl.Size = new System.Drawing.Size(556, 198);
+            this.grpAriesCtrl.Size = new System.Drawing.Size(556, 172); // H1: foot space for the MFJ998R rows - its last child ends at y163
             this.grpAriesCtrl.TabIndex = 4;
             this.grpAriesCtrl.TabStop = false;
             this.grpAriesCtrl.Text = "Aries ATU Control";
@@ -27054,7 +27054,7 @@
             // lblAriesFW
             // 
             this.lblAriesFW.Image = null;
-            this.lblAriesFW.Location = new System.Drawing.Point(119, 170);
+            this.lblAriesFW.Location = new System.Drawing.Point(119, 150); // H1 (user 2026-10-05): footer row - sits beside labelTS529
             this.lblAriesFW.Name = "lblAriesFW";
             this.lblAriesFW.Size = new System.Drawing.Size(198, 13);
             this.lblAriesFW.TabIndex = 118;
@@ -27065,7 +27065,7 @@
             // 
             this.labelTS529.AutoSize = true;
             this.labelTS529.Image = null;
-            this.labelTS529.Location = new System.Drawing.Point(23, 170);
+            this.labelTS529.Location = new System.Drawing.Point(23, 150); // H1 (user 2026-10-05): joined its value label on one footer row
             this.labelTS529.Name = "labelTS529";
             this.labelTS529.Size = new System.Drawing.Size(87, 13);
             this.labelTS529.TabIndex = 117;

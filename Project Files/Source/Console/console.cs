@@ -47452,7 +47452,8 @@ namespace Thetis
 
         private void chkSubVFOATX_CheckedChanged(object sender, System.EventArgs e)
         {
-            CIVController.SplitTrace(string.Format("TXBAND at tick SubVFOA: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+            CIVController.SplitTrace(string.Format("TXBAND at tick SubVFOA: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+
             CIVController.SplitTrace(string.Format("CONSOLE chkSubVFOATX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkSubVFOATX).Checked, _bUpdatingTxTicks, initializing, chkSubVFOATX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkSubVFOATX.Focused && !chkSubVFOATX.Checked) chkSubVFOATX.Checked = true;
             if (_bUpdatingTxTicks) return;
@@ -47482,7 +47483,8 @@ namespace Thetis
 
         private void chkSubVFOBTX_CheckedChanged(object sender, System.EventArgs e)
         {
-            CIVController.SplitTrace(string.Format("TXBAND at tick SubVFOB: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+            CIVController.SplitTrace(string.Format("TXBAND at tick SubVFOB: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+
             CIVController.SplitTrace(string.Format("CONSOLE chkSubVFOBTX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkSubVFOBTX).Checked, _bUpdatingTxTicks, initializing, chkSubVFOBTX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkSubVFOBTX.Focused && !chkSubVFOBTX.Checked) chkSubVFOBTX.Checked = true;
             if (_bUpdatingTxTicks) return;
@@ -47524,7 +47526,8 @@ namespace Thetis
 
         private void chkVFOATX_CheckedChanged(object sender, System.EventArgs e)
         {
-            CIVController.SplitTrace(string.Format("TXBAND at tick VFOA: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+            CIVController.SplitTrace(string.Format("TXBAND at tick VFOA: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+
             CIVController.SplitTrace(string.Format("CONSOLE chkVFOATX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkVFOATX).Checked, _bUpdatingTxTicks, initializing, chkVFOATX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkVFOATX.Focused && !chkVFOATX.Checked) chkVFOATX.Checked = true;
             if (chkVFOATX.Checked)
@@ -47601,7 +47604,8 @@ namespace Thetis
         private bool m_bLastVFOBTXsetting = false;
         private void chkVFOBTX_CheckedChanged(object sender, System.EventArgs e)
         {
-            CIVController.SplitTrace(string.Format("TXBAND at tick VFOB: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+            CIVController.SplitTrace(string.Format("TXBAND at tick VFOB: transmit band now={0} split={1} A={2:F4} SubA={3:F4} B={4:F4} SubB={5:F4}", _tx_band, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, VFOBFreq, VFOBSubFreq));
+
             CIVController.SplitTrace(string.Format("CONSOLE chkVFOBTX -> {0} | upd={1} init={2} focused={3} | VFOATX={4} SubA={5} VFOBTX={6} SubB={7} SPLIT={8} | A={9:F6} SubAf={10:F6} TX={11:F6}", ((System.Windows.Forms.CheckBox)chkVFOBTX).Checked, _bUpdatingTxTicks, initializing, chkVFOBTX.Focused, chkVFOATX.Checked, chkSubVFOATX.Checked, chkVFOBTX.Checked, chkSubVFOBTX.Checked, chkVFOSplit.Checked, VFOAFreq, VFOASubFreq, TXFreq)); // H1 trace
             if (chkVFOBTX.Focused && !chkVFOBTX.Checked) chkVFOBTX.Checked = true;
             Display.TXOnVFOB = chkVFOBTX.Checked || chkSubVFOBTX.Checked; // H1: the sub B tick also transmits on the B side

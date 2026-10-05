@@ -531,7 +531,15 @@ namespace Thetis
                 if (chkCIVTransceive != null) { chkCIVTransceive.Location = new Point(10, 20); chkCIVTransceive.Size = new Size(240, 22); }
                 if (chkCIVSyncSplit != null) { chkCIVSyncSplit.Location = new Point(10, 44); chkCIVSyncSplit.Size = new Size(240, 22); }
                 if (chkCIVSyncPTT != null) { chkCIVSyncPTT.Location = new Point(10, 68); chkCIVSyncPTT.Size = new Size(240, 22); }
-                if (lblCIVInfo != null) lblCIVInfo.Location = new Point(10, 118);
+                if (lblCIVInfo != null)
+                {
+                    // H1 (user 2026-10-05): AutoSize=true grew this one-line status label straight
+                    // out of the group, so its tail was cut by the frame ("VFO dial mode trac...").
+                    // A fixed width with room to wrap keeps the whole sentence readable.
+                    lblCIVInfo.AutoSize = false;
+                    lblCIVInfo.Location = new Point(10, 118);
+                    lblCIVInfo.Size = new Size(536, 48);
+                }
             }
 
             h1ChkTrxMeterCiv = new CheckBoxTS();
@@ -574,11 +582,12 @@ namespace Thetis
             h1ChkVfoBContinuous.CheckedChanged += h1VfoBRule_Changed;
 
             h1LblVfoBPause = new LabelTS();
-            h1LblVfoBPause.AutoSize = false;
+            // H1 (user 2026-10-05): AutoSize, not a fixed 170 px - the text needs ~205 px and the
+            // "(ms)" was being cut mid-character (user: garbled text at the end of this line).
+            h1LblVfoBPause.AutoSize = true;
             h1LblVfoBPause.Image = null;
             h1LblVfoBPause.Text = "Pause before VFO B update (ms)";
-            h1LblVfoBPause.Location = new Point(300, 95);
-            h1LblVfoBPause.Size = new Size(170, 16);
+            h1LblVfoBPause.Location = new Point(250, 95);
 
             h1UdVfoBPause = new NumericUpDownTS();
             h1UdVfoBPause.Name = "udH1CivVfoBPause";
