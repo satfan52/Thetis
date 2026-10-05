@@ -37983,12 +37983,16 @@ namespace Thetis
                 int dy = y - top;
                 bool rx2Half = rx2_enabled && dy > pnlDisplay.Height / 2;
 
+                // H1 (user 2026-10-05): overlap with the display, matching the drag grab - a window
+                // pushed against the left edge keeps its wheel tuning over the part that is visible.
                 if (!rx2Half && chkEnableMultiRX.Checked &&
-                    Display.VFOASubWindowLeft >= 0 && dx > Display.VFOASubWindowLeft - 3 && dx < Display.VFOASubWindowRight + 3)
+                    Display.VFOASubWindowRight > Display.VFOASubWindowLeft && Display.VFOASubWindowRight > 0 && Display.VFOASubWindowLeft < pnlDisplay.Width &&
+                    dx > Display.VFOASubWindowLeft - 3 && dx < Display.VFOASubWindowRight + 3)
                     return TuneLocation.VFOASubWindow;
 
                 if (rx2Half && chkEnableMultiRX2.Checked &&
-                    Display.VFOBSubWindowLeft >= 0 && dx > Display.VFOBSubWindowLeft - 3 && dx < Display.VFOBSubWindowRight + 3)
+                    Display.VFOBSubWindowRight > Display.VFOBSubWindowLeft && Display.VFOBSubWindowRight > 0 && Display.VFOBSubWindowLeft < pnlDisplay.Width &&
+                    dx > Display.VFOBSubWindowLeft - 3 && dx < Display.VFOBSubWindowRight + 3)
                     return TuneLocation.VFOBSubWindow;
             }
 
@@ -40677,6 +40681,18 @@ namespace Thetis
             }
             return agc_cal_offset;
         }
+        // H1 (user 2026-10-05): is this display point on a sub receiver's window as DRAWN? Used by
+        // the grid-drag test so the number-scale strip yields to a sub window, and by the grabs so a
+        // window that runs off the display edge stays grabbable in the part that is on screen. The
+        // margin matches the +/-3 px the drag tests use.
+        private bool H1PressOnSubWindow(int x, int y)
+        {
+            // only a SUB window pushes the number-scale strip aside; the main receive window spans
+            // the strip as well, and the strip has to keep working over it
+            int w = H1WindowUnder(x, y);
+            return w == 1 || w == 3;
+        }
+
         private void getFilterEdgesInPixels(MouseEventArgs e, ref int low_x, ref int high_x, ref int vfoa_sub_x, ref int vfoa_sub_low_x, ref int vfoa_sub_high_x)
         {
             if (rx2_enabled && e.Y > pnlDisplay.Height / 2)//rx2
@@ -58671,6 +58687,7 @@ private void incrementMutliMeterDisplayModeRX2()
         {
             if (Display.PausedDisplay) return;
 
+
             if (m_frmNotchPopup.Visible) return;
             if (_highlightedSpot != null)
             {
@@ -58820,9 +58837,17 @@ private void incrementMutliMeterDisplayModeRX2()
                         case DisplayMode.SPECTRUM:
                         case DisplayMode.PANASCOPE:
                         case DisplayMode.SPECTRASCOPE:
+                            // H1 (user 2026-10-05): the number-scale strip claims the press for a grid
+                            // min/max drag and sets gridminmaxadjust - which every sub-window grab
+                            // tests and bails on. A sub receiver's window is drawn OVER that strip, so a
+                            // sub that reached the edge of the usable area could not be grabbed at all:
+                            // the press became a grid drag and the window stayed glued there. The strip
+                            // yields to a sub window. The _mox binding of this if/else is untouched -
+                            // the guard goes on the two branches, never on the condition.
+                            bool h1PressOnSubWindow = H1PressOnSubWindow(e.X, e.Y);
                             if (!_mox)
                             {
-                                if (rx1_grid_adjust)
+                                if (rx1_grid_adjust && !h1PressOnSubWindow)
                                 {
                                     grid_minmax_drag_start_point = new Point(e.X, e.Y);
                                     gridminmaxadjust = true;
@@ -58832,7 +58857,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     next_cursor = grabbing;
                                 }
 
-                                if (rx2_grid_adjust)
+                                if (rx2_grid_adjust && !h1PressOnSubWindow)
                                 {
                                     grid_minmax_drag_start_point = new Point(e.X, e.Y);
                                     gridminmaxadjust = true;
@@ -58975,6 +59000,23 @@ private void incrementMutliMeterDisplayModeRX2()
                     }
                     //
 
+                    // H1 (user 2026-10-05): one line per left click on the display. It carries the
+                    // sub window's DRAWN bounds and the flags each drag chain tests, because a sub
+                    // window near the display edge could not be grabbed and reading the code could
+                    // not say which chain claimed the click.
+                    H1SpacePttTrace("subdrag: xy=" + e.X + "," + e.Y + " rx2en=" + rx2_enabled
+                        + " overRX1=" + bOverRX1 + " overRX2=" + bOverRX2 + " mox=" + _mox
+                        + " multiRX1=" + chkEnableMultiRX.Checked + " multiRX2=" + chkEnableMultiRX2.Checked
+                        + " sub1=" + Display.VFOASubWindowLeft + ".." + Display.VFOASubWindowRight
+                        + " sub2=" + Display.VFOBSubWindowLeft + ".." + Display.VFOBSubWindowRight
+                        + " disp=" + pnlDisplay.Width + "x" + pnlDisplay.Height
+                        + " mode=" + Display.CurrentDisplayMode
+                        + " grid=" + gridminmaxadjust + "/" + gridmaxadjust
+                        + " agc=" + agc_knee_drag + "/" + agc_hang_drag + " showAgc=" + show_agc
+                        + " knee=" + Display.AGCKnee + " hang=" + Display.AGCHang
+                        + " ctm=" + current_click_tune_mode + " ctDisp=" + _click_tune_display
+                        + " subRX1en=" + Display.SubRX1Enabled + " subRX2en=" + Display.SubRX2Enabled);
+
                     // Prioritize the RX1 sub window over click-tune (including CTUN). Otherwise
                     // a drag beginning on the blue window enters the VFO B click-tune path.
                     if (bOverRX1 && chkEnableMultiRX.Checked && !_mox && !gridminmaxadjust && !gridmaxadjust &&
@@ -58990,7 +59032,13 @@ private void incrementMutliMeterDisplayModeRX2()
                         // filter edge drag below. Edges first: grabbing one drags the
                         // sub's passband, exactly like the receiver windows; the rest of
                         // the window still tunes the sub.
-                        if (Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                        // H1 (user 2026-10-05): overlap with the display, not "starts inside it".
+                        // The drawn bounds are not clipped, so a window pushed off the left edge has
+                        // a negative Left and the old >= 0 test refused the grab outright - the other
+                        // half of "the sub is stuck at the edge". An edge that is off screen stays
+                        // ungrabble, which is correct: it cannot be seen.
+                        if (Display.VFOASubWindowRight > Display.VFOASubWindowLeft && Display.VFOASubWindowRight > 0 &&
+                            Display.VFOASubWindowLeft < pnlDisplay.Width &&
                             (!rx2_enabled || e.Y <= pnlDisplay.Height / 2))
                         {
                             if (Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
@@ -59009,6 +59057,7 @@ private void incrementMutliMeterDisplayModeRX2()
                             }
                             if (e.X > Display.VFOASubWindowLeft - 3 && e.X < Display.VFOASubWindowRight + 3)
                             {
+                                H1SpacePttTrace("subdrag: GRAB SubRX1 (priority) x=" + e.X);
                                 sub_drag_last_x = e.X;
                                 sub_drag_start_freq = VFOASubFreq;
                                 rx1_sub_drag = true;
@@ -59033,7 +59082,8 @@ private void incrementMutliMeterDisplayModeRX2()
                         // H1: the SubRX2 window's edges first - drag them to change the
                         // sub's passband, the same gesture as the receiver windows; the
                         // rest of the window still tunes the sub.
-                        if (sub2Low >= 0 && sub2High > sub2Low)
+                        // H1: the same overlap rule as the SubRX1 window above
+                        if (sub2High > sub2Low && sub2High > 0 && sub2Low < pnlDisplay.Width)
                         {
                             if (Math.Abs(e.X - sub2Low) < 3)
                             {
@@ -59051,6 +59101,7 @@ private void incrementMutliMeterDisplayModeRX2()
                             }
                             if (e.X > sub2Low - 3 && e.X < sub2High + 3)
                             {
+                                H1SpacePttTrace("subdrag: GRAB SubRX2 (priority) x=" + e.X);
                                 sub_drag_last_x = e.X;
                                 rx2_sub_drag_start_freq = VFOBSubFreq;
                                 rx2_sub_drag = true;
@@ -59479,6 +59530,15 @@ private void incrementMutliMeterDisplayModeRX2()
                                     else rx1_spectrum_drag = true;
                                     next_cursor = Cursors.SizeWE;
                                 }
+
+                                // H1: which drag the click chain actually started, and the bounds the
+                                // late chain computed for the sub windows
+                                H1SpacePttTrace("subdrag: RESULT rx1sub=" + rx1_sub_drag + " rx2sub=" + rx2_sub_drag
+                                    + " rx1spec=" + rx1_spectrum_drag + " rx2spec=" + rx2_spectrum_drag
+                                    + " rx1lo=" + rx1_low_filter_drag + " rx1hi=" + rx1_high_filter_drag
+                                    + " late1=" + vfoa_sub_low_x + ".." + vfoa_sub_high_x
+                                    + " late2=" + vfob_sub_low_x + ".." + vfob_sub_high_x
+                                    + " clicktune=" + current_click_tune_mode);
 
                                 break;
                         }

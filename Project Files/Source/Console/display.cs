@@ -599,6 +599,22 @@ namespace Thetis
             set { rx2_filter_high = value; }
         }
 
+        // H1 (user 2026-10-05): the console's SubRX2 grab reads the bounds recorded below, and the
+        // user sees the window at the far left while those bounds say the middle of the display. This
+        // says which pass records them and with which numbers. Throttled to one line a second.
+        private static DateTime _h1SubTraceLast = DateTime.MinValue;
+        public static void H1SubTrace(string line)
+        {
+            try
+            {
+                if ((DateTime.Now - _h1SubTraceLast).TotalMilliseconds < 1000) return;
+                _h1SubTraceLast = DateTime.Now;
+                System.IO.File.AppendAllText(@"C:\Thetis\sub_win.log",
+                    "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + line + Environment.NewLine);
+            }
+            catch { }
+        }
+
         private static int sub_rx1_filter_low;
         public static int SubRX1FilterLow
         {
@@ -9143,6 +9159,10 @@ namespace Thetis
                     // exactly the window that is on screen
                     vfoa_sub_win_left = Math.Min(filter_left_x, filter_right_x);
                     vfoa_sub_win_right = Math.Max(filter_left_x, filter_right_x);
+                    H1SubTrace("rx1 sub W=" + W + " Low=" + Low + " width=" + width + " subdiff=" + localSubDiff
+                        + " rit=" + localRit + " fl=" + SubRX1FilterLow + " fh=" + SubRX1FilterHigh
+                        + " -> x=" + vfoa_sub_win_left + ".." + vfoa_sub_win_right
+                        + " wf=" + bIsWaterfall + " rx=" + rx);
 
                     H1DrawRxWindow(1, filter_left_x, filter_right_x, W, H, rx, top, bottom, nVerticalShift,
                         bIsWaterfall, m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
@@ -9176,6 +9196,11 @@ namespace Thetis
 
                     vfob_sub_win_left = Math.Min(sub2_left_x, sub2_right_x);
                     vfob_sub_win_right = Math.Max(sub2_left_x, sub2_right_x);
+                    H1SubTrace("rx2 sub W=" + W + " Low=" + Low + " width=" + width + " subdiff=" + localSub2Diff
+                        + " fl=" + SubRX2FilterLow + " fh=" + SubRX2FilterHigh
+                        + " -> x=" + vfob_sub_win_left + ".." + vfob_sub_win_right
+                        + " wf=" + bIsWaterfall + " rx=" + rx);
+
                     H1DrawRxWindow(3, sub2_left_x, sub2_right_x, W, H, rx, top, bottom, nVerticalShift,
                         bIsWaterfall, m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                 }
