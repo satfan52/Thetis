@@ -26549,6 +26549,12 @@ namespace Thetis
         }
 
         private bool spacebar_ptt = true;
+
+        // H1 (user 2026-10-05): the space bar is HOLD TO TALK - it keyed on press and stayed keyed
+        // until the next press (a toggle), which is not a PTT and can leave the rig transmitting.
+        // This tracks the held state so key auto-repeat cannot re-trigger it.
+        private bool _spaceBarPttHeld = false;
+
         // H1 (user 2026-10-05): height of the frequency-ruler strip along the top of the display. This
         // is the zone that toggles the full-screen panafall on a right-click. Matches the 20 px the
         // display uses for its own scale rectangle.
@@ -32855,6 +32861,22 @@ namespace Thetis
         {
             if (!Common.ShiftKeyDown) Display.DisplayShiftKeyDown = false;
 
+            // H1 (user 2026-10-05): releasing the space bar unkeys - hold to talk.
+            if (e.KeyCode == Keys.Space)
+                H1SpacePttTrace("space up: held=" + _spaceBarPttHeld + " mox=" + chkMOX.Checked + " mode=" + _current_ptt_mode);
+
+            if (e.KeyCode == Keys.Space && _spaceBarPttHeld)
+            {
+                _spaceBarPttHeld = false;
+                if (spacebar_ptt && chkMOX.Checked)
+                {
+                    if (chkVAC1.Checked && Audio.VACBypass) Audio.VACBypass = false;
+                    chkMOX.Checked = false;
+                    e.Handled = true;
+                }
+                H1SpacePttTrace("space up: unkeyed");
+            }
+
             ToggleFocusMasterTimer();
         }
 
@@ -32879,6 +32901,14 @@ namespace Thetis
         public static bool ALTM = false; // ke9ns add
         private void Console_KeyDown(object sender, System.Windows.Forms.KeyEventArgs e)
         {
+            // H1 (user 2026-10-05): the space bar is enabled in the options yet does nothing. This probe
+            // sits BEFORE every guard: a press that logs nothing here proves the key never reaches the
+            // console at all (focus is sitting somewhere that eats it), while a press that logs here but
+            // not further down names the guard that swallows it.
+            H1SpacePttTrace("KeyDown: " + e.KeyCode + " alt=" + e.Alt + " ctrl=" + e.Control
+                + " active=" + (this.ActiveControl == null ? "<none>"
+                    : this.ActiveControl.GetType().Name + "/" + this.ActiveControl.Name));
+
             // H1 (user 2026-10-05): the space bar and Escape are handled HERE, before the keyboard
             // shortcut master switch further down. The log found it: that switch
             // (else if (!enable_kb_shortcuts) { e.Handled = true; return; }) leaves this method before
@@ -32901,6 +32931,39 @@ namespace Thetis
                 return;
             }
 
+            // H1 (user 2026-10-05): a READ-ONLY box cannot be typed into, so it must not swallow the
+            // space bar. The meter readouts are read-only TextBoxTS and take the click when a meter is
+            // cycled - while one held the focus the space PTT never reached its branch below.
+            TextBoxTS h1SpaceTb = this.ActiveControl as TextBoxTS;
+            NumericUpDownTS h1SpaceNud = this.ActiveControl as NumericUpDownTS;
+            bool h1SpaceIsTextEntry = (h1SpaceTb != null && !h1SpaceTb.ReadOnly)
+                || (h1SpaceNud != null && !h1SpaceNud.ReadOnly);
+            if (spacebar_ptt && e.KeyCode == Keys.Space && !e.Alt && !e.Control && !h1SpaceIsTextEntry)
+            {
+                H1SpacePttTrace(string.Format(
+                    "space down: power={0} ptt={1} held={2} mox={3} mode={4} collapsed={5}",
+                    chkPower.Checked, spacebar_ptt, _spaceBarPttHeld, chkMOX.Checked,
+                    _current_ptt_mode, collapsedDisplay));
+
+                if (chkPower.Checked)
+                {
+                    // auto-repeat guard: only a repeat while MOX is still keyed BY SPACE. A bare flag
+                    // here once left the space bar dead for a whole session after one missed key-up.
+                    if (!(_spaceBarPttHeld && chkMOX.Checked && _current_ptt_mode == PTTMode.SPACE))
+                    {
+                        _spaceBarPttHeld = true;
+                        _current_ptt_mode = PTTMode.SPACE;
+                        if (!chkMOX.Checked) chkMOX.Checked = true;
+                        if (!(ARP.IsBusy && BypassVACWhenPlayingWAV))
+                        {
+                            if (chkVAC1.Checked && allow_space_bypass) Audio.VACBypass = true;
+                        }
+                    }
+                }
+                // consumed either way: with chkPower focused the space would otherwise toggle POWER
+                e.Handled = true;
+                return;
+            }
             if (Common.ShiftKeyDown) Display.DisplayShiftKeyDown = true;
 
             if (e.Alt == true) // ke9ns add
@@ -33293,11 +33356,28 @@ namespace Thetis
                         break;
                     case Keys.Space:
                         {
+                            // H1: one line per press, unconditional - an earlier version logged only the
+                            // first press of a hold, which hid the fault it was there to find.
+                            H1SpacePttTrace(string.Format(
+                                "space down: power={0} ptt={1} held={2} mox={3} mode={4} collapsed={5}",
+                                chkPower.Checked, spacebar_ptt, _spaceBarPttHeld, chkMOX.Checked,
+                                _current_ptt_mode, collapsedDisplay));
                             if (chkPower.Checked)
                             {
                                 if (spacebar_ptt)
                                 {
+                                    // H1: auto-repeat guard. It used to be the bare flag, so one missed
+                                    // key-up (focus change while space is held) left the flag set and the
+                                    // space bar dead for the whole session. Now it only counts as repeat
+                                    // while MOX is genuinely still keyed BY SPACE - otherwise heal and key.
+                                    if (_spaceBarPttHeld && chkMOX.Checked && _current_ptt_mode == PTTMode.SPACE)
+                                    {
+                                        e.Handled = true;
+                                        break;
+                                    }
+                                    _spaceBarPttHeld = true;
                                     _current_ptt_mode = PTTMode.SPACE;
+                                    if (!chkMOX.Checked) chkMOX.Checked = true;          // H1: key on press, no toggle
 
                                     //VACBypass
                                     if (!(ARP.IsBusy && BypassVACWhenPlayingWAV)) // dont change vac bypass if it being used by ARP
@@ -37931,16 +38011,24 @@ namespace Thetis
 
         private void Console_MouseWheel(object sender, System.Windows.Forms.MouseEventArgs e)
         {
-            if (this.ActiveControl is PrettyTrackBar)
+            // H1 (user 2026-10-05): a READ-ONLY box is a readout, not a text entry, so it must not
+            // stop the wheel. The meter readouts are read-only TextBoxTS and hold the focus after a
+            // meter is cycled - this returned before tuning, so the wheel was dead over the panafall.
+            TextBoxTS h1WheelTb = this.ActiveControl as TextBoxTS;
+            NumericUpDownTS h1WheelNud = this.ActiveControl as NumericUpDownTS;
+            bool h1WheelReadOnlyBox = (h1WheelTb != null && h1WheelTb.ReadOnly)
+                || (h1WheelNud != null && h1WheelNud.ReadOnly);
+
+            if (!h1WheelReadOnlyBox && this.ActiveControl is PrettyTrackBar)
             {
                 btnHidden.Focus();
                 return;
             }
 
-            if (this.ActiveControl is TextBoxTS ||
+            if (!h1WheelReadOnlyBox && (this.ActiveControl is TextBoxTS ||
                 this.ActiveControl is NumericUpDownTS ||
                 this.ActiveControl is TrackBarTS ||
-                this.ActiveControl is PrettyTrackBar)
+                this.ActiveControl is PrettyTrackBar))
             {
                 // MW0LGE Console_KeyPress(this, new KeyPressEventArgs((char)Keys.Enter));
                 // console keypress does nothing but buttonfocus
@@ -37972,6 +38060,14 @@ namespace Thetis
             if (num_steps == 0) return;
             int step = CurrentTuneStepHz;
             if (Common.ShiftKeyDown && step >= 10) step /= 10; //MW0LGE
+
+            // H1 (user 2026-10-05): one line per wheel notch - which control held the focus, where the
+            // pointer was, and what the hit test made of it. Reading the code could not say why the
+            // wheel did nothing; this can.
+            H1SpacePttTrace("wheel: active=" + (this.ActiveControl == null ? "<none>"
+                    : this.ActiveControl.GetType().Name + "/" + this.ActiveControl.Name)
+                + " xy=" + e.X + "," + e.Y + " hit=" + TuneHitTest(e.X, e.Y) + " steps=" + num_steps
+                + " step=" + step + " fullscreen=" + _h1FullScreenPanafall);
 
             switch (TuneHitTest(e.X, e.Y))
             {
