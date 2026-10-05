@@ -26949,6 +26949,7 @@ namespace Thetis
             {
                 _h1FullScreenPanafall = false;
                 H1EightRowsExit();                       // H1: the eight-row view ends with the mode
+                setupTuneDriveSlider();                  // H1: the console's tune slider comes back on exit
                 ExpandDisplay(true);
                 H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
             }
@@ -26958,6 +26959,7 @@ namespace Thetis
                 _h1FullScreenPanafall = true;
                 H1FullScreenCaptureGeometry();           // H1: remember the normal geometry before the collapse
                 H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
+                setupTuneDriveSlider();                  // H1: and stays off the full-screen view
                 CollapseDisplay(true);
             }
             H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
@@ -56562,7 +56564,14 @@ private void incrementMutliMeterDisplayModeRX2()
         }
         private void setupTuneDriveSlider()
         {
-            if (_tuneDrivePowerSource != DrivePowerSource.TUNE_SLIDER && _2ToneDrivePowerSource != DrivePowerSource.TUNE_SLIDER)
+            if (_h1FullScreenPanafall)
+            {
+                // H1 (user report 2026-10-05): the ANT Tune slider belongs to the console flanks;
+                // on the full-screen panafall it floated over the rows, so it stays off it
+                ptbTune.Visible = false;
+                lblTune.Visible = false;
+            }
+            else if (_tuneDrivePowerSource != DrivePowerSource.TUNE_SLIDER && _2ToneDrivePowerSource != DrivePowerSource.TUNE_SLIDER)
             {
                 // hide it
                 ptbTune.Visible = false;
