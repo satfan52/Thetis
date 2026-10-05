@@ -21925,8 +21925,85 @@ namespace Thetis
         }
         // H1 (user 2026-10-03): the MFJ998R options and the per-slot CI-V identity
         private bool _h1MfjBurstEnabled = false;   // the tune burst at a band change
-        private int _h1MfjBurstSeconds = 2;        // its length, 1 to 20 s
         private bool _h1MfjBurstActive = false;    // a burst is running
+        // H1 (user 2026-10-05): the tuner power cycle. When no match below 2 is found, the
+        // tuner's DC is cut and restored to restart its controller, then the attempt is
+        // repeated, up to Cycles per episode. Owner is H1MfjPowerCycle below; the relay is
+        // always left released (tuner powered).
+        private bool _h1MfjPwrCycleEnabled = true;   // H1 (user 2026-10-05): ON by default - the cycle is the point of the feature and the relay still ends released
+        private int _h1MfjCycleGiveUpSeconds = 30;  // H1 (user 2026-10-05): THE attempt window - how long
+                                                   // a tune is tried for a match before it counts as failed,
+                                                   // used by the band-change burst AND the two-step tune alike.
+                                                   // MFJ-998 spec: tunes in under 20 s, usually under 5.
+        private int _h1MfjCycleOffSeconds = 3;    // H1: how long the DC stays cut, 1 to 30 s. Only needs to drop the tuner's rail (and the bias-T's capacitors); raising it past that gains nothing
+        private int _h1MfjCycleSettleSeconds = 1;  // H1: boot before any RF, 1 to 30 s. The tuner is
+                                                   // IDLE until RF arrives (MFJ: tuning starts when
+                                                   // >=5 W is applied), so every second here is dead
+                                                   // time - only the boot needs covering
+        private int _h1MfjCycleMax = 1;   // H1 (user 2026-10-05): one cycle - a second adds nothing, the retry is what matters
+        private int _h1MfjCycleCooldownSeconds = 30;   // H1 (user 2026-10-05): was a hard-coded 60 s; now a field, 0 = no limit
+        private bool _h1PwrCycleRunning = false;
+        private int _h1PwrCycleUsed = 0;
+        private long _h1PwrCycleLastTick = 0;
+        private string _h1PwrCycleNote = "";        // the live text while a cycle runs
+        // H1 (user 2026-10-05): the automation re-keys Tune for a retry, and that press runs the
+        // same H1TuneAutoPhaseStart as a fresh one - which resets the cycle budget, and a budget
+        // of 0 re-arms the 60 s cooldown, refusing the second cycle.
+        // The flag must be a PENDING marker, not a synchronous one: chkTUN_CheckedChanged is
+        // async void and only reaches H1TuneAutoPhaseStart after its own awaits (line ~35867),
+        // so a flag set and cleared around the assignment is already false by then and never
+        // suppresses the reset. This one is raised before the retry key and consumed where the
+        // phase start reads it.
+        private bool _h1PwrCycleRetryPending = false;
+        // H1 (user 2026-10-05): the outcome notes. A match, a give-up or a cycle shows here for
+        // 20 s and then the line falls back to the plain relay state.
+        private string _h1MfjNote = "";
+        private Color _h1MfjNoteCol = Color.White;
+        private long _h1MfjNoteTick = 0;
+        private const int H1MfjNoteMs = 20000;
+
+        internal void H1MfjNoteSet(string text, Color col)
+        {
+            _h1MfjNote = text;
+            _h1MfjNoteCol = col;
+            _h1MfjNoteTick = Environment.TickCount;
+        }
+
+        public bool H1MfjPwrCycleEnabled
+        {
+            get { return _h1MfjPwrCycleEnabled; }
+            set
+            {
+                _h1MfjPwrCycleEnabled = value;
+                if (!value) H1MfjPowerCycleAbort("option turned off");
+            }
+        }
+        public int H1MfjCycleGiveUpSeconds
+        {
+            get { return _h1MfjCycleGiveUpSeconds; }
+            set { if (value >= 5 && value <= 30) _h1MfjCycleGiveUpSeconds = value; }
+        }
+        // H1 (user 2026-10-05): the burst length is gone - one attempt window covers both paths.
+        public int H1MfjCycleOffSeconds
+        {
+            get { return _h1MfjCycleOffSeconds; }
+            set { if (value >= 1 && value <= 30) _h1MfjCycleOffSeconds = value; }
+        }
+        public int H1MfjCycleSettleSeconds
+        {
+            get { return _h1MfjCycleSettleSeconds; }
+            set { if (value >= 1 && value <= 30) _h1MfjCycleSettleSeconds = value; }
+        }
+        public int H1MfjCycleMax
+        {
+            get { return _h1MfjCycleMax; }
+            set { if (value >= 1 && value <= 3) _h1MfjCycleMax = value; }
+        }
+        public int H1MfjCycleCooldownSeconds
+        {
+            get { return _h1MfjCycleCooldownSeconds; }
+            set { if (value >= 0 && value <= 300) _h1MfjCycleCooldownSeconds = value; }
+        }
         private int _h1SwrHoldSeconds = 1;         // the SWR hold, 1 to 10 s
         private int _h1CivMasterSlot = 0;          // 0 = none chosen (the pre-master behaviour)
         private readonly byte[] _h1civ_slot_addr = new byte[] { 0, 0x88, 0x88, 0x88, 0x88 };
@@ -21934,11 +22011,6 @@ namespace Thetis
         {
             get { return _h1MfjBurstEnabled; }
             set { _h1MfjBurstEnabled = value; }
-        }
-        public int H1MfjBurstSeconds
-        {
-            get { return _h1MfjBurstSeconds; }
-            set { if (value >= 1 && value <= 20) _h1MfjBurstSeconds = value; }
         }
         public int H1SwrHoldSeconds
         {
@@ -22227,6 +22299,129 @@ namespace Thetis
             catch { }
         }
 
+        // H1 (user 2026-10-05): the tuner power-cycle owner. Every path that can decide "no
+        // match" calls this; it refuses whenever the action cannot be carried out safely or
+        // would fight the operator, and it always ends with the relay RELEASED.
+        internal void H1PwrCycleResetEpisode()
+        {
+            _h1PwrCycleRetryPending = false;     // a fresh episode clears any stale marker
+            _h1PwrCycleUsed = 0;
+            _h1PwrCycleNote = "";
+        }
+
+        // H1 (user 2026-10-05): the carrier must be OFF THE AIR before the tuner's DC is cut,
+        // but the console's Tune release takes a moment (its handler is async), so _tuning is
+        // still true at the instant a burst or a give-up tries to start a cycle. Without this
+        // wait the cycle was refused every time and said nothing about it (user report: NO
+        // MATCH shown, never a cycle).
+        // H1 (user 2026-10-05): wait for the BOARD's confirmation of a relay state. The board
+        // answers OK RELAY ON/OFF and the controller records it, so this is the one piece of
+        // real feedback the cycle has - the tuner itself says nothing.
+        private async Task H1WaitRelayState(bool wanted, int ms)
+        {
+            DateTime dl = DateTime.UtcNow.AddMilliseconds(ms);
+            while (MfjRelayInstance != null && MfjRelayInstance.LinkOpen &&
+                   MfjRelayInstance.RelayOn != wanted && DateTime.UtcNow < dl)
+                await Task.Delay(20);
+        }
+
+        private async Task H1WaitCarrierClear(int ms)
+        {
+            DateTime dl = DateTime.UtcNow.AddMilliseconds(ms);
+            while ((MOX || _tuning) && DateTime.UtcNow < dl) await Task.Delay(50);
+        }
+
+        internal bool H1MfjPowerCycle(string reason)
+        {
+            AmpLanController amp = AmpLanControllerInstance;
+            // H1 (user 2026-10-05): every refusal is logged - a silent one is indistinguishable
+            // from the feature not working, which is what this looked like on the air.
+            if (!_h1MfjPwrCycleEnabled)
+            {
+                if (amp != null) amp.LogNote("power cycle not run ({0}): the Power-cycle on no match option is off", reason);
+                return false;
+            }
+            if (_h1PwrCycleRunning) return false;             // already cycling - no log spam
+            if (!PowerOn)
+            {
+                if (amp != null) amp.LogNote("power cycle not run ({0}): the power is off", reason);
+                return false;
+            }
+            if (MOX || _tuning)
+            {
+                if (amp != null) amp.LogNote("power cycle not run ({0}): RF is still on the line (MOX or Tune not cleared)", reason);
+                return false;
+            }
+            if (MfjRelayInstance == null || !MfjRelayInstance.LinkOpen)
+            {
+                if (amp != null) amp.LogNote("power cycle skipped ({0}): the station controller is not answering", reason);
+                return false;
+            }
+            if (MfjRelayInstance.RelayOn || (h1MfjPower != null && h1MfjPower.Checked))
+            {
+                if (amp != null) amp.LogNote("power cycle skipped ({0}): the relay is held by hand - the tuner is already cut", reason);
+                return false;
+            }
+            if (_h1PwrCycleUsed >= _h1MfjCycleMax)
+            {
+                if (amp != null) amp.LogNote("power cycle not available ({0}): the {1} cycles for this event are used", reason, _h1MfjCycleMax);
+                H1MfjNoteSet("NO MATCH - " + _h1MfjCycleMax + " CYCLES", Color.Red);
+                return false;
+            }
+            // H1 (user 2026-10-05): the cooldown gates the START of an episode only - applied
+            // during one it refused the second cycle of a sequence. It is now a settable field
+            // (Cooldown:, 0 = no limit, default 30 s).
+            if (_h1MfjCycleCooldownSeconds > 0 && _h1PwrCycleUsed == 0 && _h1PwrCycleLastTick != 0 &&
+                Environment.TickCount - _h1PwrCycleLastTick < _h1MfjCycleCooldownSeconds * 1000)
+            {
+                if (amp != null)
+                    amp.LogNote("power cycle not run ({0}): within {1} s of the previous one", reason, _h1MfjCycleCooldownSeconds);
+                return false;
+            }
+            _h1PwrCycleRunning = true;
+            _h1PwrCycleUsed++;
+            _h1PwrCycleLastTick = Environment.TickCount;
+            H1MfjPowerCycleRun(reason);
+            return true;
+        }
+
+        private async void H1MfjPowerCycleRun(string reason)
+        {
+            int n = _h1PwrCycleUsed;
+            try
+            {
+                _h1PwrCycleNote = string.Format("Power Cycle {0}/{1}", n, _h1MfjCycleMax);
+                _h1MfjNote = "";                              // the cycle line owns the readout while it runs
+                if (AmpLanControllerInstance != null)
+                    AmpLanControllerInstance.LogNote("power cycle {0}/{1} ({2}): tuner DC cut for {3} s, {4} s settle after restore",
+                        n, _h1MfjCycleMax, reason, _h1MfjCycleOffSeconds, _h1MfjCycleSettleSeconds);
+                // H1 (user 2026-10-05): the dwell is timed from the board's CONFIRMATION of each
+                // relay change, not from issuing the command, so the cut and the restore are the
+                // full Off time and the settle starts when the tuner is really powered again.
+                if (h1MfjPower != null) h1MfjPower.Checked = true;   // the pill drives the relay, so the button shows the cut
+                await H1WaitRelayState(true, 1000);
+                await Task.Delay(_h1MfjCycleOffSeconds * 1000);
+                if (h1MfjPower != null) h1MfjPower.Checked = false;  // restored - and released is the safe end state
+                await H1WaitRelayState(false, 1000);
+                // H1 (user 2026-10-05, corrected): the line does NOT say TUNING here. The tuner is
+                // powered but there is no carrier yet, and no carrier means no tuning - the label
+                // must track the RF, not the relay (user heard the mismatch). It stays on the cycle
+                // line until the retry's Tune press actually puts a carrier on the air.
+                await Task.Delay(_h1MfjCycleSettleSeconds * 1000);
+            }
+            finally { _h1PwrCycleRunning = false; }
+        }
+
+        internal void H1MfjPowerCycleAbort(string reason)
+        {
+            if (h1MfjPower != null && h1MfjPower.Checked) h1MfjPower.Checked = false;
+            if (!_h1PwrCycleRunning) return;
+            _h1PwrCycleRunning = false;
+            _h1PwrCycleNote = "";
+            if (AmpLanControllerInstance != null)
+                AmpLanControllerInstance.LogNote("power cycle aborted - {0}; relay released, tuner powered", reason);
+        }
+
         internal void H1BandGuardArm()
         {
             H1BandGuardDisarm();
@@ -22247,6 +22442,7 @@ namespace Thetis
             _h1BandGuardNoBypassWarned = false;
             _h1BandGuardNoSwrWarned = false;
             _h1BandGuardRestorePwr = ptbPWR.Value; // the band's own PA Drive value
+            H1PwrCycleResetEpisode();              // H1: a fresh band change gets its own Cycles budget
             _h1BandGuardArmTick = Environment.TickCount;
             _h1BandGuardReqTick = Environment.TickCount;
             bool bypassed = AmpLanControllerInstance.StateKnown && !AmpLanControllerInstance.IsOperate;
@@ -22283,6 +22479,7 @@ namespace Thetis
                 _h1MfjBurstActive = false;
                 if (chkTUN.Checked) chkTUN.Checked = false; // the burst carrier never outlives its guard
             }
+            H1MfjPowerCycleAbort("band-change guard cleared"); // H1: the relay must never be left cut
         }
 
         // H1 (user 2026-10-03): the MFJ998R band-change tune burst. With the sub-option
@@ -22307,25 +22504,58 @@ namespace Thetis
         {
             try
             {
-                // no carrier until the bypass is confirmed - the same rule as the tune press
-                DateTime h1dl = DateTime.UtcNow.AddMilliseconds(8000);
-                while (_h1BandGuardArmed && _h1BandGuardLevelHeld && DateTime.UtcNow < h1dl)
-                    await Task.Delay(50);
-                if (!_h1BandGuardArmed || _h1BandGuardLevelHeld) return;
-                if (!PowerOn) return; // H1: never engage Tune with the power off - it would raise the power-off notice
-                if (AmpLanControllerInstance != null)
-                    AmpLanControllerInstance.LogNote("band-change tune burst: Tune at the ANT Tune level for up to {0} s", _h1MfjBurstSeconds);
-                chkTUN.Checked = true; // the usual Tune press carries the burst; the phase machinery watches the SWR
-                DateTime h1start = DateTime.UtcNow;
-                while (_h1MfjBurstActive && _h1BandGuardArmed && chkTUN.Checked &&
-                       DateTime.UtcNow < h1start.AddSeconds(_h1MfjBurstSeconds))
-                    await Task.Delay(100);
-                if (_h1MfjBurstActive && _h1BandGuardArmed && chkTUN.Checked)
+                int attempt = 0;
+                // H1 (user 2026-10-05): this is a LOOP - burst, power-cycle the tuner, burst again -
+                // until a match, the guard is cancelled, the Cycles budget is spent, or the power
+                // goes off. The first version ran the burst once and fell off the end, so a failed
+                // match reported CYCLE 1/2 and then nothing at all (user report: no 2/2, no failure).
+                while (_h1MfjBurstActive && _h1BandGuardArmed)
                 {
-                    // the full burst without a match - stop the carrier, stay parked, keep watching
+                    // no carrier until the bypass is confirmed - the same rule as the tune press
+                    DateTime h1dl = DateTime.UtcNow.AddMilliseconds(8000);
+                    while (_h1BandGuardArmed && _h1BandGuardLevelHeld && DateTime.UtcNow < h1dl)
+                        await Task.Delay(50);
+                    if (!_h1BandGuardArmed || _h1BandGuardLevelHeld) return;
+                    if (!PowerOn) return; // H1: never engage Tune with the power off - it would raise the power-off notice
+                    attempt++;
+                    if (AmpLanControllerInstance != null)
+                        AmpLanControllerInstance.LogNote("band-change tune burst{0}: Tune at the ANT Tune level for up to {1} s",
+                            attempt > 1 ? " (retry " + attempt + ")" : "", _h1MfjCycleGiveUpSeconds);
+                    if (attempt > 1) _h1PwrCycleRetryPending = true;   // survives the async tune handler
+                    chkTUN.Checked = true; // the usual Tune press carries the burst; the phase machinery watches the SWR
+                    DateTime h1start = DateTime.UtcNow;
+                    while (_h1MfjBurstActive && _h1BandGuardArmed && chkTUN.Checked &&
+                           DateTime.UtcNow < h1start.AddSeconds(_h1MfjCycleGiveUpSeconds))
+                        await Task.Delay(100);
+                    if (!(_h1MfjBurstActive && _h1BandGuardArmed && chkTUN.Checked)) return; // matched, or the guard was cancelled
+                    // the full burst without a match - stop the carrier first: the tuner's DC is never
+                    // cut with RF on the line (user requirement 2026-10-05)
                     chkTUN.Checked = false;
                     if (AmpLanControllerInstance != null)
                         AmpLanControllerInstance.LogNote("tune burst ended, the SWR has not settled below {0:0.0} - keeping the amplifier in stand-by, still watching", H1TuneMatchSwr);
+                    // H1 (user 2026-10-05): the attempt window has now ELAPSED - this is where the
+                    // outcome is decided, never part-way through it. The budget is checked BEFORE the
+                    // cycle so the last restart is always followed by one more burst: a tuner that was
+                    // just power-cycled and never retried is pointless (user: one cycle is enough, but
+                    // it has to be given its full chance).
+                    if (_h1PwrCycleUsed >= _h1MfjCycleMax || !PowerOn)
+                    {
+                        if (AmpLanControllerInstance != null)
+                            AmpLanControllerInstance.LogNote("no match below {0:0.0} after {1} power cycle(s) and a full retry - staying in stand-by and bypassed; check the antenna",
+                                H1TuneMatchSwr, _h1PwrCycleUsed);
+                        H1MfjNoteSet("NO MATCH" + (_h1PwrCycleUsed > 0
+                            ? " - " + _h1PwrCycleUsed + (_h1PwrCycleUsed == 1 ? " CYCLE" : " CYCLES") : ""), Color.Red);
+                        return;
+                    }
+                    await H1WaitCarrierClear(3000);             // the Tune release is async - let it finish
+                    if (!H1MfjPowerCycle("band change: no match inside the burst"))
+                    {
+                        H1MfjNoteSet("NO MATCH", Color.Red);
+                        return;
+                    }
+                    while (_h1PwrCycleRunning && _h1BandGuardArmed) await Task.Delay(100);
+                    if (!_h1BandGuardArmed) return;
+                    // round again - the loop's next burst is the retry after this restart
                 }
             }
             finally
@@ -22446,6 +22676,7 @@ namespace Thetis
                 AmpLanControllerInstance.RequestOperate();
                 AmpLanControllerInstance.LogNote("SWR settled below 2.0 - PA level back at {0}%, amplifier to OPERATE", target);
             }
+            H1MfjNoteSet("MATCH OK", Color.LightGreen);  // H1: the band guard's own match
         }
         // H1: two-phase tune (user requirement 2026-10-02). Phase 1: the amplifier is
         // bypassed and the rig tunes the remote tuner at the Tune power level; when the
@@ -22469,6 +22700,7 @@ namespace Thetis
             }
         }
         private bool _h1TuneAutoRunning = false;
+        private bool _h1TuneGaveUp = false;        // H1: the attempt window expired with no match
 
         private void H1TuneAutoPhaseStart()
         {
@@ -22476,6 +22708,9 @@ namespace Thetis
             if ((!_h1AmpTuneStandbyEnabled && !_h1MfjBurstActive) || !_h1AmpTuneArmed) return;
             if (AmpLanControllerInstance == null || !AmpLanControllerInstance.IsOpen) return;
             _h1TuneAutoRunning = true;
+            if (_h1PwrCycleRetryPending) _h1PwrCycleRetryPending = false;   // the automation's retry - keep the budget
+            else H1PwrCycleResetEpisode();                                  // an operator press - fresh budget
+            H1MfjNoteSet("TUNING", Color.Orange);   // H1 (user 2026-10-05): the tuner is working - say so, the outcome replaces it
             AmpLanControllerInstance.LogNote("two-phase tune armed: waiting for the tuner (SWR {0:0.0} or better for {1} s)", H1TuneMatchSwr, H1SwrHoldMs / 1000);
             H1TuneAutoPhaseRun();
         }
@@ -22487,28 +22722,75 @@ namespace Thetis
             DateTime stableSince = DateTime.MinValue;
             try
             {
-                while (chkTUN.Checked)
+                // H1 (user 2026-10-05): the whole attempt loops - tune, power-cycle the tuner, tune
+                // again - so the retry is watched by this machinery instead of being keyed and
+                // forgotten (which is what the first version did).
+                while (true)
                 {
-                    await Task.Delay(100);
-                    if (!chkTUN.Checked) break;
-                    if (AmpLanControllerInstance == null) break;
-                    if (AmpLanControllerInstance.StateKnown && AmpLanControllerInstance.IsOperate) break; // already in phase 2
-                    if (CIVControllerInstance == null || !CIVControllerInstance.RigSwrFresh(1500))
+                    DateTime h1AttemptStart = DateTime.UtcNow;
+                    _h1TuneGaveUp = false;
+                    while (chkTUN.Checked)
                     {
-                        stableSince = DateTime.MinValue;
-                        continue;
-                    }
-                    float swr = CIVControllerInstance.RigSwrRatio;
-                    if (swr <= H1TuneMatchSwr)
-                    {
-                        if (stableSince == DateTime.MinValue) stableSince = DateTime.UtcNow;
-                        else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1SwrHoldMs)
+                        await Task.Delay(100);
+                        if (!chkTUN.Checked) break;
+                        if (AmpLanControllerInstance == null) break;
+                        if (AmpLanControllerInstance.StateKnown && AmpLanControllerInstance.IsOperate) return; // already in phase 2
+                        // H1: the attempt has a deadline. Past it the match counts as NOT found, so the
+                        // tuner is power-cycled and another attempt is allowed - without this a
+                        // two-step tune simply waits for ever and can never fail.
+                        if (!_h1MfjBurstActive &&
+                            (DateTime.UtcNow - h1AttemptStart).TotalSeconds >= _h1MfjCycleGiveUpSeconds)
                         {
-                            H1TuneAutoPhaseAdvance();
+                            _h1TuneGaveUp = true;
+                            if (AmpLanControllerInstance != null)
+                                AmpLanControllerInstance.LogNote("two-step tune: no match below {0:0.0} after {1} s - attempt counts as failed",
+                                    H1TuneMatchSwr, _h1MfjCycleGiveUpSeconds);
+                            chkTUN.Checked = false;             // release the carrier before the DC is cut
                             break;
                         }
+                        if (CIVControllerInstance == null || !CIVControllerInstance.RigSwrFresh(1500))
+                        {
+                            stableSince = DateTime.MinValue;
+                            continue;
+                        }
+                        float swr = CIVControllerInstance.RigSwrRatio;
+                        if (swr <= H1TuneMatchSwr)
+                        {
+                            if (stableSince == DateTime.MinValue) stableSince = DateTime.UtcNow;
+                            else if ((DateTime.UtcNow - stableSince).TotalMilliseconds >= H1SwrHoldMs)
+                            {
+                                H1TuneAutoPhaseAdvance();
+                                return;
+                            }
+                        }
+                        else stableSince = DateTime.MinValue;
                     }
-                    else stableSince = DateTime.MinValue;
+                    if (!_h1TuneGaveUp) return;                 // the operator released, or the match advanced
+                    stableSince = DateTime.MinValue;
+                    // H1 (user 2026-10-05): the attempt window elapsed - decide HERE, never part-way
+                    // through it, and check the budget BEFORE the cycle so the retry always follows it.
+                    if (_h1PwrCycleUsed >= _h1MfjCycleMax || !PowerOn || !_h1AmpTuneArmed)
+                    {
+                        if (AmpLanControllerInstance != null)
+                            AmpLanControllerInstance.LogNote("two-step tune: no match below {0:0.0} after {1} power cycle(s) and a full retry - press Tune again after checking the antenna",
+                                H1TuneMatchSwr, _h1PwrCycleUsed);
+                        H1MfjNoteSet("NO MATCH" + (_h1PwrCycleUsed > 0
+                            ? " - " + _h1PwrCycleUsed + (_h1PwrCycleUsed == 1 ? " CYCLE" : " CYCLES") : ""), Color.Red);
+                        return;
+                    }
+                    await H1WaitCarrierClear(3000);             // the Tune release is async - let it finish
+                    if (!H1MfjPowerCycle("two-step tune: no match inside the attempt window"))
+                    {
+                        H1MfjNoteSet("NO MATCH", Color.Red);    // reported even with the automation off
+                        return;
+                    }
+                    while (_h1PwrCycleRunning) await Task.Delay(100);
+                    if (AmpLanControllerInstance != null)
+                        AmpLanControllerInstance.LogNote("power cycle {0}/{1} done - retrying the two-step tune at the ANT Tune level",
+                            _h1PwrCycleUsed, _h1MfjCycleMax);
+                    if (!PowerOn) return;
+                    _h1PwrCycleRetryPending = true;             // survives the async tune handler
+                    chkTUN.Checked = true;                      // the retry - and this loop watches it
                 }
             }
             finally
@@ -22520,6 +22802,9 @@ namespace Thetis
         private async void H1TuneAutoPhaseAdvance()
         {
             if (!chkTUN.Checked) return;
+            // H1 (user 2026-10-05): reaching here means the SWR held below 2 - say so in the
+            // tuner's readout (covers the two-step tune and the band-change burst alike).
+            H1MfjNoteSet("MATCH OK", Color.LightGreen);
             // H1 round 6 (user 2026-10-02): the matching phase ran at the SELECTED tune
             // source; the OPERATING phase - the amplified part of the tune - now runs at
             // the DRIVE slider level, which is the level the amplifier is driven at in

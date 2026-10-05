@@ -464,8 +464,13 @@ namespace Thetis
         private TextBoxTS h1TxtAmpPort;
         private GroupBoxTS h1GrpMfj;
         private CheckBoxTS h1ChkMfjBurst;
-        private NumericUpDownTS h1UdMfjBurstLen;
         private CheckBoxTS h1ChkMfjRelay;
+        private CheckBoxTS h1ChkMfjPwrCycle;            // H1: power-cycle the tuner when no match is found
+        private NumericUpDownTS h1UdMfjCycleGiveUp;
+        private NumericUpDownTS h1UdMfjCycleOff;
+        private NumericUpDownTS h1UdMfjCycleSettle;
+        private NumericUpDownTS h1UdMfjCycleMax;
+        private NumericUpDownTS h1UdMfjCooldown;
         private ComboBoxTS h1CmbMfjRelayPort;
         private GroupBoxTS h1GrpMcu;
         private CheckBoxTS h1ChkMfjPttIn;
@@ -713,8 +718,11 @@ namespace Thetis
 
             h1GrpMfj = new GroupBoxTS();
             h1GrpMfj.Text = "MFJ998R";
-            h1GrpMfj.Location = new Point(6, 219);
-            h1GrpMfj.Size = new Size(556, 114);
+            // H1 (user 2026-10-05): moved up into the space reclaimed from the Aries group
+            // above and grown by one row for the power-cycle parameters; the page bottom is
+            // unchanged at 333.
+            h1GrpMfj.Location = new Point(6, 191);
+            h1GrpMfj.Size = new Size(556, 142);   // H1 (user 2026-10-05): taller so every row gets a gap - the boxes' top borders were being painted over by the row above
 
             h1ChkAmpTuneStandby = new CheckBoxTS();
             h1ChkAmpTuneStandby.AutoSize = false;
@@ -722,7 +730,7 @@ namespace Thetis
             h1ChkAmpTuneStandby.Image = null;
             h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
             h1ChkAmpTuneStandby.Text = "Two-step tune for easy operation with an ATU and a linear amplifier";
-            h1ChkAmpTuneStandby.Location = new Point(10, 18);
+            h1ChkAmpTuneStandby.Location = new Point(10, 14);
             h1ChkAmpTuneStandby.Size = new Size(536, 22);
             toolTip1.SetToolTip(h1ChkAmpTuneStandby,
                 "The TUNE button always switches the OM2000A+ to stand-by while it is held." + System.Environment.NewLine +
@@ -736,7 +744,7 @@ namespace Thetis
             h1ChkBandGuard.Image = null;
             h1ChkBandGuard.Name = "chkH1BandGuard";
             h1ChkBandGuard.Text = "Band Change: bypass amp and set PA Drive level to ANT Tune level until Antenna SWR stabilises <2";
-            h1ChkBandGuard.Location = new Point(10, 40);
+            h1ChkBandGuard.Location = new Point(10, 38);
             h1ChkBandGuard.Size = new Size(536, 22);
             toolTip1.SetToolTip(h1ChkBandGuard,
                 "When checked, every band change bypasses the OM2000A+ and the PA level runs at" + System.Environment.NewLine +
@@ -758,63 +766,160 @@ namespace Thetis
                 "SWR settles below 2 inside the burst, the carrier is released and the amplifier" + System.Environment.NewLine +
                 "returns in line. Otherwise the carrier stops and the waiting procedure continues.");
 
-            LabelTS h1LblBurstLen = new LabelTS();
-            h1LblBurstLen.AutoSize = true;
-            h1LblBurstLen.Image = null;
-            h1LblBurstLen.Text = "Tune burst length:";
-            h1LblBurstLen.Location = new Point(10, 88);
-
-            h1UdMfjBurstLen = new NumericUpDownTS();
-            h1UdMfjBurstLen.Name = "udH1MfjBurstLen";
-            h1UdMfjBurstLen.Minimum = 1;
-            h1UdMfjBurstLen.Maximum = 20;
-            h1UdMfjBurstLen.Value = 2;
-            h1UdMfjBurstLen.Location = new Point(122, 85);
-            h1UdMfjBurstLen.Size = new Size(48, 20);
-            toolTip1.SetToolTip(h1UdMfjBurstLen, "The length of the TUNE burst that starts a band change, in seconds (1 to 20).");
-
-            LabelTS h1LblBurstSec = new LabelTS();
-            h1LblBurstSec.AutoSize = true;
-            h1LblBurstSec.Image = null;
-            h1LblBurstSec.Text = "s";
-            h1LblBurstSec.Location = new Point(174, 88);
 
             LabelTS h1LblSwrHold = new LabelTS();
             h1LblSwrHold.AutoSize = true;
             h1LblSwrHold.Image = null;
             h1LblSwrHold.Text = "SWR hold:";
-            h1LblSwrHold.Location = new Point(214, 88);
+            h1LblSwrHold.Location = new Point(134, 90);
 
             h1UdSwrHold = new NumericUpDownTS();
             h1UdSwrHold.Name = "udH1SwrHold";
             h1UdSwrHold.Minimum = 1;
             h1UdSwrHold.Maximum = 10;
             h1UdSwrHold.Value = 1;
-            h1UdSwrHold.Location = new Point(274, 85);
-            h1UdSwrHold.Size = new Size(48, 20);
+            h1UdSwrHold.Location = new Point(202, 87);
+            h1UdSwrHold.Size = new Size(52, 20);   // H1: sized to its maximum
             toolTip1.SetToolTip(h1UdSwrHold, "How long the SWR must stay below 2 before a match is accepted, in seconds (1 to 10).");
 
-            LabelTS h1LblSwrSec = new LabelTS();
-            h1LblSwrSec.AutoSize = true;
-            h1LblSwrSec.Image = null;
-            h1LblSwrSec.Text = "s";
-            h1LblSwrSec.Location = new Point(326, 88);
+
+            // H1 (user 2026-10-05): the power-cycle tick. It sits on the free end of the burst
+            // row - the group has no spare row for it - with the text shortened to fit.
+            h1ChkMfjPwrCycle = new CheckBoxTS();
+            h1ChkMfjPwrCycle.AutoSize = false;
+            h1ChkMfjPwrCycle.UseVisualStyleBackColor = true;
+            h1ChkMfjPwrCycle.Image = null;
+            h1ChkMfjPwrCycle.Name = "chkH1MfjPwrCycle";
+            h1ChkMfjPwrCycle.Text = "Power-cycle on no match";
+            h1ChkMfjPwrCycle.Checked = true;   // H1 (user 2026-10-05): default ON (user decision)
+            h1ChkMfjPwrCycle.Location = new Point(10, 112);
+            h1ChkMfjPwrCycle.Size = new Size(150, 22);   // H1: stops short of the Off time label
+            toolTip1.SetToolTip(h1ChkMfjPwrCycle,
+                "When no match below 2 is found, the tuner's DC power is cut and restored to restart it," +
+                System.Environment.NewLine +
+                "then the attempt is repeated up to the Cycles limit. Applies to the two-step tune (after" +
+                System.Environment.NewLine +
+                "the Give up time) and to a band change (after the TUNE burst). The relay is always left" +
+                System.Environment.NewLine +
+                "released, so the tuner ends powered, and a cycle never runs while transmitting.");
+
+            LabelTS h1LblCycleGiveUp = new LabelTS();
+            h1LblCycleGiveUp.AutoSize = true;
+            h1LblCycleGiveUp.Image = null;
+            h1LblCycleGiveUp.Text = "Give up:";   // H1 (user 2026-10-05): THE attempt window - both the band-change burst and the two-step use it
+            h1LblCycleGiveUp.Location = new Point(10, 90);
+
+            h1UdMfjCycleGiveUp = new NumericUpDownTS();
+            h1UdMfjCycleGiveUp.Name = "udH1MfjCycleGiveUp";
+            h1UdMfjCycleGiveUp.Minimum = 5;
+            h1UdMfjCycleGiveUp.Maximum = 30;
+            h1UdMfjCycleGiveUp.Value = 30; // H1 (user 2026-10-05): the full envelope, post-cycle retry included
+            h1UdMfjCycleGiveUp.Location = new Point(70, 87);
+            h1UdMfjCycleGiveUp.Size = new Size(56, 20);   // H1 (user 2026-10-05): wide enough for its maximum (30)
+            toolTip1.SetToolTip(h1UdMfjCycleGiveUp,
+                "How long a tune is tried for a match below 2 before the attempt counts as failed, in" +
+                System.Environment.NewLine + "seconds (5 to 30). Used by the band-change burst AND the two-step tune -" +
+                System.Environment.NewLine + "one window for both, after which the power cycle is offered.");
+
+
+            LabelTS h1LblCycleOff = new LabelTS();
+            h1LblCycleOff.AutoSize = true;
+            h1LblCycleOff.Image = null;
+            h1LblCycleOff.Text = "Off time:";
+            h1LblCycleOff.Location = new Point(165, 115);
+
+            h1UdMfjCycleOff = new NumericUpDownTS();
+            h1UdMfjCycleOff.Name = "udH1MfjCycleOff";
+            h1UdMfjCycleOff.Minimum = 1;
+            h1UdMfjCycleOff.Maximum = 30;
+            h1UdMfjCycleOff.Value = 3;   // H1
+            h1UdMfjCycleOff.Location = new Point(228, 112);
+            h1UdMfjCycleOff.Size = new Size(56, 20);   // H1: sized to its maximum
+            toolTip1.SetToolTip(h1UdMfjCycleOff,
+                "How long the tuner's DC power stays cut during a power cycle, in seconds (1 to 30)." +
+                System.Environment.NewLine +
+                "Too short and the tuner's controller will not reset.");
+
+
+            LabelTS h1LblCycleSettle = new LabelTS();
+            h1LblCycleSettle.AutoSize = true;
+            h1LblCycleSettle.Image = null;
+            h1LblCycleSettle.Text = "Settle:";
+            h1LblCycleSettle.Location = new Point(292, 115);
+
+            h1UdMfjCycleSettle = new NumericUpDownTS();
+            h1UdMfjCycleSettle.Name = "udH1MfjCycleSettle";
+            h1UdMfjCycleSettle.Minimum = 1;
+            h1UdMfjCycleSettle.Maximum = 30;
+            h1UdMfjCycleSettle.Value = 1;  // H1: minimal - the retry's carrier is sustained, so the
+                                           // tuner tunes whenever it comes alive and sees it
+            h1UdMfjCycleSettle.Location = new Point(352, 112);
+            h1UdMfjCycleSettle.Size = new Size(56, 20);   // H1: sized to its maximum
+            toolTip1.SetToolTip(h1UdMfjCycleSettle,
+                "How long to wait after the tuner is powered again before the next attempt, in seconds" +
+                System.Environment.NewLine + "(1 to 30). The MFJ998R has no ready signal but is idle until RF" +
+                System.Environment.NewLine + "arrives, so keep this to its boot time - it is dead time otherwise.");
+
+
+            // H1 (user 2026-10-05): the cooldown, user-settable (0 = no limit).
+            LabelTS h1LblCooldown = new LabelTS();
+            h1LblCooldown.AutoSize = true;
+            h1LblCooldown.Image = null;
+            h1LblCooldown.Text = "Cooldown:";
+            h1LblCooldown.Location = new Point(262, 90);
+
+            h1UdMfjCooldown = new NumericUpDownTS();
+            h1UdMfjCooldown.Name = "udH1MfjCooldown";
+            h1UdMfjCooldown.Minimum = 0;
+            h1UdMfjCooldown.Maximum = 300;
+            h1UdMfjCooldown.Value = 30;
+            h1UdMfjCooldown.Location = new Point(334, 87);
+            h1UdMfjCooldown.Size = new Size(60, 20);   // H1: THREE digits (300) - was 44 and could not show its own maximum
+            toolTip1.SetToolTip(h1UdMfjCooldown,
+                "How long after a power cycle before a new band change or Tune press may start another one," +
+                System.Environment.NewLine + "in seconds (0 to 300; 0 = no limit). It never delays the cycles within one event.");
+
+            LabelTS h1LblCycleMax = new LabelTS();
+            h1LblCycleMax.AutoSize = true;
+            h1LblCycleMax.Image = null;
+            h1LblCycleMax.Text = "Cycles:";
+            h1LblCycleMax.Location = new Point(416, 115);
+
+            h1UdMfjCycleMax = new NumericUpDownTS();
+            h1UdMfjCycleMax.Name = "udH1MfjCycleMax";
+            h1UdMfjCycleMax.Minimum = 1;
+            h1UdMfjCycleMax.Maximum = 3;
+            h1UdMfjCycleMax.Value = 1;   // H1 (user 2026-10-05): one power cycle
+            h1UdMfjCycleMax.Location = new Point(478, 112);
+            h1UdMfjCycleMax.Size = new Size(52, 20);   // H1: sized to its maximum
+            toolTip1.SetToolTip(h1UdMfjCycleMax,
+                "How many power cycles one band change or one two-step tune may use before it gives up and" +
+                System.Environment.NewLine + "stays in stand-by (1 to 3).");
+
 
             h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
             h1ChkBandGuard.CheckedChanged += h1ChkBandGuard_CheckedChanged;
             h1ChkMfjBurst.CheckedChanged += h1ChkMfjBurst_CheckedChanged;
-            h1UdMfjBurstLen.ValueChanged += h1UdMfjBurstLen_ValueChanged;
             h1UdSwrHold.ValueChanged += h1UdSwrHold_ValueChanged;
+            h1ChkMfjPwrCycle.CheckedChanged += h1ChkMfjPwrCycle_CheckedChanged;
+            h1UdMfjCycleGiveUp.ValueChanged += h1UdMfjCycleGiveUp_ValueChanged;
+            h1UdMfjCycleOff.ValueChanged += h1UdMfjCycleOff_ValueChanged;
+            h1UdMfjCycleSettle.ValueChanged += h1UdMfjCycleSettle_ValueChanged;
+            h1UdMfjCycleMax.ValueChanged += h1UdMfjCycleMax_ValueChanged;
+            h1UdMfjCooldown.ValueChanged += h1UdMfjCooldown_ValueChanged;
 
             h1GrpMfj.Controls.Add(h1ChkAmpTuneStandby);
             h1GrpMfj.Controls.Add(h1ChkBandGuard);
             h1GrpMfj.Controls.Add(h1ChkMfjBurst);
-            h1GrpMfj.Controls.Add(h1LblBurstLen);
-            h1GrpMfj.Controls.Add(h1UdMfjBurstLen);
-            h1GrpMfj.Controls.Add(h1LblBurstSec);
             h1GrpMfj.Controls.Add(h1LblSwrHold);
             h1GrpMfj.Controls.Add(h1UdSwrHold);
-            h1GrpMfj.Controls.Add(h1LblSwrSec);
+            h1GrpMfj.Controls.Add(h1ChkMfjPwrCycle);
+            h1GrpMfj.Controls.Add(h1LblCycleGiveUp);
+            h1GrpMfj.Controls.Add(h1UdMfjCycleGiveUp);
+            h1GrpMfj.Controls.Add(h1LblCycleOff);
+            h1GrpMfj.Controls.Add(h1UdMfjCycleOff);
+            h1GrpMfj.Controls.Add(h1LblCycleSettle);
+            h1GrpMfj.Controls.Add(h1UdMfjCycleSettle);
             // H1 (user 2026-10-05): show or hide the console block. It belongs in the tuner's own
             // group, not the Microcontroller page - it is THIS block the page configures. It sits at
             // the end of the settings row, which had ~150 px spare.
@@ -833,10 +938,15 @@ namespace Thetis
                 System.Environment.NewLine + "Unticked, the block disappears completely - the relay, the power cycle" +
                 System.Environment.NewLine + "and the PTT lines keep working.");
 
+            h1GrpMfj.Controls.Add(h1LblCooldown);
             h1GrpMfj.Controls.Add(h1ChkMfjBlockVis);
+            h1GrpMfj.Controls.Add(h1UdMfjCooldown);
+            h1GrpMfj.Controls.Add(h1LblCycleMax);
+            h1GrpMfj.Controls.Add(h1UdMfjCycleMax);
             tpApolloATU.Controls.Add(h1GrpMfj);
         }
 
+        // -----------------------------------------------------------------------------
         // H1 (user 2026-10-05): the Microcontroller page. The station controller on a USB
         // Arduino serves the MFJ998R relay AND the PTT lines, so its own settings live
         // here rather than in the tuner's group: the COM port it is on, and the external
@@ -1031,6 +1141,35 @@ namespace Thetis
             if (h1UdMfjPttDeb != null) console.H1MfjPttInDebounceMs = (int)h1UdMfjPttDeb.Value;
         }
 
+        private void h1ChkMfjPwrCycle_CheckedChanged(object sender, EventArgs e)
+        {
+            if (h1ChkMfjPwrCycle != null) console.H1MfjPwrCycleEnabled = h1ChkMfjPwrCycle.Checked;
+        }
+
+        private void h1UdMfjCycleGiveUp_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjCycleGiveUp != null) console.H1MfjCycleGiveUpSeconds = (int)h1UdMfjCycleGiveUp.Value;
+        }
+
+        private void h1UdMfjCycleOff_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjCycleOff != null) console.H1MfjCycleOffSeconds = (int)h1UdMfjCycleOff.Value;
+        }
+
+        private void h1UdMfjCycleSettle_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjCycleSettle != null) console.H1MfjCycleSettleSeconds = (int)h1UdMfjCycleSettle.Value;
+        }
+
+        private void h1UdMfjCycleMax_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjCycleMax != null) console.H1MfjCycleMax = (int)h1UdMfjCycleMax.Value;
+        }
+
+        private void h1UdMfjCooldown_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjCooldown != null) console.H1MfjCycleCooldownSeconds = (int)h1UdMfjCooldown.Value;
+        }
 
         private void h1UdSwrHold_ValueChanged(object sender, EventArgs e)
         {
@@ -11452,8 +11591,13 @@ namespace Thetis
             if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
             if (h1ChkBandGuard != null) h1ChkBandGuard.Checked = console.H1BandGuardEnabled;
             if (h1ChkMfjBurst != null) h1ChkMfjBurst.Checked = console.H1MfjBurstEnabled;
-            if (h1UdMfjBurstLen != null) h1UdMfjBurstLen.Value = console.H1MfjBurstSeconds;
             if (h1UdSwrHold != null) h1UdSwrHold.Value = console.H1SwrHoldSeconds;
+            if (h1ChkMfjPwrCycle != null) h1ChkMfjPwrCycle.Checked = console.H1MfjPwrCycleEnabled;
+            if (h1UdMfjCycleGiveUp != null) h1UdMfjCycleGiveUp.Value = console.H1MfjCycleGiveUpSeconds;
+            if (h1UdMfjCycleOff != null) h1UdMfjCycleOff.Value = console.H1MfjCycleOffSeconds;
+            if (h1UdMfjCycleSettle != null) h1UdMfjCycleSettle.Value = console.H1MfjCycleSettleSeconds;
+            if (h1UdMfjCycleMax != null) h1UdMfjCycleMax.Value = console.H1MfjCycleMax;
+            if (h1UdMfjCooldown != null) h1UdMfjCooldown.Value = console.H1MfjCycleCooldownSeconds;
             if (h1ChkMfjRelay != null) h1ChkMfjRelay.Checked = console.H1MfjRelayEnabled;
             if (h1CmbMfjRelayPort != null && !string.IsNullOrEmpty(console.H1MfjRelayPort))
             {
