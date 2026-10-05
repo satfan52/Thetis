@@ -3225,8 +3225,11 @@ namespace Thetis
             a.Add("panelBandHF.Visible/" + _bands_HF_selected);
             a.Add("panelBandVHF.Visible/" + _bands_VHF_selected);
             a.Add("panelBandGEN.Visible/" + _bands_GEN_selected);
-            a.Add("iscollapsed/" + _iscollapsed);
-            a.Add("isexpanded/" + _isexpanded);
+            // H1 (user 2026-10-05): the full-screen panafall runs CollapseDisplay underneath, so
+            // closing the console while it was up wrote iscollapsed=true and every later launch came
+            // up in the legacy collapsed view. Full-screen is not the collapsed view.
+            a.Add("iscollapsed/" + (_h1FullScreenPanafall ? false : _iscollapsed));
+            a.Add("isexpanded/" + (_h1FullScreenPanafall ? true : _isexpanded));
             a.Add("diversity/" + _diversity2);
 
             for (int i = (int)PreampMode.FIRST + 1; i < (int)PreampMode.LAST; i++)
@@ -5223,11 +5226,18 @@ namespace Thetis
                 this.Size = szConsoleSize;
                 this.Location = pConsoleLocation;
 
+                // H1 (user 2026-10-05): never boot into the legacy collapsed view. H1LayoutV4 lays the
+                // console out for the expanded geometry alone, so a restored collapsed console comes up
+                // as a near-empty window with no way back - reported as "stuck in full screen mode,
+                // Escape does not work". A collapsed state also got written by the full-screen panafall
+                // (it is CollapseDisplay underneath), which made every later launch start collapsed, so
+                // the saved flag could not self-correct. Boot expanded; the flag is rewritten on exit.
                 if (_iscollapsed)
                 {
-                    this.CollapseDisplay(false);
+                    _iscollapsed = false;
+                    _isexpanded = true;
+                    bNeedUpdate = true;
                 }
-                else
                 {
                     initializing = false;
                     this.ExpandDisplay(false);
@@ -26539,6 +26549,78 @@ namespace Thetis
         }
 
         private bool spacebar_ptt = true;
+        // H1 (user 2026-10-05): height of the frequency-ruler strip along the top of the display. This
+        // is the zone that toggles the full-screen panafall on a right-click. Matches the 20 px the
+        // display uses for its own scale rectangle.
+        private const int H1RulerStripHeight = 20;
+
+        // H1 (user 2026-10-05): hands the whole screen to the panafall, or gives it back. This is the
+        // existing Collapse/Expand pair - no new layout code. Never reshuffles the window with RF on
+        // the air.
+        // H1 (user 2026-10-05): middle-click on ANY of the display surfaces toggles the full-screen
+        // panafall. It was wired to pnlDisplay alone, and the log showed the middle-click never firing
+        // there - the fork draws several panafalls (panelDisplay, pnlDisplay, panelRX2Display, ...), so
+        // the click was landing on a sibling. Wire them all rather than guess which one is on top.
+        private bool _h1MiddleClickWired = false;
+
+        private void H1Display_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Middle || SelectedNotch != null) return;
+
+            // H1 (user 2026-10-05): the middle button acts on the receiver whose window is under
+            // it - its audio, or with Shift its transmit source. Anywhere else it keeps the
+            // full-screen toggle, so the way in and out of full screen is unchanged.
+            // The point is taken from the screen: this handler is wired to every display surface,
+            // and e.X/e.Y would be in whichever one fired.
+            Point pp = pnlDisplay.PointToClient(Cursor.Position);
+            int win = H1WindowUnder(pp.X, pp.Y);
+
+            if (win >= 0)
+            {
+                if ((ModifierKeys & Keys.Shift) == Keys.Shift) H1SetTxWindow(win);
+                else H1ToggleRxAudio(win);
+                return;
+            }
+
+            H1ToggleFullScreenPanafall("middle-click");
+        }
+
+        // H1 (user 2026-10-05): which receiver's window is under this display point?
+        // 0 = RX1, 1 = SubRX1, 2 = RX2, 3 = SubRX2, -1 = none. A sub's window is drawn over its
+        // receiver's, so it is tested first. The bounds are the ones the display recorded while
+        // drawing, so the hit region is exactly what is on screen.
+        private int H1WindowUnder(int x, int y)
+        {
+            if (_mox) return -1;
+
+            bool rx2Half = rx2_enabled && y > pnlDisplay.Height / 2;
+
+            if (!rx2Half)
+            {
+                if (chkEnableMultiRX.Checked && Display.SubRX1Enabled &&
+                    Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                    x > Display.VFOASubWindowLeft - 3 && x < Display.VFOASubWindowRight + 3)
+                    return 1;
+
+                if (Display.VFOAWindowRight > Display.VFOAWindowLeft &&
+                    x > Display.VFOAWindowLeft - 3 && x < Display.VFOAWindowRight + 3)
+                    return 0;
+
+                return -1;
+            }
+
+            if (chkEnableMultiRX2.Checked && Display.SubRX2Enabled &&
+                Display.VFOBSubWindowRight > Display.VFOBSubWindowLeft &&
+                x > Display.VFOBSubWindowLeft - 3 && x < Display.VFOBSubWindowRight + 3)
+                return 3;
+
+            if (Display.VFOBWindowRight > Display.VFOBWindowLeft &&
+                x > Display.VFOBWindowLeft - 3 && x < Display.VFOBWindowRight + 3)
+                return 2;
+
+            return -1;
+        }
+
         // H1: one receiver's audio on or off. These are the four per-channel gates, the same ones
         // the audio groups' MUT pills drive - and switching one ON also clears its parent's stream
         // mute, or the receiver would be open while its stream is out of the mix.
@@ -26703,6 +26785,41 @@ namespace Thetis
 
             Display.H1RxAudioMask = audio;
             Display.H1RxTxMask = tx;
+        }
+
+        private void H1WireMiddleClick(Control parent)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c.Name == "panelDisplay" || c.Name == "pnlDisplay" || c.Name.Contains("Display"))
+                    c.MouseDown += H1Display_MouseDown;
+                H1WireMiddleClick(c);
+            }
+        }
+
+        private void H1WireMiddleClickOnce()
+        {
+            if (_h1MiddleClickWired) return;
+            _h1MiddleClickWired = true;
+            H1WireMiddleClick(this);
+        }
+
+        private void H1ToggleFullScreenPanafall(string from)
+        {
+            if (MOX || _tuning) return;
+
+            if (collapsedDisplay || _iscollapsed)
+            {
+                _h1FullScreenPanafall = false;
+                ExpandDisplay(true);
+            }
+            else
+            {
+                // set BEFORE collapsing: CollapseDisplay runs the hide, which is gated on this flag
+                _h1FullScreenPanafall = true;
+                CollapseDisplay(true);
+            }
+            H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
         }
 
         // H1 (user 2026-10-05): one diagnostic line per space press. The option is enabled in this
@@ -32762,6 +32879,28 @@ namespace Thetis
         public static bool ALTM = false; // ke9ns add
         private void Console_KeyDown(object sender, System.Windows.Forms.KeyEventArgs e)
         {
+            // H1 (user 2026-10-05): the space bar and Escape are handled HERE, before the keyboard
+            // shortcut master switch further down. The log found it: that switch
+            // (else if (!enable_kb_shortcuts) { e.Handled = true; return; }) leaves this method before
+            // any key case runs, so with shortcuts off neither key ever reached its case - the space
+            // PTT "was there but did nothing", and Escape did nothing. The space PTT has its own
+            // option (Setup -> Keyboard -> SpaceBar Control) and Escape is the only way out of the
+            // full-screen panafall, so neither may depend on that switch.
+            if (e.KeyCode == Keys.Escape && !e.Alt && !e.Control)
+            {
+                H1SpacePttTrace("escape: collapsedDisplay=" + collapsedDisplay + " _iscollapsed=" + _iscollapsed
+                    + " fullscreen=" + _h1FullScreenPanafall + " mox=" + MOX + " tuning=" + _tuning);
+                // H1 (user 2026-10-05): the SAME toggle the middle-click runs. The two used to differ:
+                // Escape only set my flag and called ExpandDisplay, so leaving a collapsed console that
+                // was not my full-screen mode still left the controls stripped.
+                if (collapsedDisplay || _iscollapsed)
+                {
+                    H1ToggleFullScreenPanafall("escape");
+                    e.Handled = true;
+                }
+                return;
+            }
+
             if (Common.ShiftKeyDown) Display.DisplayShiftKeyDown = true;
 
             if (e.Alt == true) // ke9ns add
@@ -33137,6 +33276,21 @@ namespace Thetis
 
                 switch (e.KeyCode)
                 {
+                    // H1 (user 2026-10-05): Escape restores the normal UI from the full-screen
+                    // panafall. RX only - never reshuffle the window with RF on the air.
+                    case Keys.Escape:
+                        // H1: the collapsed state lives in TWO flags - collapsedDisplay (this fork's
+                        // menu/collapse path) and _iscollapsed (the persisted legacy flag). Guarding on
+                        // only the first is why Escape did nothing. Log both so it is never guesswork.
+                        H1SpacePttTrace("escape: collapsedDisplay=" + collapsedDisplay + " _iscollapsed=" + _iscollapsed
+                            + " _isexpanded=" + _isexpanded + " mox=" + MOX + " tuning=" + _tuning);
+                        if ((collapsedDisplay || _iscollapsed) && !MOX && !_tuning)
+                        {
+                            _h1FullScreenPanafall = false;
+                            ExpandDisplay(true);
+                            e.Handled = true;
+                        }
+                        break;
                     case Keys.Space:
                         {
                             if (chkPower.Checked)
@@ -33144,7 +33298,6 @@ namespace Thetis
                                 if (spacebar_ptt)
                                 {
                                     _current_ptt_mode = PTTMode.SPACE;
-                                    chkMOX.Checked = !chkMOX.Checked;
 
                                     //VACBypass
                                     if (!(ARP.IsBusy && BypassVACWhenPlayingWAV)) // dont change vac bypass if it being used by ARP
@@ -44873,6 +45026,8 @@ namespace Thetis
                 panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 913); // H1: the right vol/pan strip, right column bandSubRX2 pair
                 ShapeRX2MixerStrip();
                 H1LayoutV4(); // H1: layout v4 places everything last
+            H1FullScreenHideControls(); // H1: it just re-showed panels and captions - re-hide at once
+            H1WireMiddleClickOnce(); // H1: the full-screen gesture follows every display surface
                 H1TracePanelMoves("resize-out");
 
                 MeterManager.SetPositionOfDockedMeters();
@@ -49804,6 +49959,103 @@ namespace Thetis
         }
 
         private bool _modeDependentSettingsFormAutoClosedWhenExpanded = false; // used to bring it back if we go back to collapsed
+        // H1 (user 2026-10-05): the full-screen panafall - nothing on screen but the panafall, with
+        // the mouse fully working on it (drag tuning, click tuning, wheel). Confirmed by the user:
+        // "keep nothing - the panafall alone fills the screen", plus "mouse control should work".
+        //
+        // So the display is never touched - not hidden, not disabled, handlers left alone - and every
+        // OTHER control goes away. To come back correctly the normal view is captured first, because
+        // Expand has to restore the state the normal view actually had, not merely "everything on".
+        private bool _h1FullScreenPanafall = false;
+        private bool _h1FullScreenCaptured = false;
+        private Point _h1BtnHiddenHome = Point.Empty;
+        private bool _h1BtnHiddenMoved = false;
+        private readonly Dictionary<Control, bool> _h1FullScreenHidden = new Dictionary<Control, bool>();
+
+        private void H1FullScreenCapture()
+        {
+            if (_h1FullScreenCaptured) return;
+
+            // H1 (user 2026-10-05): Windows returns false from Control.Visible for EVERY control while
+            // an ancestor is hidden - before the form is first Shown that is the whole tree. A capture
+            // taken at startup therefore recorded "everything hidden", and the matching restore then
+            // HID the console: Escape appeared to do nothing while the window went blank. Only a shown
+            // console has a state worth remembering, so a capture attempted before that is skipped and
+            // the real one is taken when the user actually enters full-screen.
+            if (!this.Visible) return;
+
+            _h1FullScreenHidden.Clear();
+            H1CaptureVisible(this);
+            _h1FullScreenCaptured = true;
+        }
+
+        private void H1CaptureVisible(Control parent)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                _h1FullScreenHidden[c] = c.Visible;
+                H1CaptureVisible(c);
+            }
+        }
+
+        private void H1FullScreenHideControls()
+        {
+            // CRITICAL: only my full-screen mode may do this. The legacy collapsed view is a normal
+            // Thetis feature and is restored at startup - hiding everything for it left the console
+            // with no visible controls and no way to reach Power (reported as "can not power on").
+            if (!_h1FullScreenPanafall) return;
+
+            foreach (Control c in this.Controls)
+                if (c != null && c.Name != "panelDisplay") c.Hide();
+
+            // the display container's own chrome (pan/zoom/ZTB etc) - the user wants none of it
+            foreach (Control c in panelDisplay.Controls)
+                if (c != null && c.Name != "pnlDisplay") c.Hide();
+
+            // the panafall keeps its mouse: explicitly left visible, enabled and in front so drag
+            // tuning and click tuning survive the sweep
+            panelDisplay.Visible = true;
+            panelDisplay.Enabled = true;
+            pnlDisplay.Visible = true;
+            pnlDisplay.Enabled = true;
+            pnlDisplay.BringToFront();
+
+            // H1 (user 2026-10-05): the per-panafall control strip is part of the full-screen view
+            H1FsShow();
+
+            // H1 (user 2026-10-05): keep the focus sink reachable. Windows routes every key AND the
+            // mouse wheel to the FOCUSED control, and every recovery path in this console calls
+            // btnHidden.Focus(). The sweep hid btnHidden, so those calls silently failed: focus stayed
+            // on a control the sweep had just hidden, and with it went the space bar and the wheel -
+            // the wheel because Console_MouseWheel bails while a TextBoxTS/NumericUpDownTS holds focus.
+            // Off-screen but still VISIBLE keeps the sink focusable and out of sight.
+            if (btnHidden != null)
+            {
+                if (!_h1BtnHiddenMoved) { _h1BtnHiddenHome = btnHidden.Location; _h1BtnHiddenMoved = true; }
+                btnHidden.Location = new Point(-1000, -1000);
+                btnHidden.Visible = true;
+                btnHidden.Focus();
+            }
+        }
+
+        private void H1FullScreenRestoreControls()
+        {
+            foreach (KeyValuePair<Control, bool> kv in _h1FullScreenHidden)
+                if (kv.Key != null && !kv.Key.IsDisposed) kv.Key.Visible = kv.Value;
+            _h1FullScreenHidden.Clear();
+            _h1FullScreenCaptured = false;
+
+            // H1: the control strip belongs to the full-screen view only
+            H1FsHide();
+
+            // H1: the focus sink went off-screen for the full-screen view - put it back
+            if (btnHidden != null && _h1BtnHiddenMoved)
+            {
+                btnHidden.Location = _h1BtnHiddenHome;
+                _h1BtnHiddenMoved = false;
+            }
+        }
+
         private void ExpandDisplay(bool bSuspendDraw = true)
         {
             if (initializing) return;
@@ -50251,6 +50503,8 @@ namespace Thetis
             panelRX2Mixer.Location = new Point(this.ClientSize.Width - 404, 913); // H1: the right vol/pan strip, right column band
             ShapeRX2MixerStrip();
             H1LayoutV4(); // H1: layout v4 places everything last
+            H1FullScreenHideControls(); // H1: it just re-showed panels and captions - re-hide at once
+            H1WireMiddleClickOnce(); // H1: the full-screen gesture follows every display surface
             // H1: arm the RX2 sub channel from the restored SubRX2 volume and pan values
             ptbRX2SubGain_Scroll(this, EventArgs.Empty);
             ptbRX2SubPan_Scroll(this, EventArgs.Empty);
@@ -50317,7 +50571,8 @@ namespace Thetis
             if (bSuspendDraw) ResumeDrawing(this);
 
             this.Text = BasicTitleBar; //MW0LGE_21a moved here after expaned is true so that title text gets rebuild correctly
-        }
+                    H1FullScreenRestoreControls();   // H1: put the normal view back
+}
         private void setPAProfileLabelPos()
         {
             int x = -1;
@@ -50326,9 +50581,6 @@ namespace Thetis
             if (!_iscollapsed && _isexpanded)
             {
                 // use panelModeSpecificPhone even though might not be shown, it is still repositioned
-                // H1 round 4 (user 2026-10-02): the label rides the EQ button row itself -
-                // level with the three pills, its right edge 10 px left of RX EQ, so the row
-                // reads [PA Profile: ...] [RX EQ] [TX EQ] [TX FL] as one line
                 x = panelModeSpecificPhone.Left + 81 - 10 - lblPAProfile.Width;
                 y = panelModeSpecificPhone.Top + 121 + (23 - lblPAProfile.Height) / 2;
             }
@@ -50372,6 +50624,7 @@ namespace Thetis
         //
         public void CollapseDisplay(bool bSuspendDraw = true)
         {
+            H1FullScreenCapture();   // H1: remember the normal view first
             LegacyItemController.Update();
 
             if (bSuspendDraw) SuspendDrawing(this);
@@ -50874,7 +51127,8 @@ namespace Thetis
             setPAProfileLabelPos(); //[2.10.1.0] MW0LGE
 
             if (bSuspendDraw) ResumeDrawing(this);
-        }
+                    H1FullScreenHideControls();   // H1: and last, so the collapsed layout cannot re-show them
+}
 
 
         // relocate the controls on the collapsed display
@@ -51283,7 +51537,8 @@ namespace Thetis
                 radRX1Show.Location = new Point(radRX1Show.Location.X, -200);
                 radRX2Show.Location = new Point(radRX2Show.Location.X, -200);
             }
-        }
+                    H1FullScreenHideControls();   // H1: it just re-showed things; full-screen keeps only the display
+}
 
 
 
@@ -60583,6 +60838,17 @@ private void incrementMutliMeterDisplayModeRX2()
         private void pnlDisplay_MouseUp(object sender, MouseEventArgs e)
         {
             if (Display.PausedDisplay) return;
+
+            // H1 (user 2026-10-05): a right-click on the FREQUENCY RULER hands the whole screen to the
+            // panafall, and Escape brings the controls back. The display engine computes that strip
+            // internally and exposes no rectangle for it, so use its height and the top edge, where the
+            // ruler sits. Checked before anything else and returned from, so the existing right-click
+            // actions (click-tune and friends) never also fire on the ruler.
+            if (e.Button == MouseButtons.Right && e.Y >= 0 && e.Y <= H1RulerStripHeight)
+            {
+                H1ToggleFullScreenPanafall("frequency ruler right-click");
+                return;   // consumed either way - the right-click actions must not also fire on the ruler
+            }
 
             if (e.Button == MouseButtons.Left)
             {
