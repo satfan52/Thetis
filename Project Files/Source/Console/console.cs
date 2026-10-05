@@ -7425,13 +7425,28 @@ namespace Thetis
             // centre sy+39, and the 38 px AF unit lands its label at sy+20 and its track at
             // sy+36, squarely between the two slider rows.
             int sy = r1;                                      // H1: the slider columns ride up level with the cluster's top row (user 2026-10-02) - the whole band reads as one line
-            int mxR = bx + cw + 16;                           // Drive and Tune, right of the cluster
-            int mxAF = mxR + 84 + 16;                         // Master AF, right of the Tune slider (user 2026-10-02)
+            // H1 (user 2026-10-05, round 2): the MFJ998R block now takes the mirror position
+            // of the OM2000A+ block - bx+308, the same row - so Drive/Tune and Master AF
+            // shift right to follow it. mxR is the Drive/Tune column, mxAF follows below.
+            // H1 (user 2026-10-05, round 5): Drive/Tune and the MFJ998R block swap places, so
+            // the Drive/Tune column sits next to the cluster and the block is outermost -
+            // the mirror image of the left flank.
+            int mxR = bx + cw + 16;                           // Drive and Tune, next to the cluster
+            // H1 (user 2026-10-05, round 3): Master AF moves to the LEFT of the OM2000A+
+            // block - 16 px off its left edge, on the same row, mirroring the 16 px gutter
+            // the block keeps off the cluster on its right.
+            // H1 (user 2026-10-05, round 5): Master AF and the OM2000A+ block swap places, so
+            // the amp block is the outermost item on the left and the AF slider sits next to the
+            // cluster - the mirror image of the right flank.
+            int mxAF = bx - 100;                              // Master AF, between the OM2000A+ block and the cluster
             H1Cap("split", "VFO", sx, cY, 130);
             H1Cap("tx", "TRANSMIT", tx, cY, 336);
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
-            H1Put(lblAF, this, mxAF, sy + 20);
-            H1Put(ptbAF, this, mxAF, sy + 36, 84, 22);
+            // H1 (user 2026-10-05, round 4): Master AF sits on the OM2000A+ block's top row,
+            // which is also the PA Drive column's level - label on sy, slider on sy+16 - so the
+            // left flank mirrors the right one.
+            H1Put(lblAF, this, mxAF, sy);
+            H1Put(ptbAF, this, mxAF, sy + 16, 84, 22);
             H1Put(lblPWR, this, mxR, sy);
             H1Put(ptbPWR, this, mxR, sy + 16, 84, 22);
             foreach (Control mc in new Control[] { lblAF, ptbAF, lblPWR, ptbPWR }) if (mc != null) { mc.BackColor = Color.Transparent; mc.BringToFront(); } // H1: the display panel's empty bottom margin must not hide the value labels
@@ -7443,17 +7458,38 @@ namespace Thetis
             // and the Auto tune toggle sit on the two rows under the title, the activity
             // readout along the bottom. Shown only while the OM2000A+ link is enabled
             // (meter source or the stand-by option).
-            H1Cap("om2000a", "OM2000A+", bx - 240, sy, 224);
-            H1Put(h1AmpMode, this, bx - 240, sy + 18, 84, 22);
-            H1Put(h1AmpPower, this, bx - 148, sy + 18, 84, 22);
-            H1Put(h1AmpAutoTune, this, bx - 240, sy + 42, 84, 22);
-            H1Put(h1AmpStatus, this, bx - 148, sy + 46, 140, 14);
-            foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune })
+            // H1 (user 2026-10-05, round 5): the OM2000A+ block takes the outer left slot
+            // (bx-340, 224 px) and Master AF moves in between it and the cluster.
+            H1Cap("om2000a", "OM2000A+", bx - 340, sy, 224);
+            H1Put(h1AmpMode, this, bx - 340, sy + 18, 84, 22);
+            H1Put(h1AmpPower, this, bx - 248, sy + 18, 84, 22);
+            H1Put(h1AmpAutoTune, this, bx - 340, sy + 42, 84, 22);
+            H1Put(h1AmpStatus, this, bx - 248, sy + 46, 140, 14);
+            // H1 (user 2026-10-05, round 2): the MFJ998R block mirrors the OM2000A+ block -
+            // same row, the same 16 px gutter off the cluster, its own column on the right.
+            // 160 px is the widest that fits: a true 224 mirror plus both slider columns
+            // would run 57 px into the SUB RX2 caption at x1505. Shifting the sliders anyway
+            // puts Master AF at bx+584, directly under the Zoom slider (1370-1505).
+            // H1 (user 2026-10-05, round 5): the MFJ998R block takes the outer right slot.
+            H1Cap("mfj998r", "MFJ998R", bx + 408, sy, 160);
+            // H1 (user 2026-10-05): the pill takes the OM2000A+ pills' own size, so the two
+            // blocks read as one design; the block keeps its 160 px footprint.
+            H1Put(h1MfjPower, this, bx + 408, sy + 18,
+                  (h1AmpMode != null ? h1AmpMode.Width : 80), (h1AmpMode != null ? h1AmpMode.Height : 22));
+            H1Put(h1MfjStatus, this, bx + 408, sy + 46, 160, 14);   // the readout, under the pill
+            H1MfjButtonsVis();                                       // H1: honour the show/hide option
+            if (h1MfjStatus != null) h1MfjStatus.BringToFront();
+            if (h1MfjPower != null) h1MfjPower.BringToFront();
+            // H1 (user 2026-10-05): the MFJ998R pill takes the same stretched skin tile as
+            // the amp pills - without it the tile draws at its own size and the pill reads
+            // as bare text instead of the OM2000A+ pill design.
+            foreach (Control ac in new Control[] { h1AmpMode, h1AmpPower, h1AmpAutoTune, h1MfjPower })
                 if (ac != null)
                 {
                     if (ac.BackgroundImageLayout != ImageLayout.Stretch) ac.BackgroundImageLayout = ImageLayout.Stretch;
                     ac.BringToFront();
                 }
+            if (h1MfjStatus != null) h1MfjStatus.BringToFront();   // H1: the readout must not be covered by the display panel
             if (h1AmpStatus != null) h1AmpStatus.BringToFront();
             H1AmpButtonsVis();
             // H1: the Tune slider rides directly under the Drive slider and appears there only
@@ -50499,13 +50535,17 @@ namespace Thetis
                 panelDSP.Location = new Point(2, 760); // H1: RX1 DSP toggles, left column
 
             //[2.10.3.6]MW0LGE changed the above to cope with legacy control dynamic removal, now based off left of the ztb button
-            ptbDisplayZoom.Location = new Point(btnDisplayZTB.Left - tb_display_zoom_size_basis.Width - 4, tb_display_zoom_basis.Y + v_delta);
-            ptbDisplayZoom.Size = tb_display_zoom_size_basis;
+            // H1 (user 2026-10-05, round 2): the Zoom and Pan sliders show at half length, and
+            // the Zoom slider sits right up against ZTB (user requirement) instead of keeping
+            // its old left edge. Both sizes come from the basis captured at load and never
+            // write back to it, so a collapse/expand cycle cannot compound the halving.
+            ptbDisplayZoom.Size = new Size(tb_display_zoom_size_basis.Width / 2, tb_display_zoom_size_basis.Height);
+            ptbDisplayZoom.Location = new Point(btnDisplayZTB.Left - ptbDisplayZoom.Width - 4, tb_display_zoom_basis.Y + v_delta);
             lblDisplayZoom.Location = new Point(ptbDisplayZoom.Location.X - lbl_display_zoom_size_basis.Width, lbl_display_zoom_basis.Y + v_delta);
 
             lblDisplayPan.Location = new Point(lbl_displaypan_basis.X, lbl_displaypan_basis.Y + v_delta);
             ptbDisplayPan.Location = new Point(tb_displaypan_basis.X, tb_displaypan_basis.Y + v_delta);
-            ptbDisplayPan.Size = tb_displaypan_size_basis;
+            ptbDisplayPan.Size = new Size(tb_displaypan_size_basis.Width / 2, tb_displaypan_size_basis.Height);  // H1 (user 2026-10-05): half length
             btnDisplayPanCenter.Location = new Point(ptbDisplayPan.Location.X + ptbDisplayPan.Width + 4, ptbDisplayPan.Location.Y);
 
             // :NOTE: Force update on pan control
@@ -50687,14 +50727,21 @@ namespace Thetis
 }
         private void setPAProfileLabelPos()
         {
+            // H1 (user 2026-10-05): in the full-screen panafall this readout is clutter and must stay
+            // hidden - this method runs after the full-screen hide and would otherwise re-show it.
+            if (_h1FullScreenPanafall) { lblPAProfile.Visible = false; return; }
+
             int x = -1;
             int y = -1;
 
             if (!_iscollapsed && _isexpanded)
             {
                 // use panelModeSpecificPhone even though might not be shown, it is still repositioned
-                x = panelModeSpecificPhone.Left + 81 - 10 - lblPAProfile.Width;
-                y = panelModeSpecificPhone.Top + 121 + (23 - lblPAProfile.Height) / 2;
+                // H1 (user 2026-10-05, round 5): the label sits BELOW the three pills now,
+                // left-aligned with RX EQ, one clear row under them (pills are 23 px tall at
+                // panel y 121).
+                x = panelModeSpecificPhone.Left + 81;
+                y = panelModeSpecificPhone.Top + 121 + 23 + 4;
             }
             else if (_iscollapsed && !_isexpanded)
             {
@@ -51508,7 +51555,7 @@ namespace Thetis
 
             lblDisplayPan.Location = new Point(pnlDisplay.Location.X, top);
             ptbDisplayPan.Location = new Point(lblDisplayPan.Location.X + lblDisplayPan.Width, top);
-            ptbDisplayPan.Size = new Size(dynamicWidth / 2, tb_display_pan_size_basis.Height);
+            ptbDisplayPan.Size = new Size(dynamicWidth / 4, tb_display_pan_size_basis.Height);  // H1 (user 2026-10-05): half length
             btnDisplayPanCenter.Location = new Point(ptbDisplayPan.Location.X + ptbDisplayPan.Width, top);
 
             // :NOTE: Force update on pan control
@@ -51521,7 +51568,10 @@ namespace Thetis
 
             lblDisplayZoom.Location = new Point(comboDisplayMode.Location.X + comboDisplayMode.Width + 5, top);
             ptbDisplayZoom.Location = new Point(lblDisplayZoom.Location.X + lblDisplayZoom.Width, top);
-            ptbDisplayZoom.Size = new Size(btnDisplayZTB.Location.X - (lblDisplayZoom.Location.X + lblDisplayZoom.Size.Width), tb_display_zoom_size_basis.Height);
+            // H1 (user 2026-10-05): half length. The ZTB and 0.5x/1x/2x/4x buttons keep
+            // their own positions (user's choice), so the freed space shows as a gap
+            // between this slider and ZTB.
+            ptbDisplayZoom.Size = new Size(Math.Max(40, (btnDisplayZTB.Location.X - (lblDisplayZoom.Location.X + lblDisplayZoom.Size.Width)) / 2), tb_display_zoom_size_basis.Height);
 
             // :NOTE: Force update on zoom control
             Zoom = ptbDisplayZoom.Value;
