@@ -666,6 +666,49 @@ namespace Thetis
         private static int vfoa_sub_win_right = -1;
         public static int VFOASubWindowLeft { get { return vfoa_sub_win_left; } }
         public static int VFOASubWindowRight { get { return vfoa_sub_win_right; } }
+
+        // H1 (user 2026-10-05): the two MAIN receiver windows, the same contract the sub windows keep.
+        private static int vfoa_win_left = -1, vfoa_win_right = -1;
+        private static int vfob_win_left = -1, vfob_win_right = -1;
+        public static int VFOAWindowLeft { get { return vfoa_win_left; } }
+        public static int VFOAWindowRight { get { return vfoa_win_right; } }
+        public static int VFOBWindowLeft { get { return vfob_win_left; } }
+        public static int VFOBWindowRight { get { return vfob_win_right; } }
+
+        // H1 (user 2026-10-05): which of the four receivers is in the audio path and which one
+        // transmits, so the WINDOWS themselves show it - a window in the audio path draws solid,
+        // a silent one keeps its translucent fill, and the transmitting one wears a bright edge
+        // and a TX tag. Bit 0 = RX1, 1 = SubRX1, 2 = RX2, 3 = SubRX2.
+        private static int h1_rx_audio_mask = 0x0F;
+        private static int h1_rx_tx_mask = 0x01;
+        public static int H1RxAudioMask { get { return h1_rx_audio_mask; } set { h1_rx_audio_mask = value; } }
+        public static int H1RxTxMask { get { return h1_rx_tx_mask; } set { h1_rx_tx_mask = value; } }
+        private static bool H1RxAudible(int idx) { return ((h1_rx_audio_mask >> idx) & 1) != 0; }
+
+        // H1: one receiver's window. idx selects the receiver, normal is the translucent brush the
+        // window has always worn, solid the same colour at full opacity for a window in the audio path.
+        private static void H1DrawRxWindow(int idx, int left, int right, int W, int H, int rx, int top,
+            bool bottom, int nVerticalShift, bool bIsWaterfall,
+            SharpDX.Direct2D1.Brush normal, SharpDX.Direct2D1.Brush solid)
+        {
+            drawFilterOverlayDX2D(H1RxAudible(idx) ? solid : normal, left, right, W, H, rx, top, bottom, nVerticalShift);
+
+            if (((h1_rx_tx_mask >> idx) & 1) == 0) return;
+            if (right <= 0 || left >= W) return;
+
+            int l = Math.Max(0, left);
+            int r = Math.Min(W, right);
+            drawLineDX2D(m_bDX2_h1_tx_edge, l, nVerticalShift + top, l, nVerticalShift + top + H, 2);
+            drawLineDX2D(m_bDX2_h1_tx_edge, r, nVerticalShift + top, r, nVerticalShift + top + H, 2);
+
+            // the tag belongs on the panadapter only - the window spans both panes
+            if (!bIsWaterfall)
+            {
+                int tx = l + 2;
+                if (tx + 24 > W) tx = Math.Max(0, r - 24);
+                drawStringDX2D("TX", fontDX2d_font9, m_bDX2_h1_tx_edge, tx, nVerticalShift + top + 2);
+            }
+        }
         public static bool SubRX2Enabled
         {
             get { return sub_rx2_enabled; }
@@ -7887,6 +7930,8 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_data_line_pen_brush;
 
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush;
+        private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush_solid; // H1: a sub window in the audio path draws solid
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_tx_edge;               // H1: the TX window edge + tag
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_zero_line_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_filter_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_cw_zero_pen;
@@ -7909,6 +7954,7 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_bandstack_overlay_brush_highlight;
 
         private static SharpDX.Direct2D1.Brush m_bDX2_display_filter_brush;
+        private static SharpDX.Direct2D1.Brush m_bDX2_display_filter_brush_solid; // H1: a receive window in the audio path draws solid
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_filter_brush;
         private static SharpDX.Direct2D1.Brush m_bDX2_m_bTextCallOutActive;
         private static SharpDX.Direct2D1.Brush m_bDX2_m_bTextCallOutInactive;
@@ -8279,6 +8325,8 @@ namespace Thetis
             m_bDX2_bandstack_overlay_brush_highlight = null;
 
             m_bDX2_display_filter_brush = null;
+            m_bDX2_display_filter_brush_solid = null;
+            m_bDX2_h1_tx_edge = null;
             m_bDX2_tx_filter_brush = null;
             m_bDX2_m_bTextCallOutActive = null;
             m_bDX2_m_bTextCallOutInactive = null;
@@ -8307,6 +8355,7 @@ namespace Thetis
             m_bDX2_dhp2 = null;
 
             m_bDX2_sub_rx_filter_brush = null;
+            m_bDX2_sub_rx_filter_brush_solid = null;
             m_bDX2_sub_rx_zero_line_pen = null;
             m_bDX2_tx_filter_pen = null;
             m_bDX2_cw_zero_pen = null;
@@ -8369,6 +8418,7 @@ namespace Thetis
                 m_bDX2_bandstack_overlay_brush_highlight = convertBrush((SolidBrush)bandstack_overlay_brush_highlight);
 
                 m_bDX2_display_filter_brush = convertBrush((SolidBrush)display_filter_brush);
+                m_bDX2_display_filter_brush_solid = convertBrush(new SolidBrush(Color.FromArgb(255, display_filter_brush.Color)));
                 m_bDX2_tx_filter_brush = convertBrush((SolidBrush)tx_filter_brush);
                 m_bDX2_m_bTextCallOutActive = convertBrush((SolidBrush)m_bTextCallOutActive);
                 m_bDX2_m_bTextCallOutInactive = convertBrush((SolidBrush)m_bTextCallOutInactive);
@@ -8378,6 +8428,8 @@ namespace Thetis
                 m_bDX2_tx_vgrid_pen_inb = convertBrush((SolidBrush)tx_vgrid_pen_inb.Brush);
                 m_bDX2_band_edge_pen = convertBrush((SolidBrush)band_edge_pen.Brush);
                 m_bDX2_grid_pen_inb = convertBrush((SolidBrush)grid_pen_inb.Brush);
+
+                m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
                 m_bDX2_Yellow = getDXBrushForColour(Color.Yellow);
@@ -8396,6 +8448,7 @@ namespace Thetis
                 m_bDX2_dhp2 = getDXBrushForColour(Color.FromArgb(150, 255, 0, 0));
 
                 m_bDX2_sub_rx_filter_brush = convertBrush((SolidBrush)sub_rx_filter_brush);
+                m_bDX2_sub_rx_filter_brush_solid = convertBrush(new SolidBrush(Color.FromArgb(255, sub_rx_filter_color)));
                 m_bDX2_sub_rx_zero_line_pen = convertBrush((SolidBrush)sub_rx_zero_line_pen.Brush);
                 m_bDX2_tx_filter_pen = convertBrush((SolidBrush)tx_filter_pen.Brush);
                 m_bDX2_cw_zero_pen = convertBrush((SolidBrush)cw_zero_pen.Brush);
@@ -9091,7 +9144,8 @@ namespace Thetis
                     vfoa_sub_win_left = Math.Min(filter_left_x, filter_right_x);
                     vfoa_sub_win_right = Math.Max(filter_left_x, filter_right_x);
 
-                    drawFilterOverlayDX2D(m_bDX2_sub_rx_filter_brush, filter_left_x, filter_right_x, W, H, rx, top, bottom, nVerticalShift);
+                    H1DrawRxWindow(1, filter_left_x, filter_right_x, W, H, rx, top, bottom, nVerticalShift,
+                        bIsWaterfall, m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                 }
 
                 if ((bIsWaterfall && m_bShowRXZeroLineOnWaterfall) || !bIsWaterfall)
@@ -9122,8 +9176,8 @@ namespace Thetis
 
                     vfob_sub_win_left = Math.Min(sub2_left_x, sub2_right_x);
                     vfob_sub_win_right = Math.Max(sub2_left_x, sub2_right_x);
-
-                    drawFilterOverlayDX2D(m_bDX2_sub_rx_filter_brush, sub2_left_x, sub2_right_x, W, H, rx, top, bottom, nVerticalShift);
+                    H1DrawRxWindow(3, sub2_left_x, sub2_right_x, W, H, rx, top, bottom, nVerticalShift,
+                        bIsWaterfall, m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                 }
 
                 if ((bIsWaterfall && m_bShowRXZeroLineOnWaterfall) || !bIsWaterfall)
@@ -9142,7 +9196,22 @@ namespace Thetis
                     int filter_left_x = (int)((float)(filter_low - Low - f_diff) / width * W);
                     int filter_right_x = (int)((float)(filter_high - Low - f_diff) / width * W);
 
-                    drawFilterOverlayDX2D(m_bDX2_display_filter_brush, filter_left_x, filter_right_x, W, H, rx, top, bottom, nVerticalShift);
+                    // H1: record the drawn bounds of the main receiver window too, so the console's
+                    // hit test works on exactly what is on screen, then draw it per its place in
+                    // the audio path and the transmit choice.
+                    if (rx == 1)
+                    {
+                        vfoa_win_left = Math.Min(filter_left_x, filter_right_x);
+                        vfoa_win_right = Math.Max(filter_left_x, filter_right_x);
+                    }
+                    else
+                    {
+                        vfob_win_left = Math.Min(filter_left_x, filter_right_x);
+                        vfob_win_right = Math.Max(filter_left_x, filter_right_x);
+                    }
+
+                    H1DrawRxWindow(rx == 1 ? 0 : 2, filter_left_x, filter_right_x, W, H, rx, top, bottom, nVerticalShift,
+                        bIsWaterfall, m_bDX2_display_filter_brush, m_bDX2_display_filter_brush_solid);
 
                     if (!bIsWaterfall)
                     {

@@ -7644,6 +7644,18 @@ namespace Thetis
         private PrettyTrackBar ptbSubRX2Width, ptbSubRX2Shift, ptbSubRX2Gain;
         private CheckBoxTS chkSubRX1NR, chkSubRX1ANF, chkSubRX1NB2, chkSubRX1BIN, chkSubRX1MUT;
         private CheckBoxTS chkSubRX2NR, chkSubRX2ANF, chkSubRX2NB2, chkSubRX2BIN, chkSubRX2MUT;
+
+        // H1 (user 2026-10-05): the four listen pills of the full-screen panafall. One per receiver,
+        // lit while that receiver is audible, one click each, independent - any combination may be
+        // live. They drive the console's own mutes, so the pills and the normal-view MUT controls
+        // always agree. Mouse only: full screen has nothing else on screen to aim at.
+        private CheckBoxTS h1ListenRX1, h1ListenRX2, h1ListenS1, h1ListenS2;
+        private bool _h1ListenBuilt = false;
+        private bool _h1ListenSync = false;
+        private const int H1ListenPillW = 62;   // the stock pills are 45 wide; SUB1/SUB2 need the room
+        private const int H1ListenPillH = 24;
+        private const int H1ListenPillGap = 4;
+        private const int H1ListenMargin = 8;   // in from the display's right edge, and down from its top
         private CheckBoxTS chkVAC1MUT, chkVAC2MUT; // H1: the receiver mutes in the audio groups
         private CheckBoxTS chkSubRX1Follow, chkSubRX2Follow; // H1: make a sub take its parent's settings
         private bool _h1MutFromSlider = false; // H1: a muted volume slider, moved, hands its stream back
@@ -7772,6 +7784,20 @@ namespace Thetis
             H1FsBuild();  // H1: the full-screen per-panafall control strip
             pnlDisplay.SizeChanged += H1FsDisplayResized;
             panelDisplay.SizeChanged += H1FsDisplayResized;
+
+            // H1 (user 2026-10-05): the receiver WINDOWS carry the audio and transmit state now, so
+            // every gate that decides audibility and every transmit tick republishes it.
+            chkMUT.CheckedChanged += H1ListenMuteChanged;      // a stream mute gates its whole pair
+            chkRX2Mute.CheckedChanged += H1ListenMuteChanged;
+            if (chkVAC1MUT != null) chkVAC1MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkSubRX1MUT != null) chkSubRX1MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkVAC2MUT != null) chkVAC2MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkSubRX2MUT != null) chkSubRX2MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkVFOATX != null) chkVFOATX.CheckedChanged += H1ListenMuteChanged;
+            if (chkSubVFOATX != null) chkSubVFOATX.CheckedChanged += H1ListenMuteChanged;
+            if (chkVFOBTX != null) chkVFOBTX.CheckedChanged += H1ListenMuteChanged;
+            if (chkSubVFOBTX != null) chkSubVFOBTX.CheckedChanged += H1ListenMuteChanged;
+            H1RxWindowSync();
 
             UpdateSubGainReadout(1); UpdateSubGainReadout(2);
             UpdateSubFilterReadout(1); UpdateSubFilterReadout(2);
@@ -8323,6 +8349,202 @@ namespace Thetis
         private void H1FsDisplayResized(object sender, EventArgs e)
         {
             if (_h1FullScreenPanafall) H1FsLayout();
+        }
+
+        private void H1BuildListenPills()
+        {
+            if (_h1ListenBuilt) return;
+            _h1ListenBuilt = true;
+
+            h1ListenRX1 = H1NewListenPill("h1ListenRX1", "RX1");
+            h1ListenRX2 = H1NewListenPill("h1ListenRX2", "RX2");
+            h1ListenS1 = H1NewListenPill("h1ListenS1", "SUB1");
+            h1ListenS2 = H1NewListenPill("h1ListenS2", "SUB2");
+
+            h1ListenRX1.Click += H1ListenPill_Click;
+            h1ListenRX2.Click += H1ListenPill_Click;
+            h1ListenS1.Click += H1ListenPill_Click;
+            h1ListenS2.Click += H1ListenPill_Click;
+
+            // any of the four per-channel gates moved anywhere - the pills follow
+            if (chkVAC1MUT != null) chkVAC1MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkSubRX1MUT != null) chkSubRX1MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkVAC2MUT != null) chkVAC2MUT.CheckedChanged += H1ListenMuteChanged;
+            if (chkSubRX2MUT != null) chkSubRX2MUT.CheckedChanged += H1ListenMuteChanged;
+            chkMUT.CheckedChanged += H1ListenMuteChanged;      // the stream mutes gate both of a pair
+            chkRX2Mute.CheckedChanged += H1ListenMuteChanged;
+
+            // the corner must follow the display when it is resized (entering or leaving full screen)
+            pnlDisplay.SizeChanged += H1ListenDisplayResized;
+            panelDisplay.SizeChanged += H1ListenDisplayResized;
+
+            H1ListenPillsSync();
+        }
+
+        private void H1ListenDisplayResized(object sender, EventArgs e)
+        {
+            if (_h1FullScreenPanafall) H1ListenPillsLayout();
+        }
+
+        private CheckBoxTS H1NewListenPill(string name, string text)
+        {
+            CheckBoxTS c = NewSubPill(name, text);
+            c.Size = new Size(H1ListenPillW, H1ListenPillH);
+            c.Visible = false;                   // full screen only
+            c.TabStop = false;                   // never take the keyboard from the space PTT
+            Controls.Add(c);
+            return c;
+        }
+
+        // H1: everything the four pills act on, on one line - the mute flags the audio engine reads,
+        // the console mutes, and the four receiver output gains.
+        private string H1ListenAudioState()
+        {
+            return "muteRX1=" + Audio.MuteRX1 + " muteRX2=" + Audio.MuteRX2
+                + " chkMUT=" + chkMUT.Checked + " chkRX2Mute=" + chkRX2Mute.Checked
+                + " sub1=" + (chkSubRX1MUT == null ? "n/a" : chkSubRX1MUT.Checked.ToString())
+                + " sub2=" + (chkSubRX2MUT == null ? "n/a" : chkSubRX2MUT.Checked.ToString())
+                + " gains=" + radio.GetDSPRX(0, 0).RXOutputGain + "/" + radio.GetDSPRX(0, 1).RXOutputGain
+                + "/" + radio.GetDSPRX(1, 0).RXOutputGain + "/" + radio.GetDSPRX(1, 1).RXOutputGain;
+        }
+
+        private void H1ListenMuteChanged(object sender, EventArgs e)
+        {
+            // H1 (user 2026-10-05): the pills are gone; this keeps the receiver-window masks current
+            H1RxWindowSync();
+        }
+
+        private void H1ListenPill_Click(object sender, EventArgs e)
+        {
+            if (_h1ListenSync) return;
+            CheckBoxTS p = sender as CheckBoxTS;
+            if (p == null) return;
+
+            bool heard = p.Checked;               // a CheckBox flips itself first; read the new state
+            H1SpacePttTrace("listen click: " + p.Text + " heard=" + heard + " | " + H1ListenAudioState());
+            _h1ListenSync = true;
+            try
+            {
+                // H1: the pills gate ONE receiver each - its own DSP channel gain. The parent stream
+                // mute (chkMUT / chkRX2Mute) silences the whole pair, so switching a receiver ON also
+                // clears it; otherwise a receiver could be open while its stream is out of the mix,
+                // which is exactly what made the first build look dead.
+                if (p == h1ListenRX1)
+                {
+                    if (chkVAC1MUT != null) chkVAC1MUT.Checked = !heard;
+                    if (heard) chkMUT.Checked = false;
+                }
+                else if (p == h1ListenRX2)
+                {
+                    if (chkVAC2MUT != null) chkVAC2MUT.Checked = !heard;
+                    if (heard) chkRX2Mute.Checked = false;
+                }
+                else if (p == h1ListenS1)
+                {
+                    if (chkSubRX1MUT != null) chkSubRX1MUT.Checked = !heard;
+                    if (heard) chkMUT.Checked = false;
+                }
+                else if (p == h1ListenS2)
+                {
+                    if (chkSubRX2MUT != null) chkSubRX2MUT.Checked = !heard;
+                    if (heard) chkRX2Mute.Checked = false;
+                }
+            }
+            finally { _h1ListenSync = false; }
+
+            H1SpacePttTrace("listen after: " + p.Text + " | " + H1ListenAudioState());
+
+            // hand the keyboard back - full screen routes keys and the wheel through the focus
+            if (btnHidden != null) btnHidden.Focus();
+
+            H1ListenPillsSync();
+        }
+
+        // H1: mirror the four mutes onto the pills. Lit means audible, so the pills show the
+        // INVERSE of the mute. A receiver that is switched off is dimmed and does nothing.
+        private void H1ListenPillsSync()
+        {
+            if (!_h1ListenBuilt || _h1ListenSync) return;
+            _h1ListenSync = true;
+            try
+            {
+                // a receiver is audible only when its own gate is open AND its stream is in the mix
+                H1ListenPillState(h1ListenRX1,
+                    !chkMUT.Checked && (chkVAC1MUT == null || !chkVAC1MUT.Checked), true);
+                H1ListenPillState(h1ListenRX2,
+                    !chkRX2Mute.Checked && rx2_enabled && (chkVAC2MUT == null || !chkVAC2MUT.Checked),
+                    rx2_enabled);
+                H1ListenPillState(h1ListenS1,
+                    !chkMUT.Checked && chkSubRX1MUT != null && !chkSubRX1MUT.Checked,
+                    chkEnableMultiRX.Checked);
+                H1ListenPillState(h1ListenS2,
+                    !chkRX2Mute.Checked && chkSubRX2MUT != null && !chkSubRX2MUT.Checked,
+                    rx2_enabled && chkEnableMultiRX2.Checked);
+            }
+            finally { _h1ListenSync = false; }
+        }
+
+        private void H1ListenPillState(CheckBoxTS p, bool heard, bool available)
+        {
+            if (p == null) return;
+            if (p.Checked != heard)
+            {
+                p.Checked = heard;
+                H1SpacePttTrace("listen pill " + p.Text + " -> " + (heard ? "ON" : "OFF"));
+            }
+            p.Enabled = available;
+
+            // on a dark blue panafall green reads as live at a glance, grey as silent
+            Color back = !available ? Color.FromArgb(28, 28, 28)
+                       : heard ? Color.FromArgb(0, 150, 60)
+                       : Color.FromArgb(48, 48, 48);
+            Color fore = !available ? Color.FromArgb(90, 90, 90)
+                       : heard ? Color.White
+                       : Color.FromArgb(165, 165, 165);
+
+            if (p.BackColor != back) p.BackColor = back;
+            if (p.ForeColor != fore) p.ForeColor = fore;
+            p.FlatAppearance.CheckedBackColor = back;   // the checked paint must not overrule it
+            p.FlatAppearance.MouseOverBackColor = back;
+            p.FlatAppearance.MouseDownBackColor = back;
+        }
+
+        // H1: the pills sit in the top-right corner of the panafall. Computed from the display's own
+        // rectangle each time they are shown, so they stay in the corner at any display size.
+        private void H1ListenPillsLayout()
+        {
+            if (!_h1ListenBuilt) return;
+
+            // H1 (user 2026-10-05): each panafall carries its OWN pair - RX1 + SUB1 on the first,
+            // RX2 + SUB2 on the second. The RX2 panafall is the lower half of the display, so the
+            // second pair sits a further half-height down.
+            int left = panelDisplay.Left + pnlDisplay.Left;
+            int top = panelDisplay.Top + pnlDisplay.Top + H1ListenMargin;
+            int pairW = 2 * H1ListenPillW + H1ListenPillGap;
+            int x = left + pnlDisplay.Width - H1ListenMargin - pairW;
+            int y2 = top + pnlDisplay.Height / 2;
+            int pitch = H1ListenPillW + H1ListenPillGap;
+
+            h1ListenRX1.Location = new Point(x, top);
+            h1ListenS1.Location = new Point(x + pitch, top);
+            h1ListenRX2.Location = new Point(x, y2);
+            h1ListenS2.Location = new Point(x + pitch, y2);
+
+            // the second pair belongs to RX2's panafall - nothing to show while RX2 is off
+            h1ListenRX2.Visible = h1ListenS2.Visible = rx2_enabled && _h1FullScreenPanafall;
+        }
+
+        private void H1ShowListenPills()
+        {
+            if (!_h1ListenBuilt) return;
+            H1ListenPillsSync();
+            foreach (Control p in new Control[] { h1ListenRX1, h1ListenRX2, h1ListenS1, h1ListenS2 })
+            {
+                if (p == null) continue;
+                p.Visible = true;
+                p.BringToFront();
+            }
+            H1ListenPillsLayout();   // last: it decides whether RX2's pair shows at all
         }
 
         // H1: the twin of the RX1 filter panel's Reset button
@@ -26317,6 +26539,184 @@ namespace Thetis
         }
 
         private bool spacebar_ptt = true;
+        // H1: one receiver's audio on or off. These are the four per-channel gates, the same ones
+        // the audio groups' MUT pills drive - and switching one ON also clears its parent's stream
+        // mute, or the receiver would be open while its stream is out of the mix.
+        private void H1ToggleRxAudio(int win)
+        {
+            _h1ListenSync = true;
+            try
+            {
+                switch (win)
+                {
+                    case 0:
+                        if (chkVAC1MUT != null)
+                        {
+                            chkVAC1MUT.Checked = !chkVAC1MUT.Checked;
+                            if (!chkVAC1MUT.Checked) chkMUT.Checked = false;
+                        }
+                        break;
+                    case 1:
+                        if (chkSubRX1MUT != null)
+                        {
+                            chkSubRX1MUT.Checked = !chkSubRX1MUT.Checked;
+                            if (!chkSubRX1MUT.Checked) chkMUT.Checked = false;
+                        }
+                        break;
+                    case 2:
+                        if (chkVAC2MUT != null)
+                        {
+                            chkVAC2MUT.Checked = !chkVAC2MUT.Checked;
+                            if (!chkVAC2MUT.Checked) chkRX2Mute.Checked = false;
+                        }
+                        break;
+                    case 3:
+                        if (chkSubRX2MUT != null)
+                        {
+                            chkSubRX2MUT.Checked = !chkSubRX2MUT.Checked;
+                            if (!chkSubRX2MUT.Checked) chkRX2Mute.Checked = false;
+                        }
+                        break;
+                }
+            }
+            finally { _h1ListenSync = false; }
+
+            H1RxWindowSync();
+            H1SpacePttTrace("window click: receiver " + win + " -> " + H1ListenAudioState());
+        }
+
+        // H1: make one receiver the transmit source. The console keeps one tick armed at a time,
+        // so setting one hands the transmit to that VFO.
+        //
+        // H1 (user 2026-10-05): choosing the transmit source must not touch the AUDIO. The tick
+        // handlers do their own work on the way - they move volume sliders, re-arm VAC gains, and
+        // the sub volume sliders bring their stream back when they move - so a transmit click was
+        // switching receivers on. The six audio flags are captured here and put back afterwards, so
+        // the gesture only ever moves the transmit tick.
+        private void H1SetTxWindow(int win)
+        {
+            bool gateRx1 = chkVAC1MUT != null && chkVAC1MUT.Checked;
+            bool gateSub1 = chkSubRX1MUT != null && chkSubRX1MUT.Checked;
+            bool gateRx2 = chkVAC2MUT != null && chkVAC2MUT.Checked;
+            bool gateSub2 = chkSubRX2MUT != null && chkSubRX2MUT.Checked;
+            bool streamRx1 = chkMUT.Checked;
+            bool streamRx2 = chkRX2Mute.Checked;
+
+            // H1: the four volumes the gates work through are part of the audio state. A tick handler
+            // can move a slider without the gate ever changing, so restoring the gates alone leaves
+            // the receiver louder or dead. Capture the volumes too.
+            int volRx1 = ptbRX0Gain == null ? -1 : ptbRX0Gain.Value;
+            int volSub1 = ptbRX1Gain == null ? -1 : ptbRX1Gain.Value;
+            int volRx2 = ptbRX2Gain == null ? -1 : ptbRX2Gain.Value;
+            int volSub2 = ptbRX2SubGain == null ? -1 : ptbRX2SubGain.Value;
+
+            _h1ListenSync = true;
+            try
+            {
+                switch (win)
+                {
+                    case 0: if (chkVFOATX != null) chkVFOATX.Checked = true; break;
+                    case 1: if (chkSubVFOATX != null) chkSubVFOATX.Checked = true; break;
+                    case 2: if (chkVFOBTX != null) chkVFOBTX.Checked = true; break;
+                    case 3: if (chkSubVFOBTX != null) chkSubVFOBTX.Checked = true; break;
+                }
+            }
+            finally { _h1ListenSync = false; }
+
+            // H1 (user 2026-10-05): a shift-click on RX1/RX2 is heard as a ~50 ms burst that the subs
+            // never make. The stock VFO A / VFO B tick handlers do work the sub ticks do not - they
+            // switch the transmit VAC channel, re-run updateVFOFreqs, and set FullDuplex and the
+            // transmit DSP mode. This records that state in the moment between the tick moving and
+            // the audio being put back, so the burst can be named instead of guessed at.
+            H1SpacePttTrace("window shift-click mid: duplex=" + chkFullDuplex.Checked
+                + " rx2AutoMuteTX=" + Audio.RX2AutoMuteTX + " txMode=" + Audio.TXDSPMode
+                + " mon=" + chkMON.Checked + " | " + H1ListenAudioState());
+
+            // put the audio back exactly as the gesture found it
+            _h1ListenSync = true;
+            try
+            {
+                if (chkVAC1MUT != null && chkVAC1MUT.Checked != gateRx1) chkVAC1MUT.Checked = gateRx1;
+                if (chkSubRX1MUT != null && chkSubRX1MUT.Checked != gateSub1) chkSubRX1MUT.Checked = gateSub1;
+                if (chkVAC2MUT != null && chkVAC2MUT.Checked != gateRx2) chkVAC2MUT.Checked = gateRx2;
+                if (chkSubRX2MUT != null && chkSubRX2MUT.Checked != gateSub2) chkSubRX2MUT.Checked = gateSub2;
+                if (chkMUT.Checked != streamRx1) chkMUT.Checked = streamRx1;
+                if (chkRX2Mute.Checked != streamRx2) chkRX2Mute.Checked = streamRx2;
+
+                if (volRx1 >= 0 && ptbRX0Gain.Value != volRx1) ptbRX0Gain.Value = volRx1;
+                if (volSub1 >= 0 && ptbRX1Gain.Value != volSub1) ptbRX1Gain.Value = volSub1;
+                if (volRx2 >= 0 && ptbRX2Gain.Value != volRx2) ptbRX2Gain.Value = volRx2;
+                if (volSub2 >= 0 && ptbRX2SubGain.Value != volSub2) ptbRX2SubGain.Value = volSub2;
+            }
+            finally { _h1ListenSync = false; }
+
+            // H1: and re-apply the four channel gains from the restored state. The tick handlers
+            // write these gains directly; where the gate never moved, that write is still in effect.
+            H1ApplyRxChannelGains();
+
+            H1RxWindowSync();
+            H1SpacePttTrace("window shift-click: TX source -> receiver " + win
+                + " | ticks A=" + chkVFOATX.Checked + " SubA=" + chkSubVFOATX.Checked
+                + " B=" + chkVFOBTX.Checked + " SubB=" + chkSubVFOBTX.Checked
+                + " split=" + chkVFOSplit.Checked + " mask=" + Display.H1RxTxMask
+                + " | gates A=" + (chkVAC1MUT != null && chkVAC1MUT.Checked)
+                + " SubA=" + (chkSubRX1MUT != null && chkSubRX1MUT.Checked)
+                + " B=" + (chkVAC2MUT != null && chkVAC2MUT.Checked)
+                + " SubB=" + (chkSubRX2MUT != null && chkSubRX2MUT.Checked)
+                + " | stream=" + chkMUT.Checked + "/" + chkRX2Mute.Checked
+                + " | was=" + gateRx1 + gateSub1 + gateRx2 + gateSub2 + "/" + streamRx1 + streamRx2
+                + " | vol=" + volRx1 + "/" + volSub1 + "/" + volRx2 + "/" + volSub2
+                + " | " + H1ListenAudioState()
+                + " | duplex=" + chkFullDuplex.Checked + " rx2AutoMuteTX=" + Audio.RX2AutoMuteTX
+                + " txMode=" + Audio.TXDSPMode + " mon=" + chkMON.Checked);
+        }
+
+        // H1: apply the four receiver channel gains from the gates and the volumes they work through,
+        // exactly as the mute handlers do. Called after a transmit-source change so the audio the
+        // gesture found is still the audio it leaves.
+        private void H1ApplyRxChannelGains()
+        {
+            if (ptbRX0Gain != null && chkVAC1MUT != null)
+                radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
+            if (ptbRX1Gain != null && chkSubRX1MUT != null)
+                radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+            if (ptbRX2Gain != null && chkVAC2MUT != null)
+                radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
+            if (ptbRX2SubGain != null && chkSubRX2MUT != null)
+                radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+        }
+
+        // H1: publish the audio and transmit state to the display, which paints the windows with it.
+        private void H1RxWindowSync()
+        {
+            int audio = 0;
+            if (chkVAC1MUT != null && !chkVAC1MUT.Checked && !chkMUT.Checked) audio |= 1;
+            if (chkSubRX1MUT != null && !chkSubRX1MUT.Checked && !chkMUT.Checked) audio |= 2;
+            if (rx2_enabled && chkVAC2MUT != null && !chkVAC2MUT.Checked && !chkRX2Mute.Checked) audio |= 4;
+            if (rx2_enabled && chkSubRX2MUT != null && !chkSubRX2MUT.Checked && !chkRX2Mute.Checked) audio |= 8;
+
+            int tx = 0;
+            if (chkVFOATX != null && chkVFOATX.Checked) tx |= 1;
+            if (chkSubVFOATX != null && chkSubVFOATX.Checked) tx |= 2;
+            if (chkVFOBTX != null && chkVFOBTX.Checked) tx |= 4;
+            if (chkSubVFOBTX != null && chkSubVFOBTX.Checked) tx |= 8;
+
+            Display.H1RxAudioMask = audio;
+            Display.H1RxTxMask = tx;
+        }
+
+        // H1 (user 2026-10-05): one diagnostic line per space press. The option is enabled in this
+        // station's options yet the key did nothing, and reading the code cannot say which branch it
+        // took - this does. Goes to C:\Thetis\space_ptt.log.
+        private void H1SpacePttTrace(string line)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(@"C:\Thetis\space_ptt.log",
+                    "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] " + line + Environment.NewLine);
+            }
+            catch { }
+        }
         public bool SpaceBarPTT
         {
             get { return spacebar_ptt; }
