@@ -501,6 +501,46 @@ namespace Thetis
         {
             get { return _high_freq; }
         }
+        // H1 (diagnosis 2026-10-05): copy every setting from another spec (the receiver's live one).
+        // Field-level copies, so no setter cascade fires; the caller runs initAnalyzer afterwards.
+        public void CopySettingsFrom(SpecHPSDR src)
+        {
+            if (src == null || src == this) return;
+            update = src.update;
+            spur_eliminationtion_ffts = src.spur_eliminationtion_ffts;
+            data_type = src.data_type;
+            fft_size = src.fft_size;
+            blocksize = src.blocksize;
+            window_type = src.window_type;
+            kaiser_pi = src.kaiser_pi;
+            overlap = src.overlap;
+            clip = src.clip;
+            span_clip_l = src.span_clip_l;
+            span_clip_h = src.span_clip_h;
+            pixels = src.pixels;
+            stitches = src.stitches;
+            calibration_data_set = src.calibration_data_set;
+            span_min_freq = src.span_min_freq;
+            span_max_freq = src.span_max_freq;
+            average_on = src.average_on;
+            peak_on = src.peak_on;
+            det_type_pan = src.det_type_pan;
+            det_type_wf = src.det_type_wf;
+            norm_oneHz_pan = src.norm_oneHz_pan;
+            frame_rate = src.frame_rate;
+            tau = src.tau;
+            tau_wf = src.tau_wf;
+            av_mode = src.av_mode;
+            av_mode_wf = src.av_mode_wf;
+            z_slider = src.z_slider;
+            pan_slider = src.pan_slider;
+            sample_rate = src.sample_rate;
+            nb_on = src.nb_on;
+            nb2_on = src.nb2_on;
+            _pixel_out = src._pixel_out;
+            max_w = src.max_w;
+        }
+
         public void initAnalyzer()
         {
             //no spur elimination => only one spur_elim_fft and it's spectrum is not flipped

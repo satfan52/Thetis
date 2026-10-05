@@ -8360,13 +8360,12 @@ namespace Thetis
                         SpecHPSDR ref0 = specRX.GetSpecRX(0);
                         if (sp != null && ref0 != null)
                         {
+                            // H1 (diagnosis 2026-10-05): a spare built from constructor defaults left
+                            // fields like z_slider, pan_slider and max_w at zero and its analyser never
+                            // produced pixels - GetPixels stayed at flag 0 forever. Clone EVERY setting
+                            // of the receiver's spec instead, then reconfigure the analyser.
+                            sp.CopySettingsFrom(ref0);
                             sp.IgnoreFrequencyOffset = true;   // must never clobber the TX display vars or the network offsets
-                            sp.SampleRate = ref0.SampleRate;
-                            sp.FFTSize = ref0.FFTSize;
-                            sp.FrameRate = ref0.FrameRate;
-                            sp.WindowType = ref0.WindowType;
-                            sp.Pixels = ref0.Pixels;
-                            sp.Update = true;   // H1: track later property sets (a resize, another rate) like RX1's spec
                             sp.initAnalyzer();
                         }
                     }
