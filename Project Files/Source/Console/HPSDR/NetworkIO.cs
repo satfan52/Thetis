@@ -158,6 +158,16 @@ namespace Thetis
                 BetaVersion = ri.BetaVersion;
                 Protocol2VersionSupported = ri.Protocol2Supported;
                 NumReceivers = ri.NumRxs > 0 ? ri.NumRxs : (HardwareSpecific.Model == HPSDRModel.REDPITAYA ? (ri.CodeVersion == 32 ? 5 : 8) : 5);
+                // H1 (diagnosis 2026-10-05): what the radio actually reported - the eight-row view needs
+                // to know whether "8 receivers" is the radio's own answer or the model fallback
+                try
+                {
+                    System.IO.File.AppendAllText(@"C:\Thetis\space_ptt.log",
+                        "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] radio info: protocol=" + (protocol == 0 ? "P1" : "P2")
+                        + " NumRxs=" + ri.NumRxs + " CodeVersion=" + ri.CodeVersion + " Beta=" + ri.BetaVersion
+                        + " P2Supported=" + ri.Protocol2Supported + " DeviceType=" + ri.DeviceType + Environment.NewLine);
+                }
+                catch { }
 
                 //[2.10.3.9]MW0LGE added board check, issue icon shown in setup
                 bool board_is_expected_for_model;

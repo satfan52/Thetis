@@ -5260,6 +5260,7 @@ namespace Thetis
                         this.WindowState = FormWindowState.Normal;
                         break;
                 }
+                H1StartupStartSnapshots();
             }
 
             return;
@@ -8333,6 +8334,79 @@ namespace Thetis
         }
 
         // ---- placement and visibility -----------------------------------------------------
+        // H1 (user 2026-10-06): the eight-row full-screen panafall. The full-screen view shows all eight
+        // DDCs as equal rows. Rows 1-2 are RX1 and RX2; the other six are the spare DDC streams (2..7),
+        // straight from the eight-receiver router this station already runs. Each spare gets its analyzer
+        // configured and running, its pan feed turned on, and is tuned to RX1's centre - the design's
+        // "DDCs 3-8 initialise from RX1's slice".
+        // The DDC each stream is fed by (HPSDR eight-receiver router, satfan52 mapping): stream 0=DDC0
+        // (RX1), stream 1=DDC3 (RX2), stream 2=DDC1, stream 3=DDC2, streams 4..7=DDC4..DDC7.
+        private static readonly int[] H1StreamToDdc = new int[8] { 0, 3, 1, 2, 4, 5, 6, 7 };
+        private static DateTime _h1flagsTraceLast = DateTime.MinValue;
+
+        private void H1EightRowsEnter()
+        {
+            try
+            {
+                double centre = Display.CentreFreqRX1;
+                for (int s = 2; s < 8; s++)
+                {
+                    try { NetworkIO.VFOfreq(H1StreamToDdc[s], centre, 0); } catch (Exception ex1) { H1SpacePttTrace("eight-row setup: VFO for stream " + s + " failed: " + ex1.Message); }
+                    Display.H1RowCentreMHz[s] = centre;
+                    try { cmaster.SetRunPanadapter(s, true); } catch (Exception ex2) { H1SpacePttTrace("eight-row setup: run-pan for stream " + s + " failed: " + ex2.Message); }
+                    try
+                    {
+                        SpecHPSDR sp = specRX.GetSpecRX(s);
+                        SpecHPSDR ref0 = specRX.GetSpecRX(0);
+                        if (sp != null && ref0 != null)
+                        {
+                            sp.IgnoreFrequencyOffset = true;   // must never clobber the TX display vars or the network offsets
+                            sp.SampleRate = ref0.SampleRate;
+                            sp.FFTSize = ref0.FFTSize;
+                            sp.FrameRate = ref0.FrameRate;
+                            sp.WindowType = ref0.WindowType;
+                            sp.Pixels = ref0.Pixels;
+                            sp.Update = true;   // H1: track later property sets (a resize, another rate) like RX1's spec
+                            sp.initAnalyzer();
+                        }
+                    }
+                    catch (Exception ex3) { H1SpacePttTrace("eight-row setup: analyser for stream " + s + " failed: " + ex3.Message); }
+                }
+                try { UpdateDDCs(Display.RX2Enabled); } catch (Exception exd) { H1SpacePttTrace("eight-row setup: UpdateDDCs failed: " + exd.Message); }
+                Display.H1EightRows = true;
+                H1SpacePttTrace("eight-row panafall: six spare DDC streams up, spares at " + centre.ToString("f6") + " MHz");
+            }
+            catch { }
+        }
+
+        private void H1EightRowsExit()
+        {
+            try
+            {
+                Display.H1EightRows = false;
+                Display.H1EightRowCleanup();
+                for (int s = 2; s < 8; s++)
+                {
+                    try { cmaster.SetRunPanadapter(s, false); } catch { }
+
+                }
+                H1SpacePttTrace("eight-row panafall: spare DDC streams down");
+            }
+            catch { }
+        }
+
+        // H1: while the eight-row view is up the spares ride RX1's centre - UpdateRX1DDSFreq calls this
+        // with the new DDS frequency on every RX1 tune.
+        private void H1EightRowsFollowRX1(double mhz)
+        {
+            if (!Display.H1EightRows) return;
+            for (int s = 2; s < 8; s++)
+            {
+                try { NetworkIO.VFOfreq(H1StreamToDdc[s], mhz, 0); } catch { }
+                Display.H1RowCentreMHz[s] = mhz;
+            }
+        }
+
         private void H1FsLayout()
         {
             if (!_h1fsBuilt) return;
@@ -8340,7 +8414,9 @@ namespace Thetis
             int left = panelDisplay.Left + pnlDisplay.Left;
             int top = panelDisplay.Top + pnlDisplay.Top + H1ListenMargin;
             int x = left + pnlDisplay.Width - H1ListenMargin - H1FsW;
-            int y2 = top + pnlDisplay.Height / 2;
+            // H1 (user report 2026-10-05): with the eight rows up, RX2's strip rides on RX2's own
+            // row (row 2); the half-way anchor belongs to the old two-panafall view
+            int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2);
 
             H1FsPlace(h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
             H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
@@ -8396,6 +8472,7 @@ namespace Thetis
         {
             if (_h1FullScreenPanafall) H1FsLayout();
         }
+
 
         private void H1BuildListenPills()
         {
@@ -19533,6 +19610,7 @@ namespace Thetis
                     break;
             }
 
+            H1EightRowsFollowRX1(rx1_dds_freq_mhz);   // H1: the eight-row spares follow RX1 while the view is up
         }
 
         double rx2_dds_freq_mhz;
@@ -26853,12 +26931,14 @@ namespace Thetis
             if (collapsedDisplay || _iscollapsed)
             {
                 _h1FullScreenPanafall = false;
+                H1EightRowsExit();                       // H1: the eight-row view ends with the mode
                 ExpandDisplay(true);
             }
             else
             {
                 // set BEFORE collapsing: CollapseDisplay runs the hide, which is gated on this flag
                 _h1FullScreenPanafall = true;
+                H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
                 CollapseDisplay(true);
             }
             H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
@@ -30391,6 +30471,69 @@ namespace Thetis
 
                         if (!_pause_DisplayThread) // skip any of this
                         {
+                            // H1 (user 2026-10-06): the eight-row full-screen view fetches all eight DDC
+                            // streams every pass - rows 1-2 into the RX1/RX2 buffers, rows 3-8 into the row
+                            // buffers. The regular per-mode fetches below are skipped entirely in this mode.
+                            if (Display.H1EightRows)
+                            {
+                                string h1diag = "";
+                                for (int h1r = 0; h1r < 8; h1r++)
+                                {
+                                    float[] dNew, wNew, dCur, wCur;
+                                    if (h1r == 0)
+                                    {
+                                        dNew = Display.new_display_data; wNew = Display.new_waterfall_data;
+                                        dCur = Display.current_display_data; wCur = Display.current_waterfall_data;
+                                    }
+                                    else if (h1r == 1)
+                                    {
+                                        dNew = Display.new_display_data_bottom; wNew = Display.new_waterfall_data_bottom;
+                                        dCur = Display.current_display_data_bottom; wCur = Display.current_waterfall_data_bottom;
+                                    }
+                                    else
+                                    {
+                                        dNew = Display.h1row_display_data[h1r - 2]; wNew = Display.h1row_waterfall_data[h1r - 2];
+                                        dCur = Display.h1row_current_display_data[h1r - 2]; wCur = Display.h1row_current_waterfall_data[h1r - 2];
+                                    }
+                                    if (dNew == null || wNew == null) continue;
+
+                                    int h1f1 = -1;
+                                    fixed (float* ptr = &dNew[0])
+                                        SpecHPSDRDLL.GetPixels(h1r, 0, ptr, ref h1f1);
+                                    if (h1f1 == 1 && dCur != null) Array.Copy(dNew, dCur, dNew.Length);
+
+                                    int h1f2 = -1;
+                                    double h1ref;
+                                    fixed (float* ptr = &wNew[0])
+                                        SpecHPSDRDLL.GetPixels(h1r, 1, ptr, ref h1f2, out h1ref);
+                                    if (h1f2 == 1)
+                                    {
+                                        if (wCur != null) Array.Copy(wNew, wCur, wNew.Length);
+                                        Display.h1row_wf_fresh[h1r] = true;
+                                    }
+                                    h1diag += " r" + h1r + "=" + h1f1 + "/" + h1f2;
+                                }
+
+                                // H1: a plain three-second breadcrumb of what each row's fetches reported,
+                                // so an empty row can be told apart from an unfed one
+                                if ((DateTime.UtcNow - _h1flagsTraceLast).TotalSeconds > 3)
+                                {
+                                    _h1flagsTraceLast = DateTime.UtcNow;
+                                    H1SpacePttTrace("h1 flags" + h1diag);
+                                }
+
+                                // refetch every pass, and no pixel-issue marker in this mode
+                                Display.DataReady = false;
+                                Display.WaterfallDataReady = false;
+                                Display.DataReadyBottom = false;
+                                Display.WaterfallDataReadyBottom = false;
+                                Display.GetPixelsIssueRX1 = false;
+                                Display.GetPixelsIssueRX2 = false;
+                                bGetPixelIssue = false;
+                                bGetPixelIssueBottom = false;
+                            }
+                            else
+                            {
                             if ((!Display.DataReady || !Display.WaterfallDataReady) &&
                                 Display.CurrentDisplayMode != DisplayMode.OFF)
                             {
@@ -30612,6 +30755,7 @@ namespace Thetis
                                 }
 
                                 bGetPixelIssueBottom = !bDataReady && !bWaterfallDataReady;
+                            }
                             }
                         }
 
@@ -45023,6 +45167,26 @@ namespace Thetis
             panelModeSpecificFM.Location = h1;
             H1TracePanelMoves("msp-exit");
         }
+        // H1 (user 2026-10-03): startup trace - one line per layout/state event so a launch
+            }
+            catch { }
+        }
+        private void H1StartupStartSnapshots()
+        {
+            try
+            {
+                System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+                t.Interval = 10000;
+                int n = 0;
+                t.Tick += (s, e) =>
+                {
+                    n++;
+                    if (n >= 3) t.Stop();
+                };
+                t.Start();
+            }
+            catch { }
+        }
         private void ResizeConsole(int h_delta, int v_delta)
         {
             // MW0LGE changes made to this function so that RX1 meter fills space to right of VFOB box, also delay repaint until all controls moved
@@ -50530,6 +50694,7 @@ namespace Thetis
                 panelDisplay.Size = new Size(this.ClientSize.Width - gr_display_basis.X - 8, gr_display_size_basis.Height + v_delta);
             else
                 panelDisplay.Size = new Size(gr_display_size_basis.Width + h_delta, gr_display_size_basis.Height + v_delta);
+
 
             panelDisplay2.Location = new Point(gr_display2_basis.X + (h_delta / 2), gr_display2_basis.Y + v_delta);
                 panelDSP.Location = new Point(2, 760); // H1: RX1 DSP toggles, left column

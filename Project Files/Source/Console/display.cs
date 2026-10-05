@@ -234,6 +234,19 @@ namespace Thetis
         public static float[] new_waterfall_data_bottom;
         public static float[] current_waterfall_data_bottom;
 
+        // H1 (user 2026-10-06): the eight-row full-screen panafall - the six extra DDC rows (streams 2..7).
+        // Rows 1-2 draw the existing RX1/RX2 buffers; a spare row draws its own pair. The regular
+        // two-receiver rendering never reads these - they exist only for the H1 eight-row mode.
+        public static bool H1EightRows = false;                          // set by the console while the mode is on
+        public static readonly bool[] h1row_wf_fresh = new bool[8];      // a row has a new waterfall line to add
+        public static readonly double[] H1RowCentreMHz = new double[8];  // per-row centre, for the scale label
+        public static float[][] h1row_display_data = new float[6][];          // stream order (streams 2..7)
+        public static float[][] h1row_current_display_data = new float[6][];
+        public static float[][] h1row_waterfall_data = new float[6][];
+        public static float[][] h1row_current_waterfall_data = new float[6][];
+        private static SharpDX.Direct2D1.Bitmap[] _h1rowWfBmp = new SharpDX.Direct2D1.Bitmap[8];
+        private static int _h1rowWfBmpW = 0, _h1rowWfBmpH = 0;
+
         private static readonly double[] _pendingWaterfallPixelRef = new double[] { double.NaN, double.NaN };
         private static readonly double[] _currentWaterfallPixelRef = new double[] { double.NaN, double.NaN };
         private static readonly double[] _waterfallBitmapCenterMHz = new double[] { double.NaN, double.NaN };
@@ -1269,6 +1282,11 @@ namespace Thetis
                         console.specRX.GetSpecRX(0).Pixels = displayTargetWidth / m_nDecimation;
                         console.specRX.GetSpecRX(1).Pixels = displayTargetWidth / m_nDecimation;
                         console.specRX.GetSpecRX(cmaster.inid(1, 0)).Pixels = displayTargetWidth / m_nDecimation;
+                        if (H1EightRows)   // H1: the eight-row spares track the width exactly as RX1 does
+                        {
+                            for (int h1p = 2; h1p < 8; h1p++)
+                                console.specRX.GetSpecRX(h1p).Pixels = displayTargetWidth / m_nDecimation;
+                        }
                     }
 
                     N1MM.Resize();
@@ -3046,6 +3064,20 @@ namespace Thetis
                 current_waterfall_data_copy = m_objFloatPool.Rent(W);
                 current_waterfall_data_bottom_copy = m_objFloatPool.Rent(W);
 
+                // H1: the six extra rows' buffers - plain arrays, small, and never handed to the pool
+                for (int h1r = 0; h1r < 6; h1r++)
+                {
+                    if (h1row_display_data[h1r] == null) h1row_display_data[h1r] = new float[BUFFER_SIZE];
+                    if (h1row_current_display_data[h1r] == null) h1row_current_display_data[h1r] = new float[BUFFER_SIZE];
+                    if (h1row_waterfall_data[h1r] == null) h1row_waterfall_data[h1r] = new float[BUFFER_SIZE];
+                    if (h1row_current_waterfall_data[h1r] == null) h1row_current_waterfall_data[h1r] = new float[BUFFER_SIZE];
+                    for (int h1i = 0; h1i < BUFFER_SIZE; h1i++)
+                    {
+                        h1row_current_display_data[h1r][h1i] = -200.0f;
+                        h1row_current_waterfall_data[h1r][h1i] = -200.0f;
+                    }
+                }
+
                 m_rx1_spectrumPeaks = new Maximums[W];
                 m_rx2_spectrumPeaks = new Maximums[W];
 
@@ -4167,7 +4199,15 @@ namespace Thetis
                     }
                     //
 
-                    if (!split_display)
+                    // H1 (user 2026-10-06): the eight-row full-screen panafall - its own renderer, the
+                    // regular two-receiver setup below is skipped entirely while the mode is up
+                    if (H1EightRows)
+                    {
+                        m_nRX1DisplayHeight = displayTargetHeight / 8;
+                        m_nRX2DisplayHeight = displayTargetHeight / 8;
+                        H1DrawEightRowsDX2D(displayTargetWidth, displayTargetHeight);
+                    }
+                    else if (!split_display)
                     {
                         m_nRX1DisplayHeight = displayTargetHeight;
 
@@ -6478,6 +6518,266 @@ namespace Thetis
         private static bool _stopRx2Waterfall = false;
         private static DateTime _rx1_centrefreq_change_time = DateTime.UtcNow;
         private static DateTime _rx2_centrefreq_change_time = DateTime.UtcNow;
+        // H1 (user 2026-10-06): the eight-row full-screen panafall. Eight equal rows, one per DDC stream;
+        // rows 1-2 draw the existing RX1/RX2 buffers, rows 3-8 the extra DDC streams 2..7. Each row is a
+        // compact panafall: scale text, the spectrum trace and a scrolling waterfall. Only this mode's
+        // renderer runs here - the regular two-receiver drawing is left completely untouched.
+        unsafe static private void H1DrawEightRowsDX2D(int W, int H)
+        {
+            int rowH = H / 8;
+            int specH = 52;
+            if (specH > rowH - 30) specH = rowH - 30;
+            if (specH < 20) specH = 20;
+            int wfH = rowH - specH - 1;
+            if (wfH < 8) wfH = 8;
+
+            // (re)create the row waterfall bitmaps when the geometry changes
+            if (_h1rowWfBmpW != W || _h1rowWfBmpH != wfH || _h1rowWfBmp[0] == null)
+            {
+                for (int r = 0; r < 8; r++)
+                {
+                    Utilities.Dispose(ref _h1rowWfBmp[r]);
+                }
+                for (int r = 0; r < 8; r++)
+                {
+                    _h1rowWfBmp[r] = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(W, wfH), new BitmapProperties(new SDXPixelFormat(_swapChain.Description.ModeDescription.Format, ALPHA_MODE)));
+                    clearWaterfallBitmapRegion(_h1rowWfBmp[r], 0, 0, W, wfH);
+                }
+                _h1rowWfBmpW = W;
+                _h1rowWfBmpH = wfH;
+            }
+
+            int grid_max = spectrum_grid_max;
+            int grid_min = spectrum_grid_min;
+            if (grid_max <= grid_min) grid_max = grid_min + 10;
+            float span = grid_max - grid_min;
+
+            float low_threshold = waterfall_low_threshold;
+            float high_threshold = waterfall_high_threshold;
+            if (high_threshold <= low_threshold) high_threshold = low_threshold + 10f;
+
+            const int pixel_size = 4;
+            byte[] row = new byte[W * pixel_size];
+
+            if (m_nDecimation < 1) m_nDecimation = 1;
+            int nPix = W / m_nDecimation;
+
+            for (int r = 0; r < 8; r++)
+            {
+                int y0 = r * rowH;
+                if (y0 >= H) break;
+                int wfY = y0 + specH;
+                int hWf = Math.Min(wfH, y0 + rowH - wfY - 1);
+                if (hWf <= 0) continue;
+
+                float[] data;
+                float[] wfData;
+                bool hasWf;
+                if (r == 0)
+                {
+                    data = current_display_data; wfData = current_waterfall_data; hasWf = new_waterfall_data != null;
+                }
+                else if (r == 1)
+                {
+                    data = current_display_data_bottom; wfData = current_waterfall_data_bottom; hasWf = new_waterfall_data_bottom != null;
+                }
+                else
+                {
+                    data = h1row_current_display_data[r - 2]; wfData = h1row_current_waterfall_data[r - 2]; hasWf = h1row_waterfall_data[r - 2] != null;
+                }
+
+                // row separator
+                if (m_bDX2_grid_pen_inb != null)
+                    drawLineDX2D(m_bDX2_grid_pen_inb, 0, y0, W, y0, 1);
+
+                // spectrum trace - one vertical column per decimated bin, from the trace down
+                if (data != null && m_bDX2_data_line_pen_brush != null && nPix > 1)
+                {
+                    for (int i = 0; i < nPix; i++)
+                    {
+                        float v = data[i];
+                        if (v <= -200.0f) continue;
+                        float p = (grid_max - v) / span;
+                        if (p < 0f) p = 0f; else if (p > 1f) p = 1f;
+                        int x = i * m_nDecimation;
+                        int y = y0 + (int)(p * (specH - 16));
+                        drawLineDX2D(m_bDX2_data_line_pen_brush, x, y, x, y0 + specH - 2, m_nDecimation);
+                    }
+                }
+
+                // scale: the row's centre frequency, on the left of the spectrum strip
+                double centre = r == 0 ? CentreFreqRX1 : (r == 1 ? CentreFreqRX2 : H1RowCentreMHz[r]);
+                if (m_bDX2_pana_text_brush != null)
+                {
+                    drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, 4, y0 + 2);
+                }
+
+                // waterfall: colour the new line, scroll the bitmap down one row, draw it
+                if (hasWf && wfData != null && _h1rowWfBmp[r] != null && hWf == wfH)
+                {
+                    bool addRow = h1row_wf_fresh[r];
+                    h1row_wf_fresh[r] = false;
+
+                    if (addRow && nPix > 1)
+                    {
+                        for (int i = 0; i < nPix; i++)   // for each pixel in the new line
+                        {
+                            float v = wfData[i];
+                            int R, G, B;
+                            if (v <= low_threshold)
+                            {
+                                R = 0; G = 0; B = 0;
+                            }
+                            else if (v >= high_threshold)
+                            {
+                                R = 192; G = 124; B = 255;
+                            }
+                            else // value is between low and high - the 'enhanced' scheme, as the main waterfall
+                            {
+                                float overall_percent = (v - low_threshold) / (high_threshold - low_threshold);
+                                if (overall_percent < (float)2 / 9)
+                                {
+                                    float local_percent = overall_percent / ((float)2 / 9);
+                                    R = 0;
+                                    G = 0;
+                                    B = (int)(local_percent * 255);
+                                }
+                                else if (overall_percent < (float)3 / 9)
+                                {
+                                    float local_percent = (overall_percent - (float)2 / 9) / ((float)1 / 9);
+                                    R = 0; G = (int)(local_percent * 255); B = 255;
+                                }
+                                else if (overall_percent < (float)4 / 9)
+                                {
+                                    float local_percent = (overall_percent - (float)3 / 9) / ((float)1 / 9);
+                                    R = 0; G = 255; B = (int)((1.0 - local_percent) * 255);
+                                }
+                                else if (overall_percent < (float)5 / 9)
+                                {
+                                    float local_percent = (overall_percent - (float)4 / 9) / ((float)1 / 9);
+                                    R = (int)(local_percent * 255); G = 255; B = 0;
+                                }
+                                else if (overall_percent < (float)7 / 9)
+                                {
+                                    float local_percent = (overall_percent - (float)5 / 9) / ((float)2 / 9);
+                                    R = 255; G = (int)((1.0 - local_percent) * 255); B = 0;
+                                }
+                                else if (overall_percent < (float)8 / 9)
+                                {
+                                    float local_percent = (overall_percent - (float)7 / 9) / ((float)1 / 9);
+                                    R = 255; G = 0; B = (int)(local_percent * 255);
+                                }
+                                else
+                                {
+                                    float local_percent = (overall_percent - (float)8 / 9) / ((float)1 / 9);
+                                    R = (int)((0.75 + 0.25 * (1.0 - local_percent)) * 255);
+                                    G = (int)(local_percent * 255 * 0.5);
+                                    B = 255;
+                                }
+                            }
+
+                            row[(i * m_nDecimation) * pixel_size + 0] = (byte)B;
+                            row[(i * m_nDecimation) * pixel_size + 1] = (byte)G;
+                            row[(i * m_nDecimation) * pixel_size + 2] = (byte)R;
+                            row[(i * m_nDecimation) * pixel_size + 3] = 255;
+                        }
+                        // fill pixels into decimation spaces so we dont have gaps
+                        for (int i = 0; i < nPix; i++)
+                        {
+                            for (int j = 1; j < m_nDecimation && (i * m_nDecimation) + j < W; j++)
+                            {
+                                row[((i * m_nDecimation) + j) * pixel_size + 0] = row[(i * m_nDecimation) * pixel_size + 0];
+                                row[((i * m_nDecimation) + j) * pixel_size + 1] = row[(i * m_nDecimation) * pixel_size + 1];
+                                row[((i * m_nDecimation) + j) * pixel_size + 2] = row[(i * m_nDecimation) * pixel_size + 2];
+                                row[((i * m_nDecimation) + j) * pixel_size + 3] = row[(i * m_nDecimation) * pixel_size + 3];
+                            }
+                        }
+
+                        // scroll: the new line goes on top, the rest moves down one row - the main waterfall's pattern
+                        SharpDX.Direct2D1.Bitmap bmp = _h1rowWfBmp[r];
+                        SharpDX.Direct2D1.Bitmap top = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(W, wfH - 1), new BitmapProperties(new SDXPixelFormat(bmp.PixelFormat.Format, ALPHA_MODE)));
+                        top.CopyFromBitmap(bmp, new SharpDX.Point(0, 0), new SharpDX.Rectangle(0, 0, W, wfH - 1));
+                        bmp.CopyFromMemory(row, W * pixel_size, new SharpDX.Rectangle(0, 0, W, 1));
+                        bmp.CopyFromBitmap(top, new SharpDX.Point(0, 1), new SharpDX.Rectangle(0, 0, W, wfH - 1));
+                        Utilities.Dispose(ref top);
+                    }
+
+                    Matrix3x2 was = _d2dRenderTarget.Transform;
+                    _d2dRenderTarget.Transform = Matrix3x2.Identity;
+                    _d2dRenderTarget.DrawBitmap(_h1rowWfBmp[r], new RectangleF(0, wfY, W, hWf), 1.0f, BitmapInterpolationMode.Linear);
+                    _d2dRenderTarget.Transform = was;
+                }
+
+                // H1: the receiver windows on rows 1-2 - the same boxes the panafall always drew,
+                // with their listen and transmit state. Rows 3-8 are display-only for now.
+                if (r <= 1 && !localMox(r == 0 ? 1 : 2))
+                {
+                    int h1rx = r == 0 ? 1 : 2;
+                    int h1Low = r == 0 ? rx_display_low : rx2_display_low;
+                    int h1High = r == 0 ? rx_display_high : rx2_display_high;
+                    int h1Diff = r == 0 ? freq_diff : rx2_freq_diff;
+                    float h1width = h1High - h1Low;
+                    if (h1width > 0)
+                    {
+                        if (r == 0 && sub_rx1_enabled)
+                        {
+                            long localSubDiff = vfoa_sub_hz - vfoa_hz;
+                            int localRit = _rx1ClickDisplayCTUN ? rit_hz : 0;
+                            int fl = (int)((float)(SubRX1FilterLow - h1Low + localSubDiff + localRit) / h1width * W);
+                            int fr = (int)((float)(SubRX1FilterHigh - h1Low + localSubDiff + localRit) / h1width * W);
+                            vfoa_sub_win_left = Math.Min(fl, fr);
+                            vfoa_sub_win_right = Math.Max(fl, fr);
+                            H1DrawRxWindow(1, fl, fr, W, rowH, h1rx, 0, false, y0, false,
+                                m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
+                        }
+                        else if (r == 1 && sub_rx2_enabled)
+                        {
+                            long localSub2Diff = vfob_sub_hz - vfob_hz;
+                            int fl = (int)((float)(SubRX2FilterLow - h1Low + localSub2Diff) / h1width * W);
+                            int fr = (int)((float)(SubRX2FilterHigh - h1Low + localSub2Diff) / h1width * W);
+                            vfob_sub_win_left = Math.Min(fl, fr);
+                            vfob_sub_win_right = Math.Max(fl, fr);
+                            H1DrawRxWindow(3, fl, fr, W, rowH, h1rx, 0, false, y0, false,
+                                m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
+                        }
+
+                        int h1fl = r == 0 ? rx1_filter_low : rx2_filter_low;
+                        int h1fh = r == 0 ? rx1_filter_high : rx2_filter_high;
+                        if ((r == 0 && rx1_dsp_mode == DSPMode.DRM) || (r == 1 && rx2_dsp_mode == DSPMode.DRM))
+                        {
+                            h1fl = -6000;
+                            h1fh = 6000;
+                        }
+                        int flx = (int)((float)(h1fl - h1Low - h1Diff) / h1width * W);
+                        int frx = (int)((float)(h1fh - h1Low - h1Diff) / h1width * W);
+                        if (r == 0)
+                        {
+                            vfoa_win_left = Math.Min(flx, frx);
+                            vfoa_win_right = Math.Max(flx, frx);
+                        }
+                        else
+                        {
+                            vfob_win_left = Math.Min(flx, frx);
+                            vfob_win_right = Math.Max(flx, frx);
+                        }
+                        H1DrawRxWindow(r == 0 ? 0 : 2, flx, frx, W, rowH, h1rx, 0, false, y0, false,
+                            m_bDX2_display_filter_brush, m_bDX2_display_filter_brush_solid);
+                    }
+                }
+            }
+        }
+
+        // H1: free the eight-row bitmaps when the mode ends
+        public static void H1EightRowCleanup()
+        {
+            for (int r = 0; r < 8; r++)
+            {
+                Utilities.Dispose(ref _h1rowWfBmp[r]);
+            }
+            _h1rowWfBmpW = 0;
+            _h1rowWfBmpH = 0;
+        }
+
         unsafe static private bool DrawWaterfallDX2D(int nVerticalShift, int W, int H, int rx, bool bottom)
         {
             bool addRow;

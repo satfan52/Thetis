@@ -597,10 +597,7 @@ namespace Thetis
                     Display.RX2DisplayLow = _low_freq;
                     Display.RX2DisplayHigh = _high_freq;
                     break;
-                case 2:
-                case 3:
-                case 4:
-                case 5:
+                case 8:   // H1: the TX analyzer is stream inid(1,0) = 8; 2..7 are the spare receivers and must not touch the TX display vars
                     Display.TXDisplayLow = _low_freq;
                     Display.TXDisplayHigh = _high_freq;
                     break;
