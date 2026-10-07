@@ -1229,6 +1229,16 @@ class MiniTCI(tk.Tk):
                      values=[f"{p} (full TCI)" if p == 50001 else f"{p} (RX{p - 50000})"
                              for p in range(PORT_MIN, PORT_MAX + 1)]
                      ).pack(side="left", padx=(4, 8))
+        # TCI TRX selector: 50001 carries two audio streams (TRX 0 = RX1 / VFO A,
+        # TRX 1 = RX2 / VFO B). Ports 50002-50008 carry one receiver, always TRX 0.
+        self._trx_idx = 0
+        ttk.Label(g1, text="TRX:", padding=(10, 0, 2, 0)).pack(side="left")
+        self.trx_var = tk.StringVar(value="TRX 0")
+        self.trx_box = ttk.Combobox(g1, textvariable=self.trx_var, width=6, state="readonly",
+                                    values=["TRX 0", "TRX 1"])
+        self.trx_box.pack(side="left")
+        self.trx_var.trace_add("write", self._trx_changed)
+        self.rx_var.trace_add("write", self._port_changed)
         self.conn_btn = ttk.Button(g1, text="Connect", width=11, command=self.toggle_conn)
         self.conn_btn.pack(side="left")
         ttk.Label(g1, text="Audio:", padding=(20, 0, 2, 0)).pack(side="left")
@@ -1878,6 +1888,42 @@ class MiniTCI(tk.Tk):
             self.client = None
         self.toggle_conn()
 
+    # ---- TCI TRX: which audio stream of this connection the client uses ------
+    # 50001 carries two (TRX 0 = RX1 / VFO A, TRX 1 = RX2 / VFO B); the headless
+    # ports carry one receiver, always TRX 0. The receiver block follows the TRX.
+    def _rx_index(self):
+        """Receiver index for the channel-addressed commands: 0 = RX1 (VFO A),
+        1 = RX2 (VFO B). Only 50001 TRX 1 can ever be 1."""
+        return 1 if (self._trx_idx == 1 and getattr(self, "_is_full_tci", False)) else 0
+
+    def _vfo_addr(self):
+        """vfo:<rx>,<chan>. Thetis tunes RX2 through VFOBFreq: rx 0, chan 1."""
+        return "0,1" if self._rx_index() == 1 else "0,0"
+
+    def _port_changed(self, *_a):
+        """Only 50001 has TRX 1: headless ports force and grey TRX 0."""
+        port = int(self.rx_var.get().split()[0])
+        full = (port == 50001)
+        if not full and self.trx_var.get() != "TRX 0":
+            self.trx_var.set("TRX 0")
+        self.trx_box.config(state="readonly" if full else "disabled")
+        self._refresh_rx_headings()
+
+    def _trx_changed(self, *_a):
+        self._trx_idx = 1 if self.trx_var.get() == "TRX 1" else 0
+        self._refresh_rx_headings()
+        if self.connected and getattr(self, "_is_full_tci", False):
+            self.logprint("TRX changed - Disconnect and Connect to apply")
+
+    def _refresh_rx_headings(self):
+        """The receiver block title names the receiver it actually drives."""
+        if not hasattr(self, "sec_vfoa"):
+            return
+        self.sec_vfoa.config(text="3 · VFO B — RX2 (reception)"
+                             if self._rx_index() == 1 else
+                             "3 · VFO A — RX1 (reception)")
+
+
     def toggle_conn(self):
         if self.client:
             self._manual_disconnect = True      # a click, not a drop
@@ -1888,6 +1934,15 @@ class MiniTCI(tk.Tk):
         self._manual_disconnect = False
         port = int(self.rx_var.get().split()[0])
         self._is_full_tci = (port == 50001)  # Phase -1a: port detect
+        # TRX from the selector; headless ports have TRX 0 only
+        self._trx_idx = 1 if self.trx_var.get() == "TRX 1" else 0
+        if not self._is_full_tci:
+            self._trx_idx = 0
+            if self.trx_var.get() != "TRX 0":
+                self.trx_var.set("TRX 0")   # the row must show what is in use
+        self._refresh_rx_headings()
+        if self._trx_idx == 1:
+            self.logprint("TRX 1 = RX2 audio; the SubVFOA block below stays on RX1")
         self.text_q = queue.Queue()
         self._iq_q = queue.Queue(maxsize=8)
         self.chrono_reqs = collections.deque()
@@ -1913,19 +1968,19 @@ class MiniTCI(tk.Tk):
             self.conn_btn.config(text="Disconnect")
             self.state_lbl.config(text="● connected", fg=C["green"])
             self.send("iq_samplerate:96000;")
-            self.send("iq_start:0;")
-            self.send("audio_start:0;")
+            self.send(f"iq_start:{self._rx_index()};")
+            self.send(f"audio_start:{self._trx_idx};")
             self.send("rx_sensors_enable:true,250;")
             # TX sensors carry Thetis's own microphone reading in dBm, which the
             # S-meter shows while transmitting instead of a local guess
             self.send("tx_sensors_enable:true,250;")
-            self.send(f"vfo:0,0,{self.freq_hz};")
-            self.send(f"modulation:0,{self.mode};")
+            self.send(f"vfo:{self._vfo_addr()},{self.freq_hz};")
+            self.send(f"modulation:{self._rx_index()},{self.mode};")
             lo, hi = self.pan.filt
             self._send_filter_band(lo, hi)
             # Phase -1a: full TCI (port 50001) uses rx_ctun_ex instead of ctun
             if getattr(self, "_is_full_tci", False):
-                self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
+                self.send(f"rx_ctun_ex:{self._rx_index()},{str(self.ctun_var.get()).lower()};")
                 self._txdsp_query()   # mic gain / COMP / DXP / VOX from the console
                 self.send("tune_drive:0;")   # console transmit power during Tune
                 # the SubVFOA's own DSP state, so both apps start in step
@@ -1942,7 +1997,7 @@ class MiniTCI(tk.Tk):
             if getattr(self, "_is_full_tci", False):
                 # 50001: rx_channel_enable for sub-channel, vfoasub for freq
                 if self.sub_enabled:
-                    self.send(f"rx_channel_enable:0,1,true;")
+                    self.send("rx_channel_enable:0,1,true;")
                     self.send(f"vfoasub:0,{self.sub_hz};")
             else:
                 self.send("subrx_state:0;")
@@ -1961,8 +2016,8 @@ class MiniTCI(tk.Tk):
                 # agc_gain is the unified gain path (server routes it through the
                 # console AGC-T control, which applies the right parameter for
                 # the current mode: fixed gain in Fixed, max gain in auto modes).
-                self.send(f"agc_mode:0,{self._agc_mode_to_tci(self.agc_var.get())};")
-                self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+                self.send(f"agc_mode:{self._rx_index()},{self._agc_mode_to_tci(self.agc_var.get())};")
+                self.send(f"agc_gain:{self._rx_index()},{int(self.agc_gain_var.get())};")
             elif self.agc_var.get() == "OFF":
                 self.send("agc_auto_ex:0,false;")
                 self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
@@ -2231,7 +2286,7 @@ class MiniTCI(tk.Tk):
                     # broadcasts vfo:0,1,<hz> for VFOBFreq, and when RX2 is off
                     # VFO B IS the sub-channel - consuming it here dragged VFO A
                     # (and its panadapter marker) onto the sub frequency.
-                    if rx_i == 0 and chan_i == 0:
+                    if rx_i == 0 and chan_i == (1 if self._rx_index() == 1 else 0):
                         self.freq_hz = int(hz)
                         self._fmt_freq()
                         self.pan.vfo_hz = hz
@@ -2250,7 +2305,7 @@ class MiniTCI(tk.Tk):
                     dds_hz = float(p[-1])
                 except (ValueError, IndexError):
                     rx_i, dds_hz = -1, 0.0
-                if rx_i == 0:
+                if rx_i == self._rx_index():
                     try:
                         self.ddc_center_hz = int(dds_hz)
                         self.dds_lbl.config(text="DDS " + self._fmt_hz(dds_hz))
@@ -2335,7 +2390,7 @@ class MiniTCI(tk.Tk):
                 # rx_sensors:<rx>,<dBm>; - the receiver's main channel reading
                 try:
                     p = v.split(",")
-                    if int(p[0]) == 0:
+                    if int(p[0]) == self._rx_index():
                         self.smeter = float(p[-1])
                         if 0 not in self.rx_meter_levels:
                             self.rx_meter_levels[0] = self.smeter
@@ -2354,7 +2409,7 @@ class MiniTCI(tk.Tk):
                 # an S-meter of its own rather than a copy of VFO A's.
                 try:
                     p = str(v).split(",")
-                    if int(p[0]) == 0 and len(p) >= 3:
+                    if int(p[0]) == self._rx_index() and len(p) >= 3:
                         chan = int(p[1])
                         if chan in (0, 1):
                             self.rx_meter_levels[chan] = float(p[2])
@@ -2369,7 +2424,7 @@ class MiniTCI(tk.Tk):
                 p = v.split(",")
                 if len(p) >= 3:
                     try:
-                        if int(p[0]) == 0:
+                        if int(p[0]) == self._rx_index():
                             self.pan.filt = (float(p[1]), float(p[2]))
                             self._filter_entries_set(self.pan.filt)
                             self._sync_filtw_slider(self.pan.filt)
@@ -2411,7 +2466,7 @@ class MiniTCI(tk.Tk):
                 # Only rx 0 is this client's VFO A. Thetis sends FM (not NFM).
                 try:
                     p = str(v).split(",")
-                    if int(p[0]) == 0:
+                    if int(p[0]) == self._rx_index():
                         tok = p[1].strip().upper()
                         if tok in MODES and tok != self.mode_var.get():
                             # adopt the mode AND the filter Thetis just applied.
@@ -2927,7 +2982,7 @@ class MiniTCI(tk.Tk):
         # Branch H1: tell the server which display model is in use
         # Phase -1a: full TCI (port 50001) uses rx_ctun_ex instead of ctun
         if getattr(self, "_is_full_tci", False):
-            self.send(f"rx_ctun_ex:0,{str(self.ctun_var.get()).lower()};")
+            self.send(f"rx_ctun_ex:{self._rx_index()},{str(self.ctun_var.get()).lower()};")
         else:
             self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
         self.logprint(f"CTUN {'on' if self.ctun_var.get() else 'off'}")
@@ -2978,7 +3033,7 @@ class MiniTCI(tk.Tk):
         # CTUN: A floats inside the DDC (server-side RXOsc); display stays fixed,
         # only the tune line moves. The client never self-shifts here.
         self.pan.vfo_hz = self.freq_hz
-        self.send(f"vfo:0,0,{self.freq_hz};")
+        self.send(f"vfo:{self._vfo_addr()},{self.freq_hz};")
 
     def _tune_direct(self):
         t = self.tune_entry.get().strip().replace(",", ".")
@@ -3091,7 +3146,7 @@ class MiniTCI(tk.Tk):
                 self.pan.vfo_hz = new_freq
                 self.pan.center_hz = new_freq
                 self.pan.data_center_hz = new_freq
-                self.send(f"vfo:0,0,{new_freq};")
+                self.send(f"vfo:{self._vfo_addr()},{new_freq};")
                 self.mode_var.set(b[2])
                 # B follows into the new band, defaulting to VFO A's frequency
                 if self.sub_enabled:
@@ -3118,7 +3173,7 @@ class MiniTCI(tk.Tk):
         self.mode = self.mode_var.get()
         filt = _thetis_filter(self.mode_var.get(), 4)   # mode default (F5)
         self._filter_entries_set(filt if filt is not None else (-48000, 48000))
-        self.send(f"modulation:0,{self.mode};")
+        self.send(f"modulation:{self._rx_index()},{self.mode};")
         if filt is not None:
             lo, hi = filt
             self._send_filter_band(lo, hi)
@@ -3155,7 +3210,7 @@ class MiniTCI(tk.Tk):
         if self.mode_var.get() in ("DRM", "SPEC"):
             return
         if self.connected:
-            self.send(f"rx_filter_band:0,{int(lo)},{int(hi)};")
+            self.send(f"rx_filter_band:{self._rx_index()},{int(lo)},{int(hi)};")
 
     def _filter_entries_applied(self, *_a):
         """User pressed Return / left the box: push the new edges to Thetis."""
@@ -3272,9 +3327,9 @@ class MiniTCI(tk.Tk):
         # agc_mode alone carries the full mode (server maps off<->FIXD);
         # agc_auto_ex is deliberately NOT sent - on headless it force-maps to
         # MED/FIXD and would clobber e.g. Fast.
-        self.send(f"agc_mode:0,{self._agc_mode_to_tci(mode)};")
+        self.send(f"agc_mode:{self._rx_index()},{self._agc_mode_to_tci(mode)};")
         # unified gain push: server routes to fixed gain (FIXD) or AGC-T (auto)
-        self.send(f"agc_gain:0,{int(self.agc_gain_var.get())};")
+        self.send(f"agc_gain:{self._rx_index()},{int(self.agc_gain_var.get())};")
 
     def _agc_auto_changed(self):
         # kept for compatibility (Auto checkbox removed); no-op
@@ -3288,7 +3343,7 @@ class MiniTCI(tk.Tk):
             return   # echo handler set the slider - do not re-send
         # one unified gain command on all ports - the server routes it to the
         # correct parameter for the current AGC mode
-        self.send(f"agc_gain:0,{int(float(v))};")
+        self.send(f"agc_gain:{self._rx_index()},{int(float(v))};")
 
     def _update_agc_gain_label(self):
         try:
