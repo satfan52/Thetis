@@ -3921,10 +3921,10 @@ namespace Thetis
             // is carried by the filter's sign
             bool wasActive = sub.Active;
             int low = sub.RXFilterLow, high = sub.RXFilterHigh;
-            WDSP.SetChannelState(WDSP.id((uint)rx, 1), 0, 1);
+            WDSP.SetChannelState(WDSP.id((uint)(2 * rx), 1), 0, 1);
             sub.DSPMode = mode;
             sub.SetRXFilter(low, high);
-            if (wasActive) WDSP.SetChannelState(WDSP.id((uint)rx, 1), 1, 0);
+            if (wasActive) WDSP.SetChannelState(WDSP.id((uint)(2 * rx), 1), 1, 0);
 
             sendSubMode(rx, mode);
         }
@@ -4016,7 +4016,7 @@ namespace Thetis
             if (sub.RXAGCMode == AGCMode.FIXD)
                 sub.RXFixedAGC = gain;
             else
-                WDSP.SetRXAAGCTop(WDSP.id((uint)rx, 1), (double)gain);
+                WDSP.SetRXAAGCTop(WDSP.id((uint)(2 * rx), 1), (double)gain);
             _subAgcGainDb[rx] = gain;
             sendSubAgcGain(rx, gain);
         }
@@ -5667,7 +5667,9 @@ private void handleTXFilterBandEx(string[] args)
                                     freqMHz = Math.Round(freqMHz, 6);
                                     if (consoleThreadSafe != null)
                                     {
-                                        if (consoleThreadSafe.RX2Enabled)
+                                        if (rx == 1)
+                                        	consoleThreadSafe.VFOBSubFreq = freqMHz;   // H1: RX2's own sub receiver
+                                        else if (consoleThreadSafe.RX2Enabled)
                                             consoleThreadSafe.VFOASubFreq = freqMHz;  // sub-channel within RX1
                                         else
                                             consoleThreadSafe.VFOBFreq = freqMHz;      // dual-VFO = sub-channel when RX2 off
@@ -6959,8 +6961,8 @@ private void handleTXFilterBandEx(string[] args)
 						enabled = channel == 0 ? true : consoleThreadSafe.GetSubRX(1);
                         break;
 					case 1:
-						//just return rx2 state as no subrx
-						enabled = channel == 0 ? consoleThreadSafe.RX2Enabled : false;
+						// H1: RX2 has a sub receiver of its own
+						enabled = channel == 0 ? consoleThreadSafe.RX2Enabled : consoleThreadSafe.GetSubRX(2); // H1: RX2's own sub (chkEnableMultiRX2)
                         break;
 				}
 				sendRxChannelEnable(receiver, channel, enabled);
@@ -6975,7 +6977,11 @@ private void handleTXFilterBandEx(string[] args)
 				{
 					consoleThreadSafe.SetSubRX(1, enabled);
 				}
-				else if(receiver == 1) // main or sub will set state
+				else if (receiver == 1 && channel == 1) // H1: RX2's sub receiver
+				{
+					consoleThreadSafe.SetSubRX(2, enabled);
+				}
+				else if(receiver == 1) // main will set state
 				{
 					consoleThreadSafe.RX2Enabled = enabled;
 				}
