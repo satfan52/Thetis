@@ -857,6 +857,8 @@ class MiniTCI(tk.Tk):
         self.sub_mode = "USB"
         self.sub_filt = (150, 2800)
         self.sub_enabled = False
+        self.rx2_enabled = None           # console RX2 state (banner / rx_enable echo)
+        self._sub_awaiting_read = False   # a vfoasub: read is in flight
         self.split = False
         self.tx_vfo = "A"                # which VFO the TX checkbox shows
         self.audio_sel = "main"          # main | sub | both
@@ -1237,6 +1239,15 @@ class MiniTCI(tk.Tk):
         # TCI TRX selector: 50001 carries two audio streams (TRX 0 = RX1 / VFO A,
         # TRX 1 = RX2 / VFO B). Ports 50002-50008 carry one receiver, always TRX 0.
         self._trx_idx = 0
+        # Radio power (TCI start/stop). A headless Thetis comes up with the radio
+        # OFF, so switching it on from here is how a session begins.
+        self.power_on = False
+        self.power_btn = tk.Button(g1, text="POWER", width=8,
+                                   font=("Segoe UI", 10, "bold"),
+                                   command=self.toggle_power)
+        self.power_btn.pack(side="left", padx=(0, 10))
+        self._refresh_power_btn()
+
         ttk.Label(g1, text="TRX:", padding=(4, 0, 2, 0)).pack(side="left")
         self.trx_var = tk.StringVar(value="TRX 0")
         self.trx_box = ttk.Combobox(g1, textvariable=self.trx_var, width=6, state="readonly",
@@ -1946,6 +1957,22 @@ class MiniTCI(tk.Tk):
         self.sub_sm.set_label(f"SubRX{n}")
         self.tx_src_lbl.config(text=f"TX on SubRX{n}")
 
+    def toggle_power(self):
+        """TCI start/stop: the radio's power, driven from this client."""
+        if not self.connected:
+            self.logprint("POWER: connect first")
+            return
+        self.send("stop;" if self.power_on else "start;")
+        self.logprint("POWER " + ("off" if self.power_on else "on") + " requested")
+
+    def _refresh_power_btn(self):
+        on = bool(self.power_on)
+        self.power_btn.config(text="POWER" + (" ON" if on else " OFF"),
+                              bg="#c6e6c6" if on else "#e2e4ea",
+                              activebackground="#c6e6c6" if on else "#d8dae2",
+                              fg=C["fg"], relief="sunken" if on else "raised")
+
+
     def toggle_conn(self):
         if self.client:
             self._manual_disconnect = True      # a click, not a drop
@@ -1997,7 +2024,14 @@ class MiniTCI(tk.Tk):
             # TX sensors carry Thetis's own microphone reading in dBm, which the
             # S-meter shows while transmitting instead of a local guess
             self.send("tx_sensors_enable:true,250;")
-            self.send(f"vfo:{self._vfo_addr()},{self.freq_hz};")
+            # Never push our stored frequency here. After a TRX change it holds the
+            # OTHER receiver's value and overwrote the console's VFO (RX1's numbers
+            # landing on VFO B). Ask for the console's value instead - the reply is
+            # adopted by the vfo handler - and only write when the operator tunes.
+            if getattr(self, "_is_full_tci", False):
+                self.send(f"vfo:{self._vfo_addr()};")        # read: adopt the console's VFO
+            else:
+                self.send(f"vfo:{self._vfo_addr()},{self.freq_hz};")   # headless port: own receiver
             self.send(f"modulation:{self._rx_index()},{self.mode};")
             lo, hi = self.pan.filt
             self._send_filter_band(lo, hi)
@@ -2018,10 +2052,23 @@ class MiniTCI(tk.Tk):
             if not self.sub_hz:
                 self.sub_hz = self.freq_hz + 2000
             if getattr(self, "_is_full_tci", False):
-                # 50001: rx_channel_enable for sub-channel, vfoasub for freq
+                # 50001: rx_channel_enable for sub-channel, vfoasub for freq.
+                # TRX 1 IS RX2: its VFO (vfo:0,1) and its audio only exist while RX2
+                # is enabled in the console - with RX2 off that address silently
+                # retunes RX1's sub-channel, which made the band change look dead.
+                if self._rx_index() == 1:
+                    if self.rx2_enabled is False:
+                        self.logprint("TRX 1: RX2 was off in Thetis - switching it on")
+                    self.send("rx_channel_enable:1,0,true;")
                 if self.sub_enabled:
                     self.send(f"rx_channel_enable:{self._rx_index()},1,true;")
-                    self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
+                # SubRX2 must FOLLOW the console's SubVFO B, never overwrite it:
+                # ask for it, ask again once the enables above have landed, and
+                # only place B locally if the console has no sub frequency to give.
+                self._sub_awaiting_read = True
+                self.send(f"vfoasub:{self._rx_index()};")
+                self.after(700, self._sub_second_read)
+                self.after(1600, self._sub_read_fallback)
             else:
                 self.send("subrx_state:0;")
                 if self.sub_enabled:
@@ -2199,14 +2246,50 @@ class MiniTCI(tk.Tk):
                         self.logprint(f"Sub {'on' if st else 'off'} (50001)")
                         self._sub_refresh_ui()
                 continue
-            if k == "vfoasub" and v:
-                # 50001: vfoasub:0,<freqHz> — sub-channel frequency echo
+            if k in ("start", "stop"):
+                # TCI power state - the console sends start; when it powers up (the
+                # initial radio state carries it, and every change is broadcast)
+                self.power_on = (k == "start")
+                self._refresh_power_btn()
+                continue
+
+            if k == "rx_enable" and v:
+                # rx_enable:<rx>,<bool> - the console's receiver state. While RX2 is
+                # off, the TRX 1 address (vfo:0,1) is really RX1's sub-channel.
                 try:
                     p = str(v).split(",")
-                    if len(p) >= 2:
-                        self.sub_hz = int(p[1])
-                        self._sub_refresh_ui()
-                except ValueError:
+                    if int(p[0]) == 1:
+                        was, self.rx2_enabled = self.rx2_enabled, (p[1].strip().lower() == "true")
+                        if (was is True and not self.rx2_enabled and self.connected
+                                and getattr(self, "_is_full_tci", False) and self._rx_index() == 1):
+                            self.logprint("RX2 was switched off in Thetis - TRX 1 has no audio")
+                        if (was is False and self.rx2_enabled and self.connected
+                                and getattr(self, "_is_full_tci", False) and self._rx_index() == 1):
+                            # RX2 just came on in Thetis: pick up its VFO and its sub
+                            # now, so TRX 1 lands on what the console is showing.
+                            self.logprint("RX2 turned on in Thetis - following RX2 and SubRX2")
+                            self.send("vfo:0,1;")
+                            self._sub_awaiting_read = True
+                            self.send("vfoasub:1;")
+                except (ValueError, IndexError):
+                    pass
+                continue
+            if k == "vfoasub" and v:
+                # vfoasub:<rx>,<freqHz> - RX1's sub-channel (rx 0) or RX2's own sub
+                # (rx 1 = TRX 1). Address-checked: with RX2 off the console's VFO-B
+                # field still carries RX1's sub value, which is not ours to show.
+                try:
+                    p = str(v).split(",")
+                    if len(p) >= 2 and int(p[0]) == self._rx_index():
+                        hz = int(p[1])
+                        if hz > 0:
+                            # the console's SubVFO B is authoritative: follow it as it
+                            # stands - no band filter, since the server only answers
+                            # while RX2's own sub receiver is actually in use.
+                            self._sub_awaiting_read = False
+                            self.sub_hz = hz
+                            self._sub_refresh_ui()
+                except (ValueError, IndexError):
                     pass
                 continue
             if k == "subrx":
@@ -2309,7 +2392,18 @@ class MiniTCI(tk.Tk):
                     # broadcasts vfo:0,1,<hz> for VFOBFreq, and when RX2 is off
                     # VFO B IS the sub-channel - consuming it here dragged VFO A
                     # (and its panadapter marker) onto the sub frequency.
-                    if rx_i == 0 and chan_i == (1 if self._rx_index() == 1 else 0):
+                    # Which (rx, channel) carries THIS client's receiver?
+                    #   TRX 0 -> rx 0 / chan 0 (RX1's VFO A).
+                    #   TRX 1 -> RX2: its VFO arrives as vfo:0,1 (VFOBFreq) while RX2
+                    #            is on, and as vfo:1,0 (RX2's own channel). With RX2
+                    #            off, vfo:0,1 is RX1's sub-channel and not ours to take.
+                    if self._rx_index() == 1:
+                        rx2_live = self.rx2_enabled is not False
+                        is_mine = rx2_live and ((rx_i == 0 and chan_i == 1)
+                                                or (rx_i == 1 and chan_i == 0))
+                    else:
+                        is_mine = rx_i == 0 and chan_i == 0
+                    if is_mine:
                         self.freq_hz = int(hz)
                         self._fmt_freq()
                         self.pan.vfo_hz = hz
@@ -3148,6 +3242,38 @@ class MiniTCI(tk.Tk):
         self.split = want_split
         self._sub_refresh_ui()
 
+    def _sub_second_read(self):
+        """One more ask: the sub enable may only have reached the console now."""
+        if (self._sub_awaiting_read and self.connected
+                and getattr(self, "_is_full_tci", False)):
+            self.send(f"vfoasub:{self._rx_index()};")
+            self.send(f"vfo:{self._vfo_addr()};")   # and the VFO, in case the enable landed late
+
+    def _sub_read_fallback(self):
+        """The console has no SubVFO B to give (RX2 or its sub idle): place B in
+        this receiver's band instead of showing a frequency from another band."""
+        if self._sub_awaiting_read:
+            self._sub_awaiting_read = False
+            self._sub_follow_rx()
+
+
+    def _sub_follow_rx(self, push=True):
+        """Keep VFO B in the same band as this receiver.
+
+        A sub frequency left in another band - RX2 on 12 m while B still holds
+        RX1's 30 m value - is placed 2 kHz above the receiver. Pushes only when
+        the sub is on, so a console the operator is not using is left alone.
+        """
+        band = self._band_for_freq(self.freq_hz)
+        if not self.sub_hz or (band and self._band_for_freq(self.sub_hz) != band):
+            self.sub_hz = self.freq_hz + 2000
+            self._sub_refresh_ui()
+            if push and self.connected and self.sub_enabled:
+                self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
+            return True
+        return False
+
+
     def _band_changed(self, *_):
         if getattr(self, "_loading", False):
             return                      # settings load in progress - no switch
@@ -3157,6 +3283,7 @@ class MiniTCI(tk.Tk):
             self._band_stack_save()
         self._band_stack_current = name
         if self._band_stack_load(name):
+            self._sub_follow_rx(push=self.sub_enabled)
             return
         for b in BANDS:
             if b[0] == name:
@@ -3170,6 +3297,8 @@ class MiniTCI(tk.Tk):
                 self.pan.center_hz = new_freq
                 self.pan.data_center_hz = new_freq
                 self.send(f"vfo:{self._vfo_addr()},{new_freq};")
+                # B follows into the new band even when the sub is off locally
+                self._sub_follow_rx(push=self.sub_enabled)
                 self.mode_var.set(b[2])
                 # B follows into the new band, defaulting to VFO A's frequency
                 if self.sub_enabled:
