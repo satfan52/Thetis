@@ -781,10 +781,15 @@ class Smeter(tk.Canvas):
             self.create_line(x, y - 11, x, y - 16, fill="#444444")
             self.create_text(x, y - 23, text=lab, fill="#8a4a10",
                              font=("Segoe UI", 8, "bold"))
-        self.create_text(self._x0 - 2, y - 18, text=label, fill="#444444",
+        self._lbl_item = self.create_text(self._x0 - 2, y - 18, text=label, fill="#444444",
                          font=("Segoe UI", 7, "bold"))
         self._txt = self.create_text(self._x1, height - 6, text="idle", anchor="e",
                                      fill=C["fg"], font=("Consolas", 11, "bold"))
+
+    def set_label(self, label):
+        """Receiver name on the bar (RX1, SubRX2, ...): follows the TRX/port."""
+        self._label = label
+        self.itemconfig(self._lbl_item, text=label)
 
     def f2x(self, dbm):
         frac = clamp((dbm - self.DB_FLOOR) / (self.DB_CEIL - self.DB_FLOOR), 0.0, 1.0)
@@ -1232,11 +1237,11 @@ class MiniTCI(tk.Tk):
         # TCI TRX selector: 50001 carries two audio streams (TRX 0 = RX1 / VFO A,
         # TRX 1 = RX2 / VFO B). Ports 50002-50008 carry one receiver, always TRX 0.
         self._trx_idx = 0
-        ttk.Label(g1, text="TRX:", padding=(10, 0, 2, 0)).pack(side="left")
+        ttk.Label(g1, text="TRX:", padding=(4, 0, 2, 0)).pack(side="left")
         self.trx_var = tk.StringVar(value="TRX 0")
         self.trx_box = ttk.Combobox(g1, textvariable=self.trx_var, width=6, state="readonly",
                                     values=["TRX 0", "TRX 1"])
-        self.trx_box.pack(side="left")
+        self.trx_box.pack(side="left", padx=(2, 18))
         self.trx_var.trace_add("write", self._trx_changed)
         self.rx_var.trace_add("write", self._port_changed)
         self.conn_btn = ttk.Button(g1, text="Connect", width=11, command=self.toggle_conn)
@@ -1330,7 +1335,7 @@ class MiniTCI(tk.Tk):
         right.pack(side="left", fill="both", anchor="n")
 
         # ========================= 3 VFO A =========================
-        self.sec_vfoa = self._section(left, "3 · VFO A — RX1 (reception)")
+        self.sec_vfoa = self._section(left, "3 · RX1 (reception)")
         a1 = self._row(self.sec_vfoa)
         # the band selector and the DDS indicator belong to this section and to the
         # same row as the readout: the band is a slice property, the DDS is where
@@ -1340,7 +1345,8 @@ class MiniTCI(tk.Tk):
         ttk.Combobox(a1, textvariable=self.band_var, width=5, state="readonly",
                      values=[b[0] for b in BANDS]).pack(side="left", padx=(3, 10))
         self.band_var.trace_add("write", self._band_changed)
-        ttk.Label(a1, text="VFO A", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
+        self.lbl_rx3 = ttk.Label(a1, text="RX1", font=("Segoe UI", 9, "bold"))
+        self.lbl_rx3.pack(side="left", padx=(2, 6))
         self.freq_lbl = tk.Label(a1, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
                                  font=("Consolas", 24, "bold"))
         self.freq_lbl.pack(side="left", padx=(2, 12))
@@ -1408,15 +1414,16 @@ class MiniTCI(tk.Tk):
         # one S-meter per DSP channel: this bar shows VFO A's own signal reading,
         # taken from Thetis (WDSP meters the channel), and the microphone level
         # while transmitting, exactly as Thetis's own meter does
-        self.sm = Smeter(self.secA_row3, label="VFO A")
+        self.sm = Smeter(self.secA_row3, label="RX1")
         self.sm.pack(side="left", padx=(2, 0))
 
         # ======================= 4 SubVFOA =======================
         # Same presentation as VFO A and its OWN DSP chain: its own mode, filter
         # and AGC. Constraint: it runs inside VFO A's slice, one DDC.
-        self.sec_sub = self._section(left, "4 · SubVFOA — SubRX1 (reception)")
+        self.sec_sub = self._section(left, "4 · SubRX1 (reception)")
         b1 = self._row(self.sec_sub)
-        ttk.Label(b1, text="SubVFOA", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
+        self.lbl_rx4 = ttk.Label(b1, text="SubRX1", font=("Segoe UI", 9, "bold"))
+        self.lbl_rx4.pack(side="left", padx=(2, 6))
         self.vfo_lbl = tk.Label(b1, text="7.076.000", bg=C["panel"], fg="#0055aa",
                                 font=("Consolas", 24, "bold"))
         self.vfo_lbl.pack(side="left", padx=(2, 12))
@@ -1474,7 +1481,7 @@ class MiniTCI(tk.Tk):
 
         b3 = self._row(self.sec_sub)
         # the sub has its own DSP channel and therefore its own signal reading
-        self.sub_sm = Smeter(b3, label="SubVFOA")
+        self.sub_sm = Smeter(b3, label="SubRX1")
         self.sub_sm.pack(side="left", padx=(2, 0))
 
         # ========================== 5 TX ==========================
@@ -1547,7 +1554,7 @@ class MiniTCI(tk.Tk):
                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 2))
         self.split_btn = ttk.Button(tsp, text="off", width=5, command=self._split_toggle)
         self.split_btn.pack(side="left")
-        self.tx_src_lbl = tk.Label(tsp, text="TX on VFO A", bg=C["panel"],
+        self.tx_src_lbl = tk.Label(tsp, text="TX on SubRX1", bg=C["panel"],
                                    fg=C["dim"], font=("Segoe UI", 9))
         self.tx_src_lbl.pack(side="left", padx=(10, 0))
 
@@ -1896,6 +1903,17 @@ class MiniTCI(tk.Tk):
         1 = RX2 (VFO B). Only 50001 TRX 1 can ever be 1."""
         return 1 if (self._trx_idx == 1 and getattr(self, "_is_full_tci", False)) else 0
 
+    def _rx_number(self):
+        """Thetis receiver number for the labels: 50001 TRX 0 = RX1, 50001
+        TRX 1 = RX2, and each headless port 5000N serves RXn. While connected it
+        follows the connection, not the dropdown (a change needs a reconnect)."""
+        if self.connected:
+            port = getattr(self, "_connected_port", None) or int(self.rx_var.get().split()[0])
+            return (1 + self._trx_idx) if port == 50001 else (port - 50000)
+        port = int(self.rx_var.get().split()[0])
+        trx = 1 if (port == 50001 and self.trx_var.get() == "TRX 1") else 0
+        return (1 + trx) if port == 50001 else (port - 50000)
+
     def _vfo_addr(self):
         """vfo:<rx>,<chan>. Thetis tunes RX2 through VFOBFreq: rx 0, chan 1."""
         return "0,1" if self._rx_index() == 1 else "0,0"
@@ -1916,13 +1934,17 @@ class MiniTCI(tk.Tk):
             self.logprint("TRX changed - Disconnect and Connect to apply")
 
     def _refresh_rx_headings(self):
-        """The receiver block title names the receiver it actually drives."""
+        """Every receiver-named label follows the TRX / port selection."""
         if not hasattr(self, "sec_vfoa"):
             return
-        self.sec_vfoa.config(text="3 · VFO B — RX2 (reception)"
-                             if self._rx_index() == 1 else
-                             "3 · VFO A — RX1 (reception)")
-
+        n = self._rx_number()
+        self.sec_vfoa.config(text=f"3 · RX{n} (reception)")
+        self.sec_sub.config(text=f"4 · SubRX{n} (reception)")
+        self.lbl_rx3.config(text=f"RX{n}")
+        self.lbl_rx4.config(text=f"SubRX{n}")
+        self.sm.set_label(f"RX{n}")
+        self.sub_sm.set_label(f"SubRX{n}")
+        self.tx_src_lbl.config(text=f"TX on SubRX{n}")
 
     def toggle_conn(self):
         if self.client:
@@ -1935,6 +1957,7 @@ class MiniTCI(tk.Tk):
         port = int(self.rx_var.get().split()[0])
         self._is_full_tci = (port == 50001)  # Phase -1a: port detect
         # TRX from the selector; headless ports have TRX 0 only
+        self._connected_port = port
         self._trx_idx = 1 if self.trx_var.get() == "TRX 1" else 0
         if not self._is_full_tci:
             self._trx_idx = 0
@@ -1942,7 +1965,7 @@ class MiniTCI(tk.Tk):
                 self.trx_var.set("TRX 0")   # the row must show what is in use
         self._refresh_rx_headings()
         if self._trx_idx == 1:
-            self.logprint("TRX 1 = RX2 audio; the SubVFOA block below stays on RX1")
+            self.logprint("TRX 1 = RX2 audio; the sub block below drives SubRX2")
         self.text_q = queue.Queue()
         self._iq_q = queue.Queue(maxsize=8)
         self.chrono_reqs = collections.deque()
@@ -1984,10 +2007,10 @@ class MiniTCI(tk.Tk):
                 self._txdsp_query()   # mic gain / COMP / DXP / VOX from the console
                 self.send("tune_drive:0;")   # console transmit power during Tune
                 # the SubVFOA's own DSP state, so both apps start in step
-                self.send("sub_mode:0;")
-                self.send("sub_filter:0;")
-                self.send("sub_agc_mode:0;")
-                self.send("sub_agc_gain:0;")
+                self.send(f"sub_mode:{self._rx_index()};")
+                self.send(f"sub_filter:{self._rx_index()};")
+                self.send(f"sub_agc_mode:{self._rx_index()};")
+                self.send(f"sub_agc_gain:{self._rx_index()};")
                 self._vox_mic_keep()
             else:
                 self.send(f"ctun:0,{str(self.ctun_var.get()).lower()};")
@@ -1997,15 +2020,15 @@ class MiniTCI(tk.Tk):
             if getattr(self, "_is_full_tci", False):
                 # 50001: rx_channel_enable for sub-channel, vfoasub for freq
                 if self.sub_enabled:
-                    self.send("rx_channel_enable:0,1,true;")
-                    self.send(f"vfoasub:0,{self.sub_hz};")
+                    self.send(f"rx_channel_enable:{self._rx_index()},1,true;")
+                    self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
             else:
                 self.send("subrx_state:0;")
                 if self.sub_enabled:
                     self.send("subrx:0,true;")
                     self.send(f"vfo:1,0,{self.sub_hz};")
-                    self.send(f"sub_mode:0,{self.sub_mode};")
-                    self.send(f"sub_filter:0,{self.sub_filt[0]},{self.sub_filt[1]};")
+                    self.send(f"sub_mode:{self._rx_index()},{self.sub_mode};")
+                    self.send(f"sub_filter:{self._rx_index()},{self.sub_filt[0]},{self.sub_filt[1]};")
             if self.split:
                 self.send("split_enable:0,true;")
             # route audio per the saved main/sub/both selection - NOT the raw
@@ -2654,7 +2677,7 @@ class MiniTCI(tk.Tk):
         # Thetis's SPLIT always sends the transmitter to the sub frequency, on or
         # off - so the text is fixed and the colour carries the state.
         self.split_btn.config(text="on" if self.split else "off")
-        self.tx_src_lbl.config(text="TX on SubVFOA",
+        self.tx_src_lbl.config(text=f"TX on SubRX{self._rx_number()}",
                                fg=C["red"] if self.split else C["dim"])
         self.pan.sub_hz = self.sub_hz if on else 0.0
         self.pan.sub_filt = self.sub_filt
@@ -2670,7 +2693,7 @@ class MiniTCI(tk.Tk):
         self._sub_refresh_ui()
         if getattr(self, "_is_full_tci", False):
             # 50001: rx_channel_enable controls the sub-channel (chkEnableMultiRX)
-            self.send(f"rx_channel_enable:0,1,{str(want).lower()};")
+            self.send(f"rx_channel_enable:{self._rx_index()},1,{str(want).lower()};")
         else:
             self.send(f"subrx:0,{str(want).lower()};")
         if want:
@@ -2680,8 +2703,8 @@ class MiniTCI(tk.Tk):
                 self.send(f"vfo:1,0,{self.sub_hz};")
             else:
                 # vfoasub sets VFOASubFreq (the sub readout in Thetis)
-                self.send(f"vfoasub:0,{self.sub_hz};")
-            self.send(f"sub_mode:0,{self.sub_mode};")
+                self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
+            self.send(f"sub_mode:{self._rx_index()},{self.sub_mode};")
             self._sub_send_filter()
             self._sub_send_agc()
             # audio routing lives in the General section: keep it in step
@@ -2732,7 +2755,7 @@ class MiniTCI(tk.Tk):
 
     def _sub_send_mode(self):
         if self._sub_enabled():
-            self.send(f"sub_mode:0,{self.sub_mode};")
+            self.send(f"sub_mode:{self._rx_index()},{self.sub_mode};")
 
     def _sub_send_filter(self, filt=None):
         """The sub channel's own passband. DRM/SPEC filters are the server's."""
@@ -2741,13 +2764,13 @@ class MiniTCI(tk.Tk):
         if not self._sub_enabled():
             return
         lo, hi = filt if filt else self.sub_filt
-        self.send(f"sub_filter:0,{int(lo)},{int(hi)};")
+        self.send(f"sub_filter:{self._rx_index()},{int(lo)},{int(hi)};")
 
     def _sub_send_agc(self):
         if not self._sub_enabled():
             return
-        self.send(f"sub_agc_mode:0,{self._agc_mode_to_tci(self.sub_agc_var.get())};")
-        self.send(f"sub_agc_gain:0,{int(float(self.sub_agc_gain_var.get()))};")
+        self.send(f"sub_agc_mode:{self._rx_index()},{self._agc_mode_to_tci(self.sub_agc_var.get())};")
+        self.send(f"sub_agc_gain:{self._rx_index()},{int(float(self.sub_agc_gain_var.get()))};")
 
     def _sub_a_filter(self):
         """SubVFOA passband from its own Low/High boxes."""
@@ -2848,7 +2871,7 @@ class MiniTCI(tk.Tk):
         if not self.connected or getattr(self, "_sub_agc_gain_busy", False):
             return
         if self._sub_enabled():
-            self.send(f"sub_agc_gain:0,{int(float(v))};")
+            self.send(f"sub_agc_gain:{self._rx_index()},{int(float(v))};")
 
     def _update_sub_agc_gain_label(self):
         try:
@@ -2919,7 +2942,7 @@ class MiniTCI(tk.Tk):
         if self._sub_enabled():
             # Phase -1a: 50001 uses vfoasub instead of vfo:1
             if getattr(self, "_is_full_tci", False):
-                self.send(f"vfoasub:0,{self.sub_hz};")
+                self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
             else:
                 self.send(f"vfo:1,0,{self.sub_hz};")
 
@@ -3020,7 +3043,7 @@ class MiniTCI(tk.Tk):
         if self._sub_enabled():
             self._clamp_sub_to_ddc()
             if getattr(self, "_is_full_tci", False):
-                self.send(f"vfoasub:0,{self.sub_hz};")
+                self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
             else:
                 self.send(f"vfo:1,0,{self.sub_hz};")
             self._sub_refresh_ui()
@@ -3105,17 +3128,17 @@ class MiniTCI(tk.Tk):
             # Phase -1a: 50001 uses rx_channel_enable + vfoasub; headless uses subrx + vfo:1
             self.sub_enabled = True
             if getattr(self, "_is_full_tci", False):
-                self.send("rx_channel_enable:0,1,true;")
-                self.send(f"vfoasub:0,{self.sub_hz};")
+                self.send(f"rx_channel_enable:{self._rx_index()},1,true;")
+                self.send(f"vfoasub:{self._rx_index()},{self.sub_hz};")
             else:
                 self.send("subrx:0,true;")
                 self.send(f"vfo:1,0,{self.sub_hz};")
-            self.send(f"sub_mode:0,{self.sub_mode};")
+            self.send(f"sub_mode:{self._rx_index()},{self.sub_mode};")
             self._sub_send_filter()
             self._sub_send_agc()
         elif self.sub_enabled:
             if getattr(self, "_is_full_tci", False):
-                self.send("rx_channel_enable:0,1,false;")
+                self.send(f"rx_channel_enable:{self._rx_index()},1,false;")
             else:
                 self.send("subrx:0,false;")
             self.sub_enabled = False
