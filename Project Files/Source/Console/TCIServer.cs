@@ -857,6 +857,13 @@ namespace Thetis
 			sendRXEnable(1, enabled);
 			sendTXEnable(1, enabled && !consoleThreadSafe.MOX);
 		}
+		// H1: SubVFOB - RX2's sub receiver frequency, published under its own name:
+		// vfo:1,1 duplicates VFO B, so a client cannot tell SubRX2's frequency from it.
+		public void VFOBSubChange(double freqMHz)
+		{
+			if (m_disconnected) return;
+			sendTextFrame("vfoasub:1," + ((long)(freqMHz * 1e6)).ToString() + ";");
+		}
         public void HWSampleRateChange(int rx, int oldSampleRate, int newSampleRate)
         {
             if (m_disconnected) return;
@@ -5660,8 +5667,18 @@ private void handleTXFilterBandEx(string[] args)
                 // H1: TCI command to set VFOA sub-frequency (the smaller readout below VFO A)
                                 private void handleVFOASUB(string[] args)
                                 {
-                                    if (args == null || args.Length < 2) return;
+                                    if (args == null || args.Length < 1) return;
                                     if (!int.TryParse(args[0], out int rx)) return;
+                                    if (args.Length == 1)   // H1: read the current sub frequency (rx 1 = RX2's own sub)
+                                    {
+                                    	double cur = rx == 1 ? consoleThreadSafe.VFOBSubFreq
+                                    	                    : (consoleThreadSafe.RX2Enabled ? consoleThreadSafe.VFOASubFreq : consoleThreadSafe.VFOBFreq);
+                                    	if (cur > 0)
+                                    	    sendTextFrame(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                    	        "vfoasub:{0},{1};", rx, (long)Math.Round(cur * 1e6)));
+                                    	return;
+                                    }
+                                    if (args.Length < 2) return;
                                     if (!long.TryParse(args[1], out long freqHz)) return;
                                     double freqMHz = freqHz / 1e6;
                                     freqMHz = Math.Round(freqMHz, 6);
@@ -7450,6 +7467,8 @@ private void handleTXFilterBandEx(string[] args)
 					console.HWSampleRateChangedHandlers += OnHWSampleRateChanged;
 					console.ThetisFocusChangedHandlers += OnThetisFocusChanged;
 					console.RX2EnabledChangedHandlers += OnRX2EnabledChanged;
+					console.VFOBSubFrequencyChangeHandlers += OnVFOBSubFrequencyChanged;
+					console.VFOASubFrequencyChangeHandlers += OnVFOASubFrequencyChanged;
 					console.SpotClickedHandlers += OnSpotClicked;
 					console.MuteChangedHandlers += OnMuteChanged;
 					console.MONChangedHandlers += OnMONChanged;
@@ -7565,6 +7584,8 @@ private void handleTXFilterBandEx(string[] args)
 					console.HWSampleRateChangedHandlers -= OnHWSampleRateChanged;
 					console.ThetisFocusChangedHandlers -= OnThetisFocusChanged;
 					console.RX2EnabledChangedHandlers -= OnRX2EnabledChanged;
+					console.VFOBSubFrequencyChangeHandlers -= OnVFOBSubFrequencyChanged;
+					console.VFOASubFrequencyChangeHandlers -= OnVFOASubFrequencyChanged;
 					console.SpotClickedHandlers -= OnSpotClicked;
                     console.MuteChangedHandlers -= OnMuteChanged;
                     console.MONChangedHandlers -= OnMONChanged;
@@ -8232,6 +8253,18 @@ private void handleTXFilterBandEx(string[] args)
 				}
 			}
 		}
+		public void OnVFOBSubFrequencyChanged(double freqMHz)
+		{
+			lock (m_objLocker)
+			{
+                if (m_server == null || m_socketListenersList == null) return;
+
+                foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+				{
+					socketListener.VFOBSubChange(freqMHz);
+				}
+			}
+		}
 		private void OnHWSampleRateChanged(int rx, int oldSampleRate, int newSampleRate)
 		{
 			lock (m_objLocker)
@@ -8244,7 +8277,23 @@ private void handleTXFilterBandEx(string[] args)
 				}
 			}
 		}
-		private void OnDrivePowerChanged(int rx, int newPower, bool tune)
+        // H1: RX1's sub receiver (SubVFOA). Until now its frequency only reached a
+        // client as a side effect of VFO B changing while RX2 was off, so a client's
+        // SubRX1 drifted out of step. Publish it on every change, as vfoasub:0.
+        public void OnVFOASubFrequencyChanged(Band oldBand, Band newBand, DSPMode newMode, Filter newFilter,
+            double oldFreq, double newFreq, double newCentreF, bool newCTUN, int newZoomSlider, double offset, int rx)
+        {
+            lock (m_objLocker)
+            {
+                if (m_server == null || m_socketListenersList == null) return;
+
+                foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+                {
+                    socketListener.VFOASubChange(newFreq);
+                }
+            }
+        }
+		public void OnDrivePowerChanged(int rx, int newPower, bool tune)
 		{
 			lock (m_objLocker)
 			{
