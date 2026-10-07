@@ -538,6 +538,30 @@ namespace Thetis
 
         private TCPIPcatServer m_tcpCATServer;
         private TCPIPtciServer m_tcpTCIServer;
+        private bool m_bTciOnly = false; // H1: headless TCI-only start (-tcionly)
+        // H1: headless mode reports where a terminal session can see it - the calling
+        // console (attached on demand) and tci_only.log beside the exe.
+        private bool m_bTciOnlyConsole = false;
+        private void H1TciOnlyWrite(string msg)
+        {
+            try
+            {
+                if (!m_bTciOnlyConsole)
+                {
+                    AttachConsole(ATTACH_PARENT_PROCESS);   // the terminal that started us
+                    m_bTciOnlyConsole = true;
+                }
+                System.Console.WriteLine("[TCI-only] " + msg);
+            }
+            catch { }
+            try
+            {
+                System.IO.File.AppendAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.ExecutablePath), "tci_only.log"),
+                    DateTime.Now.ToString("HH:mm:ss") + "  " + msg + "\r\n");
+            }
+            catch { }
+        }
         private bool m_bDisplayLoopRunning = false;
         private frmNotchPopup m_frmNotchPopup;
         private frmFinder _frmFinder;
@@ -611,6 +635,9 @@ namespace Thetis
         // ======================================================
         public Console(string[] args)
         {
+            H1StartupTrace("ctor start (thread " + System.Threading.Thread.CurrentThread.ManagedThreadId + ")");
+            this.Shown += (s, e) => H1StartupTrace("window Shown: size=" + this.Size + " state=" + this.WindowState
+                + " loc=" + this.Location + " resizes=" + _h1StartupResizeCount + " expands=" + _h1StartupExpandCount);
             //DialogResult drr = MessageBox.Show("This version will break stuff.\n" +
             //    "There are lots of things that need testing/fixing. Ok to continue?",
             //    "Eeeeeeek",
@@ -731,6 +758,17 @@ namespace Thetis
 
             _use_additional_sas = !Common.HasArg(args, "-nospec"); // prevent the use of additional spec analysers           
             _touch_support = Common.HasArg(args, "-touch"); // configure touch support for mouse down/up/move, used primarily by containers, and ucMeter
+            // H1: headless TCI-only mode. Started from a terminal it brings up the
+            // radio, the DSP and TCI exactly as usual, but the window is never faded in
+            // (it stays at opacity 0 and out of the taskbar) and the panafall/waterfall
+            // renderer is not started - nothing is drawn, so there is no GUI at all.
+            m_bTciOnly = Common.HasArg(args, "-tcionly");
+            if (Common.HasArg(args, "-tcibind"))
+            {
+            	// -tcibind:<address> - e.g. 0.0.0.0 to accept remote clients (default 127.0.0.1)
+            	string bind = Common.ArgParam(args, "-tcibind:");
+            	if (!string.IsNullOrWhiteSpace(bind)) TCIip = bind;
+            }
 
             string splash_screen_folder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\OpenHPSDR\\SplashScreens";
             if (!Directory.Exists(splash_screen_folder))
@@ -1031,7 +1069,14 @@ namespace Thetis
 
             LogTool.AddLogEntry("Splash screen hidden");
 
-            Common.FadeIn(this);
+            if (m_bTciOnly)
+            {
+            	// headless: stay invisible and out of the taskbar (Opacity is already 0)
+            	ShowInTaskbar = false;
+                H1TciOnlyWrite("no GUI, TCI on " + TCIip + ":" + TCIport.ToString());
+            }
+            else
+            	Common.FadeIn(this);
 
             LogTool.AddLogEntry("Console showing");
 
@@ -1120,7 +1165,7 @@ namespace Thetis
 #endif
 
             m_bResizeDX2Display = true;
-            if (draw_display_thread == null || !draw_display_thread.IsAlive)
+            if (!m_bTciOnly && (draw_display_thread == null || !draw_display_thread.IsAlive))
             {
                 draw_display_thread = new Thread(new ThreadStart(RunDisplay))
                 {
@@ -1132,6 +1177,7 @@ namespace Thetis
                 draw_display_thread.Start();
             }
             _pause_DisplayThread = false;
+            if (m_bTciOnly) H1TciOnlyWrite("panafall/waterfall renderer not started");
 
             if (reposition_conosle_and_setup)
             {
@@ -1565,7 +1611,9 @@ namespace Thetis
                 Application.DoEvents();
 
                 _theConsole = new Console(args);
+                H1StartupTrace("Main: ctor done, about to Run");
                 Application.Run(_theConsole);
+                H1StartupTrace("Main: Run returned");
                 restart = _theConsole.Restart && !Common.ShiftKeyDown;
             }
             catch (Exception ex)
@@ -4161,6 +4209,7 @@ namespace Thetis
                     case "console_state":
                         m_WindowState = (FormWindowState)int.Parse(val);
                         bNeedUpdate = true;
+                        H1StartupTrace("restore console_state=" + val);
                         break;
                     case "setup_top":
                         num = Int32.Parse(val);
@@ -5223,6 +5272,9 @@ namespace Thetis
 
             if (bNeedUpdate)
             {
+                H1StartupTrace("restore-apply: m_WindowState=" + m_WindowState + " collapsed=" + _iscollapsed
+                    + " savedSize=" + szConsoleSize + " savedLoc=" + pConsoleLocation
+                    + " curSize=" + this.Size + " curState=" + this.WindowState);
                 this.Size = szConsoleSize;
                 this.Location = pConsoleLocation;
 
@@ -5234,6 +5286,7 @@ namespace Thetis
                 // the saved flag could not self-correct. Boot expanded; the flag is rewritten on exit.
                 if (_iscollapsed)
                 {
+                    H1StartupTrace("H1: persisted collapsed state ignored - booting expanded");
                     _iscollapsed = false;
                     _isexpanded = true;
                     bNeedUpdate = true;
@@ -5260,6 +5313,7 @@ namespace Thetis
                         this.WindowState = FormWindowState.Normal;
                         break;
                 }
+                H1StartupTrace("restore-apply done: size=" + this.Size + " state=" + this.WindowState + " loc=" + this.Location);
                 H1StartupStartSnapshots();
             }
 
@@ -24262,6 +24316,9 @@ namespace Thetis
             txtVFOBSub.Text = (rx2_enabled && chkEnableMultiRX2.Checked) ? freq.ToString("f6") : ""; // H1: emptied with RX2 off and while the sub is idle
             txtVFOBSub_LostFocus(this, EventArgs.Empty);
             recordSubMemory(2); // H1: the sub's frequency joins the band memory
+            // H1: publish SubVFOB so a TRX 1 client follows the console's SubRX2
+            // (the value is meaningless while the sub is idle: VFOBSubInUse gates it)
+            if (VFOBSubInUse) VFOBSubFrequencyChangeHandlers?.Invoke(m_dVFOBSubFreq);
         }
 
         public bool VFOBSubInUse
@@ -45213,6 +45270,17 @@ namespace Thetis
             H1TracePanelMoves("msp-exit");
         }
         // H1 (user 2026-10-03): startup trace - one line per layout/state event so a launch
+        // that shows the un-arranged console can be read back from %TEMP%\h1_startup.log.
+        private static int _h1StartupResizeCount = 0;
+        private static int _h1StartupExpandCount = 0;
+        private static int _h1StartupCollapseCount = 0;
+        private static bool _h1StartupSnapshotsStarted = false;
+        private static void H1StartupTrace(string msg)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "h1_startup.log"),
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + msg + "\r\n");
             }
             catch { }
         }
@@ -45220,12 +45288,17 @@ namespace Thetis
         {
             try
             {
+                if (_h1StartupSnapshotsStarted) return;
+                _h1StartupSnapshotsStarted = true;
                 System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
                 t.Interval = 10000;
                 int n = 0;
                 t.Tick += (s, e) =>
                 {
                     n++;
+                    H1StartupTrace("snapshot +" + (n * 10) + "s: size=" + this.Size + " state=" + this.WindowState
+                        + " loc=" + this.Location + " resizes=" + _h1StartupResizeCount + " expands=" + _h1StartupExpandCount
+                        + " collapses=" + _h1StartupCollapseCount + " collapsed=" + this.collapsedDisplay);
                     if (n >= 3) t.Stop();
                 };
                 t.Start();
@@ -45237,6 +45310,10 @@ namespace Thetis
             // MW0LGE changes made to this function so that RX1 meter fills space to right of VFOB box, also delay repaint until all controls moved
             SuspendDrawing(this); //MW0LGE
             H1TracePanelMoves("resize-in " + h_delta + "," + v_delta);
+            _h1StartupResizeCount++;
+            if (_h1StartupResizeCount <= 12)
+                H1StartupTrace("resize #" + _h1StartupResizeCount + " delta=" + h_delta + "," + v_delta
+                    + " size=" + this.Size + " state=" + this.WindowState + " loc=" + this.Location);
 
             // This routine captures the size and location parameters *after* windows
             // has resized the image, (if the video is set for "120 dpi" in lieu of the
@@ -45244,6 +45321,7 @@ namespace Thetis
 
             if ((h_delta == 0) && (v_delta == 0) && (previous_delta == 0))
             {
+                H1StartupTrace("resize #" + _h1StartupResizeCount + " SKIPPED (deltas zero, previous zero)");
                 // do nothing - this only occurs for my first call to Resize with both deltas zero during init
                 // and at that time windows hasn't resized the display if in 120 dpi mode.
                 // Use the "previous_delta" variable to ensure that if we *reduce* size back
@@ -50495,6 +50573,9 @@ namespace Thetis
         private void ExpandDisplay(bool bSuspendDraw = true)
         {
             if (initializing) return;
+            _h1StartupExpandCount++;
+            H1StartupTrace("ExpandDisplay #" + _h1StartupExpandCount + " suspend=" + bSuspendDraw
+                + " size=" + this.Size + " state=" + this.WindowState);
 
             if (bSuspendDraw) SuspendDrawing(this);
 
@@ -51076,6 +51157,9 @@ namespace Thetis
         {
             H1FullScreenCapture();   // H1: remember the normal view first
             LegacyItemController.Update();
+            _h1StartupCollapseCount++;
+            H1StartupTrace("CollapseDisplay #" + _h1StartupCollapseCount + " suspend=" + bSuspendDraw
+                + " size=" + this.Size + " state=" + this.WindowState);
 
             if (bSuspendDraw) SuspendDrawing(this);
 
@@ -54583,6 +54667,10 @@ private void incrementMutliMeterDisplayModeRX2()
         public delegate void VFOAFrequencyChanged(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider, double offset, int rx);
         public delegate void VFOBFrequencyChanged(Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider, double offset, int rx);
         public delegate void VFOASubFrequencyChanged(Band oldBand, Band newBand, DSPMode newMode, Filter newFilter, double oldFreq, double newFreq, double newCentreF, bool newCTUN, int newZoomSlider, double offset, int rx);
+        // H1: SubVFOB - the sub receiver of RX2, same role VFOASubFrequencyChanged
+        // plays for RX1's sub. TRX 1 clients follow this to stay in step with the
+        // console's SubRX2 while connected.
+        public delegate void VFOBSubFrequencyChanged(double newFreq);
         public delegate void MoxChanged(int rx, bool oldMox, bool newMox);
         public delegate void MoxPreChanged(int rx, bool currentMox, bool expectedMox);
         public delegate void SetBandChanged(int rx, Band oldBand, Band newBand, DSPMode oldMode, DSPMode newMode, Filter oldFilter, Filter newFilter, double oldFreq, double newFreq, double oldCentreF, double newCentreF, bool oldCTUN, bool newCTUN, int oldZoomSlider, int newZoomSlider);
@@ -54747,6 +54835,7 @@ private void incrementMutliMeterDisplayModeRX2()
         public VFOAFrequencyChanged VFOAFrequencyChangeHandlers;
         public VFOBFrequencyChanged VFOBFrequencyChangeHandlers;
         public VFOASubFrequencyChanged VFOASubFrequencyChangeHandlers;
+        public VFOBSubFrequencyChanged VFOBSubFrequencyChangeHandlers; // H1: SubVFOB, RX2's sub receiver
         public MoxChanged MoxChangeHandlers;
 
         // H1: TX microphone/processor parameters changed (mic gain + mic mute,
