@@ -441,7 +441,19 @@ void SetRXTCIRun (int active)
 // sub). A TCI client needs to choose between them, and the console's own audio
 // path (VAC, wav recorder, the user's listening) must not change - so the gains
 // live here and are applied in pipe.c to a TCI-only copy of the mix.
-double tci_rx_chan_gain[cmMAXrcvr][2] = {{1.0, 1.0}};
+// H1: per-receiver TCI tap gains. EVERY receiver must start at unity: the old
+// partial initialiser {{1.0, 1.0}} left receivers 1..cmMAXrcvr-1 at ZERO, and
+// pipe.c scales its TCI-only copy by these gains - so every TCI port except
+// RX1 streamed exact digital silence while frames kept flowing at full rate.
+#if cmMAXrcvr != 16
+#error "tci_rx_chan_gain initialiser below assumes cmMAXrcvr == 16"
+#endif
+double tci_rx_chan_gain[cmMAXrcvr][2] = {
+	{1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0},
+	{1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0},
+	{1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0},
+	{1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0}, {1.0, 1.0}
+};
 
 PORT
 void SetTCIRxChannelGains (int rx, double mainGain, double subGain)
