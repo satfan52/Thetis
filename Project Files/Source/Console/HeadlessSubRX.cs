@@ -35,6 +35,7 @@ namespace Thetis
             public bool Nr, Anf, Snb;
             public AGCMode AgcMode = AGCMode.MED;
             public double AgcGainDb = 20.0;
+            public bool Follow;                   // H1: takes the port receiver's set (frequency aside)
         }
 
         private static readonly Dictionary<int, State> _states = new Dictionary<int, State>();
@@ -110,6 +111,32 @@ namespace Thetis
         }
 
         public static bool IsEnabled(int rx) { return Get(rx).Enabled; }
+
+        // H1: the "=RXn" follower for a headless port. Ticked, the sub takes the port
+        // receiver's whole set - mode, passband and AGC - on every change, and never the
+        // frequency: that is the one thing a follower keeps for itself. Same semantics as
+        // the console's own =RX1/=RX2 pills.
+        public static bool GetFollow(int rx) { return Get(rx).Follow; }
+
+        public static void SetFollow(int rx, bool on)
+        {
+            Get(rx).Follow = on;
+            if (on) MirrorFromMain(rx);
+            TciLog.Log($"[SubRX] rx{rx} follow={on}");
+        }
+
+        public static void MirrorFromMain(int rx)
+        {
+            var s = Get(rx);
+            if (!s.Follow) return;
+            var main = HeadlessSliceManager.Instance.GetSlice(rx);
+            if (main == null) return;
+            if (s.Mode != main.Mode) ApplyMode(rx, main.Mode);
+            if (main.FilterHigh > main.FilterLow &&
+                (s.FilterLow != main.FilterLow || s.FilterHigh != main.FilterHigh))
+                ApplyFilter(rx, main.FilterLow, main.FilterHigh);
+            if (s.AgcMode != main.AgcMode) ApplyAgc(rx, main.AgcMode, s.AgcGainDb);
+        }
 
         /// <summary>VFO B absolute frequency (Hz). Main slice frequency is the DDC centre.</summary>
         public static void SetFreq(int rx, long hz)
