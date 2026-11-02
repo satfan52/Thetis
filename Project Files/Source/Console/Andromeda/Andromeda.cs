@@ -4220,6 +4220,11 @@ namespace Thetis
                     //panelModeSpecificDigital.BringToFront();
                     break;
             }
+            // H1 (user 2026-11-02): the PA-profile readout is a form-level label parked inside
+            // the transmit block's own footprint, so Show()ing a mode panel can leave the panel
+            // over it. Raise the readout after every mode change, otherwise it disappears in the
+            // modes whose panel was just brought up.
+            if (lblPAProfile != null) lblPAProfile.BringToFront();
         }
 
 

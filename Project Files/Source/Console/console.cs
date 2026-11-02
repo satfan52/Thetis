@@ -7565,12 +7565,29 @@ namespace Thetis
                 if (tp != null)
                 {
                     tp.Location = H1ModePanelPoint();
-                    // H1: the stock mode panels are the OLD transmit block - moved here they
-                    // still painted over the H1 cluster (and over the PA-profile readout), and
-                    // their APF group drew across CW Break-In. Nothing re-shows them, so hide
-                    // them outright: the H1 transmit cluster is the transmit section now.
-                    tp.Visible = false;
+                    // H1 (user 2026-11-02): these four panels ARE the transmit section - the
+                    // phone panel carries the MIC/compander/VOX/noise-gate/TX-filter/TX-profile
+                    // controls, CW the keyer set, digital the VAC gains, FM the deviation set.
+                    // Hiding them emptied the TRANSMIT group and left only the PA-profile
+                    // readout; visibility belongs to SelectModeDependentPanel(), which shows the
+                    // current mode's panel and hides the other three - never hide them here.
                 }
+            H1StartupTrace("txblock: phone=" + (panelModeSpecificPhone != null && panelModeSpecificPhone.Visible)
+                + " cw=" + (panelModeSpecificCW != null && panelModeSpecificCW.Visible)
+                + " dig=" + (panelModeSpecificDigital != null && panelModeSpecificDigital.Visible)
+                + " fm=" + (panelModeSpecificFM != null && panelModeSpecificFM.Visible)
+                + " loc=" + (panelModeSpecificPhone != null ? panelModeSpecificPhone.Location.ToString() : "?")
+                + " mode=" + RX1DSPMode.ToString()
+                + " collapsed=" + _iscollapsed + " expanded=" + _isexpanded);
+            // H1 (user 2026-11-02): the stock CW panel draws its APF box (panel y 5..94) across the
+            // top of the CW Break-In group (panel y 92) on the dark skin, so the two read as one
+            // garbled block. Nudge Break-In down 4 px and take 2 px off its height; its own delay
+            // readout ends at panel y 40, so it still fits, and it clears the pitch box at y 140.
+            if (grpSemiBreakIn != null)
+            {
+                grpSemiBreakIn.Location = new Point(115, 96);
+                if (grpSemiBreakIn.Size != new Size(215, 43)) grpSemiBreakIn.Size = new Size(215, 43);
+            }
             // H1: the EQ and TX filter pills sit on one row, centred on the transmit block's
             // centre line, with a clear band under the transmit filter boxes above - sat tight
             // under them they read as related to the filter limits, which they are not
@@ -45294,10 +45311,7 @@ namespace Thetis
             Point h1 = H1ModePanelPoint();
             foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
                 if (tp != null)
-                {
-                    tp.Location = h1;
-                    tp.Visible = false;   // H1: the old transmit block stays off screen
-                }
+                    tp.Location = h1;   // H1: park only - SelectModeDependentPanel() owns visibility
             H1TracePanelMoves("msp-exit");
         }
         // H1 (user 2026-10-03): startup trace - one line per layout/state event so a launch
