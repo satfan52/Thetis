@@ -820,6 +820,7 @@ namespace Thetis
 		{
 			StopSocketListener();
 		}
+        private System.Threading.Timer m_tmStation; // H1: station-block state tick
         private Console consoleThreadSafe
         {
             get
@@ -857,6 +858,84 @@ namespace Thetis
 			sendRXEnable(1, enabled);
 			sendTXEnable(1, enabled && !consoleThreadSafe.MOX);
 		}
+
+		// H1: a read answers with the console's facts; a write drives the same action the
+		// console's pill does, and is ignored while the amplifier link is down.
+		private void sendStationState()
+		{
+			Console c = consoleThreadSafe;
+			AmpLanController amp = c != null ? c.AmpLanControllerInstance : null;
+			AmpState(amp != null && amp.IsOpen ? 1 : 0, amp != null && amp.StateKnown ? 1 : 0,
+			         amp != null && amp.IsOperate ? 1 : 0, amp != null && amp.PaOn ? 1 : 0,
+			         amp != null && amp.IsAutoTune ? 1 : 0, amp != null && amp.IsHeating ? 1 : 0,
+			         amp != null && amp.IsCooling ? 1 : 0, amp != null && amp.IsPtt ? 1 : 0,
+			         amp != null && amp.FaultFresh ? 1 : 0);
+			if (c != null)
+				MfjState(c.MfjRelayInstance != null && c.MfjRelayInstance.LinkOpen ? 1 : 0,
+				         c.H1MfjRelayEnabled ? 1 : 0,
+				         c.MfjRelayInstance != null && c.MfjRelayInstance.RelayOn ? 1 : 0,
+				         c.H1MfjPwrCycleEnabled ? 1 : 0,
+				         c.H1MfjPttInEnabled ? 1 : 0, c.H1MfjPttInDebounceMs);
+		}
+
+		private static bool tryParseOnOff(string[] args, out bool want)
+		{
+			want = false;
+			if (args == null || args.Length < 1) return false;
+			string v = args[0].Trim().ToLowerInvariant();
+			if (v == "on" || v == "true" || v == "1") { want = true; return true; }
+			if (v == "off" || v == "false" || v == "0") { want = false; return true; }
+			return false;
+		}
+
+		private void handleAmpMode(string[] args)
+		{
+			Console c = consoleThreadSafe;
+			AmpLanController amp = c != null ? c.AmpLanControllerInstance : null;
+			if (amp != null && amp.IsOpen && args != null && args.Length >= 1)
+			{
+				string v = args[0].Trim().ToLowerInvariant();
+				if (v == "operate" && !amp.IsOperate) amp.RequestOperate();
+				else if (v == "standby" && amp.IsOperate) amp.RequestStandby();
+			}
+			sendStationState();
+		}
+
+		private void handleAmpPa(string[] args)
+		{
+			Console c = consoleThreadSafe;
+			AmpLanController amp = c != null ? c.AmpLanControllerInstance : null;
+			bool want;
+			if (amp != null && amp.IsOpen && tryParseOnOff(args, out want))
+			{
+				if (want && !amp.PaOn) amp.RequestPaOn();
+				else if (!want && amp.PaOn) amp.RequestPaOff();
+			}
+			sendStationState();
+		}
+
+		private void handleAmpAutoTune(string[] args)
+		{
+			Console c = consoleThreadSafe;
+			AmpLanController amp = c != null ? c.AmpLanControllerInstance : null;
+			bool want;
+			if (amp != null && amp.IsOpen && tryParseOnOff(args, out want))
+			{
+				if (want && !amp.IsAutoTune) amp.RequestAutoTune();
+				else if (!want && amp.IsAutoTune) amp.RequestAutoTuneStop();
+			}
+			sendStationState();
+		}
+
+		private void handleMfjRelay(string[] args)
+		{
+			Console c = consoleThreadSafe;
+			bool want;
+			if (c != null && tryParseOnOff(args, out want) && c.H1MfjRelayEnabled != want)
+				c.H1MfjRelayEnabled = want;
+			sendStationState();
+		}
+
 		// H1: SubVFOB - RX2's sub receiver frequency, published under its own name:
 		// vfo:1,1 duplicates VFO B, so a client cannot tell SubRX2's frequency from it.
 		public void VFOBSubChange(double freqMHz)
@@ -864,6 +943,24 @@ namespace Thetis
 			if (m_disconnected) return;
 			sendTextFrame("vfoasub:1," + ((long)(freqMHz * 1e6)).ToString() + ";");
 		}
+
+		// H1: the station blocks - OM2000A+ amplifier and the MFJ998R tuner relay - mirrored
+		// over TCI so a client shows the console's own facts, never a direct link.
+		public void AmpState(int open, int known, int operate, int pa, int autotune,
+		                     int heating, int cooling, int ptt, int fault)
+		{
+			if (m_disconnected) return;
+			sendTextFrame("amp_state:" + open + "," + known + "," + operate + "," + pa + "," + autotune
+			              + "," + heating + "," + cooling + "," + ptt + "," + fault + ";");
+		}
+
+public void MfjState(int link, int relay, int relayActual, int pwrcycle, int pttin, int debounce)
+		{
+			if (m_disconnected) return;
+			sendTextFrame("mfj_state:" + link + "," + relay + "," + relayActual + "," + pwrcycle
+			              + "," + pttin + "," + debounce + ";");
+		}
+
         public void HWSampleRateChange(int rx, int oldSampleRate, int newSampleRate)
         {
             if (m_disconnected) return;
@@ -2659,6 +2756,8 @@ namespace Thetis
             handleDrive(new string[] { "1" });
             handleTuneDrive(new string[] { "0" });
             handleTuneDrive(new string[] { "1" });
+            handleSubFollow(new string[] { "0" });
+            handleSubFollow(new string[] { "1" });
 
             sendMOX(0, consoleThreadSafe.MOX && !(consoleThreadSafe.VFOBTX && bRX2Enabled));
             sendMOX(1, consoleThreadSafe.MOX && (consoleThreadSafe.VFOBTX && bRX2Enabled));
@@ -3896,6 +3995,58 @@ namespace Thetis
                 case DSPMode.SPEC: return "SPEC";
                 default: return "USB";
             }
+        }
+
+        // H1: "=RXn" over TCI - the console's own follow pill for its two subs. Read form
+        // sub_follow:<rx>;  write form sub_follow:<rx>,<on|off>;  Broadcast once a second
+        // (SubFollowState) so the client's pill and the console's pill cannot disagree.
+        private void handleSubFollow(string[] args)
+        {
+            if (args == null || args.Length < 1) return;
+            if (!int.TryParse(args[0], out int rx)) return;
+            if (rx < 0 || rx > 1) return;
+
+            if (args.Length == 1)
+            {
+                sendSubFollow(rx, subFollowGet(rx));
+                return;
+            }
+
+            string v = args[1].Trim().ToLowerInvariant();
+            bool on = v == "1" || v == "true" || v == "on";
+            if (!on && !(v == "0" || v == "false" || v == "off")) return;
+
+            // H1: the console's pill is a *control* - it has to be moved on the UI thread,
+            // or Checked changes without the pill ever repainting ("=RX1 does not work").
+            // Same pattern the VAC switches use in lineOutEnable().
+            try
+            {
+                Console c = consoleThreadSafe;
+                if (c != null)
+                    c.Invoke(new MethodInvoker(() => c.H1SubFollowSet(rx, on)));
+            }
+            catch { }
+            sendSubFollow(rx, subFollowGet(rx));
+        }
+
+        private bool subFollowGet(int rx)
+        {
+            try { return consoleThreadSafe != null && consoleThreadSafe.H1SubFollowGet(rx); }
+            catch { return false; }
+        }
+
+        private void sendSubFollow(int rx, bool on)
+        {
+            sendTextFrame("sub_follow:" + rx.ToString() + "," + (on ? "1" : "0") + ";");
+        }
+
+        // H1: the follow state of the console's two own subs, once a second, so a client's
+        // "=RXn" shows what the console's pill shows whichever side moved it.
+        public void SubFollowState(int rx1, int rx2)
+        {
+            if (m_disconnected) return;
+            sendTextFrame("sub_follow:0," + rx1.ToString() + ";");
+            sendTextFrame("sub_follow:1," + rx2.ToString() + ";");
         }
 
         private void handleSubMode(string[] args)
@@ -5961,8 +6112,32 @@ private void handleTXFilterBandEx(string[] args)
                     // H1: SubVFOA's OWN DSP chain. The sub runs in VFO A's slice,
                     // one DDC, but WDSP gives it its own channel: mode, filter and
                     // AGC are independent of VFO A's.
+                    // H1: the station blocks (OM2000A+ amplifier, MFJ998R tuner relay).
+                    // Both a bare command (read) and one with a value are accepted.
+                    case "amp_state":
+                    	// fall through to the same reply as the setters
+                    	sendStationState();
+                    	break;
+                    case "amp_mode":
+                    	handleAmpMode(args);
+                    	break;
+                    case "amp_pa":
+                    	handleAmpPa(args);
+                    	break;
+                    case "amp_autotune":
+                    	handleAmpAutoTune(args);
+                    	break;
+                    case "mfj_state":
+                    	sendStationState();
+                    	break;
+                    case "mfj_relay":
+                    	handleMfjRelay(args);
+                    	break;
                     case "sub_mode":
                         handleSubMode(args);
+                        break;
+                    case "sub_follow":
+                        handleSubFollow(args);
                         break;
                     case "sub_filter":
                         handleSubFilter(args);
@@ -7126,6 +7301,8 @@ private void handleTXFilterBandEx(string[] args)
 			sendPingFrame("Thetis");
 		}
 
+		// H1: push the station-block state once a second, so a mirror in MiniTCI follows
+
         private void VFOcallback(Object o)
         {
             TCPIPtciSocketListener.VFOData vfod = (TCPIPtciSocketListener.VFOData)o;
@@ -7227,6 +7404,7 @@ private void handleTXFilterBandEx(string[] args)
 			new IPEndPoint(DEFAULT_SERVER, DEFAULT_PORT);
 
 		private TcpListener m_server = null;
+		private System.Threading.Timer m_tmStation = null; // H1: station-block state tick
 		private bool m_stopServer = false;
 		private bool m_stopPurging = false;
 		private Thread m_serverThread = null;
@@ -7388,7 +7566,12 @@ private void handleTXFilterBandEx(string[] args)
         }
 
         public void StartServer(Console c, int rateLimit = 0)
+
+
 		{
+		// H1: the station blocks (OM2000A+ / MFJ998R) tick to connected clients
+		if (m_tmStation == null)
+			m_tmStation = new System.Threading.Timer(StationStateTimer, null, 1000, 1000);
 			if (m_server != null)
 			{
 				m_nRateLimit = rateLimit;
@@ -8252,6 +8435,47 @@ private void handleTXFilterBandEx(string[] args)
 					socketListener.RX2EnabledChange(enabled);
 				}
 			}
+		}
+		// the console without polling it.
+		private void StationStateTimer(object state)
+		{
+			try
+			{
+				Console c = console;
+				if (c == null) return;
+
+				AmpLanController amp = c.AmpLanControllerInstance;
+				int open = amp != null && amp.IsOpen ? 1 : 0;
+				int known = amp != null && amp.StateKnown ? 1 : 0;
+				int operate = amp != null && amp.IsOperate ? 1 : 0;
+				int pa = amp != null && amp.PaOn ? 1 : 0;
+				int autotune = amp != null && amp.IsAutoTune ? 1 : 0;
+				int heating = amp != null && amp.IsHeating ? 1 : 0;
+				int cooling = amp != null && amp.IsCooling ? 1 : 0;
+				int ptt = amp != null && amp.IsPtt ? 1 : 0;
+				int fault = amp != null && amp.FaultFresh ? 1 : 0;
+                int link = c.MfjRelayInstance != null && c.MfjRelayInstance.LinkOpen ? 1 : 0;
+                int relay = c.H1MfjRelayEnabled ? 1 : 0;
+                int relayActual = c.MfjRelayInstance != null && c.MfjRelayInstance.RelayOn ? 1 : 0;
+				int cycle = c.H1MfjPwrCycleEnabled ? 1 : 0;
+
+				int pttin = c.H1MfjPttInEnabled ? 1 : 0;
+				int deb = c.H1MfjPttInDebounceMs;
+
+				lock (m_objLocker)
+				{
+		            if (m_server == null || m_socketListenersList == null || m_socketListenersList.Count == 0) return;
+		            foreach (TCPIPtciSocketListener socketListener in m_socketListenersList)
+					{
+						socketListener.AmpState(open, known, operate, pa, autotune, heating, cooling, ptt, fault);
+                        socketListener.MfjState(link, relay, relayActual, cycle, pttin, deb);
+                        socketListener.SubFollowState(
+                            c.H1SubFollowGet(0) ? 1 : 0,
+                            c.H1SubFollowGet(1) ? 1 : 0);
+					}
+				}
+			}
+			catch { }
 		}
 		public void OnVFOBSubFrequencyChanged(double freqMHz)
 		{
