@@ -32,6 +32,22 @@ worktree you were started in as your workspace; do not switch branches in it.
 
 Output: `Project Files\bin\x64\Release\Thetis.exe`.
 
+### First build in a fresh clone
+
+`Project Files\Source\packages` is gitignored, so a fresh clone cannot build: the first run stops
+at `Thetis.csproj(1358,5)` with *"This project references NuGet package(s) that are missing"*,
+because the project imports `Microsoft.NETFramework.ReferenceAssemblies.net48` from that folder.
+Restore once, then build:
+
+```
+nuget restore "Project Files\Source\Thetis_VS2026.sln"
+```
+
+That writes ~66 packages (~1 GB) into `Project Files\Source\packages`. `nuget.exe` is not
+installed machine-wide; this machine has it at `C:\dev\tools\nuget.exe`, otherwise
+`winget install Microsoft.NuGet`. An existing worktree that has already built does not need
+this step.
+
 The repo lives inside OneDrive: expect slow IO, occasional file locks, and `bin/obj` churn. If a
 build fails on a locked file, retry after a few seconds before investigating.
 
