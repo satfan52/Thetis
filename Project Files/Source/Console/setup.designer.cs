@@ -1,4 +1,4 @@
-namespace Thetis
+﻿namespace Thetis
 {
     using System.Windows.Forms;
 
@@ -1609,6 +1609,7 @@ namespace Thetis
             this.lblAriesCAT = new System.Windows.Forms.LabelTS();
             this.chkEnableAries = new System.Windows.Forms.CheckBoxTS();
             this.tpOtherHW_amp = new System.Windows.Forms.TabPage();
+            this.tpOtherHW_trx = new System.Windows.Forms.TabPage();
             this.grpGanymedeCtrl = new System.Windows.Forms.GroupBoxTS();
             this.comboGanymedeCATPort = new System.Windows.Forms.ComboBoxTS();
             this.lblGanymedeCAT = new System.Windows.Forms.LabelTS();
@@ -3588,6 +3589,8 @@ namespace Thetis
             this.comboCAT4parity = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT4databits = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT4stopbits = new System.Windows.Forms.ComboBoxTS();
+            this.lblCAT4Protocol = new System.Windows.Forms.LabelTS();
+            this.comboCAT4Protocol = new System.Windows.Forms.ComboBoxTS();
             this.grpCat3ControlBox = new System.Windows.Forms.GroupBoxTS();
             this.comboCAT3Port = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT3baud = new System.Windows.Forms.ComboBoxTS();
@@ -3600,6 +3603,8 @@ namespace Thetis
             this.comboCAT3parity = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT3databits = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT3stopbits = new System.Windows.Forms.ComboBoxTS();
+            this.lblCAT3Protocol = new System.Windows.Forms.LabelTS();
+            this.comboCAT3Protocol = new System.Windows.Forms.ComboBoxTS();
             this.grpCat2ControlBox = new System.Windows.Forms.GroupBoxTS();
             this.comboCAT2Port = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT2baud = new System.Windows.Forms.ComboBoxTS();
@@ -3612,6 +3617,8 @@ namespace Thetis
             this.comboCAT2parity = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT2databits = new System.Windows.Forms.ComboBoxTS();
             this.comboCAT2stopbits = new System.Windows.Forms.ComboBoxTS();
+            this.lblCAT2Protocol = new System.Windows.Forms.LabelTS();
+            this.comboCAT2Protocol = new System.Windows.Forms.ComboBoxTS();
             this.grpCatControlBox = new System.Windows.Forms.GroupBoxTS();
             this.comboCATPort = new System.Windows.Forms.ComboBoxTS();
             this.comboCATbaud = new System.Windows.Forms.ComboBoxTS();
@@ -26923,6 +26930,7 @@ namespace Thetis
             this.tpApolloAmp.Controls.Add(this.tpApolloApollo);
             this.tpApolloAmp.Controls.Add(this.tpApolloATU);
             this.tpApolloAmp.Controls.Add(this.tpOtherHW_amp);
+            this.tpApolloAmp.Controls.Add(this.tpOtherHW_trx);
             this.tpApolloAmp.Location = new System.Drawing.Point(0, 0);
             this.tpApolloAmp.Name = "tpApolloAmp";
             this.tpApolloAmp.SelectedIndex = 0;
@@ -27240,6 +27248,16 @@ namespace Thetis
             this.tpOtherHW_amp.Size = new System.Drawing.Size(576, 340);
             this.tpOtherHW_amp.TabIndex = 2;
             this.tpOtherHW_amp.Text = "Amp";
+            // 
+            // tpOtherHW_trx
+            // 
+            this.tpOtherHW_trx.BackColor = System.Drawing.SystemColors.Control;
+            this.tpOtherHW_trx.Location = new System.Drawing.Point(4, 22);
+            this.tpOtherHW_trx.Name = "tpOtherHW_trx";
+            this.tpOtherHW_trx.Padding = new System.Windows.Forms.Padding(3);
+            this.tpOtherHW_trx.Size = new System.Drawing.Size(576, 340);
+            this.tpOtherHW_trx.TabIndex = 3;
+            this.tpOtherHW_trx.Text = "Transceivers";
             // 
             // grpGanymedeCtrl
             // 
@@ -51865,7 +51883,7 @@ namespace Thetis
             // clrbtnBtnSel
             // 
             this.clrbtnBtnSel.Automatic = "Automatic";
-            this.clrbtnBtnSel.Color = System.Drawing.Color.Yellow;
+            this.clrbtnBtnSel.Color = System.Drawing.Color.FromArgb(((int)(((byte)(50)))), ((int)(((byte)(108)))), ((int)(((byte)(183))))); // H1: was Color.Yellow - the stale stock default that repainted the sub ticks yellow at every start
             this.clrbtnBtnSel.Image = null;
             this.clrbtnBtnSel.Location = new System.Drawing.Point(245, 66);
             this.clrbtnBtnSel.MoreColors = "More Colors...";
@@ -57387,40 +57405,40 @@ namespace Thetis
             // txtCAT1
             // 
             this.txtCAT1.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT1.Location = new System.Drawing.Point(14, 237);
+            this.txtCAT1.Location = new System.Drawing.Point(14, 272);
             this.txtCAT1.Multiline = true;
             this.txtCAT1.Name = "txtCAT1";
-            this.txtCAT1.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT1.Size = new System.Drawing.Size(160, 38);
             this.txtCAT1.TabIndex = 108;
             this.toolTip1.SetToolTip(this.txtCAT1, "You can add a discription for that CAT port.");
             // 
             // txtCAT4
             // 
             this.txtCAT4.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT4.Location = new System.Drawing.Point(512, 237);
+            this.txtCAT4.Location = new System.Drawing.Point(512, 272);
             this.txtCAT4.Multiline = true;
             this.txtCAT4.Name = "txtCAT4";
-            this.txtCAT4.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT4.Size = new System.Drawing.Size(160, 38);
             this.txtCAT4.TabIndex = 96;
             this.toolTip1.SetToolTip(this.txtCAT4, "You can add a discription for that CAT port.");
             // 
             // txtCAT3
             // 
             this.txtCAT3.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT3.Location = new System.Drawing.Point(346, 237);
+            this.txtCAT3.Location = new System.Drawing.Point(346, 272);
             this.txtCAT3.Multiline = true;
             this.txtCAT3.Name = "txtCAT3";
-            this.txtCAT3.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT3.Size = new System.Drawing.Size(160, 38);
             this.txtCAT3.TabIndex = 95;
             this.toolTip1.SetToolTip(this.txtCAT3, "You can add a discription for that CAT port.");
             // 
             // txtCAT2
             // 
             this.txtCAT2.BackColor = System.Drawing.SystemColors.Window;
-            this.txtCAT2.Location = new System.Drawing.Point(180, 237);
+            this.txtCAT2.Location = new System.Drawing.Point(180, 272);
             this.txtCAT2.Multiline = true;
             this.txtCAT2.Name = "txtCAT2";
-            this.txtCAT2.Size = new System.Drawing.Size(160, 40);
+            this.txtCAT2.Size = new System.Drawing.Size(160, 38);
             this.txtCAT2.TabIndex = 94;
             this.toolTip1.SetToolTip(this.txtCAT2, "You can add a discription for that CAT port.");
             // 
@@ -57431,9 +57449,9 @@ namespace Thetis
             this.grpPTTBitBang.Controls.Add(this.chkCATPTT_RTS);
             this.grpPTTBitBang.Controls.Add(this.chkCATPTT_DTR);
             this.grpPTTBitBang.Controls.Add(this.chkCATPTTEnabled);
-            this.grpPTTBitBang.Location = new System.Drawing.Point(12, 289);
+            this.grpPTTBitBang.Location = new System.Drawing.Point(12, 312);
             this.grpPTTBitBang.Name = "grpPTTBitBang";
-            this.grpPTTBitBang.Size = new System.Drawing.Size(160, 112);
+            this.grpPTTBitBang.Size = new System.Drawing.Size(160, 94);
             this.grpPTTBitBang.TabIndex = 91;
             this.grpPTTBitBang.TabStop = false;
             this.grpPTTBitBang.Text = "PTT Control";
@@ -57463,7 +57481,7 @@ namespace Thetis
             // chkCATPTT_RTS
             // 
             this.chkCATPTT_RTS.Image = null;
-            this.chkCATPTT_RTS.Location = new System.Drawing.Point(16, 74);
+            this.chkCATPTT_RTS.Location = new System.Drawing.Point(16, 67);
             this.chkCATPTT_RTS.Name = "chkCATPTT_RTS";
             this.chkCATPTT_RTS.Size = new System.Drawing.Size(56, 24);
             this.chkCATPTT_RTS.TabIndex = 0;
@@ -57473,7 +57491,7 @@ namespace Thetis
             // chkCATPTT_DTR
             // 
             this.chkCATPTT_DTR.Image = null;
-            this.chkCATPTT_DTR.Location = new System.Drawing.Point(74, 78);
+            this.chkCATPTT_DTR.Location = new System.Drawing.Point(74, 71);
             this.chkCATPTT_DTR.Name = "chkCATPTT_DTR";
             this.chkCATPTT_DTR.Size = new System.Drawing.Size(60, 16);
             this.chkCATPTT_DTR.TabIndex = 1;
@@ -57503,6 +57521,8 @@ namespace Thetis
             this.grpCat4ControlBox.Controls.Add(this.comboCAT4parity);
             this.grpCat4ControlBox.Controls.Add(this.comboCAT4databits);
             this.grpCat4ControlBox.Controls.Add(this.comboCAT4stopbits);
+            this.grpCat4ControlBox.Controls.Add(this.lblCAT4Protocol);
+            this.grpCat4ControlBox.Controls.Add(this.comboCAT4Protocol);
             this.grpCat4ControlBox.Location = new System.Drawing.Point(512, 8);
             this.grpCat4ControlBox.Name = "grpCat4ControlBox";
             this.grpCat4ControlBox.Size = new System.Drawing.Size(160, 216);
@@ -57510,11 +57530,38 @@ namespace Thetis
             this.grpCat4ControlBox.TabStop = false;
             this.grpCat4ControlBox.Text = "CAT4 Control";
             // 
+            // lblCAT4Protocol
+            // 
+            this.lblCAT4Protocol.AutoSize = true;
+            this.lblCAT4Protocol.Image = null;
+            this.lblCAT4Protocol.Location = new System.Drawing.Point(12, 178);
+            this.lblCAT4Protocol.Name = "lblCAT4Protocol";
+            this.lblCAT4Protocol.Size = new System.Drawing.Size(49, 13);
+            this.lblCAT4Protocol.TabIndex = 96;
+            this.lblCAT4Protocol.Text = "Protocol:";
+            // 
+            // comboCAT4Protocol
+            // 
+            this.comboCAT4Protocol.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.comboCAT4Protocol.DropDownWidth = 140;
+            this.comboCAT4Protocol.Items.AddRange(new object[] {
+            "Kenwood TS-2000",
+            "Icom CI-V (IC-7100)"});
+            this.comboCAT4Protocol.Location = new System.Drawing.Point(10, 192);
+            this.comboCAT4Protocol.Name = "comboCAT4Protocol";
+            this.comboCAT4Protocol.Size = new System.Drawing.Size(142, 21);
+            this.comboCAT4Protocol.TabIndex = 97;
+            this.comboCAT4Protocol.SelectedIndexChanged += new System.EventHandler(this.comboCAT4Protocol_SelectedIndexChanged);
+            this.toolTip1.SetToolTip(this.comboCAT4Protocol, "Selects the rig-control protocol spoken on CAT4." + System.Environment.NewLine +
+                "\"Kenwood TS-2000\": classic Kenwood/Elecraft style ASCII commands." + System.Environment.NewLine +
+                "\"Icom CI-V (IC-7100)\": the IC-7100 may also sit on this port; the CI-V" + System.Environment.NewLine +
+                "settings on the Transceivers page then apply.");
+            // 
             // comboCAT4Port
             // 
             this.comboCAT4Port.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.comboCAT4Port.DropDownWidth = 56;
-            this.comboCAT4Port.Location = new System.Drawing.Point(72, 48);
+            this.comboCAT4Port.Location = new System.Drawing.Point(72, 40);
             this.comboCAT4Port.Name = "comboCAT4Port";
             this.comboCAT4Port.Size = new System.Drawing.Size(72, 21);
             this.comboCAT4Port.TabIndex = 95;
@@ -57536,7 +57583,7 @@ namespace Thetis
             "38400",
             "57600",
             "115200"});
-            this.comboCAT4baud.Location = new System.Drawing.Point(72, 80);
+            this.comboCAT4baud.Location = new System.Drawing.Point(72, 67);
             this.comboCAT4baud.Name = "comboCAT4baud";
             this.comboCAT4baud.Size = new System.Drawing.Size(72, 21);
             this.comboCAT4baud.TabIndex = 93;
@@ -57546,7 +57593,7 @@ namespace Thetis
             // 
             this.lblCAT4Baud.AutoSize = true;
             this.lblCAT4Baud.Image = null;
-            this.lblCAT4Baud.Location = new System.Drawing.Point(24, 83);
+            this.lblCAT4Baud.Location = new System.Drawing.Point(24, 70);
             this.lblCAT4Baud.Name = "lblCAT4Baud";
             this.lblCAT4Baud.Size = new System.Drawing.Size(32, 13);
             this.lblCAT4Baud.TabIndex = 5;
@@ -57556,7 +57603,7 @@ namespace Thetis
             // 
             this.lblCAT4Port.AutoSize = true;
             this.lblCAT4Port.Image = null;
-            this.lblCAT4Port.Location = new System.Drawing.Point(24, 51);
+            this.lblCAT4Port.Location = new System.Drawing.Point(24, 43);
             this.lblCAT4Port.Name = "lblCAT4Port";
             this.lblCAT4Port.Size = new System.Drawing.Size(29, 13);
             this.lblCAT4Port.TabIndex = 3;
@@ -57576,7 +57623,7 @@ namespace Thetis
             // 
             this.lblCAT4Parity.AutoSize = true;
             this.lblCAT4Parity.Image = null;
-            this.lblCAT4Parity.Location = new System.Drawing.Point(24, 115);
+            this.lblCAT4Parity.Location = new System.Drawing.Point(24, 97);
             this.lblCAT4Parity.Name = "lblCAT4Parity";
             this.lblCAT4Parity.Size = new System.Drawing.Size(33, 13);
             this.lblCAT4Parity.TabIndex = 92;
@@ -57586,7 +57633,7 @@ namespace Thetis
             // 
             this.lblCAT4Data.AutoSize = true;
             this.lblCAT4Data.Image = null;
-            this.lblCAT4Data.Location = new System.Drawing.Point(24, 147);
+            this.lblCAT4Data.Location = new System.Drawing.Point(24, 121);
             this.lblCAT4Data.Name = "lblCAT4Data";
             this.lblCAT4Data.Size = new System.Drawing.Size(30, 13);
             this.lblCAT4Data.TabIndex = 92;
@@ -57596,7 +57643,7 @@ namespace Thetis
             // 
             this.lblCAT4Stop.AutoSize = true;
             this.lblCAT4Stop.Image = null;
-            this.lblCAT4Stop.Location = new System.Drawing.Point(24, 179);
+            this.lblCAT4Stop.Location = new System.Drawing.Point(24, 151);
             this.lblCAT4Stop.Name = "lblCAT4Stop";
             this.lblCAT4Stop.Size = new System.Drawing.Size(29, 13);
             this.lblCAT4Stop.TabIndex = 92;
@@ -57612,7 +57659,7 @@ namespace Thetis
             "even",
             "mark",
             "space"});
-            this.comboCAT4parity.Location = new System.Drawing.Point(72, 112);
+            this.comboCAT4parity.Location = new System.Drawing.Point(72, 94);
             this.comboCAT4parity.Name = "comboCAT4parity";
             this.comboCAT4parity.Size = new System.Drawing.Size(72, 21);
             this.comboCAT4parity.TabIndex = 92;
@@ -57626,7 +57673,7 @@ namespace Thetis
             "8",
             "7",
             "6"});
-            this.comboCAT4databits.Location = new System.Drawing.Point(72, 144);
+            this.comboCAT4databits.Location = new System.Drawing.Point(72, 121);
             this.comboCAT4databits.Name = "comboCAT4databits";
             this.comboCAT4databits.Size = new System.Drawing.Size(72, 21);
             this.comboCAT4databits.TabIndex = 93;
@@ -57640,7 +57687,7 @@ namespace Thetis
             "1",
             "1.5",
             "2"});
-            this.comboCAT4stopbits.Location = new System.Drawing.Point(72, 176);
+            this.comboCAT4stopbits.Location = new System.Drawing.Point(72, 148);
             this.comboCAT4stopbits.Name = "comboCAT4stopbits";
             this.comboCAT4stopbits.Size = new System.Drawing.Size(72, 21);
             this.comboCAT4stopbits.TabIndex = 94;
@@ -57659,6 +57706,8 @@ namespace Thetis
             this.grpCat3ControlBox.Controls.Add(this.comboCAT3parity);
             this.grpCat3ControlBox.Controls.Add(this.comboCAT3databits);
             this.grpCat3ControlBox.Controls.Add(this.comboCAT3stopbits);
+            this.grpCat3ControlBox.Controls.Add(this.lblCAT3Protocol);
+            this.grpCat3ControlBox.Controls.Add(this.comboCAT3Protocol);
             this.grpCat3ControlBox.Location = new System.Drawing.Point(346, 8);
             this.grpCat3ControlBox.Name = "grpCat3ControlBox";
             this.grpCat3ControlBox.Size = new System.Drawing.Size(160, 216);
@@ -57666,11 +57715,38 @@ namespace Thetis
             this.grpCat3ControlBox.TabStop = false;
             this.grpCat3ControlBox.Text = "CAT3 Control";
             // 
+            // lblCAT3Protocol
+            // 
+            this.lblCAT3Protocol.AutoSize = true;
+            this.lblCAT3Protocol.Image = null;
+            this.lblCAT3Protocol.Location = new System.Drawing.Point(12, 178);
+            this.lblCAT3Protocol.Name = "lblCAT3Protocol";
+            this.lblCAT3Protocol.Size = new System.Drawing.Size(49, 13);
+            this.lblCAT3Protocol.TabIndex = 96;
+            this.lblCAT3Protocol.Text = "Protocol:";
+            // 
+            // comboCAT3Protocol
+            // 
+            this.comboCAT3Protocol.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.comboCAT3Protocol.DropDownWidth = 140;
+            this.comboCAT3Protocol.Items.AddRange(new object[] {
+            "Kenwood TS-2000",
+            "Icom CI-V (IC-7100)"});
+            this.comboCAT3Protocol.Location = new System.Drawing.Point(10, 192);
+            this.comboCAT3Protocol.Name = "comboCAT3Protocol";
+            this.comboCAT3Protocol.Size = new System.Drawing.Size(142, 21);
+            this.comboCAT3Protocol.TabIndex = 97;
+            this.comboCAT3Protocol.SelectedIndexChanged += new System.EventHandler(this.comboCAT3Protocol_SelectedIndexChanged);
+            this.toolTip1.SetToolTip(this.comboCAT3Protocol, "Selects the rig-control protocol spoken on CAT3." + System.Environment.NewLine +
+                "\"Kenwood TS-2000\": classic Kenwood/Elecraft style ASCII commands." + System.Environment.NewLine +
+                "\"Icom CI-V (IC-7100)\": the IC-7100 may also sit on this port; the CI-V" + System.Environment.NewLine +
+                "settings on the Transceivers page then apply.");
+            // 
             // comboCAT3Port
             // 
             this.comboCAT3Port.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.comboCAT3Port.DropDownWidth = 56;
-            this.comboCAT3Port.Location = new System.Drawing.Point(72, 48);
+            this.comboCAT3Port.Location = new System.Drawing.Point(72, 40);
             this.comboCAT3Port.Name = "comboCAT3Port";
             this.comboCAT3Port.Size = new System.Drawing.Size(72, 21);
             this.comboCAT3Port.TabIndex = 95;
@@ -57692,7 +57768,7 @@ namespace Thetis
             "38400",
             "57600",
             "115200"});
-            this.comboCAT3baud.Location = new System.Drawing.Point(72, 80);
+            this.comboCAT3baud.Location = new System.Drawing.Point(72, 67);
             this.comboCAT3baud.Name = "comboCAT3baud";
             this.comboCAT3baud.Size = new System.Drawing.Size(72, 21);
             this.comboCAT3baud.TabIndex = 93;
@@ -57702,7 +57778,7 @@ namespace Thetis
             // 
             this.lblCAT3Baud.AutoSize = true;
             this.lblCAT3Baud.Image = null;
-            this.lblCAT3Baud.Location = new System.Drawing.Point(24, 83);
+            this.lblCAT3Baud.Location = new System.Drawing.Point(24, 70);
             this.lblCAT3Baud.Name = "lblCAT3Baud";
             this.lblCAT3Baud.Size = new System.Drawing.Size(32, 13);
             this.lblCAT3Baud.TabIndex = 5;
@@ -57712,7 +57788,7 @@ namespace Thetis
             // 
             this.lblCAT3Port.AutoSize = true;
             this.lblCAT3Port.Image = null;
-            this.lblCAT3Port.Location = new System.Drawing.Point(24, 51);
+            this.lblCAT3Port.Location = new System.Drawing.Point(24, 43);
             this.lblCAT3Port.Name = "lblCAT3Port";
             this.lblCAT3Port.Size = new System.Drawing.Size(29, 13);
             this.lblCAT3Port.TabIndex = 3;
@@ -57732,7 +57808,7 @@ namespace Thetis
             // 
             this.lblCAT3Parity.AutoSize = true;
             this.lblCAT3Parity.Image = null;
-            this.lblCAT3Parity.Location = new System.Drawing.Point(24, 115);
+            this.lblCAT3Parity.Location = new System.Drawing.Point(24, 97);
             this.lblCAT3Parity.Name = "lblCAT3Parity";
             this.lblCAT3Parity.Size = new System.Drawing.Size(33, 13);
             this.lblCAT3Parity.TabIndex = 92;
@@ -57742,7 +57818,7 @@ namespace Thetis
             // 
             this.lblCAT3Data.AutoSize = true;
             this.lblCAT3Data.Image = null;
-            this.lblCAT3Data.Location = new System.Drawing.Point(24, 147);
+            this.lblCAT3Data.Location = new System.Drawing.Point(24, 121);
             this.lblCAT3Data.Name = "lblCAT3Data";
             this.lblCAT3Data.Size = new System.Drawing.Size(30, 13);
             this.lblCAT3Data.TabIndex = 92;
@@ -57752,7 +57828,7 @@ namespace Thetis
             // 
             this.lblCAT3Stop.AutoSize = true;
             this.lblCAT3Stop.Image = null;
-            this.lblCAT3Stop.Location = new System.Drawing.Point(25, 179);
+            this.lblCAT3Stop.Location = new System.Drawing.Point(24, 151);
             this.lblCAT3Stop.Name = "lblCAT3Stop";
             this.lblCAT3Stop.Size = new System.Drawing.Size(29, 13);
             this.lblCAT3Stop.TabIndex = 92;
@@ -57768,7 +57844,7 @@ namespace Thetis
             "even",
             "mark",
             "space"});
-            this.comboCAT3parity.Location = new System.Drawing.Point(72, 112);
+            this.comboCAT3parity.Location = new System.Drawing.Point(72, 94);
             this.comboCAT3parity.Name = "comboCAT3parity";
             this.comboCAT3parity.Size = new System.Drawing.Size(72, 21);
             this.comboCAT3parity.TabIndex = 92;
@@ -57782,7 +57858,7 @@ namespace Thetis
             "8",
             "7",
             "6"});
-            this.comboCAT3databits.Location = new System.Drawing.Point(72, 144);
+            this.comboCAT3databits.Location = new System.Drawing.Point(72, 121);
             this.comboCAT3databits.Name = "comboCAT3databits";
             this.comboCAT3databits.Size = new System.Drawing.Size(72, 21);
             this.comboCAT3databits.TabIndex = 93;
@@ -57796,7 +57872,7 @@ namespace Thetis
             "1",
             "1.5",
             "2"});
-            this.comboCAT3stopbits.Location = new System.Drawing.Point(72, 176);
+            this.comboCAT3stopbits.Location = new System.Drawing.Point(72, 148);
             this.comboCAT3stopbits.Name = "comboCAT3stopbits";
             this.comboCAT3stopbits.Size = new System.Drawing.Size(72, 21);
             this.comboCAT3stopbits.TabIndex = 94;
@@ -57815,6 +57891,8 @@ namespace Thetis
             this.grpCat2ControlBox.Controls.Add(this.comboCAT2parity);
             this.grpCat2ControlBox.Controls.Add(this.comboCAT2databits);
             this.grpCat2ControlBox.Controls.Add(this.comboCAT2stopbits);
+            this.grpCat2ControlBox.Controls.Add(this.lblCAT2Protocol);
+            this.grpCat2ControlBox.Controls.Add(this.comboCAT2Protocol);
             this.grpCat2ControlBox.Location = new System.Drawing.Point(180, 8);
             this.grpCat2ControlBox.Name = "grpCat2ControlBox";
             this.grpCat2ControlBox.Size = new System.Drawing.Size(160, 216);
@@ -57822,11 +57900,38 @@ namespace Thetis
             this.grpCat2ControlBox.TabStop = false;
             this.grpCat2ControlBox.Text = "CAT2 Control";
             // 
+            // lblCAT2Protocol
+            // 
+            this.lblCAT2Protocol.AutoSize = true;
+            this.lblCAT2Protocol.Image = null;
+            this.lblCAT2Protocol.Location = new System.Drawing.Point(12, 178);
+            this.lblCAT2Protocol.Name = "lblCAT2Protocol";
+            this.lblCAT2Protocol.Size = new System.Drawing.Size(49, 13);
+            this.lblCAT2Protocol.TabIndex = 96;
+            this.lblCAT2Protocol.Text = "Protocol:";
+            // 
+            // comboCAT2Protocol
+            // 
+            this.comboCAT2Protocol.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.comboCAT2Protocol.DropDownWidth = 140;
+            this.comboCAT2Protocol.Items.AddRange(new object[] {
+            "Kenwood TS-2000",
+            "Icom CI-V (IC-7100)"});
+            this.comboCAT2Protocol.Location = new System.Drawing.Point(10, 192);
+            this.comboCAT2Protocol.Name = "comboCAT2Protocol";
+            this.comboCAT2Protocol.Size = new System.Drawing.Size(142, 21);
+            this.comboCAT2Protocol.TabIndex = 97;
+            this.comboCAT2Protocol.SelectedIndexChanged += new System.EventHandler(this.comboCAT2Protocol_SelectedIndexChanged);
+            this.toolTip1.SetToolTip(this.comboCAT2Protocol, "Selects the rig-control protocol spoken on CAT2." + System.Environment.NewLine +
+                "\"Kenwood TS-2000\": classic Kenwood/Elecraft style ASCII commands." + System.Environment.NewLine +
+                "\"Icom CI-V (IC-7100)\": the IC-7100 may also sit on this port; the CI-V" + System.Environment.NewLine +
+                "settings on the Transceivers page then apply.");
+            // 
             // comboCAT2Port
             // 
             this.comboCAT2Port.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.comboCAT2Port.DropDownWidth = 56;
-            this.comboCAT2Port.Location = new System.Drawing.Point(72, 48);
+            this.comboCAT2Port.Location = new System.Drawing.Point(72, 40);
             this.comboCAT2Port.Name = "comboCAT2Port";
             this.comboCAT2Port.Size = new System.Drawing.Size(72, 21);
             this.comboCAT2Port.TabIndex = 95;
@@ -57848,7 +57953,7 @@ namespace Thetis
             "38400",
             "57600",
             "115200"});
-            this.comboCAT2baud.Location = new System.Drawing.Point(72, 80);
+            this.comboCAT2baud.Location = new System.Drawing.Point(72, 67);
             this.comboCAT2baud.Name = "comboCAT2baud";
             this.comboCAT2baud.Size = new System.Drawing.Size(72, 21);
             this.comboCAT2baud.TabIndex = 93;
@@ -57858,7 +57963,7 @@ namespace Thetis
             // 
             this.lblCAT2Baud.AutoSize = true;
             this.lblCAT2Baud.Image = null;
-            this.lblCAT2Baud.Location = new System.Drawing.Point(24, 83);
+            this.lblCAT2Baud.Location = new System.Drawing.Point(24, 70);
             this.lblCAT2Baud.Name = "lblCAT2Baud";
             this.lblCAT2Baud.Size = new System.Drawing.Size(32, 13);
             this.lblCAT2Baud.TabIndex = 5;
@@ -57868,7 +57973,7 @@ namespace Thetis
             // 
             this.lblCAT2Port.AutoSize = true;
             this.lblCAT2Port.Image = null;
-            this.lblCAT2Port.Location = new System.Drawing.Point(24, 51);
+            this.lblCAT2Port.Location = new System.Drawing.Point(24, 43);
             this.lblCAT2Port.Name = "lblCAT2Port";
             this.lblCAT2Port.Size = new System.Drawing.Size(29, 13);
             this.lblCAT2Port.TabIndex = 3;
@@ -57888,7 +57993,7 @@ namespace Thetis
             // 
             this.lblCAT2Parity.AutoSize = true;
             this.lblCAT2Parity.Image = null;
-            this.lblCAT2Parity.Location = new System.Drawing.Point(24, 115);
+            this.lblCAT2Parity.Location = new System.Drawing.Point(24, 97);
             this.lblCAT2Parity.Name = "lblCAT2Parity";
             this.lblCAT2Parity.Size = new System.Drawing.Size(33, 13);
             this.lblCAT2Parity.TabIndex = 92;
@@ -57898,7 +58003,7 @@ namespace Thetis
             // 
             this.lblCAT2Data.AutoSize = true;
             this.lblCAT2Data.Image = null;
-            this.lblCAT2Data.Location = new System.Drawing.Point(24, 144);
+            this.lblCAT2Data.Location = new System.Drawing.Point(24, 121);
             this.lblCAT2Data.Name = "lblCAT2Data";
             this.lblCAT2Data.Size = new System.Drawing.Size(30, 13);
             this.lblCAT2Data.TabIndex = 92;
@@ -57908,7 +58013,7 @@ namespace Thetis
             // 
             this.lblCAT2Stop.AutoSize = true;
             this.lblCAT2Stop.Image = null;
-            this.lblCAT2Stop.Location = new System.Drawing.Point(24, 179);
+            this.lblCAT2Stop.Location = new System.Drawing.Point(24, 151);
             this.lblCAT2Stop.Name = "lblCAT2Stop";
             this.lblCAT2Stop.Size = new System.Drawing.Size(29, 13);
             this.lblCAT2Stop.TabIndex = 92;
@@ -57924,7 +58029,7 @@ namespace Thetis
             "even",
             "mark",
             "space"});
-            this.comboCAT2parity.Location = new System.Drawing.Point(72, 112);
+            this.comboCAT2parity.Location = new System.Drawing.Point(72, 94);
             this.comboCAT2parity.Name = "comboCAT2parity";
             this.comboCAT2parity.Size = new System.Drawing.Size(72, 21);
             this.comboCAT2parity.TabIndex = 92;
@@ -57938,7 +58043,7 @@ namespace Thetis
             "8",
             "7",
             "6"});
-            this.comboCAT2databits.Location = new System.Drawing.Point(72, 144);
+            this.comboCAT2databits.Location = new System.Drawing.Point(72, 121);
             this.comboCAT2databits.Name = "comboCAT2databits";
             this.comboCAT2databits.Size = new System.Drawing.Size(72, 21);
             this.comboCAT2databits.TabIndex = 93;
@@ -57952,7 +58057,7 @@ namespace Thetis
             "1",
             "1.5",
             "2"});
-            this.comboCAT2stopbits.Location = new System.Drawing.Point(72, 176);
+            this.comboCAT2stopbits.Location = new System.Drawing.Point(72, 148);
             this.comboCAT2stopbits.Name = "comboCAT2stopbits";
             this.comboCAT2stopbits.Size = new System.Drawing.Size(72, 21);
             this.comboCAT2stopbits.TabIndex = 94;
@@ -57982,7 +58087,7 @@ namespace Thetis
             // 
             this.comboCATPort.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.comboCATPort.DropDownWidth = 56;
-            this.comboCATPort.Location = new System.Drawing.Point(72, 48);
+            this.comboCATPort.Location = new System.Drawing.Point(72, 40);
             this.comboCATPort.Name = "comboCATPort";
             this.comboCATPort.Size = new System.Drawing.Size(72, 21);
             this.comboCATPort.TabIndex = 95;
@@ -58004,7 +58109,7 @@ namespace Thetis
             "38400",
             "57600",
             "115200"});
-            this.comboCATbaud.Location = new System.Drawing.Point(72, 80);
+            this.comboCATbaud.Location = new System.Drawing.Point(72, 67);
             this.comboCATbaud.Name = "comboCATbaud";
             this.comboCATbaud.Size = new System.Drawing.Size(72, 21);
             this.comboCATbaud.TabIndex = 93;
@@ -58014,7 +58119,7 @@ namespace Thetis
             // 
             this.lblCATBaud.AutoSize = true;
             this.lblCATBaud.Image = null;
-            this.lblCATBaud.Location = new System.Drawing.Point(24, 83);
+            this.lblCATBaud.Location = new System.Drawing.Point(24, 70);
             this.lblCATBaud.Name = "lblCATBaud";
             this.lblCATBaud.Size = new System.Drawing.Size(32, 13);
             this.lblCATBaud.TabIndex = 5;
@@ -58024,7 +58129,7 @@ namespace Thetis
             // 
             this.lblCATPort.AutoSize = true;
             this.lblCATPort.Image = null;
-            this.lblCATPort.Location = new System.Drawing.Point(24, 51);
+            this.lblCATPort.Location = new System.Drawing.Point(24, 43);
             this.lblCATPort.Name = "lblCATPort";
             this.lblCATPort.Size = new System.Drawing.Size(29, 13);
             this.lblCATPort.TabIndex = 3;
@@ -58044,7 +58149,7 @@ namespace Thetis
             // 
             this.lblCATParity.AutoSize = true;
             this.lblCATParity.Image = null;
-            this.lblCATParity.Location = new System.Drawing.Point(24, 115);
+            this.lblCATParity.Location = new System.Drawing.Point(24, 97);
             this.lblCATParity.Name = "lblCATParity";
             this.lblCATParity.Size = new System.Drawing.Size(33, 13);
             this.lblCATParity.TabIndex = 92;
@@ -58054,7 +58159,7 @@ namespace Thetis
             // 
             this.lblCATData.AutoSize = true;
             this.lblCATData.Image = null;
-            this.lblCATData.Location = new System.Drawing.Point(24, 147);
+            this.lblCATData.Location = new System.Drawing.Point(24, 121);
             this.lblCATData.Name = "lblCATData";
             this.lblCATData.Size = new System.Drawing.Size(30, 13);
             this.lblCATData.TabIndex = 92;
@@ -58064,7 +58169,7 @@ namespace Thetis
             // 
             this.lblCATStop.AutoSize = true;
             this.lblCATStop.Image = null;
-            this.lblCATStop.Location = new System.Drawing.Point(24, 179);
+            this.lblCATStop.Location = new System.Drawing.Point(24, 151);
             this.lblCATStop.Name = "lblCATStop";
             this.lblCATStop.Size = new System.Drawing.Size(29, 13);
             this.lblCATStop.TabIndex = 92;
@@ -58080,7 +58185,7 @@ namespace Thetis
             "even",
             "mark",
             "space"});
-            this.comboCATparity.Location = new System.Drawing.Point(72, 112);
+            this.comboCATparity.Location = new System.Drawing.Point(72, 94);
             this.comboCATparity.Name = "comboCATparity";
             this.comboCATparity.Size = new System.Drawing.Size(72, 21);
             this.comboCATparity.TabIndex = 92;
@@ -58094,7 +58199,7 @@ namespace Thetis
             "8",
             "7",
             "6"});
-            this.comboCATdatabits.Location = new System.Drawing.Point(72, 144);
+            this.comboCATdatabits.Location = new System.Drawing.Point(72, 121);
             this.comboCATdatabits.Name = "comboCATdatabits";
             this.comboCATdatabits.Size = new System.Drawing.Size(72, 21);
             this.comboCATdatabits.TabIndex = 93;
@@ -58108,7 +58213,7 @@ namespace Thetis
             "1",
             "1.5",
             "2"});
-            this.comboCATstopbits.Location = new System.Drawing.Point(72, 176);
+            this.comboCATstopbits.Location = new System.Drawing.Point(72, 148);
             this.comboCATstopbits.Name = "comboCATstopbits";
             this.comboCATstopbits.Size = new System.Drawing.Size(72, 21);
             this.comboCATstopbits.TabIndex = 94;
@@ -58232,7 +58337,7 @@ namespace Thetis
             this.lblCIVInfo.Name = "lblCIVInfo";
             this.lblCIVInfo.Size = new System.Drawing.Size(490, 13);
             this.lblCIVInfo.TabIndex = 7;
-            this.lblCIVInfo.Text = "CI-V IC-7100: Addr 0x88, Host 0xE0. VFO dial & mode tracking work with or without PTT sync.";
+            this.lblCIVInfo.Text = "CI-V IC-7100: Host 0xE0. The CI-V address and the master tick are set on the CAT pages. VFO dial & mode tracking work with or without PTT sync.";
             // 
             // tpTCITCPIPN1MM
             // 
@@ -74261,6 +74366,8 @@ namespace Thetis
         private System.Windows.Forms.ComboBoxTS comboCAT4parity;
         private System.Windows.Forms.ComboBoxTS comboCAT4databits;
         private System.Windows.Forms.ComboBoxTS comboCAT4stopbits;
+        private System.Windows.Forms.LabelTS lblCAT4Protocol;
+        private System.Windows.Forms.ComboBoxTS comboCAT4Protocol;
         private System.Windows.Forms.GroupBoxTS grpCat3ControlBox;
         private System.Windows.Forms.ComboBoxTS comboCAT3Port;
         private System.Windows.Forms.ComboBoxTS comboCAT3baud;
@@ -74273,6 +74380,8 @@ namespace Thetis
         private System.Windows.Forms.ComboBoxTS comboCAT3parity;
         private System.Windows.Forms.ComboBoxTS comboCAT3databits;
         private System.Windows.Forms.ComboBoxTS comboCAT3stopbits;
+        private System.Windows.Forms.LabelTS lblCAT3Protocol;
+        private System.Windows.Forms.ComboBoxTS comboCAT3Protocol;
         private System.Windows.Forms.GroupBoxTS grpCat2ControlBox;
         private System.Windows.Forms.ComboBoxTS comboCAT2Port;
         private System.Windows.Forms.ComboBoxTS comboCAT2baud;
@@ -74285,6 +74394,8 @@ namespace Thetis
         private System.Windows.Forms.ComboBoxTS comboCAT2parity;
         private System.Windows.Forms.ComboBoxTS comboCAT2databits;
         private System.Windows.Forms.ComboBoxTS comboCAT2stopbits;
+        private System.Windows.Forms.LabelTS lblCAT2Protocol;
+        private System.Windows.Forms.ComboBoxTS comboCAT2Protocol;
         private System.Windows.Forms.TextBoxTS txtCAT4;
         private System.Windows.Forms.TextBoxTS txtCAT3;
         private System.Windows.Forms.TextBoxTS txtCAT2;
@@ -75393,6 +75504,7 @@ namespace Thetis
         private TabPage tpApolloApollo;
         private TabPage tpApolloATU;
         private TabPage tpOtherHW_amp;
+        private TabPage tpOtherHW_trx;
         private TabPage tpAndromeda;
         private GroupBoxTS groupBoxTS15;
         private ButtonTS btnQSOTimerPlaySelectedWAV;

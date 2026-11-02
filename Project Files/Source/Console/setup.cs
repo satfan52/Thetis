@@ -393,6 +393,536 @@ namespace Thetis
             Audio.ProcessedTXOutputEnabled = chkProcessedTXOutputEnable.Checked;
             // [linked MIC/VAC1 TX gain] re-sync the panel slider for the new route state
             console.SyncMicToVacGain();
+            // H1: the IC-7100 power follows the active power slider on this route; sync at once
+            console.H1RigDriveForceSync();
+        }
+
+        private CheckBoxTS h1ChkDimUnused;
+
+        // H1: the "dim unused receiver controls" switch, built in code so no designer
+        // or resource edits are needed. It follows the console items group.
+        private void H1BuildDimUnusedOption()
+        {
+            if (h1ChkDimUnused != null || groupBoxTS44 == null) return;
+            h1ChkDimUnused = new CheckBoxTS();
+            h1ChkDimUnused.AutoSize = true;
+            h1ChkDimUnused.UseVisualStyleBackColor = true;
+            h1ChkDimUnused.Image = null;
+            h1ChkDimUnused.Name = "chkH1DimUnused";
+            h1ChkDimUnused.Text = "Dim unused receiver controls (RX2, SUBRX1, SUBRX2)";
+            int h1yb = 0;
+            foreach (Control h1c in groupBoxTS44.Controls) h1yb = Math.Max(h1yb, h1c.Bottom);
+            h1ChkDimUnused.Location = new Point(19, h1yb + 6);
+            h1ChkDimUnused.Checked = LegacyItemController.DimUnusedReceivers;
+            h1ChkDimUnused.CheckedChanged += h1ChkDimUnused_CheckedChanged;
+            groupBoxTS44.Controls.Add(h1ChkDimUnused);
+            if (groupBoxTS44.Height < h1ChkDimUnused.Bottom + 12) groupBoxTS44.Height = h1ChkDimUnused.Bottom + 12;
+        }
+
+        private void h1ChkDimUnused_CheckedChanged(object sender, EventArgs e)
+        {
+            LegacyItemController.DimUnusedReceivers = h1ChkDimUnused != null && h1ChkDimUnused.Checked;
+        }
+
+        private CheckBoxTS h1ChkRigPowerMeters;
+
+        // H1: the CI-V option in the CAT1 Protocol & CI-V Settings group. When checked, the
+        // Drive / Tune sliders also set the IC-7100 RF power and the SWR / FWD / REF transmit
+        // readings come from the rig's own meters. Built in code; the form's automatic option
+        // save and restore picks it up like any other CheckBoxTS on the tabs.
+        private void H1BuildCivRigMetersOption()
+        {
+            if (h1ChkRigPowerMeters != null || grpCIVControl == null) return;
+            h1ChkRigPowerMeters = new CheckBoxTS();
+            h1ChkRigPowerMeters.AutoSize = false;
+            h1ChkRigPowerMeters.UseVisualStyleBackColor = true;
+            h1ChkRigPowerMeters.Image = null;
+            h1ChkRigPowerMeters.Name = "chkH1RigPowerMeters"; // stored name - the DB key uses this spelling
+            h1ChkRigPowerMeters.Text = "IC-7100 power & meters via CI-V";
+            h1ChkRigPowerMeters.Location = new Point(300, 44);
+            h1ChkRigPowerMeters.Size = new Size(246, 22);
+            toolTip1.SetToolTip(h1ChkRigPowerMeters,
+                "When checked, Thetis sets the IC-7100's RF power based on the \"Drive\" and \"Tune\"" + System.Environment.NewLine +
+                "levels and it fetches the IC-7100's FWD, REF and SWR readings.");
+            h1ChkRigPowerMeters.CheckedChanged += h1ChkRigPowerMeters_CheckedChanged;
+            grpCIVControl.Controls.Add(h1ChkRigPowerMeters);
+        }
+
+        private void h1ChkRigPowerMeters_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1RigPowerMetersEnabled = h1ChkRigPowerMeters != null && h1ChkRigPowerMeters.Checked;
+        }
+
+        private GroupBoxTS h1GrpTrx;
+        private CheckBoxTS h1ChkTrxMeterCiv;
+        private CheckBoxTS h1ChkAmpMeterAmp;
+        private GroupBoxTS h1GrpAmp;
+        private CheckBoxTS h1ChkAmpTuneStandby;
+        private CheckBoxTS h1ChkBandGuard;
+        private TextBoxTS h1TxtAmpAddress;
+        private TextBoxTS h1TxtAmpPort;
+        private GroupBoxTS h1GrpMfj;
+        private CheckBoxTS h1ChkMfjBurst;
+        private NumericUpDownTS h1UdMfjBurstLen;
+        private NumericUpDownTS h1UdSwrHold;
+        private LabelTS lblCIVAddr1;
+        private LabelTS lblCIVAddr2;
+        private LabelTS lblCIVAddr3;
+        private LabelTS lblCIVAddr4;
+        private TextBoxTS txtCIVAddr1;
+        private TextBoxTS txtCIVAddr2;
+        private TextBoxTS txtCIVAddr3;
+        private TextBoxTS txtCIVAddr4;
+        private RadioButtonTS radCIVMaster1;
+        private RadioButtonTS radCIVMaster2;
+        private RadioButtonTS radCIVMaster3;
+        private RadioButtonTS radCIVMaster4;
+        private bool h1CivSlotBuilt = false;
+
+        // H1 round 5 (user 2026-10-02): the Transceivers page under Other H/W, right next to
+        // the Amp page, for hybrid operation - the SDR receives while an external transceiver
+        // such as the IC-7100 transmits. The TX meter source is no longer a three-way radio
+        // on Display/General; it is two checkboxes, here for the IC-7100 and on the Amp page
+        // for the OM2000A+, and the default for everyone is the SDR connected to Thetis.
+        private void H1BuildTransceiverOptions()
+        {
+            if (h1GrpTrx != null || tpOtherHW_amp == null) return;
+
+            // The Transceivers page itself is declared in the designer, next to the Amp
+            // page; only its contents are built here, in the code-built H1 style.
+
+            h1GrpTrx = new GroupBoxTS();
+            h1GrpTrx.Text = "IC-7100";
+            h1GrpTrx.Location = new Point(6, 17);
+            h1GrpTrx.Size = new Size(556, 196);
+
+            // H1 round 7 (user 2026-10-02): everything that serves the IC-7100 moves here
+            // from the CAT1 page, so the Serial CAT pages stay generic and free for other
+            // rigs and other purposes. The CAT1 page keeps only the protocol selector.
+            if (grpCIVControl != null)
+            {
+                Control[] h1ci = new Control[] { chkCIVTransceive, chkCIVSyncSplit, chkCIVSyncPTT, lblCIVInfo };
+                foreach (Control h1c in h1ci)
+                {
+                    if (h1c != null) { grpCIVControl.Controls.Remove(h1c); h1GrpTrx.Controls.Add(h1c); }
+                }
+                if (h1ChkRigPowerMeters != null)
+                {
+                    grpCIVControl.Controls.Remove(h1ChkRigPowerMeters);
+                    h1GrpTrx.Controls.Add(h1ChkRigPowerMeters);
+                }
+                if (lblCIVAddress != null) grpCIVControl.Controls.Remove(lblCIVAddress); // H1 2026-10-03: the address moved to the CAT pages
+                if (txtCIVAddress != null) grpCIVControl.Controls.Remove(txtCIVAddress);
+                grpCIVControl.Text = "CAT1 Protocol"; // the protocol selector stays generic
+                grpCIVControl.Size = new Size(520, 54);
+
+                if (chkCIVTransceive != null) { chkCIVTransceive.Location = new Point(10, 20); chkCIVTransceive.Size = new Size(240, 22); }
+                if (chkCIVSyncSplit != null) { chkCIVSyncSplit.Location = new Point(10, 44); chkCIVSyncSplit.Size = new Size(240, 22); }
+                if (chkCIVSyncPTT != null) { chkCIVSyncPTT.Location = new Point(10, 68); chkCIVSyncPTT.Size = new Size(240, 22); }
+                if (lblCIVInfo != null) lblCIVInfo.Location = new Point(10, 118);
+            }
+
+            h1ChkTrxMeterCiv = new CheckBoxTS();
+            h1ChkTrxMeterCiv.AutoSize = false;
+            h1ChkTrxMeterCiv.UseVisualStyleBackColor = true;
+            h1ChkTrxMeterCiv.Image = null;
+            h1ChkTrxMeterCiv.Name = "chkH1TrxMeterIC7100";
+            h1ChkTrxMeterCiv.Text = "TX meter uses the IC-7100 data";
+            h1ChkTrxMeterCiv.Location = new Point(300, 20);
+            h1ChkTrxMeterCiv.Size = new Size(246, 22);
+            toolTip1.SetToolTip(h1ChkTrxMeterCiv,
+                "When checked, the Thetis TX meter displays the IC-7100's FWD, REF and SWR" + System.Environment.NewLine +
+                "readings (instead of the SDR ones).");
+
+            LabelTS h1LblTrxInfo = new LabelTS();
+            h1LblTrxInfo.AutoSize = false;
+            h1LblTrxInfo.Image = null;
+            h1LblTrxInfo.ForeColor = System.Drawing.SystemColors.GrayText;
+            h1LblTrxInfo.Text = "Hybrid operation: the SDR receives while the IC-7100 transmits. These settings apply" + System.Environment.NewLine +
+                "to the CI-V link, whichever CAT it is enabled on; the TX meter option only picks which" + System.Environment.NewLine +
+                "readings the transmit meter shows.";
+            h1LblTrxInfo.Location = new Point(10, 138);
+            h1LblTrxInfo.Size = new Size(536, 44);
+
+            h1ChkTrxMeterCiv.CheckedChanged += h1ChkTrxMeterCiv_CheckedChanged;
+
+            // H1 (user 2026-10-03): one VFO B update rule for every transmit tick - by
+            // default the IC-7100 VFO B follows once tuning pauses; continuous on request.
+            h1ChkVfoBContinuous = new CheckBoxTS();
+            h1ChkVfoBContinuous.AutoSize = false;
+            h1ChkVfoBContinuous.UseVisualStyleBackColor = true;
+            h1ChkVfoBContinuous.Image = null;
+            h1ChkVfoBContinuous.Name = "chkH1CivVfoBContinuous";
+            h1ChkVfoBContinuous.Text = "VFO B follows tuning continuously";
+            h1ChkVfoBContinuous.Location = new Point(300, 68);
+            h1ChkVfoBContinuous.Size = new Size(246, 22);
+            toolTip1.SetToolTip(h1ChkVfoBContinuous,
+                "When checked, every tuning step of the VFO that holds the TX tick is sent to the IC-7100 VFO B at once." + System.Environment.NewLine +
+                "Each update switches the IC-7100 VFOs, which can be heard as relay clicks.");
+            h1ChkVfoBContinuous.CheckedChanged += h1VfoBRule_Changed;
+
+            h1LblVfoBPause = new LabelTS();
+            h1LblVfoBPause.AutoSize = false;
+            h1LblVfoBPause.Image = null;
+            h1LblVfoBPause.Text = "Pause before VFO B update (ms)";
+            h1LblVfoBPause.Location = new Point(300, 95);
+            h1LblVfoBPause.Size = new Size(170, 16);
+
+            h1UdVfoBPause = new NumericUpDownTS();
+            h1UdVfoBPause.Name = "udH1CivVfoBPause";
+            h1UdVfoBPause.Minimum = 100;
+            h1UdVfoBPause.Maximum = 2000;
+            h1UdVfoBPause.Increment = 50;
+            h1UdVfoBPause.Value = 400;
+            h1UdVfoBPause.Location = new Point(476, 92);
+            h1UdVfoBPause.Size = new Size(60, 20);
+            toolTip1.SetToolTip(h1UdVfoBPause,
+                "How long tuning must pause before the new transmit frequency is sent to the IC-7100 VFO B." + System.Environment.NewLine +
+                "Thetis also sends it before keying the IC-7100.");
+            h1UdVfoBPause.ValueChanged += h1VfoBRule_Changed;
+
+            h1GrpTrx.Controls.Add(h1ChkTrxMeterCiv);
+            h1GrpTrx.Controls.Add(h1ChkVfoBContinuous);
+            h1GrpTrx.Controls.Add(h1LblVfoBPause);
+            h1GrpTrx.Controls.Add(h1UdVfoBPause);
+            h1GrpTrx.Controls.Add(h1LblTrxInfo);
+            h1VfoBRule_Changed(this, EventArgs.Empty);
+            tpOtherHW_trx.Controls.Add(h1GrpTrx);
+        }
+
+        private CheckBoxTS h1ChkVfoBContinuous;
+        private LabelTS h1LblVfoBPause;
+        private NumericUpDownTS h1UdVfoBPause;
+
+        private void h1VfoBRule_Changed(object sender, EventArgs e)
+        {
+            if (h1ChkVfoBContinuous == null || h1UdVfoBPause == null) return;
+            bool cont = h1ChkVfoBContinuous.Checked;
+            h1UdVfoBPause.Enabled = !cont;
+            if (h1LblVfoBPause != null) h1LblVfoBPause.Enabled = !cont;
+            console.H1CivVfoBContinuous = cont;
+            console.H1CivVfoBPauseMs = (int)h1UdVfoBPause.Value;
+        }
+
+        private void h1ChkTrxMeterCiv_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1TrxMeterIC7100 = h1ChkTrxMeterCiv != null && h1ChkTrxMeterCiv.Checked;
+        }
+
+        // H1: the OM2000A+ group - standby during tune plus the amplifier address. On
+        // the General tab, Other H/W sub-tab, Amp page, in its own category below the
+        // Ganymede Amplifier Control group.
+        private void H1BuildAmpLanOptions()
+        {
+            if (h1GrpAmp != null || tpOtherHW_amp == null) return;
+
+            h1GrpAmp = new GroupBoxTS();
+            h1GrpAmp.Text = "OM2000A+";
+            h1GrpAmp.Location = new Point(6, 219);
+            h1GrpAmp.Size = new Size(556, 114);
+
+            h1ChkAmpMeterAmp = new CheckBoxTS();
+            h1ChkAmpMeterAmp.AutoSize = false;
+            h1ChkAmpMeterAmp.UseVisualStyleBackColor = true;
+            h1ChkAmpMeterAmp.Image = null;
+            h1ChkAmpMeterAmp.Name = "chkH1AmpMeterOM2000A";
+            h1ChkAmpMeterAmp.Text = "TX meter uses the OM2000A+";
+            h1ChkAmpMeterAmp.Location = new Point(346, 47);
+            h1ChkAmpMeterAmp.Size = new Size(200, 22);
+            toolTip1.SetToolTip(h1ChkAmpMeterAmp,
+                "When checked, the Thetis TX meter displays the OM2000A's FWD, REF and SWR" + System.Environment.NewLine +
+                "readings during PA operation (but not while the amp is bypassed).");
+
+            LabelTS h1LblAmpAddr = new LabelTS();
+            h1LblAmpAddr.AutoSize = true;
+            h1LblAmpAddr.Image = null;
+            h1LblAmpAddr.Text = "Address:";
+            h1LblAmpAddr.Location = new Point(10, 50);
+
+            h1TxtAmpAddress = new TextBoxTS();
+            h1TxtAmpAddress.Name = "txtH1AmpAddress";
+            h1TxtAmpAddress.MaxLength = 40;
+            h1TxtAmpAddress.Size = new Size(150, 20);
+            h1TxtAmpAddress.Location = new Point(72, 47);
+            h1TxtAmpAddress.Text = "192.168.129.124";
+            toolTip1.SetToolTip(h1TxtAmpAddress, "The amplifier's network address, as set in its own network settings. One connection at a time; the OM Power manager cannot share it.");
+
+            LabelTS h1LblAmpPort = new LabelTS();
+            h1LblAmpPort.AutoSize = true;
+            h1LblAmpPort.Image = null;
+            h1LblAmpPort.Text = "Port:";
+            h1LblAmpPort.Location = new Point(240, 50);
+
+            h1TxtAmpPort = new TextBoxTS();
+            h1TxtAmpPort.Name = "txtH1AmpPort";
+            h1TxtAmpPort.MaxLength = 5;
+            h1TxtAmpPort.Size = new Size(52, 20);
+            h1TxtAmpPort.Location = new Point(284, 47);
+            h1TxtAmpPort.Text = "10001";
+
+            LabelTS h1LblAmpInfo = new LabelTS();
+            h1LblAmpInfo.AutoSize = false;
+            h1LblAmpInfo.Image = null;
+            h1LblAmpInfo.ForeColor = System.Drawing.SystemColors.GrayText;
+            h1LblAmpInfo.Text = "The amplifier link opens with the tune, the TX meter or the band-change option.";
+            h1LblAmpInfo.Location = new Point(10, 94);
+            h1LblAmpInfo.Size = new Size(536, 16);
+
+            h1ChkAmpMeterAmp.CheckedChanged += h1ChkAmpMeterAmp_CheckedChanged;
+            h1TxtAmpAddress.TextChanged += h1TxtAmpAddress_TextChanged;
+            h1TxtAmpPort.TextChanged += h1TxtAmpPort_TextChanged;
+
+            h1GrpAmp.Controls.Add(h1ChkAmpMeterAmp);
+            h1GrpAmp.Controls.Add(h1LblAmpAddr);
+            h1GrpAmp.Controls.Add(h1TxtAmpAddress);
+            h1GrpAmp.Controls.Add(h1LblAmpPort);
+            h1GrpAmp.Controls.Add(h1TxtAmpPort);
+            h1GrpAmp.Controls.Add(h1LblAmpInfo);
+            tpOtherHW_amp.Controls.Add(h1GrpAmp);
+        }
+
+        // -----------------------------------------------------------------------------
+        // H1 round 8 (user 2026-10-03): the MFJ998R options. These serve a slow remote
+        // antenna tuner such as the MFJ998R. The two-step tune has moved here and now runs
+        // only on CTRL+click; the band-change procedure is bypass + ANT Tune level + watch;
+        // the burst sub-option prepends a short TUNE at the ANT Tune level. On the General
+        // tab, Other H/W sub-tab, ATU page, below the Aries ATU Control group.
+        // -----------------------------------------------------------------------------
+        private void H1BuildMfj998Options()
+        {
+            if (h1GrpMfj != null || tpApolloATU == null) return;
+
+            h1GrpMfj = new GroupBoxTS();
+            h1GrpMfj.Text = "MFJ998R";
+            h1GrpMfj.Location = new Point(6, 219);
+            h1GrpMfj.Size = new Size(556, 114);
+
+            h1ChkAmpTuneStandby = new CheckBoxTS();
+            h1ChkAmpTuneStandby.AutoSize = false;
+            h1ChkAmpTuneStandby.UseVisualStyleBackColor = true;
+            h1ChkAmpTuneStandby.Image = null;
+            h1ChkAmpTuneStandby.Name = "chkH1AmpTuneStandby";
+            h1ChkAmpTuneStandby.Text = "Two-step tune for easy operation with an ATU and a linear amplifier";
+            h1ChkAmpTuneStandby.Location = new Point(10, 18);
+            h1ChkAmpTuneStandby.Size = new Size(536, 22);
+            toolTip1.SetToolTip(h1ChkAmpTuneStandby,
+                "The TUNE button always switches the OM2000A+ to stand-by while it is held." + System.Environment.NewLine +
+                "With this option ticked, holding CTRL while clicking Tune runs the two-step tune:" + System.Environment.NewLine +
+                "the antenna is matched with the amplifier bypassed, the PA Drive level returns" + System.Environment.NewLine +
+                "first, and the amplifier comes back in line. A band change never runs the two-step tune.");
+
+            h1ChkBandGuard = new CheckBoxTS();
+            h1ChkBandGuard.AutoSize = false;
+            h1ChkBandGuard.UseVisualStyleBackColor = true;
+            h1ChkBandGuard.Image = null;
+            h1ChkBandGuard.Name = "chkH1BandGuard";
+            h1ChkBandGuard.Text = "Band Change: bypass amp and set PA Drive level to ANT Tune level until Antenna SWR stabilises <2";
+            h1ChkBandGuard.Location = new Point(10, 40);
+            h1ChkBandGuard.Size = new Size(536, 22);
+            toolTip1.SetToolTip(h1ChkBandGuard,
+                "When checked, every band change bypasses the OM2000A+ and the PA level runs at" + System.Environment.NewLine +
+                "the ANT Tune value, so the antenna tuner can retune on the next transmission." + System.Environment.NewLine +
+                "When the SWR holds below 2, the PA Drive value returns first and the amplifier" + System.Environment.NewLine +
+                "comes back in line. These options serve a slow remote antenna tuner such as the MFJ998R.");
+
+            h1ChkMfjBurst = new CheckBoxTS();
+            h1ChkMfjBurst.AutoSize = false;
+            h1ChkMfjBurst.UseVisualStyleBackColor = true;
+            h1ChkMfjBurst.Image = null;
+            h1ChkMfjBurst.Name = "chkH1MfjBurst";
+            h1ChkMfjBurst.Text = "Band change: start with a TUNE burst at \"ANT tune\" power level";
+            h1ChkMfjBurst.Location = new Point(10, 62);
+            h1ChkMfjBurst.Size = new Size(536, 22);
+            toolTip1.SetToolTip(h1ChkMfjBurst,
+                "With the band-change option ticked, the console first keys its own tune carrier at" + System.Environment.NewLine +
+                "the ANT Tune level for the burst length while the amplifier is bypassed. When the" + System.Environment.NewLine +
+                "SWR settles below 2 inside the burst, the carrier is released and the amplifier" + System.Environment.NewLine +
+                "returns in line. Otherwise the carrier stops and the waiting procedure continues.");
+
+            LabelTS h1LblBurstLen = new LabelTS();
+            h1LblBurstLen.AutoSize = true;
+            h1LblBurstLen.Image = null;
+            h1LblBurstLen.Text = "Tune burst length:";
+            h1LblBurstLen.Location = new Point(10, 88);
+
+            h1UdMfjBurstLen = new NumericUpDownTS();
+            h1UdMfjBurstLen.Name = "udH1MfjBurstLen";
+            h1UdMfjBurstLen.Minimum = 1;
+            h1UdMfjBurstLen.Maximum = 20;
+            h1UdMfjBurstLen.Value = 2;
+            h1UdMfjBurstLen.Location = new Point(122, 85);
+            h1UdMfjBurstLen.Size = new Size(48, 20);
+            toolTip1.SetToolTip(h1UdMfjBurstLen, "The length of the TUNE burst that starts a band change, in seconds (1 to 20).");
+
+            LabelTS h1LblBurstSec = new LabelTS();
+            h1LblBurstSec.AutoSize = true;
+            h1LblBurstSec.Image = null;
+            h1LblBurstSec.Text = "s";
+            h1LblBurstSec.Location = new Point(174, 88);
+
+            LabelTS h1LblSwrHold = new LabelTS();
+            h1LblSwrHold.AutoSize = true;
+            h1LblSwrHold.Image = null;
+            h1LblSwrHold.Text = "SWR hold:";
+            h1LblSwrHold.Location = new Point(214, 88);
+
+            h1UdSwrHold = new NumericUpDownTS();
+            h1UdSwrHold.Name = "udH1SwrHold";
+            h1UdSwrHold.Minimum = 1;
+            h1UdSwrHold.Maximum = 10;
+            h1UdSwrHold.Value = 1;
+            h1UdSwrHold.Location = new Point(274, 85);
+            h1UdSwrHold.Size = new Size(48, 20);
+            toolTip1.SetToolTip(h1UdSwrHold, "How long the SWR must stay below 2 before a match is accepted, in seconds (1 to 10).");
+
+            LabelTS h1LblSwrSec = new LabelTS();
+            h1LblSwrSec.AutoSize = true;
+            h1LblSwrSec.Image = null;
+            h1LblSwrSec.Text = "s";
+            h1LblSwrSec.Location = new Point(326, 88);
+
+            h1ChkAmpTuneStandby.CheckedChanged += h1ChkAmpTuneStandby_CheckedChanged;
+            h1ChkBandGuard.CheckedChanged += h1ChkBandGuard_CheckedChanged;
+            h1ChkMfjBurst.CheckedChanged += h1ChkMfjBurst_CheckedChanged;
+            h1UdMfjBurstLen.ValueChanged += h1UdMfjBurstLen_ValueChanged;
+            h1UdSwrHold.ValueChanged += h1UdSwrHold_ValueChanged;
+
+            h1GrpMfj.Controls.Add(h1ChkAmpTuneStandby);
+            h1GrpMfj.Controls.Add(h1ChkBandGuard);
+            h1GrpMfj.Controls.Add(h1ChkMfjBurst);
+            h1GrpMfj.Controls.Add(h1LblBurstLen);
+            h1GrpMfj.Controls.Add(h1UdMfjBurstLen);
+            h1GrpMfj.Controls.Add(h1LblBurstSec);
+            h1GrpMfj.Controls.Add(h1LblSwrHold);
+            h1GrpMfj.Controls.Add(h1UdSwrHold);
+            h1GrpMfj.Controls.Add(h1LblSwrSec);
+            tpApolloATU.Controls.Add(h1GrpMfj);
+        }
+
+        // -----------------------------------------------------------------------------
+        // H1 (user 2026-10-03): one CI-V address per CAT slot and one master tick per
+        // slot speaking Icom CI-V. On separate serial ports the address cannot collide,
+        // so the slot - not the address - identifies the master radio. The controls sit
+        // with their slot: CAT1 in its protocol group, CAT2-4 in their control boxes.
+        // -----------------------------------------------------------------------------
+        private void H1BuildCivSlotOptions()
+        {
+            if (h1CivSlotBuilt || grpCatControlBox == null) return;
+            h1CivSlotBuilt = true;
+
+            // H1 round 7c makes the four boxes look the same; the address and master rows
+            // join the Protocol row in each slot's own box (CAT1 in the CAT1 Control box).
+            H1BuildCivSlotBox(1, grpCatControlBox);
+            H1BuildCivSlotBox(2, grpCat2ControlBox);
+            H1BuildCivSlotBox(3, grpCat3ControlBox);
+            H1BuildCivSlotBox(4, grpCat4ControlBox);
+
+            if (txtCIVAddr1 != null) txtCIVAddr1.TextChanged += h1CivSlotAddr_TextChanged;
+            if (txtCIVAddr2 != null) txtCIVAddr2.TextChanged += h1CivSlotAddr_TextChanged;
+            if (txtCIVAddr3 != null) txtCIVAddr3.TextChanged += h1CivSlotAddr_TextChanged;
+            if (txtCIVAddr4 != null) txtCIVAddr4.TextChanged += h1CivSlotAddr_TextChanged;
+            if (radCIVMaster1 != null) radCIVMaster1.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+            if (radCIVMaster2 != null) radCIVMaster2.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+            if (radCIVMaster3 != null) radCIVMaster3.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+            if (radCIVMaster4 != null) radCIVMaster4.CheckedChanged += h1CivSlotMaster_CheckedChanged;
+        }
+
+        private void H1BuildCivSlotBox(int slot, GroupBoxTS box)
+        {
+            if (box == null) return;
+            box.Size = new Size(160, 262);
+
+            LabelTS lbl = new LabelTS();
+            lbl.AutoSize = true;
+            lbl.Image = null;
+            lbl.Text = "CI-V Addr (Hex):";
+            lbl.Location = new Point(10, 220);
+            TextBoxTS txt = new TextBoxTS();
+            txt.Name = "txtCIVAddr" + slot;
+            txt.MaxLength = 2;
+            txt.Text = "88";
+            txt.Location = new Point(116, 217);
+            txt.Size = new Size(38, 20);
+            RadioButtonTS rad = new RadioButtonTS();
+            rad.Name = "radCIVMaster" + slot;
+            rad.Text = "is master";
+            rad.Location = new Point(10, 240);
+            rad.Size = new Size(100, 20);
+            toolTip1.SetToolTip(rad, "This slot's radio carries the IC-7100 duties: the drive and tune power, the meters, PTT, and the tune and band-change supervision.");
+            box.Controls.Add(lbl);
+            box.Controls.Add(txt);
+            box.Controls.Add(rad);
+
+            if (slot == 1) { lblCIVAddr1 = lbl; txtCIVAddr1 = txt; radCIVMaster1 = rad; }
+            else if (slot == 2) { lblCIVAddr2 = lbl; txtCIVAddr2 = txt; radCIVMaster2 = rad; }
+            else if (slot == 3) { lblCIVAddr3 = lbl; txtCIVAddr3 = txt; radCIVMaster3 = rad; }
+            else { lblCIVAddr4 = lbl; txtCIVAddr4 = txt; radCIVMaster4 = rad; }
+        }
+
+        private void h1ChkMfjBurst_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1MfjBurstEnabled = h1ChkMfjBurst != null && h1ChkMfjBurst.Checked;
+        }
+
+        private void h1UdMfjBurstLen_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdMfjBurstLen != null) console.H1MfjBurstSeconds = (int)h1UdMfjBurstLen.Value;
+        }
+
+        private void h1UdSwrHold_ValueChanged(object sender, EventArgs e)
+        {
+            if (h1UdSwrHold != null) console.H1SwrHoldSeconds = (int)h1UdSwrHold.Value;
+        }
+
+        private void h1CivSlotAddr_TextChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            TextBoxTS tb = sender as TextBoxTS;
+            if (tb == null) return;
+            byte addr;
+            if (!byte.TryParse(tb.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out addr)) return;
+            int slot = tb == txtCIVAddr1 ? 1 : tb == txtCIVAddr2 ? 2 : tb == txtCIVAddr3 ? 3 : 4;
+            console.H1SetCivSlotAddress(slot, addr);
+        }
+
+        private void h1CivSlotMaster_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            RadioButtonTS rb = sender as RadioButtonTS;
+            if (rb == null || !rb.Checked) return; // only the tick being set acts; the cascade clears the rest
+            RadioButtonTS[] all = new RadioButtonTS[] { null, radCIVMaster1, radCIVMaster2, radCIVMaster3, radCIVMaster4 };
+            for (int h1s = 1; h1s <= 4; h1s++)
+            {
+                if (all[h1s] != null && all[h1s] != rb && all[h1s].Checked) all[h1s].Checked = false;
+            }
+            int slot = rb == radCIVMaster1 ? 1 : rb == radCIVMaster2 ? 2 : rb == radCIVMaster3 ? 3 : 4;
+            console.H1CivMaster = slot;
+        }
+
+        private void h1ChkAmpTuneStandby_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1AmpTuneStandbyEnabled = h1ChkAmpTuneStandby != null && h1ChkAmpTuneStandby.Checked;
+        }
+
+        private void h1ChkBandGuard_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1BandGuardEnabled = h1ChkBandGuard != null && h1ChkBandGuard.Checked;
+        }
+
+        private void h1ChkAmpMeterAmp_CheckedChanged(object sender, EventArgs e)
+        {
+            console.H1AmpMeterEnabled = h1ChkAmpMeterAmp != null && h1ChkAmpMeterAmp.Checked;
+        }
+
+        private void h1TxtAmpAddress_TextChanged(object sender, EventArgs e)
+        {
+            console.H1AmpAddress = h1TxtAmpAddress != null ? h1TxtAmpAddress.Text : string.Empty;
+        }
+
+        private void h1TxtAmpPort_TextChanged(object sender, EventArgs e)
+        {
+            int port;
+            if (h1TxtAmpPort != null && int.TryParse(h1TxtAmpPort.Text.Trim(), out port)) console.H1AmpPort = port;
         }
 
         internal void AfterConstructor()
@@ -412,6 +942,25 @@ namespace Thetis
             updateDiscordState();
 
             addDelegates();
+
+            H1BuildDimUnusedOption(); // H1: the dim-unused receiver option, built in code
+            H1BuildCivRigMetersOption(); // H1: the CI-V rig power & meters option, built in code
+            H1BuildAmpLanOptions(); // H1: the OM2000A+ LAN options, built in code
+            H1BuildTransceiverOptions(); // H1: the three-way TX meter source, built in code
+            H1BuildMfj998Options(); // H1: the MFJ998R tune and band-change options, built in code
+            H1BuildCivSlotOptions(); // H1: per-slot CI-V address and master, built in code
+
+            // H1 round 7c (user): the four CAT boxes must look the same - CAT1 carries the
+            // same Protocol row in its own group and the old standalone group is retired.
+            if (comboCAT1Protocol != null && grpCatControlBox != null)
+            {
+                grpCatControlBox.Controls.Add(lblCAT1Protocol);
+                grpCatControlBox.Controls.Add(comboCAT1Protocol);
+                lblCAT1Protocol.Location = new System.Drawing.Point(12, 178);
+                comboCAT1Protocol.Location = new System.Drawing.Point(10, 192);
+                comboCAT1Protocol.Size = new System.Drawing.Size(142, 21);
+                if (grpCIVControl != null) grpCIVControl.Visible = false;
+            }
 
             //MW0LGE_21i
             ucVAC1VARGrapherIn.MaxPoints = ucVAC1VARGrapherIn.Width;
@@ -623,6 +1172,9 @@ namespace Thetis
             comboCATstopbits.Text = "1";
             comboCATRigType.Text = "TS-2000";
             if (comboCAT1Protocol.Text == "") comboCAT1Protocol.Text = "Kenwood TS-2000";
+            if (comboCAT2Protocol != null && comboCAT2Protocol.Text == "") comboCAT2Protocol.Text = "Kenwood TS-2000";
+            if (comboCAT3Protocol != null && comboCAT3Protocol.Text == "") comboCAT3Protocol.Text = "Kenwood TS-2000";
+            if (comboCAT4Protocol != null && comboCAT4Protocol.Text == "") comboCAT4Protocol.Text = "Kenwood TS-2000";
             if (txtCIVAddress.Text == "") txtCIVAddress.Text = "88";
             updateCIVControlsEnabled();
             comboFocusMasterMode.Text = "None";
@@ -651,7 +1203,7 @@ namespace Thetis
 
             // some default tci server states MW0LGE_21k9d
             chkCopyRX2VFObToVFOa.Checked = true;
-            chkUseRX1vfoaForRX2vfoa.Checked = true;
+            chkUseRX1vfoaForRX2vfoa.Checked = false;
             chkTCIsendInitialStateOnConnect.Checked = true;
             // some default tcpipcat server states
             chkWelcomeMessageTCPIPCat.Checked = true;
@@ -4438,6 +4990,45 @@ namespace Thetis
             set
             {
                 if (comboCAT1Protocol != null) comboCAT1Protocol.Text = value;
+            }
+        }
+
+        public string CAT2Protocol
+        {
+            get
+            {
+                if (comboCAT2Protocol != null) return comboCAT2Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT2Protocol != null) comboCAT2Protocol.Text = value;
+            }
+        }
+
+        public string CAT3Protocol
+        {
+            get
+            {
+                if (comboCAT3Protocol != null) return comboCAT3Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT3Protocol != null) comboCAT3Protocol.Text = value;
+            }
+        }
+
+        public string CAT4Protocol
+        {
+            get
+            {
+                if (comboCAT4Protocol != null) return comboCAT4Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT4Protocol != null) comboCAT4Protocol.Text = value;
             }
         }
 
@@ -10568,8 +11159,18 @@ namespace Thetis
             console.CATDataBits = int.Parse((string)comboCATdatabits.SelectedItem);
             console.CATStopBits = SDRSerialPort.StringToStopBits((string)comboCATstopbits.SelectedItem);
             console.CATProtocol = comboCAT1Protocol.Text;
-            if (byte.TryParse(txtCIVAddress.Text, System.Globalization.NumberStyles.HexNumber, null, out byte civAddr))
-                console.CIVAddress = civAddr;
+            // H1 (2026-10-03): every slot loads its saved protocol at start-up. Only CAT1 was
+            // loaded here; slots 2-4 kept the Kenwood default until their selector was touched,
+            // so enabling e.g. CAT3 as Icom CI-V after a restart silently routed it down the
+            // Kenwood path. Load all four the same way.
+            if (comboCAT2Protocol != null) console.CAT2Protocol = comboCAT2Protocol.Text;
+            if (comboCAT3Protocol != null) console.CAT3Protocol = comboCAT3Protocol.Text;
+            if (comboCAT4Protocol != null) console.CAT4Protocol = comboCAT4Protocol.Text;
+            // H1 (2026-10-03): one CI-V address per slot; the fields live on the CAT pages
+            if (txtCIVAddr1 != null && byte.TryParse(txtCIVAddr1.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a1)) console.H1SetCivSlotAddress(1, h1a1);
+            if (txtCIVAddr2 != null && byte.TryParse(txtCIVAddr2.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a2)) console.H1SetCivSlotAddress(2, h1a2);
+            if (txtCIVAddr3 != null && byte.TryParse(txtCIVAddr3.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a3)) console.H1SetCivSlotAddress(3, h1a3);
+            if (txtCIVAddr4 != null && byte.TryParse(txtCIVAddr4.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out byte h1a4)) console.H1SetCivSlotAddress(4, h1a4);
             console.CIVTransceive = chkCIVTransceive.Checked;
             console.CIVSyncSplit = chkCIVSyncSplit.Checked;
             console.CIVSyncPTT = chkCIVSyncPTT.Checked;
@@ -10622,6 +11223,21 @@ namespace Thetis
                 console.GanymedeCATPort = port;
             console.GanymedeCATEnabled = chkEnableGanymede.Checked;
 
+            // H1 (2026-10-03): the master radio - exactly one slot may carry it
+            int h1mst = 0;
+            if (radCIVMaster1 != null && radCIVMaster1.Checked) h1mst = 1;
+            else if (radCIVMaster2 != null && radCIVMaster2.Checked) h1mst = 2;
+            else if (radCIVMaster3 != null && radCIVMaster3.Checked) h1mst = 3;
+            else if (radCIVMaster4 != null && radCIVMaster4.Checked) h1mst = 4;
+            console.H1CivMaster = h1mst;
+
+            // H1 (2026-10-03): refresh the CI-V options here, after the options are restored.
+            // The defaults pass early in the start-up disables them while the protocol
+            // selectors are still empty, and nothing re-enabled them until a selector or
+            // CAT1's enable was touched - seen live as greyed options once the per-slot
+            // protocol-load fix removed the usual selector touches.
+            updateCIVControlsEnabled();
+
         }
 
         // called in error cases to set the dialiog vars from 
@@ -10640,10 +11256,30 @@ namespace Thetis
             if (comboCATPTTPort.Items.Contains(port))
                 comboCATPTTPort.Text = port;
             comboCAT1Protocol.Text = console.CATProtocol;
-            txtCIVAddress.Text = console.CIVAddress.ToString("X2");
+            if (comboCAT2Protocol != null) comboCAT2Protocol.Text = console.CAT2Protocol;
+            if (comboCAT3Protocol != null) comboCAT3Protocol.Text = console.CAT3Protocol;
+            if (comboCAT4Protocol != null) comboCAT4Protocol.Text = console.CAT4Protocol;
+            if (txtCIVAddr1 != null) txtCIVAddr1.Text = console.CAT1CIVAddress.ToString("X2");
+            if (txtCIVAddr2 != null) txtCIVAddr2.Text = console.CAT2CIVAddress.ToString("X2");
+            if (txtCIVAddr3 != null) txtCIVAddr3.Text = console.CAT3CIVAddress.ToString("X2");
+            if (txtCIVAddr4 != null) txtCIVAddr4.Text = console.CAT4CIVAddress.ToString("X2");
+            if (radCIVMaster1 != null) radCIVMaster1.Checked = console.H1CivMaster == 1;
+            if (radCIVMaster2 != null) radCIVMaster2.Checked = console.H1CivMaster == 2;
+            if (radCIVMaster3 != null) radCIVMaster3.Checked = console.H1CivMaster == 3;
+            if (radCIVMaster4 != null) radCIVMaster4.Checked = console.H1CivMaster == 4;
             chkCIVTransceive.Checked = console.CIVTransceive;
             chkCIVSyncSplit.Checked = console.CIVSyncSplit;
             chkCIVSyncPTT.Checked = console.CIVSyncPTT;
+            if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Checked = console.H1RigPowerMetersEnabled;
+            if (h1ChkTrxMeterCiv != null) h1ChkTrxMeterCiv.Checked = console.H1TrxMeterIC7100; // H1 round 5
+            if (h1ChkAmpMeterAmp != null) h1ChkAmpMeterAmp.Checked = console.H1AmpMeterEnabled; // H1 round 5
+            if (h1ChkAmpTuneStandby != null) h1ChkAmpTuneStandby.Checked = console.H1AmpTuneStandbyEnabled;
+            if (h1ChkBandGuard != null) h1ChkBandGuard.Checked = console.H1BandGuardEnabled;
+            if (h1ChkMfjBurst != null) h1ChkMfjBurst.Checked = console.H1MfjBurstEnabled;
+            if (h1UdMfjBurstLen != null) h1UdMfjBurstLen.Value = console.H1MfjBurstSeconds;
+            if (h1UdSwrHold != null) h1UdSwrHold.Value = console.H1SwrHoldSeconds;
+            if (h1TxtAmpAddress != null) h1TxtAmpAddress.Text = console.H1AmpAddress;
+            if (h1TxtAmpPort != null) h1TxtAmpPort.Text = console.H1AmpPort.ToString();
             updateCIVControlsEnabled();
         }
 
@@ -10699,6 +11335,7 @@ namespace Thetis
 
         private void chkCATEnable_CheckedChanged(object sender, System.EventArgs e)
         {
+            CIVController.SplitTrace("Setup: CAT1 Enable tick -> " + chkCATEnable.Checked + " (initializing=" + initializing + ")");
             if (initializing) return;
 
             if (comboCATPort.Text == "" || !comboCATPort.Text.StartsWith("COM"))
@@ -11032,7 +11669,10 @@ namespace Thetis
 
         private void updateCIVControlsEnabled()
         {
-            bool isCIV = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
+            bool isCIV = (comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)")
+                || (comboCAT2Protocol != null && comboCAT2Protocol.Text == "Icom CI-V (IC-7100)")
+                || (comboCAT3Protocol != null && comboCAT3Protocol.Text == "Icom CI-V (IC-7100)")
+                || (comboCAT4Protocol != null && comboCAT4Protocol.Text == "Icom CI-V (IC-7100)");
             if (lblCIVAddress != null) lblCIVAddress.Enabled = isCIV;
             // the address is read live when each CI-V frame is built (and TextChanged pushes
             // it into the running controller), so it stays editable even while CAT1 is open
@@ -11040,7 +11680,25 @@ namespace Thetis
             if (chkCIVTransceive != null) chkCIVTransceive.Enabled = isCIV;
             if (chkCIVSyncSplit != null) chkCIVSyncSplit.Enabled = isCIV;
             if (chkCIVSyncPTT != null) chkCIVSyncPTT.Enabled = isCIV;
+            if (h1ChkRigPowerMeters != null) h1ChkRigPowerMeters.Enabled = isCIV;
             if (lblCIVInfo != null) lblCIVInfo.Enabled = isCIV;
+            // H1 (2026-10-03): the per-slot address and master follow that slot's protocol
+            bool civ1 = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
+            bool civ2 = comboCAT2Protocol != null && comboCAT2Protocol.Text == "Icom CI-V (IC-7100)";
+            bool civ3 = comboCAT3Protocol != null && comboCAT3Protocol.Text == "Icom CI-V (IC-7100)";
+            bool civ4 = comboCAT4Protocol != null && comboCAT4Protocol.Text == "Icom CI-V (IC-7100)";
+            if (lblCIVAddr1 != null) lblCIVAddr1.Enabled = civ1;
+            if (txtCIVAddr1 != null) txtCIVAddr1.Enabled = civ1;
+            if (radCIVMaster1 != null) radCIVMaster1.Enabled = civ1;
+            if (lblCIVAddr2 != null) lblCIVAddr2.Enabled = civ2;
+            if (txtCIVAddr2 != null) txtCIVAddr2.Enabled = civ2;
+            if (radCIVMaster2 != null) radCIVMaster2.Enabled = civ2;
+            if (lblCIVAddr3 != null) lblCIVAddr3.Enabled = civ3;
+            if (txtCIVAddr3 != null) txtCIVAddr3.Enabled = civ3;
+            if (radCIVMaster3 != null) radCIVMaster3.Enabled = civ3;
+            if (lblCIVAddr4 != null) lblCIVAddr4.Enabled = civ4;
+            if (txtCIVAddr4 != null) txtCIVAddr4.Enabled = civ4;
+            if (radCIVMaster4 != null) radCIVMaster4.Enabled = civ4;
         }
 
         private void enableCAT2_HardwareFields(bool enable)
@@ -11049,6 +11707,7 @@ namespace Thetis
             comboCAT2parity.Enabled = enable;
             comboCAT2databits.Enabled = enable;
             comboCAT2stopbits.Enabled = enable;
+            updateCIVControlsEnabled(); // H1: the CI-V options follow the slot enable/disable
         }
 
         private void enableCAT3_HardwareFields(bool enable)
@@ -11057,6 +11716,7 @@ namespace Thetis
             comboCAT3parity.Enabled = enable;
             comboCAT3databits.Enabled = enable;
             comboCAT3stopbits.Enabled = enable;
+            updateCIVControlsEnabled(); // H1: the CI-V options follow the slot enable/disable
         }
 
         private void enableCAT4_HardwareFields(bool enable)
@@ -11065,6 +11725,7 @@ namespace Thetis
             comboCAT4parity.Enabled = enable;
             comboCAT4databits.Enabled = enable;
             comboCAT4stopbits.Enabled = enable;
+            updateCIVControlsEnabled(); // H1: the CI-V options follow the slot enable/disable
         }
 
         private void doEnablementOnBitBangEnable()
@@ -11441,6 +12102,81 @@ namespace Thetis
                     chkCATEnable.Checked = false;
                     MessageBox.Show("Could not re-initialize CAT control for selected protocol. Exception:\n\n" + ex.Message,
                         "Error Initializing CAT control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void comboCAT2Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CAT2Protocol = comboCAT2Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCAT2Enable.Checked)
+            {
+                console.CAT2Enabled = false;
+                try
+                {
+                    console.CAT2Enabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CAT2Enabled = false;
+                    chkCAT2Enable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT2 control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT2 control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void comboCAT3Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CAT3Protocol = comboCAT3Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCAT3Enable.Checked)
+            {
+                console.CAT3Enabled = false;
+                try
+                {
+                    console.CAT3Enabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CAT3Enabled = false;
+                    chkCAT3Enable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT3 control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT3 control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void comboCAT4Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CAT4Protocol = comboCAT4Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCAT4Enable.Checked)
+            {
+                console.CAT4Enabled = false;
+                try
+                {
+                    console.CAT4Enabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CAT4Enabled = false;
+                    chkCAT4Enable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT4 control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT4 control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
                 }
             }
         }
