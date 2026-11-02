@@ -306,6 +306,7 @@ namespace Thetis
                 if (_update_on_property_change) Update();
             }
         }
+        public static bool DimUnusedReceivers { get; set; } = false;
         public static void Update()
         {
             if (_console == null) return;

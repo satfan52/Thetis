@@ -1383,6 +1383,7 @@ namespace Thetis
                 unsafe
                 {
                     cmaster.SetAAudioMixWhat((void*)0, 0, 2, !mute_rx2);
+                    cmaster.SetAAudioMixWhat((void*)0, 0, 3, !mute_rx2); // H1: RX2's sub receiver
                 }
             }
         }

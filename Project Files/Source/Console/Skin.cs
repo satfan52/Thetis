@@ -1728,33 +1728,43 @@ namespace Thetis
         private static void SetupPrettyTrackBarImages(PrettyTrackBar ctrl)
         {
             // load images
-           // string s = path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-";
+            string skinName = ctrl.Name;
+            bool ownFiles = File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-back" + pic_file_ext) ||
+                            File.Exists(path + "\\" + "Console" + "\\" + skinName + "-back" + pic_file_ext) ||
+                            File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-head" + pic_file_ext) ||
+                            File.Exists(path + "\\" + "Console" + "\\" + skinName + "-head" + pic_file_ext);
 
-            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "back" + pic_file_ext))
+            if (!ownFiles)
             {
-                ctrl.BackgroundImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "back" + pic_file_ext);
+                if (skinName == "ptbTune") skinName = "ptbPWR"; // H1: the skin ships no images for the Tune slider, it wears the Drive slider set
+                else if (skinName == "ptbRX2SubGain") skinName = "ptbRX1Gain";
+                else if (skinName == "ptbRX2SubPan") skinName = "ptbPanSubRX";
+                else if (skinName == "ptbRX2FilterWidth") skinName = "ptbFilterWidth";
+                else if (skinName == "ptbRX2FilterShift") skinName = "ptbFilterShift";
+                else if (skinName == "ptbSubRX1Width" || skinName == "ptbSubRX2Width") skinName = "ptbRF";
+                else if (skinName == "ptbSubRX1Shift" || skinName == "ptbSubRX2Shift") skinName = "ptbRF";
+                else if (skinName == "ptbSubRX1Gain" || skinName == "ptbSubRX2Gain") skinName = "ptbRF";
             }
-            else if (File.Exists(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "back" + pic_file_ext))
+
+            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "back" + pic_file_ext))
             {
-                ctrl.BackgroundImage = loadImage(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "back" + pic_file_ext);
+                ctrl.BackgroundImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "back" + pic_file_ext);
+            }
+            else if (File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + "back" + pic_file_ext))
+            {
+                ctrl.BackgroundImage = loadImage(path + "\\" + "Console" + "\\" + skinName + "-" + "back" + pic_file_ext);
             }
             else ctrl.BackgroundImage = null;
 
-            //             if (File.Exists(s + "back" + pic_file_ext))
-            //                 ctrl.BackgroundImage = /*Image.FromFile*/loadImage(s + "back" + pic_file_ext);
-            //             else ctrl.BackgroundImage = null;
-
-            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "head" + pic_file_ext))
+            if (File.Exists(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "head" + pic_file_ext))
             {
-                ctrl.HeadImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + ctrl.Name + "-" + "head" + pic_file_ext);
+                ctrl.HeadImage = loadImage(path + "\\" + ctrl.TopLevelControl.Name + "\\" + skinName + "-" + "head" + pic_file_ext);
             }
-            else if (File.Exists(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "head" + pic_file_ext))
+            else if (File.Exists(path + "\\" + "Console" + "\\" + skinName + "-" + "head" + pic_file_ext))
             {             
-                ctrl.HeadImage = loadImage(path + "\\" + "Console" + "\\" + ctrl.Name + "-" + "head" + pic_file_ext);
+                ctrl.HeadImage = loadImage(path + "\\" + "Console" + "\\" + skinName + "-" + "head" + pic_file_ext);
             }
             else ctrl.HeadImage = null;
-
-           // ctrl.HeadImage = File.Exists(s + "head" + pic_file_ext) ? /*Image.FromFile*/loadImage(s + "head" + pic_file_ext) : null;
 
             ctrl.Invalidate();
         }

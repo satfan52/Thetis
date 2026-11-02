@@ -121,6 +121,18 @@ namespace Thetis
                     break;
             }
 
+            // H1 round 4: the head must stay inside the control. At the top of its range the
+            // drawn position could push the art past the right edge and cut it in half (seen
+            // live 2026-10-02 on the SUBRX2 AGC gain slider at 90 dB). No-op at normal values.
+            int h1maxX = this.Width - _head_rect.Width - 2; // the 2 px keeps the art off the hard edge
+            if (h1maxX < 0) h1maxX = 0;
+            if (head_x > h1maxX) head_x = h1maxX;
+            if (head_x < 0) head_x = 0;
+            int h1maxY = this.Height - _head_rect.Height - 2;
+            if (h1maxY < 0) h1maxY = 0;
+            if (head_y > h1maxY) head_y = h1maxY;
+            if (head_y < 0) head_y = 0;
+
             _head_rect.X = head_x;
             _head_rect.Y = head_y;
         }
@@ -625,7 +637,7 @@ namespace Thetis
                         b = new SolidBrush(Color.FromArgb(255, _limitBarColor));
                     else if (val > _nLimitValue)
                     {
-                        float ratio = 170 / 255f;
+                        float ratio = 110 / 255f; // H1: dark red all the time - the 170 shade read as a different colour (user 2026-10-02)
                         b = new SolidBrush(Color.FromArgb(255, (int)(_limitBarColor.R * ratio), (int)(_limitBarColor.G * ratio), (int)(_limitBarColor.B * ratio)));
                     }
                     else
@@ -682,7 +694,11 @@ namespace Thetis
                 // grey limit bar
                 if (_bLimitEnabled)
                 {
-                    using (Brush b = new SolidBrush(Color.FromArgb(255, 64, 64, 64)))
+                    // H1: dark red even while the slider is disabled (user 2026-10-02: the red
+                    // limits must stay visible the whole time). The 64,64,64 grey vanished on
+                    // the dark skin - it was seen "missing" during Tune, when the Drive slider
+                    // is parked disabled.
+                    using (Brush b = new SolidBrush(Color.FromArgb(255, (int)(_limitBarColor.R * 110 / 255f), (int)(_limitBarColor.G * 110 / 255f), (int)(_limitBarColor.B * 110 / 255f))))
                     {
                         g.FillRectangle(b, _limitBar_rect);
                     }
