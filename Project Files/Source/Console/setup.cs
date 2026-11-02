@@ -100,12 +100,36 @@ namespace Thetis
 
         #endregion
 
+        #region Independent Processed TX Output Controls
+
+        private System.Windows.Forms.GroupBoxTS grpProcessedTXDevice;
+        private System.Windows.Forms.GroupBoxTS grpProcessedTXBuffer;
+        private System.Windows.Forms.GroupBoxTS grpProcessedTXSampleRate;
+        private System.Windows.Forms.GroupBoxTS grpProcessedTXGain;
+        private System.Windows.Forms.GroupBoxTS grpProcessedTXWASAPI;
+        private System.Windows.Forms.LabelTS lblProcessedTXDriver;
+        private System.Windows.Forms.ComboBoxTS comboProcessedTXDriver;
+        private System.Windows.Forms.LabelTS lblProcessedTXInput;
+        private System.Windows.Forms.LabelTS lblProcessedTXOutput;
+        private System.Windows.Forms.ComboBoxTS comboProcessedTXOutput;
+        private System.Windows.Forms.ComboBoxTS comboProcessedTXBuffer;
+        private System.Windows.Forms.ComboBoxTS comboProcessedTXSampleRate;
+        private System.Windows.Forms.LabelTS lblProcessedTXGain;
+        private System.Windows.Forms.NumericUpDownTS udProcessedTXGain;
+        private System.Windows.Forms.LabelTS lblProcessedTXGainUnit;
+        private System.Windows.Forms.CheckBoxTS chkProcessedTXExclusive;
+        private System.Windows.Forms.CheckBoxTS chkProcessedTXOutputEnable;
+        private System.Windows.Forms.LabelTS lblProcessedTXDescription;
+
+        #endregion
+
         #region Constructor and Destructor
 
         public Setup(Console c)
         {
             LogTool.AddLogEntry("      Setup init components...", "INITCOMPSETUP");
             InitializeComponent();
+            InitializeProcessedTXOutputControls();
 
             _original_pnlP1_adcs_location = pnlP1_adcs.Location;
 
@@ -126,6 +150,239 @@ namespace Thetis
 
             //everything here moved to AfterConstructor, which is called during singleton instance // G7KLJ's idea/implementation
         }
+
+        private void InitializeProcessedTXOutputControls()
+        {
+            grpProcessedTXDevice = new System.Windows.Forms.GroupBoxTS();
+            grpProcessedTXDevice.Name = "grpProcessedTXDevice";
+            grpProcessedTXDevice.Text = "Processed TX Output Setup";
+            grpProcessedTXDevice.Location = new System.Drawing.Point(8, 8);
+            grpProcessedTXDevice.Size = new System.Drawing.Size(430, 125);
+
+            lblProcessedTXDriver = new System.Windows.Forms.LabelTS();
+            lblProcessedTXDriver.Name = "lblProcessedTXDriver";
+            lblProcessedTXDriver.Text = "Driver:";
+            lblProcessedTXDriver.AutoSize = true;
+            lblProcessedTXDriver.Location = new System.Drawing.Point(12, 25);
+
+            comboProcessedTXDriver = new System.Windows.Forms.ComboBoxTS();
+            comboProcessedTXDriver.Name = "comboProcessedTXDriver";
+            comboProcessedTXDriver.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboProcessedTXDriver.Location = new System.Drawing.Point(64, 22);
+            comboProcessedTXDriver.Size = new System.Drawing.Size(180, 21);
+
+            lblProcessedTXInput = new System.Windows.Forms.LabelTS();
+            lblProcessedTXInput.Name = "lblProcessedTXInput";
+            lblProcessedTXInput.Text = "Input: None (output-only)";
+            lblProcessedTXInput.AutoSize = true;
+            lblProcessedTXInput.Location = new System.Drawing.Point(12, 55);
+
+            lblProcessedTXOutput = new System.Windows.Forms.LabelTS();
+            lblProcessedTXOutput.Name = "lblProcessedTXOutput";
+            lblProcessedTXOutput.Text = "Output:";
+            lblProcessedTXOutput.AutoSize = true;
+            lblProcessedTXOutput.Location = new System.Drawing.Point(12, 88);
+
+            comboProcessedTXOutput = new System.Windows.Forms.ComboBoxTS();
+            comboProcessedTXOutput.Name = "comboProcessedTXOutput";
+            comboProcessedTXOutput.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboProcessedTXOutput.Location = new System.Drawing.Point(64, 85);
+            comboProcessedTXOutput.Size = new System.Drawing.Size(350, 21);
+
+            grpProcessedTXDevice.Controls.Add(lblProcessedTXDriver);
+            grpProcessedTXDevice.Controls.Add(comboProcessedTXDriver);
+            grpProcessedTXDevice.Controls.Add(lblProcessedTXInput);
+            grpProcessedTXDevice.Controls.Add(lblProcessedTXOutput);
+            grpProcessedTXDevice.Controls.Add(comboProcessedTXOutput);
+
+            grpProcessedTXBuffer = new System.Windows.Forms.GroupBoxTS();
+            grpProcessedTXBuffer.Name = "grpProcessedTXBuffer";
+            grpProcessedTXBuffer.Text = "Buffer Size";
+            grpProcessedTXBuffer.Location = new System.Drawing.Point(8, 145);
+            grpProcessedTXBuffer.Size = new System.Drawing.Size(105, 65);
+
+            comboProcessedTXBuffer = new System.Windows.Forms.ComboBoxTS();
+            comboProcessedTXBuffer.Name = "comboProcessedTXBuffer";
+            comboProcessedTXBuffer.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboProcessedTXBuffer.Location = new System.Drawing.Point(16, 26);
+            comboProcessedTXBuffer.Size = new System.Drawing.Size(72, 21);
+            comboProcessedTXBuffer.Items.AddRange(new object[] { "64", "128", "256", "512", "1024", "2048" });
+            comboProcessedTXBuffer.SelectedItem = "512";
+            grpProcessedTXBuffer.Controls.Add(comboProcessedTXBuffer);
+
+            grpProcessedTXSampleRate = new System.Windows.Forms.GroupBoxTS();
+            grpProcessedTXSampleRate.Name = "grpProcessedTXSampleRate";
+            grpProcessedTXSampleRate.Text = "Sample Rate";
+            grpProcessedTXSampleRate.Location = new System.Drawing.Point(121, 145);
+            grpProcessedTXSampleRate.Size = new System.Drawing.Size(105, 65);
+
+            comboProcessedTXSampleRate = new System.Windows.Forms.ComboBoxTS();
+            comboProcessedTXSampleRate.Name = "comboProcessedTXSampleRate";
+            comboProcessedTXSampleRate.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboProcessedTXSampleRate.Location = new System.Drawing.Point(16, 26);
+            comboProcessedTXSampleRate.Size = new System.Drawing.Size(72, 21);
+            comboProcessedTXSampleRate.Items.AddRange(new object[] { "44100", "48000", "96000", "192000" });
+            comboProcessedTXSampleRate.SelectedItem = "48000";
+            grpProcessedTXSampleRate.Controls.Add(comboProcessedTXSampleRate);
+
+            grpProcessedTXGain = new System.Windows.Forms.GroupBoxTS();
+            grpProcessedTXGain.Name = "grpProcessedTXGain";
+            grpProcessedTXGain.Text = "Gain (dB)";
+            grpProcessedTXGain.Location = new System.Drawing.Point(234, 145);
+            grpProcessedTXGain.Size = new System.Drawing.Size(105, 65);
+
+            lblProcessedTXGain = new System.Windows.Forms.LabelTS();
+            lblProcessedTXGain.Name = "lblProcessedTXGain";
+            lblProcessedTXGain.Text = "TX:";
+            lblProcessedTXGain.AutoSize = true;
+            lblProcessedTXGain.Location = new System.Drawing.Point(8, 29);
+
+            udProcessedTXGain = new System.Windows.Forms.NumericUpDownTS();
+            udProcessedTXGain.Name = "udProcessedTXGain";
+            udProcessedTXGain.DecimalPlaces = 1;
+            udProcessedTXGain.Increment = 0.5M;
+            udProcessedTXGain.Minimum = -30M;
+            udProcessedTXGain.Maximum = 20M;
+            udProcessedTXGain.Value = 0M;
+            udProcessedTXGain.Location = new System.Drawing.Point(34, 26);
+            udProcessedTXGain.Size = new System.Drawing.Size(48, 20);
+
+            lblProcessedTXGainUnit = new System.Windows.Forms.LabelTS();
+            lblProcessedTXGainUnit.Name = "lblProcessedTXGainUnit";
+            lblProcessedTXGainUnit.Text = "dB";
+            lblProcessedTXGainUnit.AutoSize = true;
+            lblProcessedTXGainUnit.Location = new System.Drawing.Point(82, 29);
+
+            grpProcessedTXGain.Controls.Add(lblProcessedTXGain);
+            grpProcessedTXGain.Controls.Add(udProcessedTXGain);
+            grpProcessedTXGain.Controls.Add(lblProcessedTXGainUnit);
+
+            grpProcessedTXWASAPI = new System.Windows.Forms.GroupBoxTS();
+            grpProcessedTXWASAPI.Name = "grpProcessedTXWASAPI";
+            grpProcessedTXWASAPI.Text = "WASAPI";
+            grpProcessedTXWASAPI.Location = new System.Drawing.Point(347, 145);
+            grpProcessedTXWASAPI.Size = new System.Drawing.Size(120, 65);
+
+            chkProcessedTXExclusive = new System.Windows.Forms.CheckBoxTS();
+            chkProcessedTXExclusive.Name = "chkProcessedTXExclusive";
+            chkProcessedTXExclusive.Text = "Exclusive Out";
+            chkProcessedTXExclusive.AutoSize = true;
+            chkProcessedTXExclusive.Location = new System.Drawing.Point(12, 28);
+            chkProcessedTXExclusive.UseVisualStyleBackColor = true;
+            grpProcessedTXWASAPI.Controls.Add(chkProcessedTXExclusive);
+
+            chkProcessedTXOutputEnable = new System.Windows.Forms.CheckBoxTS();
+            chkProcessedTXOutputEnable.Name = "chkProcessedTXOutputEnable";
+            chkProcessedTXOutputEnable.Text = "Enable Processed TX Output";
+            chkProcessedTXOutputEnable.AutoSize = true;
+            chkProcessedTXOutputEnable.Location = new System.Drawing.Point(12, 230);
+            chkProcessedTXOutputEnable.UseVisualStyleBackColor = true;
+
+            lblProcessedTXDescription = new System.Windows.Forms.LabelTS();
+            lblProcessedTXDescription.Name = "lblProcessedTXDescription";
+            lblProcessedTXDescription.Text = "Post-TX-DSP audio to an external transmitter. Independent of VAC1 and VAC2; no input device is opened.";
+            lblProcessedTXDescription.AutoSize = false;
+            lblProcessedTXDescription.Location = new System.Drawing.Point(12, 260);
+            lblProcessedTXDescription.Size = new System.Drawing.Size(650, 36);
+
+            tpProcessedTXOutput.Controls.Add(grpProcessedTXDevice);
+            tpProcessedTXOutput.Controls.Add(grpProcessedTXBuffer);
+            tpProcessedTXOutput.Controls.Add(grpProcessedTXSampleRate);
+            tpProcessedTXOutput.Controls.Add(grpProcessedTXGain);
+            tpProcessedTXOutput.Controls.Add(grpProcessedTXWASAPI);
+            tpProcessedTXOutput.Controls.Add(chkProcessedTXOutputEnable);
+            tpProcessedTXOutput.Controls.Add(lblProcessedTXDescription);
+
+            foreach (object host in Audio.GetPAHosts())
+                comboProcessedTXDriver.Items.Add(host);
+
+            int defaultHost = 0;
+            for (int i = 0; i < comboProcessedTXDriver.Items.Count; i++)
+                if (comboProcessedTXDriver.Items[i].ToString().IndexOf("WASAPI", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    defaultHost = i;
+                    break;
+                }
+            if (comboProcessedTXDriver.Items.Count > 0)
+                comboProcessedTXDriver.SelectedIndex = defaultHost;
+            PopulateProcessedTXOutputs(true);
+
+            comboProcessedTXDriver.SelectedIndexChanged += comboProcessedTXDriver_SelectedIndexChanged;
+            comboProcessedTXOutput.SelectedIndexChanged += comboProcessedTXSettingChanged;
+            comboProcessedTXBuffer.SelectedIndexChanged += comboProcessedTXSettingChanged;
+            comboProcessedTXSampleRate.SelectedIndexChanged += comboProcessedTXSettingChanged;
+            udProcessedTXGain.ValueChanged += udProcessedTXGain_ValueChanged;
+            chkProcessedTXExclusive.CheckedChanged += comboProcessedTXSettingChanged;
+            chkProcessedTXOutputEnable.CheckedChanged += chkProcessedTXOutputEnable_CheckedChanged;
+
+            ApplyProcessedTXOutputSettings(false);
+        }
+
+        private void PopulateProcessedTXOutputs(bool chooseUSBCodec)
+        {
+            comboProcessedTXOutput.Items.Clear();
+            if (comboProcessedTXDriver.SelectedIndex < 0) return;
+
+            foreach (object device in Audio.GetPAOutputDevices(comboProcessedTXDriver.SelectedIndex))
+                comboProcessedTXOutput.Items.Add(device);
+
+            if (comboProcessedTXOutput.Items.Count == 0) return;
+            int selected = 0;
+            if (chooseUSBCodec)
+                for (int i = 0; i < comboProcessedTXOutput.Items.Count; i++)
+                    if (comboProcessedTXOutput.Items[i].ToString().IndexOf("USB Audio CODEC", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        selected = i;
+                        break;
+                    }
+            comboProcessedTXOutput.SelectedIndex = selected;
+        }
+
+        private void ApplyProcessedTXOutputSettings(bool restart)
+        {
+            if (comboProcessedTXDriver.SelectedIndex >= 0)
+                Audio.ProcessedTXOutputHost = comboProcessedTXDriver.SelectedIndex;
+
+            if (comboProcessedTXOutput.SelectedItem is PADeviceInfo)
+                Audio.ProcessedTXOutputDevice = ((PADeviceInfo)comboProcessedTXOutput.SelectedItem).Index;
+
+            int value;
+            if (comboProcessedTXSampleRate.SelectedItem != null &&
+                Int32.TryParse(comboProcessedTXSampleRate.SelectedItem.ToString(), out value))
+                Audio.ProcessedTXOutputSampleRate = value;
+            if (comboProcessedTXBuffer.SelectedItem != null &&
+                Int32.TryParse(comboProcessedTXBuffer.SelectedItem.ToString(), out value))
+                Audio.ProcessedTXOutputBlockSize = value;
+
+            Audio.ProcessedTXOutputExclusive = chkProcessedTXExclusive.Checked ? 1 : 0;
+            Audio.ProcessedTXOutputGainDB = (double)udProcessedTXGain.Value;
+
+            if (restart && !initializing && Audio.ProcessedTXOutputEnabled)
+                Audio.RestartProcessedTXOutput();
+        }
+
+        private void comboProcessedTXDriver_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            PopulateProcessedTXOutputs(false);
+            ApplyProcessedTXOutputSettings(true);
+        }
+
+        private void comboProcessedTXSettingChanged(object sender, EventArgs e)
+        {
+            ApplyProcessedTXOutputSettings(true);
+        }
+
+        private void udProcessedTXGain_ValueChanged(object sender, EventArgs e)
+        {
+            Audio.ProcessedTXOutputGainDB = (double)udProcessedTXGain.Value;
+        }
+
+        private void chkProcessedTXOutputEnable_CheckedChanged(object sender, EventArgs e)
+        {
+            ApplyProcessedTXOutputSettings(false);
+            Audio.ProcessedTXOutputEnabled = chkProcessedTXOutputEnable.Checked;
+        }
+
         internal void AfterConstructor()
         {
             LogTool.AddLogEntry("      Setup setup controls...", "SETUP_CONT");
@@ -353,6 +610,9 @@ namespace Thetis
             comboCATdatabits.Text = "8";
             comboCATstopbits.Text = "1";
             comboCATRigType.Text = "TS-2000";
+            if (comboCAT1Protocol.Text == "") comboCAT1Protocol.Text = "Kenwood TS-2000";
+            if (txtCIVAddress.Text == "") txtCIVAddress.Text = "88";
+            updateCIVControlsEnabled();
             comboFocusMasterMode.Text = "None";
 
             if (comboCAT2Port.Items.Count > 0) comboCAT2Port.SelectedIndex = 0;
@@ -4153,6 +4413,76 @@ namespace Thetis
             set
             {
                 if (chkCATEnable != null) chkCATEnable.Checked = value;
+            }
+        }
+
+        public string CATProtocol
+        {
+            get
+            {
+                if (comboCAT1Protocol != null) return comboCAT1Protocol.Text;
+                return "Kenwood TS-2000";
+            }
+            set
+            {
+                if (comboCAT1Protocol != null) comboCAT1Protocol.Text = value;
+            }
+        }
+
+        public byte CIVAddress
+        {
+            get
+            {
+                if (txtCIVAddress != null)
+                {
+                    byte a;
+                    if (byte.TryParse(txtCIVAddress.Text, System.Globalization.NumberStyles.HexNumber, null, out a))
+                        return a;
+                }
+                return 0x88;
+            }
+            set
+            {
+                if (txtCIVAddress != null) txtCIVAddress.Text = value.ToString("X2");
+            }
+        }
+
+        public bool CIVTransceive
+        {
+            get
+            {
+                if (chkCIVTransceive != null) return chkCIVTransceive.Checked;
+                return true;
+            }
+            set
+            {
+                if (chkCIVTransceive != null) chkCIVTransceive.Checked = value;
+            }
+        }
+
+        public bool CIVSyncSplit
+        {
+            get
+            {
+                if (chkCIVSyncSplit != null) return chkCIVSyncSplit.Checked;
+                return true;
+            }
+            set
+            {
+                if (chkCIVSyncSplit != null) chkCIVSyncSplit.Checked = value;
+            }
+        }
+
+        public bool CIVSyncPTT
+        {
+            get
+            {
+                if (chkCIVSyncPTT != null) return chkCIVSyncPTT.Checked;
+                return false;
+            }
+            set
+            {
+                if (chkCIVSyncPTT != null) chkCIVSyncPTT.Checked = value;
             }
         }
 
@@ -10225,6 +10555,12 @@ namespace Thetis
             console.CATParity = SDRSerialPort.StringToParity((string)comboCATparity.SelectedItem);
             console.CATDataBits = int.Parse((string)comboCATdatabits.SelectedItem);
             console.CATStopBits = SDRSerialPort.StringToStopBits((string)comboCATstopbits.SelectedItem);
+            console.CATProtocol = comboCAT1Protocol.Text;
+            if (byte.TryParse(txtCIVAddress.Text, System.Globalization.NumberStyles.HexNumber, null, out byte civAddr))
+                console.CIVAddress = civAddr;
+            console.CIVTransceive = chkCIVTransceive.Checked;
+            console.CIVSyncSplit = chkCIVSyncSplit.Checked;
+            console.CIVSyncPTT = chkCIVSyncPTT.Checked;
             console.CATEnabled = chkCATEnable.Checked;
 
             // make sure the enabled state of bitbang ptt is correct 
@@ -10291,7 +10627,12 @@ namespace Thetis
             port = "COM" + console.CATPTTBitBangPort.ToString();
             if (comboCATPTTPort.Items.Contains(port))
                 comboCATPTTPort.Text = port;
-
+            comboCAT1Protocol.Text = console.CATProtocol;
+            txtCIVAddress.Text = console.CIVAddress.ToString("X2");
+            chkCIVTransceive.Checked = console.CIVTransceive;
+            chkCIVSyncSplit.Checked = console.CIVSyncSplit;
+            chkCIVSyncPTT.Checked = console.CIVSyncPTT;
+            updateCIVControlsEnabled();
         }
 
 
@@ -10673,6 +11014,19 @@ namespace Thetis
             comboCATparity.Enabled = enable;
             comboCATdatabits.Enabled = enable;
             comboCATstopbits.Enabled = enable;
+            if (comboCAT1Protocol != null) comboCAT1Protocol.Enabled = true;
+            updateCIVControlsEnabled();
+        }
+
+        private void updateCIVControlsEnabled()
+        {
+            bool isCIV = comboCAT1Protocol != null && comboCAT1Protocol.Text == "Icom CI-V (IC-7100)";
+            if (lblCIVAddress != null) lblCIVAddress.Enabled = isCIV;
+            if (txtCIVAddress != null) txtCIVAddress.Enabled = isCIV && (chkCATEnable == null || !chkCATEnable.Checked);
+            if (chkCIVTransceive != null) chkCIVTransceive.Enabled = isCIV;
+            if (chkCIVSyncSplit != null) chkCIVSyncSplit.Enabled = isCIV;
+            if (chkCIVSyncPTT != null) chkCIVSyncPTT.Enabled = isCIV;
+            if (lblCIVInfo != null) lblCIVInfo.Enabled = isCIV;
         }
 
         private void enableCAT2_HardwareFields(bool enable)
@@ -11049,6 +11403,79 @@ namespace Thetis
                 default:
                     console.CATRigType = 19;
                     break;
+            }
+        }
+
+        private void comboCAT1Protocol_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CATProtocol = comboCAT1Protocol.Text;
+            updateCIVControlsEnabled();
+
+            // If CAT is currently running, cycle CAT enable to cleanly rebind port to selected protocol
+            if (chkCATEnable.Checked)
+            {
+                console.CATEnabled = false;
+                try
+                {
+                    console.CATEnabled = true;
+                }
+                catch (Exception ex)
+                {
+                    console.CATEnabled = false;
+                    chkCATEnable.Checked = false;
+                    MessageBox.Show("Could not re-initialize CAT control for selected protocol. Exception:\n\n" + ex.Message,
+                        "Error Initializing CAT control", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+                }
+            }
+        }
+
+        private void txtCIVAddress_TextChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            string text = txtCIVAddress.Text.Trim();
+            if (byte.TryParse(text, System.Globalization.NumberStyles.HexNumber, null, out byte addr))
+            {
+                console.CIVAddress = addr;
+                if (console.CIVControllerInstance != null)
+                {
+                    console.CIVControllerInstance.RadioAddress = addr;
+                }
+            }
+        }
+
+        private void chkCIVTransceive_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CIVTransceive = chkCIVTransceive.Checked;
+            if (console.CIVControllerInstance != null)
+            {
+                console.CIVControllerInstance.TransceiveEnabled = chkCIVTransceive.Checked;
+            }
+        }
+
+        private void chkCIVSyncSplit_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CIVSyncSplit = chkCIVSyncSplit.Checked;
+            if (console.CIVControllerInstance != null)
+            {
+                console.CIVControllerInstance.SyncSplitAndFullDuplex = chkCIVSyncSplit.Checked;
+            }
+        }
+
+        private void chkCIVSyncPTT_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+
+            console.CIVSyncPTT = chkCIVSyncPTT.Checked;
+            if (console.CIVControllerInstance != null)
+            {
+                console.CIVControllerInstance.SyncPTT = chkCIVSyncPTT.Checked;
             }
         }
 

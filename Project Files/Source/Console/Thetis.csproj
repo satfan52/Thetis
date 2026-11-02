@@ -439,6 +439,8 @@
     <Compile Include="BasicAudio.cs" />
     <Compile Include="CAT\TCPIPcatServer.cs" />
     <Compile Include="CAT\UsbBCDCable.cs" />
+    <Compile Include="CAT\CIVProtocol.cs" />
+    <Compile Include="CAT\CIVController.cs" />
     <Compile Include="Channel.cs" />
     <Compile Include="clsAudioRecordPlayback.cs" />
     <Compile Include="clsBandStackManager.cs" />
