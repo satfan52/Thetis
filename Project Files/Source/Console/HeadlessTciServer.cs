@@ -1779,6 +1779,8 @@ namespace Thetis
                             int rx = _server.BaseRxIndex;
                             DSPMode mode = HeadlessTciManager.ParseDSPMode(args[1]);
                             HeadlessSliceManager.Instance.SetMode(rx, mode);
+                            HeadlessSubRX.MirrorFromMain(rx);           // H1: a following sub takes the mode
+                            if (HeadlessSubRX.GetFollow(rx)) BroadcastSubState(rx);   // H1: a client has to see the follower move
                             _server.BroadcastText($"modulation:0,{args[1].ToUpperInvariant()};");
                         }
                         else if (args.Length == 1)
@@ -1797,6 +1799,8 @@ namespace Thetis
                             {
                                 int rx = _server.BaseRxIndex;
                                 HeadlessSliceManager.Instance.SetFilter(rx, low, high);
+                                HeadlessSubRX.MirrorFromMain(rx);           // H1: ... and the passband
+                                if (HeadlessSubRX.GetFollow(rx)) BroadcastSubState(rx);   // H1: a client has to see the follower move
                                 _server.BroadcastText($"rx_filter_band:0,{low},{high};");
                             }
                         }
@@ -1859,6 +1863,27 @@ namespace Thetis
                         }
                         break;
 
+case "sub_follow":
+                        {
+                            // H1: the client's "=RXn" - the port-local equivalent of the console's
+                            // follow pill: the sub takes this receiver's mode/filter/AGC/etc. and
+                            // keeps its own frequency.
+                            int frx = _server.BaseRxIndex;
+                            if (args.Length >= 2)
+                            {
+                                string fv = args[1].Trim().ToLowerInvariant();
+                                bool fon = fv == "1" || fv == "true" || fv == "on";
+                                HeadlessSubRX.SetFollow(frx, fon);
+                                SendTextFrame($"sub_follow:0,{(fon ? 1 : 0)};");
+                            }
+                            else
+                            {
+                                SendTextFrame($"sub_follow:0,{(HeadlessSubRX.GetFollow(frx) ? 1 : 0)};");
+                            }
+                        }
+                        break;
+
+                    
                     case "sub_filter":
                         {
                             if (args.Length >= 3 && int.TryParse(args[1], out int sLow) && int.TryParse(args[2], out int sHigh))
@@ -2388,5 +2413,19 @@ namespace Thetis
                 }
             }
         }
+        // H1: after the follower has taken the port receiver's set, a connected client
+        // has to see the sub move - the same frames a client's own change would produce.
+        private void BroadcastSubState(int rx)
+        {
+            try
+            {
+                var s = HeadlessSubRX.Get(rx);
+                _server.BroadcastText($"sub_mode:0,{HeadlessTciManager.ModeToString(s.Mode)};");
+                _server.BroadcastText($"sub_filter:0,{s.FilterLow},{s.FilterHigh};");
+            }
+            catch { }
+        }
+
+
     }
 }
