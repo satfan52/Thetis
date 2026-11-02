@@ -16,6 +16,7 @@ import collections
 import json
 import os
 import time
+import socket
 import queue
 import struct
 import threading
@@ -49,15 +50,15 @@ BANDS = [  # name, default MHz, suggested mode
     ("80m",  3.600, "LSB"),
     ("60m",  5.3585, "USB"),
     ("40m",  7.060, "LSB"),
-    ("30m", 10.116, "CWU"),
+    ("30m", 10.116, "USB"),
     ("20m", 14.074, "USB"),
     ("17m", 18.100, "USB"),
     ("15m", 21.074, "USB"),
     ("12m", 24.920, "USB"),
     ("10m", 28.400, "USB"),
     ("6m",  50.313, "USB"),
-    ("2m", 144.200, "FM"),
-    ("70cm", 432.200, "FM"),
+    ("2m", 144.200, "USB"),
+    ("70cm", 432.200, "USB"),
 ]
 
 # Non-overlapping frequency ranges per band (lo MHz, hi MHz). 60m is a narrow,
@@ -741,8 +742,8 @@ class Smeter(tk.Canvas):
     S9_DBM = -93.0
     P20_DBM = -69.0          # Thetis S9+20
 
-    def __init__(self, master, width=330, height=64, label="S"):
-        super().__init__(master, width=width, height=height, bg=C["panel"],
+    def __init__(self, master, width=330, height=64, label="S", readout_w=118):
+        super().__init__(master, width=width + readout_w, height=height, bg=C["panel"],
                          highlightthickness=0)
         self._x0, self._x1, self._y = 8, width - 8, 24
         self._label = label
@@ -783,9 +784,9 @@ class Smeter(tk.Canvas):
                              font=("Segoe UI", 8, "bold"))
         self._lbl_item = self.create_text(self._x0 - 2, y - 18, text=label, fill="#444444",
                          font=("Segoe UI", 7, "bold"))
-        self._txt = self.create_text(self._x1, height - 6, text="idle", anchor="e",
-                                     fill=C["fg"], font=("Consolas", 11, "bold"))
-
+        # the numeric reading sits BESIDE the bar, level with it
+        self._txt = self.create_text(self._x1 + 10, y, text="idle", anchor="w",
+                                     fill=C["fg"], font=("Consolas", 12, "bold"))
     def set_label(self, label):
         """Receiver name on the bar (RX1, SubRX2, ...): follows the TRX/port."""
         self._label = label
@@ -1224,6 +1225,9 @@ class MiniTCI(tk.Tk):
         self.option_add("*TCombobox*Listbox.selectBackground", "#cce4ff")
         self.option_add("*TCombobox*Listbox.selectForeground", "#000000")
         s.map("TButton", background=[("active", "#c8cfda")])
+        # Radio power: a ttk button like its neighbours, with the state carried by
+        # the colour (green = on) rather than by a longer caption, which clipped.
+        s.map("PowerOff.TButton", background=[("active", "#c8cfda")])
 
         # ========================= 1 GENERAL =========================
         # Connection and audio routing: the only controls that act on the
@@ -1242,12 +1246,11 @@ class MiniTCI(tk.Tk):
         # Radio power (TCI start/stop). A headless Thetis comes up with the radio
         # OFF, so switching it on from here is how a session begins.
         self.power_on = False
-        self.power_btn = tk.Button(g1, text="POWER", width=8,
-                                   font=("Segoe UI", 10, "bold"),
-                                   command=self.toggle_power)
-        self.power_btn.pack(side="left", padx=(0, 10))
-        self._refresh_power_btn()
-
+        # station blocks (OM2000A+ / MFJ998R): facts come from the TCI server, which
+        # drives the console's own code - this client never talks to them directly
+        self.amp = {"link": 0, "known": 0, "operate": 0, "pa": 0, "autotune": 0,
+                    "heating": 0, "cooling": 0, "ptt": 0, "fault": 0}
+        self.mfj = {"link": 0, "relay": 0, "actual": 0, "cycle": 0, "pttin": 0, "deb": 0}
         ttk.Label(g1, text="TRX:", padding=(4, 0, 2, 0)).pack(side="left")
         self.trx_var = tk.StringVar(value="TRX 0")
         self.trx_box = ttk.Combobox(g1, textvariable=self.trx_var, width=6, state="readonly",
@@ -1296,6 +1299,26 @@ class MiniTCI(tk.Tk):
         # the client does not scale the transmit audio itself: the microphone gain
         # is applied by Thetis, so one control has one meaning
         self.mic_gain = 1.0
+
+        # Receiver-level controls: the band, where the DDC actually is, the SUB
+        # switch and CTUN all belong to the connected receiver, not to a block.
+        # With them moved out of the RXn block, RXn and SubRXn are identical.
+        g3 = self._row(self.sec_general)
+        ttk.Label(g3, text="Band:").pack(side="left", padx=(2, 0))
+        self.band_var = tk.StringVar(value="20m")
+        ttk.Combobox(g3, textvariable=self.band_var, width=5, state="readonly",
+                     values=[b[0] for b in BANDS]).pack(side="left", padx=(3, 12))
+        self.band_var.trace_add("write", self._band_changed)
+        self.dds_lbl = tk.Label(g3, text="DDS 7.100.000", bg=C["panel"], fg="#7a4a9a",
+                                font=("Consolas", 12, "bold"))
+        self.dds_lbl.pack(side="left", padx=(2, 14))
+        self.sub_btn = ttk.Button(g3, text="SUB off", width=8, command=self._sub_toggle)
+        self.sub_btn.pack(side="left", padx=(0, 10))
+        self.ctun_var = tk.BooleanVar(value=False)
+        self.ctun_btn = ttk.Checkbutton(g3, text="CTUN", variable=self.ctun_var,
+                                        command=self._ctun_toggled)
+        self.ctun_btn.pack(side="left")
+
 
         # ========================= 2 DISPLAY =========================
         # The panafall draws both receivers, so it belongs to neither of them.
@@ -1348,14 +1371,7 @@ class MiniTCI(tk.Tk):
         # ========================= 3 VFO A =========================
         self.sec_vfoa = self._section(left, "3 · RX1 (reception)")
         a1 = self._row(self.sec_vfoa)
-        # the band selector and the DDS indicator belong to this section and to the
-        # same row as the readout: the band is a slice property, the DDS is where
-        # the slice actually is, and the readout is where the VFO is inside it
-        ttk.Label(a1, text="Band:").pack(side="left", padx=(2, 0))
-        self.band_var = tk.StringVar(value="20m")
-        ttk.Combobox(a1, textvariable=self.band_var, width=5, state="readonly",
-                     values=[b[0] for b in BANDS]).pack(side="left", padx=(3, 10))
-        self.band_var.trace_add("write", self._band_changed)
+        # (band, DDS and CTUN live in section 1 - both receiver blocks stay identical)
         self.lbl_rx3 = ttk.Label(a1, text="RX1", font=("Segoe UI", 9, "bold"))
         self.lbl_rx3.pack(side="left", padx=(2, 6))
         self.freq_lbl = tk.Label(a1, text="A 14.074.000", bg=C["panel"], fg=C["tune"],
@@ -1367,13 +1383,6 @@ class MiniTCI(tk.Tk):
         self._freq_digit_x = []
         self._freq_font = tkfont.Font(font=self.freq_lbl.cget("font"))
         self._bind_digit_wheel(self.freq_lbl, "A")
-        self.ctun_var = tk.BooleanVar(value=False)
-        self.ctun_btn = ttk.Checkbutton(a1, text="CTUN", variable=self.ctun_var,
-                                        command=self._ctun_toggled)
-        self.ctun_btn.pack(side="left", padx=(8, 4))
-        self.dds_lbl = tk.Label(a1, text="DDS 7.100.000", bg=C["panel"], fg="#7a4a9a",
-                                font=("Consolas", 12, "bold"))
-        self.dds_lbl.pack(side="left", padx=(12, 4))
         ttk.Label(a1, text="Direct kHz:", padding=(14, 0, 2, 0)).pack(side="left")
         self.tune_entry = ttk.Entry(a1, width=10)
         self.tune_entry.pack(side="left")
@@ -1404,6 +1413,7 @@ class MiniTCI(tk.Tk):
         self.filtw_lbl = tk.Label(a2, text="2.9k", bg=C["panel"], fg=C["fg"],
                                   font=("Consolas", 9, "bold"), width=6)
         self.filtw_lbl.pack(side="left")
+        ttk.Button(a2, text="Reset", width=6, command=self._filter_reset).pack(side="left", padx=(6, 0))
         self._filt_updating = False
         ttk.Label(a2, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
         self.agc_var = tk.StringVar(value="Med")
@@ -1440,13 +1450,24 @@ class MiniTCI(tk.Tk):
         self.vfo_lbl.pack(side="left", padx=(2, 12))
         self._sub_digit_x = []
         self._bind_digit_wheel(self.vfo_lbl, "sub")
-        self.sub_btn = ttk.Button(b1, text="SUB off", width=8, command=self._sub_toggle)
-        self.sub_btn.pack(side="left", padx=(8, 4))
+        # (the SUB switch lives in section 1)
         ttk.Label(b1, text="Direct kHz:", padding=(14, 0, 2, 0)).pack(side="left")
         self.sub_tune_entry = ttk.Entry(b1, width=10)
         self.sub_tune_entry.pack(side="left")
         self.sub_tune_entry.bind("<Return>", lambda e: self._sub_tune_direct())
         ttk.Button(b1, text="Go", width=4, command=self._sub_tune_direct).pack(side="left", padx=4)
+        # Thetis's "=" control: put the receiver's frequency into the sub
+        # H1: the GUI's "=RXn" follow pill - ticked, the sub takes this receiver's
+        # mode, filter, AGC and so on; only its frequency stays its own
+        self.sub_follow_var = tk.IntVar(value=0)
+        self.sub_eq_btn = tk.Checkbutton(b1, text="=RX1", variable=self.sub_follow_var,
+                                         command=self._sub_follow_toggle,
+                                         indicatoron=False, bd=1, relief="groove", overrelief="groove",
+                                         bg=C["panel"], fg=C["fg"], selectcolor="#cfe0f5",
+                                         activebackground="#cfe0f5", activeforeground=C["fg"],
+                                         font=("Segoe UI", 9, "bold"), padx=5, pady=0)
+        self.sub_eq_btn.pack(side="left", padx=(8, 2))
+        self.sub_eq_btn.config(state="disabled")   # live only once connected
 
         b2 = self._row(self.sec_sub)
         ttk.Label(b2, text="Mode:").pack(side="left")
@@ -1472,6 +1493,7 @@ class MiniTCI(tk.Tk):
         self.sub_filtw_lbl = tk.Label(b2, text="2.6k", bg=C["panel"], fg=C["fg"],
                                       font=("Consolas", 9, "bold"), width=6)
         self.sub_filtw_lbl.pack(side="left")
+        ttk.Button(b2, text="Reset", width=6, command=self._sub_filter_reset).pack(side="left", padx=(6, 0))
         self._sub_filt_updating = False
         ttk.Label(b2, text="AGC:", padding=(14, 0, 2, 0)).pack(side="left")
         self.sub_agc_var = tk.StringVar(value="Med")
@@ -1498,7 +1520,7 @@ class MiniTCI(tk.Tk):
         # ========================== 5 TX ==========================
         # Everything that only matters while transmitting.
         self.sec_tx = self._section(right, "5 · TX — TRANSMISSION")
-        t1 = self._row(self.sec_tx)
+        t1 = self._row(self.sec_tx, top=8)
         self.ptt_btn = tk.Button(t1, text="PTT", bg="#f4d7d4", fg=C["fg"], width=8,
                                  font=("Segoe UI", 10, "bold"))
         # Thetis parity: MOX is a TOGGLE (click on, click off), one trigger only.
@@ -1514,7 +1536,7 @@ class MiniTCI(tk.Tk):
         self.bind("<KeyPress-space>", self._space_press)
         self.bind("<KeyRelease-space>", self._space_release)
 
-        t2 = self._row(self.sec_tx)
+        t2 = self._row(self.sec_tx, top=10)
         ttk.Label(t2, text="TX tail (ms):").pack(side="left", padx=(2, 2))
         self.txtail_var = tk.IntVar(value=350)
         self.txtail_entry = ttk.Entry(t2, width=5)
@@ -1522,12 +1544,35 @@ class MiniTCI(tk.Tk):
         self.txtail_entry.pack(side="left")
         self.txtail_entry.bind("<Return>", self._txtail_entry)
         self.txtail_entry.bind("<FocusOut>", self._txtail_entry)
-        ttk.Label(t2, text="Tune drive (%):", padding=(16, 0, 2, 0)).pack(side="left")
-        self.tunedrive_entry = ttk.Entry(t2, width=5)
-        self.tunedrive_entry.insert(0, str(self.tune_drive_pct))
-        self.tunedrive_entry.pack(side="left")
-        self.tunedrive_entry.bind("<Return>", self._tunedrive_entry)
-        self.tunedrive_entry.bind("<FocusOut>", self._tunedrive_entry)
+        # H1: the GUI's two drive sliders (ptbPWR "PA Drive", ptbTune "ANT Tune")
+        t3 = self._row(self.sec_tx, top=8)
+        ttk.Label(t3, text="PA Drive (%):", width=15).pack(side="left", padx=(2, 4))
+        self.pa_drive_pct = 100
+        self._pa_drive_last = 0.0
+        self._ant_tune_last = 0.0
+        # H1: nothing is known until the console sends its values, so both start at
+        # zero with a blank readout - a stale default must not look like a reading
+        self.pa_drive_var = tk.DoubleVar(value=0)
+        self.pa_drive_slider = ttk.Scale(t3, from_=0, to=100, orient="horizontal",
+                                         length=200, variable=self.pa_drive_var,
+                                         command=self._pa_drive_move)
+        self.pa_drive_slider.pack(side="left")
+        self.pa_drive_slider.bind("<ButtonRelease-1>", lambda e: self._pa_drive_send(force=True))
+        self.pa_drive_lbl = ttk.Label(t3, text="-", width=4, anchor="e")
+        self.pa_drive_lbl.pack(side="left", padx=(6, 2))
+
+        t4 = self._row(self.sec_tx, top=4)
+        ttk.Label(t4, text="ANT Tune (%):", width=15).pack(side="left", padx=(2, 4))
+        self.ant_tune_var = tk.DoubleVar(value=0)
+        self.ant_tune_slider = ttk.Scale(t4, from_=0, to=100, orient="horizontal",
+                                         length=200, variable=self.ant_tune_var,
+                                         command=self._ant_tune_move)
+        self.ant_tune_slider.pack(side="left")
+        self.ant_tune_slider.bind("<ButtonRelease-1>", lambda e: self._ant_tune_send(force=True))
+        self.ant_tune_lbl = ttk.Label(t4, text="-", width=4, anchor="e")
+        self.ant_tune_lbl.pack(side="left", padx=(6, 2))
+        for _w in (self.pa_drive_slider, self.ant_tune_slider):
+            _w.config(state="disabled")            # live only once connected
 
         self.txdsp = {}
         for key, label, lo, hi, unit in (
@@ -1547,7 +1592,7 @@ class MiniTCI(tk.Tk):
             lbl.pack(side="left", padx=(4, 0))
             self.txdsp[key] = {"var": var, "scale": sc, "lbl": lbl,
                                "lo": lo, "hi": hi, "unit": unit}
-        tdxp = self._row(self.sec_tx)
+        tdxp = self._row(self.sec_tx, top=10)
         # DXP is a TOGGLE BUTTON in Thetis (the gate on or off), so it is one here
         # too; its threshold stays whatever the console holds.
         tk.Label(tdxp, text="DXP", bg=C["panel"], fg=C["fg"], width=5, anchor="w",
@@ -1560,7 +1605,7 @@ class MiniTCI(tk.Tk):
 
         # SPLIT is a TRANSMIT decision - it sends the transmitter to the SubVFOA
         # frequency - so it lives here, not with the sub receiver's own controls.
-        tsp = self._row(self.sec_tx)
+        tsp = self._row(self.sec_tx, top=10)
         tk.Label(tsp, text="SPLIT", bg=C["panel"], fg=C["fg"], width=5, anchor="w",
                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 2))
         self.split_btn = ttk.Button(tsp, text="off", width=5, command=self._split_toggle)
@@ -1570,6 +1615,34 @@ class MiniTCI(tk.Tk):
         self.tx_src_lbl.pack(side="left", padx=(10, 0))
 
         # ========================= 6 LOG =========================
+        # ---- station blocks, the same controls as the console's groups ----
+        self._row(self.sec_tx, top=8)     # breathing space before the station blocks
+        t3 = self._row(self.sec_tx, top=18)
+        ttk.Label(t3, text="OM2000A+", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
+        self.amp_mode_btn = tk.Button(t3, text="AMP ?", width=8,
+                                      command=lambda: self._station_send("amp_mode"))
+        self.amp_mode_btn.pack(side="left", padx=(2, 9))
+        self.amp_pa_btn = tk.Button(t3, text="PA ?", width=6,
+                                    command=lambda: self._station_send("amp_pa"))
+        self.amp_pa_btn.pack(side="left", padx=(2, 9))
+        self.amp_tune_btn = tk.Button(t3, text="Auto tune", width=10,
+                                      command=lambda: self._station_send("amp_autotune"))
+        self.amp_tune_btn.pack(side="left", padx=(2, 9))
+        self.amp_lbl = tk.Label(t3, text="", bg=C["panel"], fg=C["dim"],
+                                font=("Consolas", 9))
+        self.amp_lbl.pack(side="left", padx=(8, 2))
+
+        t4 = self._row(self.sec_tx, top=12)
+        ttk.Label(t4, text="MFJ998", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(2, 6))
+        self.mfj_relay_btn = tk.Button(t4, text="Power", width=8,
+                                       command=lambda: self._station_send("mfj_relay"))
+        self.mfj_relay_btn.pack(side="left", padx=(2, 9))
+        self.mfj_lbl = tk.Label(t4, text="", bg=C["panel"], fg=C["dim"],
+                                font=("Consolas", 9))
+        self.mfj_lbl.pack(side="left", padx=(8, 2))
+        self._paint_station()
+
+
         self.sec_log = self._section(self, "6 · LOG")
         self.log = tk.Text(self.sec_log, height=5, bg="#ffffff", fg="#333333",
                            borderwidth=1, font=("Consolas", 8))
@@ -1955,22 +2028,175 @@ class MiniTCI(tk.Tk):
         self.lbl_rx4.config(text=f"SubRX{n}")
         self.sm.set_label(f"RX{n}")
         self.sub_sm.set_label(f"SubRX{n}")
+        self.sub_eq_btn.config(text=f"=RX{n}")
         self.tx_src_lbl.config(text=f"TX on SubRX{n}")
 
-    def toggle_power(self):
-        """TCI start/stop: the radio's power, driven from this client."""
+    def _station_send(self, what):
+        """A click on one of the station pills: ask the SERVER to drive the console's
+        own control (this client never talks to the amplifier or the tuner)."""
         if not self.connected:
-            self.logprint("POWER: connect first")
+            self.logprint("station block: no TCI connection")
             return
-        self.send("stop;" if self.power_on else "start;")
-        self.logprint("POWER " + ("off" if self.power_on else "on") + " requested")
+        self.logprint("station: sending " + what + " (server drives the console)")
+        if what == "amp_mode":
+            self.send("amp_mode:" + ("standby" if self.amp["operate"] else "operate") + ";")
+        elif what == "amp_pa":
+            self.send("amp_pa:" + ("off" if self.amp["pa"] else "on") + ";")
+        elif what == "amp_autotune":
+            self.send("amp_autotune:" + ("off" if self.amp["autotune"] else "on") + ";")
+        elif what == "mfj_relay":
+            self.send("mfj_relay:" + ("off" if self.mfj["relay"] else "on") + ";")
+        else:
+            return
+        self.send("amp_state;")
+        self.send("mfj_state;")
 
-    def _refresh_power_btn(self):
-        on = bool(self.power_on)
-        self.power_btn.config(text="POWER" + (" ON" if on else " OFF"),
-                              bg="#c6e6c6" if on else "#e2e4ea",
-                              activebackground="#c6e6c6" if on else "#d8dae2",
-                              fg=C["fg"], relief="sunken" if on else "raised")
+    def _paint_station(self):
+        """The console's own presentation: '?' while the state is unknown, the blue
+        fill while a pill's function is on."""
+        on_bg, off_bg = "#cfe0f5", "#e2e4ea"
+        link = self.amp["link"]
+        known = self.amp["known"]
+        amp_txt = "AMP" if (known and self.amp["operate"]) else ("AMP ?" if not known else "AMP")
+        pa_txt = "PA" if (known and self.amp["pa"]) else ("PA ?" if not known else "PA")
+        self.amp_mode_btn.config(text=amp_txt, bg=on_bg if self.amp["operate"] else off_bg)
+        self.amp_pa_btn.config(text=pa_txt, bg=on_bg if self.amp["pa"] else off_bg)
+        self.amp_tune_btn.config(bg=on_bg if self.amp["autotune"] else off_bg)
+        if not link:
+            self.amp_lbl.config(text="not connected" if not self.connected else "link down",
+                                fg=C["dim"] if not self.connected else C["red"])
+        else:
+            bits = ["operate" if self.amp["operate"] else "standby"]
+            if self.amp["heating"]:
+                bits.append("heating")
+            if self.amp["cooling"]:
+                bits.append("cooling")
+            if self.amp["ptt"]:
+                bits.append("TX")
+            if self.amp["fault"]:
+                bits.append("FAULT")
+            self.amp_lbl.config(text=" ".join(bits), fg=C["dim"])
+        if not self.connected:
+            self.mfj_relay_btn.config(bg=off_bg)
+            self.mfj_lbl.config(text="not connected", fg=C["dim"])
+        elif not self.mfj["link"]:
+            self.mfj_relay_btn.config(bg=off_bg)
+            self.mfj_lbl.config(text="link down - no station controller on the console's COM port",
+                                fg=C["red"])
+        else:
+            self.mfj_relay_btn.config(bg=on_bg if self.mfj["relay"] else off_bg)
+            bits = ["relay " + ("on" if self.mfj["actual"] else "off")
+                    + (" (requested on)" if self.mfj["relay"] and not self.mfj["actual"] else ""),
+                    "cycle " + ("on" if self.mfj["cycle"] else "off")]
+            if self.mfj["pttin"]:
+                bits.append("PTT in")
+            self.mfj_lbl.config(text=" ".join(bits), fg=C["dim"])
+
+    # ------------------------------------------------------------------ server
+    # ------------------------------------------------------------------ server
+    # MiniTCI needs a TCI server to talk to. When the GUI console is closed there is
+    # none, so connecting brings the headless one up by itself (Thetis.exe -tcionly
+    # -autostart: no window, radio powered on), then connects to it. If any Thetis is
+    # already running we never start a second one - the radio is single-owner.
+    THETIS_EXE = os.environ.get("MINITCI_THETIS", r"C:\Thetis\Thetis.exe")
+
+    def _port_open(self, timeout=0.4):
+        try:
+            port = int(self.rx_var.get().split()[0])   # the Receiver dropdown's choice
+        except (ValueError, IndexError):
+            return False
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout):
+                return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _thetis_processes():
+        """How many Thetis processes exist (any mode). -1 if it cannot be told."""
+        try:
+            import subprocess
+            out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq Thetis.exe"],
+                                 capture_output=True, text=True,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return out.stdout.lower().count("thetis.exe")
+        except Exception:
+            return -1
+
+    @staticmethod
+    def _headless_thetis_pids():
+        """PIDs of Thetis instances started with -tcionly. A GUI instance is never in
+        this list, so it can never be stopped by a client disconnect."""
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_Process -Filter \"Name='Thetis.exe'\" | "
+                 "Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"],
+                capture_output=True, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            pids = []
+            for line in out.stdout.splitlines():
+                if "-tcionly" in line:
+                    first = line.split(",")[0].strip().strip('"')
+                    if first.isdigit():
+                        pids.append(int(first))
+            return pids
+        except Exception:
+            return []
+
+    def _stop_headless_server(self):
+        """A manual Disconnect stops the headless server: it existed only to serve this
+        client, and the radio and its eight ports have to be free for the GUI console."""
+        pids = self._headless_thetis_pids()
+        if self._spawned_server_pid and self._spawned_server_pid not in pids:
+            pids.append(self._spawned_server_pid)
+        if not pids:
+            return
+        try:
+            import subprocess
+            for pid in pids:
+                subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, text=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            self.logprint("headless Thetis stopped (pid %s) - the radio is free for the GUI console"
+                          % ", ".join(str(x) for x in pids))
+        except Exception as e:
+            self.logprint(f"could not stop the headless Thetis: {type(e).__name__}: {e}")
+        self._spawned_server_pid = None
+
+
+    def _ensure_server(self):
+        """Return True when a TCI server is answering, starting the headless one if
+        the console is not running anywhere."""
+        if self._port_open():
+            return True
+        running = self._thetis_processes()
+        if running == 0:
+            if not os.path.exists(self.THETIS_EXE):
+                self.logprint("no TCI server and no " + self.THETIS_EXE + " - start Thetis yourself")
+                return False
+            self.logprint("no TCI server: starting headless Thetis ("
+                          + self.THETIS_EXE + " -tcionly -autostart)")
+            try:
+                import subprocess
+                proc = subprocess.Popen([self.THETIS_EXE, "-tcionly", "-autostart"],
+                                         cwd=os.path.dirname(self.THETIS_EXE),
+                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                         | getattr(subprocess, "DETACHED_PROCESS", 0))
+                self._spawned_server_pid = proc.pid
+            except Exception as e:
+                self.logprint(f"could not start Thetis: {type(e).__name__}: {e}")
+                return False
+        else:
+            self.logprint("Thetis is running but its TCI server is not answering yet - waiting")
+        # the console needs a while before it listens
+        for _ in range(60):
+            self.update()
+            time.sleep(0.75)
+            if self._port_open():
+                return True
+        self.logprint("TCI server did not come up")
+        return False
 
 
     def toggle_conn(self):
@@ -1978,8 +2204,15 @@ class MiniTCI(tk.Tk):
             self._manual_disconnect = True      # a click, not a drop
             self.client.send("__close__")
             self.client = None
+            self._stop_headless_server()      # free the radio for the GUI console
             self._set_state("disconnected")
             return
+        # a server must exist before we dial: with the GUI console closed, bring the
+        # headless one up (no window, radio on) rather than failing to connect
+        if not self._ensure_server():
+            self._set_state("disconnected")
+            return
+
         self._manual_disconnect = False
         port = int(self.rx_var.get().split()[0])
         self._is_full_tci = (port == 50001)  # Phase -1a: port detect
@@ -2005,6 +2238,7 @@ class MiniTCI(tk.Tk):
         self._last_draw = 0.0
         self._pan_job_q = queue.Queue(maxsize=4)
         self._pan_thread_started = False
+        self._spawned_server_pid = None    # the headless Thetis this client started, if any
         c = TciClient(port)
         self.client = c
         self._set_state("connecting")      # set UI state BEFORE the thread can race us
@@ -2012,6 +2246,25 @@ class MiniTCI(tk.Tk):
                 self.tci_chrono)
 
     def _set_state(self, s):
+        # H1: a control that can only act through the console must not look live without one
+        _live = (s == "connected")
+        for _w in (getattr(self, "sub_eq_btn", None), getattr(self, "pa_drive_slider", None),
+                   getattr(self, "ant_tune_slider", None)):
+            if _w is not None:
+                try:
+                    _w.config(state="normal" if _live else "disabled")
+                except tk.TclError:
+                    pass
+
+        if s != "connected":
+            # H1: a drive percentage belongs to the console, not to us - show nothing
+            # until the console sends its own, so a stale default cannot look real
+            for lbl in (getattr(self, "pa_drive_lbl", None), getattr(self, "ant_tune_lbl", None)):
+                if lbl is not None:
+                    try:
+                        lbl.config(text="-")
+                    except tk.TclError:
+                        pass
         if s == "connected":
             self.connected = True
             self._reconnect_tries = 0
@@ -2020,6 +2273,8 @@ class MiniTCI(tk.Tk):
             self.send("iq_samplerate:96000;")
             self.send(f"iq_start:{self._rx_index()};")
             self.send(f"audio_start:{self._trx_idx};")
+            self.send("amp_state;")       # the station blocks, if the console has them
+            self.send("mfj_state;")
             self.send("rx_sensors_enable:true,250;")
             # TX sensors carry Thetis's own microphone reading in dBm, which the
             # S-meter shows while transmitting instead of a local guess
@@ -2067,6 +2322,7 @@ class MiniTCI(tk.Tk):
                 # only place B locally if the console has no sub frequency to give.
                 self._sub_awaiting_read = True
                 self.send(f"vfoasub:{self._rx_index()};")
+                self.send(f"sub_follow:{self._rx_index()};")   # the follow pill, where the server has one
                 self.after(700, self._sub_second_read)
                 self.after(1600, self._sub_read_fallback)
             else:
@@ -2113,7 +2369,7 @@ class MiniTCI(tk.Tk):
                 self._tx_visuals()
             self.conn_btn.config(text="Connect")
             self.state_lbl.config(text="● disconnected", fg=C["dim"])
-            if was:
+            if was and not self._manual_disconnect:
                 self.logprint("connection lost - reconnecting automatically")
                 self._schedule_reconnect()
             else:
@@ -2246,11 +2502,37 @@ class MiniTCI(tk.Tk):
                         self.logprint(f"Sub {'on' if st else 'off'} (50001)")
                         self._sub_refresh_ui()
                 continue
+            if k == "amp_state" and v:
+                # amp_state:<link>,<known>,<operate>,<pa>,<autotune>,<heating>,<cooling>,<ptt>,<fault>;
+                p = str(v).split(",")
+                if len(p) >= 9:
+                    try:
+                        for name, val in zip(("link", "known", "operate", "pa", "autotune",
+                                              "heating", "cooling", "ptt", "fault"), p[:9]):
+                            self.amp[name] = int(val)
+                        self._paint_station()
+                    except ValueError:
+                        pass
+                continue
+            if k == "mfj_state" and v:
+                # mfj_state:<link>,<relay>,<relayActual>,<powercycle>,<pttin>,<debounce>;
+                p = str(v).split(",")
+                if len(p) >= 6:
+                    try:
+                        self.mfj["link"], self.mfj["relay"] = int(p[0]), int(p[1])
+                        self.mfj["actual"], self.mfj["cycle"] = int(p[2]), int(p[3])
+                        self.mfj["pttin"], self.mfj["deb"] = int(p[4]), int(p[5])
+                        self._paint_station()
+                    except ValueError:
+                        pass
+                continue
+
             if k in ("start", "stop"):
                 # TCI power state - the console sends start; when it powers up (the
                 # initial radio state carries it, and every change is broadcast)
                 self.power_on = (k == "start")
-                self._refresh_power_btn()
+                self.logprint("radio " + ("ON" if self.power_on
+                                          else "OFF - press POWER to switch the radio on"))
                 continue
 
             if k == "rx_enable" and v:
@@ -2486,19 +2768,29 @@ class MiniTCI(tk.Tk):
                     if tune_on:
                         self.logprint("Thetis TUN active - tune carrier")
                     self._tx_visuals()
-            elif k in ("tune_drive", "drive") and v:
-                # tune_drive:<rx>,<pct> = the console's TUNE power, drive:<rx>,<pct>
-                # = its DRIVE power. Which one governs Tune depends on the
-                # console's "tune power origin" setting, and with the drive-slider
-                # origin the frames arrive as `drive:`; the Tune level shown here
-                # follows whichever the console reports, so it always shows the
-                # power a tune will actually use.
+            elif k == "sub_follow" and v:
+                # the sub's follow state, as the console has it
                 p = str(v).split(",")
                 try:
-                    if int(p[0]) == 0:
-                        self._apply_tune_drive(int(float(p[1])))
+                    if int(p[0]) == self._rx_index():
+                        self._sub_follow_echo(int(p[1]) != 0)
                 except (ValueError, IndexError):
                     pass
+
+            elif k in ("tune_drive", "drive") and v:
+                # drive:<rx>,<pct> = the console's PA Drive (ptbPWR),
+                # tune_drive:<rx>,<pct> = its ANT Tune (ptbTune).
+                # Each slider shows its own; both carry the transmit receiver.
+                p = str(v).split(",")
+                try:
+                    if int(p[0]) == self._rx_index():
+                        if k == "drive":
+                            self._apply_pa_drive(int(float(p[1])))
+                        else:
+                            self._apply_tune_drive(int(float(p[1])))
+                except (ValueError, IndexError):
+                    pass
+
             elif k in ("mic_gain", "tx_comp", "tx_dexp", "vox") and v:
                 # Thetis TX microphone/processor state (console -> client)
                 self._txdsp_echo({"mic_gain": "mic", "tx_comp": "comp",
@@ -3029,6 +3321,25 @@ class MiniTCI(tk.Tk):
         except ValueError:
             self.logprint("invalid B frequency")
 
+    def _sub_follow_toggle(self):
+        """The GUI's "=RXn" pill, over TCI: the sub follows this receiver - mode,
+        filter, AGC and the rest - while keeping its own frequency."""
+        on = bool(self.sub_follow_var.get())
+        if not self.connected:
+            self.logprint("not connected - =RX%s not sent" % self._rx_number())
+            return
+        self.send(f"sub_follow:{self._rx_index()},{1 if on else 0};")
+        self.logprint("=RX%d follow %s - the sub takes this receiver's set, frequency aside"
+                      % (self._rx_number(), "on" if on else "off"))
+
+    def _sub_follow_echo(self, on):
+        """The console's own follow state: show it, never push it back."""
+        try:
+            self.sub_follow_var.set(1 if on else 0)
+        except tk.TclError:
+            pass
+
+
     def _sub_tune_to(self, hz):
         self.sub_hz = int(hz)
         self._clamp_sub_to_ddc()
@@ -3363,6 +3674,33 @@ class MiniTCI(tk.Tk):
             return
         if self.connected:
             self.send(f"rx_filter_band:{self._rx_index()},{int(lo)},{int(hi)};")
+
+    def _filter_reset(self, *_):
+        """Back to this receiver's mode default - Thetis's F5 preset."""
+        filt = _thetis_filter(self.mode_var.get(), 4)
+        if filt is None:
+            filt = (-48000.0, 48000.0)          # SPEC: the whole DDC span
+        self.pan.filt = filt
+        self._filter_entries_set(filt)
+        self._sync_filtw_slider(filt)
+        self._send_filter_band(int(filt[0]), int(filt[1]))
+        self.logprint("filter reset to %s default (%d..%d)"
+                      % (self.mode_var.get(), int(filt[0]), int(filt[1])))
+
+    def _sub_filter_reset(self, *_):
+        """Same for SubRXn, from its OWN mode (the two are independent)."""
+        filt = _thetis_filter(self.submode_var.get(), 4)
+        if filt is None:
+            return
+        self.sub_filt = (int(filt[0]), int(filt[1]))
+        self.pan.sub_filt = self.sub_filt
+        self._sub_filter_entries_set(self.sub_filt)
+        self._sub_sync_filtw_slider(self.sub_filt)
+        if self._sub_enabled():
+            self.send(f"sub_filter:{self._rx_index()},{int(filt[0])},{int(filt[1])};")
+        self.logprint("SubRX filter reset to %s default (%d..%d)"
+                      % (self.submode_var.get(), int(filt[0]), int(filt[1])))
+
 
     def _filter_entries_applied(self, *_a):
         """User pressed Return / left the box: push the new edges to Thetis."""
@@ -4050,31 +4388,83 @@ class MiniTCI(tk.Tk):
         sent at a fixed, sane amplitude and the percentage drives the console
         (TCI tune_drive, which follows the console's own 'tune power origin'
         setting: the drive slider or the tune slider)."""
-        raw = self.tunedrive_entry.get().strip()
-        try:
-            pct = int(float(raw))
-        except ValueError:
-            self._apply_tune_drive(self.tune_drive_pct)
+        self._ant_tune_send(force=True)
+
+    # ---- the GUI's two drive sliders: PA Drive (ptbPWR) and ANT Tune (ptbTune)
+    def _pa_drive_move(self, value):
+        """A drag from the user: show it and push it, throttled."""
+        pct = int(round(float(value)))
+        self.pa_drive_pct = pct
+        if self.connected:   # the readout is the console's; blank while there is none
+            self.pa_drive_lbl.config(text=str(pct))
+        self._pa_drive_send()
+
+    def _pa_drive_send(self, force=False):
+        now = time.time()
+        if not force and now - self._pa_drive_last < 0.15:
             return
-        pct = max(1, min(100, pct))
-        self._apply_tune_drive(pct, send=True)
+        self._pa_drive_last = now
+        if not self.connected:
+            return
+        self.send(f"drive:{self._rx_index()},{self.pa_drive_pct};")
+        if force:
+            self.logprint(f"PA Drive {self.pa_drive_pct}%")
+
+    def _apply_pa_drive(self, pct):
+        """The console's value: show it, never push it back."""
+        try:
+            pct = max(0, min(100, int(pct)))
+        except (TypeError, ValueError):
+            return
+        self.pa_drive_pct = pct
+        try:
+            self.pa_drive_var.set(pct)
+            self.pa_drive_lbl.config(text=str(pct))
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _ant_tune_move(self, value):
+        """A drag from the user: show it and push it, throttled."""
+        pct = int(round(float(value)))
+        self.tune_drive_pct = pct
+        if self.connected:   # the readout is the console's; blank while there is none
+            self.ant_tune_lbl.config(text=str(pct))
+        self._ant_tune_send()
+
+
+    def _ant_tune_send(self, force=False):
+        now = time.time()
+        if not force and now - self._ant_tune_last < 0.15:
+            return
+        self._ant_tune_last = now
+        if not self.connected:
+            return
+        self.send(f"tune_drive:{self._rx_index()},{self.tune_drive_pct};")
+        if force:
+            self.logprint(f"ANT Tune {self.tune_drive_pct}%")
+
 
     def _apply_tune_drive(self, pct, send=False):
-        """Show and (optionally) push the tune percentage."""
+        """Show and (optionally) push the ANT Tune percentage.
+
+        The console owns this number; we mirror it, and push it only when the
+        user moves the slider. The readout stays blank while there is no console."""
         pct = max(1, min(100, int(pct)))
         self.tune_drive_pct = pct
         self.tune_amp = TUNE_TONE_AMP              # fixed tone level
         try:
-            self.tunedrive_entry.delete(0, "end")
-            self.tunedrive_entry.insert(0, str(pct))
-        except tk.TclError:
+            self.ant_tune_var.set(pct)
+            if self.connected:
+                self.ant_tune_lbl.config(text=str(pct))
+        except (tk.TclError, AttributeError):
             pass
         if send:
             if self.connected:
-                self.send(f"tune_drive:0,{pct};")
-                self.logprint(f"Tune drive {pct}% (console transmit power)")
+                self.send(f"tune_drive:{self._rx_index()},{pct};")
+                self.logprint(f"ANT Tune {pct}% (console transmit power)")
             else:
-                self.logprint("not connected - tune drive not sent")
+                self.logprint("not connected - ANT Tune not sent")
+
 
     def tune_toggle(self):
         """WSJT-X-style Tune: press to start, press again to stop. Transmits a
