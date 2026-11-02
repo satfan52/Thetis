@@ -7562,7 +7562,15 @@ namespace Thetis
             panelSoundControls.SendToBack();
             panelVFO.Location = new Point(sx, cY + 20);
             foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
-                if (tp != null) tp.Location = H1ModePanelPoint();
+                if (tp != null)
+                {
+                    tp.Location = H1ModePanelPoint();
+                    // H1: the stock mode panels are the OLD transmit block - moved here they
+                    // still painted over the H1 cluster (and over the PA-profile readout), and
+                    // their APF group drew across CW Break-In. Nothing re-shows them, so hide
+                    // them outright: the H1 transmit cluster is the transmit section now.
+                    tp.Visible = false;
+                }
             // H1: the EQ and TX filter pills sit on one row, centred on the transmit block's
             // centre line, with a clear band under the transmit filter boxes above - sat tight
             // under them they read as related to the filter limits, which they are not
@@ -9030,6 +9038,27 @@ namespace Thetis
             if (chkSubRX2Follow.Checked) H1SyncSubFromParent(2);
             if (chkSubRX2Follow.Focused) btnHidden.Focus();
         }
+        // H1: the Follow state of a sub receiver, reachable from outside (TCI) exactly as the
+        // console's own "=RXn" pill drives it. The pill IS the control for SubRX1/SubRX2, so set
+        // that and let its own handler run the sync (mode, passband, AGC, noise pills - never the
+        // frequency, which a follower keeps).
+        public bool H1SubFollowGet(int rx)
+        {
+            if (rx == 0) return chkSubRX1Follow != null && chkSubRX1Follow.Checked;
+            if (rx == 1) return chkSubRX2Follow != null && chkSubRX2Follow.Checked;
+            return false;
+        }
+
+        public void H1SubFollowSet(int rx, bool on)
+        {
+            CheckBoxTS pill = rx == 0 ? chkSubRX1Follow : (rx == 1 ? chkSubRX2Follow : null);
+            if (pill == null) return;
+            if (pill.Checked != on)
+                pill.Checked = on;                  // the pill's own handler does the sync
+            else if (on)
+                H1SyncSubFromParent(rx + 1);        // already ticked: re-take the set now
+        }
+
 
         private void chkVAC2MUT_CheckedChanged(object sender, EventArgs e)
         {
@@ -45263,10 +45292,12 @@ namespace Thetis
             // never drift apart again - the old hard-coded pair went stale when the
             // layout moved.
             Point h1 = H1ModePanelPoint();
-            panelModeSpecificPhone.Location = h1;
-            panelModeSpecificCW.Location = h1;
-            panelModeSpecificDigital.Location = h1;
-            panelModeSpecificFM.Location = h1;
+            foreach (Panel tp in new Panel[] { panelModeSpecificPhone, panelModeSpecificCW, panelModeSpecificDigital, panelModeSpecificFM })
+                if (tp != null)
+                {
+                    tp.Location = h1;
+                    tp.Visible = false;   // H1: the old transmit block stays off screen
+                }
             H1TracePanelMoves("msp-exit");
         }
         // H1 (user 2026-10-03): startup trace - one line per layout/state event so a launch
