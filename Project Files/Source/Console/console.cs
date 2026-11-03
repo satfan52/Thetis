@@ -6389,6 +6389,13 @@ namespace Thetis
         // H1 (user 2026-11-03): RX1 and RX2 are peer receivers. The old power button is the RX1
         // button; the radio's power latch stays on chkPower, which both buttons drive. RX1Active
         // says whether receiver 1 is one of the active receivers.
+        // H1: the RX1 pill art ships inside the executable as base64 (generated from the RX2
+        // pill in the skin's caption font) so a skin or machine without chkRX1 images still
+        // renders the button as a pill instead of a plain caption.
+        private const string H1_RX1_ART_OFF_B64 =
+            "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";
+        private const string H1_RX1_ART_ON_B64 =
+            "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";
         private System.Drawing.Image _h1Rx1ArtOn = null;
         private System.Drawing.Image _h1Rx1ArtOff = null;
         private CheckBoxTS chkRX1 = null;
@@ -34490,31 +34497,52 @@ namespace Thetis
 
         // H1: load the RX1 pill art from the active skin (the skin loader only walks panels, so
         // this button loads its own two images). Falls back to the caption if the skin has none.
+        // H1: decode one of the embedded pill images (see H1_RX1_ART_*_B64).
+        private static System.Drawing.Image H1LoadPillArt(string b64)
+        {
+            try
+            {
+                byte[] data = Convert.FromBase64String(b64);
+                using (System.IO.MemoryStream s = new System.IO.MemoryStream(data))
+                    return Image.FromStream(s);
+            }
+            catch { return null; }
+        }
+
         private void H1Rx1LoadArt()
         {
             if (_h1Rx1ArtOff != null) return;
             try
             {
                 string skin = CurrentSkin;
-                if (string.IsNullOrEmpty(skin)) return; // not restored yet - try again later
-                string appdata = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
-                    + "\\OpenHPSDR\\Skins\\" + skin + "\\Console\\";
-                string local = ".\\Skins\\" + skin + "\\Console\\";
-                foreach (string dir in new string[] { local, appdata })
+                if (!string.IsNullOrEmpty(skin))
                 {
-                    try
+                    string appdata = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+                        + "\\OpenHPSDR\\Skins\\" + skin + "\\Console\\";
+                    string local = ".\\Skins\\" + skin + "\\Console\\";
+                    foreach (string dir in new string[] { local, appdata })
                     {
-                        string off = dir + "chkRX1-0.png";
-                        string on = dir + "chkRX1-1.png";
-                        if (File.Exists(off) && File.Exists(on))
+                        try
                         {
-                            using (System.IO.FileStream s1 = File.OpenRead(off)) _h1Rx1ArtOff = Image.FromStream(s1);
-                            using (System.IO.FileStream s2 = File.OpenRead(on)) _h1Rx1ArtOn = Image.FromStream(s2);
-                            H1StartupTrace("rx1art: loaded from " + dir);
-                            return;
+                            string off = dir + "chkRX1-0.png";
+                            string on = dir + "chkRX1-1.png";
+                            if (File.Exists(off) && File.Exists(on))
+                            {
+                                using (System.IO.FileStream s1 = File.OpenRead(off)) _h1Rx1ArtOff = Image.FromStream(s1);
+                                using (System.IO.FileStream s2 = File.OpenRead(on)) _h1Rx1ArtOn = Image.FromStream(s2);
+                                H1StartupTrace("rx1art: loaded from " + dir);
+                                return;
+                            }
                         }
+                        catch { }
                     }
-                    catch { }
+                }
+                if (_h1Rx1ArtOff == null)
+                {
+                    _h1Rx1ArtOff = H1LoadPillArt(H1_RX1_ART_OFF_B64);
+                    _h1Rx1ArtOn = H1LoadPillArt(H1_RX1_ART_ON_B64);
+                    if (_h1Rx1ArtOff != null)
+                        H1StartupTrace("rx1art: skin has no RX1 pill art - embedded fallback loaded");
                 }
             }
             catch { }
