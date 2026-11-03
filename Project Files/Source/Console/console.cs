@@ -814,6 +814,8 @@ namespace Thetis
             H1CreateRX2BandButtons(); // H1: RX2 band buttons, the RX1 structure
             H1CreateAmpButtons(); // H1: the amplifier stand-by/operate radios and the autotune button
             chkRX2.Size = chkPower.Size; // H1: the RX2 button is the power button's size
+            H1StartWatchdog(); // H1 debug: UI heartbeat + stall breadcrumbs
+            H1CreateRx1Button(); // H1: the left button is RX1 now - one of two peer receivers
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
             H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
             H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
@@ -1006,6 +1008,7 @@ namespace Thetis
             this.Text = BasicTitleBar;//TitleBar.GetString(); //MW0LGE_21b
 
             initializing = false;
+            H1SyncRx1AfterInit(); // H1: the restored power state puts RX1 back in step
 
             LogTool.Completed("SET");
 
@@ -6365,6 +6368,8 @@ namespace Thetis
 
         // H1: the RX2 side stays put and is veiled while nothing sits on the second slice:
         // the same dim the power-off veil uses, over the right strip and the block below it.
+        private PowerDimOverlay h1RX1VeilTop;
+        private PowerDimOverlay h1RX1VeilLeft;
         private PowerDimOverlay h1RX2VeilStrip;
         private PowerDimOverlay h1RX2VeilBelow;
         private PowerDimOverlay h1RX2VeilTop;
@@ -6381,6 +6386,17 @@ namespace Thetis
         private bool h1PowerOnPending = false;
         private System.Windows.Forms.Timer h1PowerOnTimer = null;
         private int h1PowerOnTries = 0;
+        // H1 (user 2026-11-03): RX1 and RX2 are peer receivers. The old power button is the RX1
+        // button; the radio's power latch stays on chkPower, which both buttons drive. RX1Active
+        // says whether receiver 1 is one of the active receivers.
+        private System.Drawing.Image _h1Rx1ArtOn = null;
+        private System.Drawing.Image _h1Rx1ArtOff = null;
+        private CheckBoxTS chkRX1 = null;
+        private bool _rx1Active = true;
+        private bool _h1Rx1Changing = false;
+        private bool _h1StartWithRx2 = false;
+        private bool _h1Rx2Clicked = false;   // H1: only a real mouse click may start the radio
+        public bool RX1Active { get { return _rx1Active; } }
 
         private void H1InitRX2Veil()
         {
@@ -6421,6 +6437,22 @@ namespace Thetis
             h1SubRX2Veil.DimAlpha = 115;
             h1SubRX2Veil.Visible = false;
             this.Controls.Add(h1SubRX2Veil);
+
+            // H1 (user 2026-11-03): while RX1 is switched off its own controls wear the same dim the
+            // RX2 side wears when RX2 is off - the top band up to the VFO B box and the left column.
+            h1RX1VeilTop = new PowerDimOverlay(this);
+            h1RX1VeilTop.Name = "h1RX1VeilTop";
+            h1RX1VeilTop.DrawPowerButton = false;
+            h1RX1VeilTop.DimAlpha = 115;
+            h1RX1VeilTop.Visible = false;
+            this.Controls.Add(h1RX1VeilTop);
+
+            h1RX1VeilLeft = new PowerDimOverlay(this);
+            h1RX1VeilLeft.Name = "h1RX1VeilLeft";
+            h1RX1VeilLeft.DrawPowerButton = false;
+            h1RX1VeilLeft.DimAlpha = 115;
+            h1RX1VeilLeft.Visible = false;
+            this.Controls.Add(h1RX1VeilLeft);
         }
 
         private void H1PlaceRX2Veil()
@@ -6487,6 +6519,50 @@ namespace Thetis
             }
         }
 
+        private void H1PlaceRX1Veil()
+        {
+            if (h1RX1VeilTop == null || h1RX1VeilLeft == null) return;
+            if (panelDisplay == null || grpVFOB == null) return;
+
+            // H1: the top band must stop at the LEFTMOST RX2 widget - the two RX2 meters stand
+            // left of the VFO B box, so using the VFO B edge dimmed RX2's own meters.
+            int tby = 24;
+            int tby2 = panelDisplay.Top;
+            int tright = int.MaxValue;
+            foreach (Control h1b in new Control[] { grpSubRX2Meter, grpRX2Meter, grpVFOB })
+            {
+                if (h1b == null) continue;
+                tright = Math.Min(tright, h1b.Left - 8);
+            }
+            if (tright == int.MaxValue || tright < 40) tright = ClientSize.Width / 2;
+            h1RX1VeilTop.Bounds = new Rectangle(0, tby, Math.Max(0, tright), Math.Max(0, tby2 - tby));
+
+            // the left control column beside the panafall
+            h1RX1VeilLeft.Bounds = new Rectangle(0, panelDisplay.Top,
+                Math.Max(0, panelDisplay.Left), Math.Max(0, panelDisplay.Height));
+
+            if (h1RX1VeilTop.Visible)
+            {
+                h1RX1VeilTop.Push();
+                h1RX1VeilLeft.Push();
+                h1RX1VeilTop.BringToFront();
+                h1RX1VeilLeft.BringToFront();
+            }
+        }
+
+        /// <summary>H1: RX1's controls dim while RX1 is off, exactly like RX2's do (option-driven).</summary>
+        private void H1UpdateRX1Veil()
+        {
+            if (h1RX1VeilTop == null || h1RX1VeilLeft == null) return;
+            bool show = PowerOn && !_rx1Active && LegacyItemController.DimUnusedReceivers;
+            if (h1RX1VeilTop.Visible != show)
+            {
+                h1RX1VeilTop.Visible = show;
+                h1RX1VeilLeft.Visible = show;
+            }
+            if (show) H1PlaceRX1Veil();
+        }
+
         private void H1PlaceSubVeil(PowerDimOverlay veil, int x, int w, int top, int bottom)
         {
             if (veil == null) return;
@@ -6512,6 +6588,7 @@ namespace Thetis
             try
             {
                 UpdateSubVeilStates();
+                H1UpdateRX1Veil();
                 H1RX2Grey(SecondSliceActive, RX2Enabled);
                 PowerStateWatchdog(); // the power-off veil answers to the option too
             }
@@ -7432,6 +7509,7 @@ namespace Thetis
             foreach (Control k in new Control[] { lblRX1AF, ptbRX1AF, lblRX2AF, ptbRX2AF, chkSquelch, ptbSquelch, picSquelch, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch, panelMultiRX, panelRX2Mixer, chkVAC1, chkVAC2 })
                 if (k != null) k.BringToFront();
             H1PlaceRX2Veil(); // H1: the RX2 veil follows the layout
+            H1PlaceRX1Veil(); // H1: and so does the RX1 veil
 
             // ---------- BELOW, centre: shared, balanced about the panadapter centre ----------
             // H1: the transmit cluster moved to the top of the zone directly under the
@@ -8561,6 +8639,7 @@ namespace Thetis
         // two-receiver branches (per-row gestures are a later stage).
         private bool H1Rx2Half(int yInDisplay)
         {
+            if (PowerOn && !_rx1Active && RX2Enabled) return true; // whole pane is RX2's
             if (Display.H1EightRows)
             {
                 int h1RowH = pnlDisplay.Height / 8;
@@ -9593,6 +9672,7 @@ namespace Thetis
 
             private void PushInner()
             {
+                H1Crumb("veil-push");
                 if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
 
                 Rectangle r = m_console.PowerButtonBoundsInClient();
@@ -9610,36 +9690,32 @@ namespace Thetis
                         if (DrawPowerButton && !r.IsEmpty)
                         {
                             r.Offset(-Left, -Top);
-                            // the button is redrawn right here at full contrast: a soft thin
-                            // halo, then the blue pill and the white power symbol, drawn at
-                            // the same size the button has once the console runs
-                            FillPill(g, r, 3, Color.FromArgb(45, 55, 70, 91));
-                            FillPill(g, r, 1, Color.FromArgb(80, 113, 138, 170));
-                            r.Inflate(-1, -2);
-                            using (System.Drawing.Drawing2D.GraphicsPath pill = PillPath(r, 0))
+                            // H1 (user 2026-11-03): the power button is the RX1 button now and carries its own
+                            // label and state colour. Punch a transparent hole over it instead of repainting the
+                            // old power pill, so the live control shows through the veil untouched.
+                            System.Drawing.Drawing2D.CompositingMode oldMode = g.CompositingMode;
+                            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                            using (SolidBrush hole = new SolidBrush(Color.Transparent))
+                                g.FillRectangle(hole, r);
+                            g.CompositingMode = oldMode;
+                        }
+                        // H1 (user 2026-11-03): RX2 is a peer of RX1 - leave its button undimmed exactly like
+                        // the RX1/power button, so both read the same while the radio is off.
+                        if (DrawPowerButton && m_console.chkRX2 != null)
+                        {
+                            try
                             {
-                                using (System.Drawing.Drawing2D.LinearGradientBrush body =
-                                    new System.Drawing.Drawing2D.LinearGradientBrush(r, Color.FromArgb(10, 25, 70), Color.FromArgb(45, 100, 190), 90f))
-                                    g.FillPath(body, pill);
-                                using (Pen edge = new Pen(Color.FromArgb(120, 165, 235), 1.6f))
-                                    g.DrawPath(edge, pill);
+                                System.Drawing.Point s2 = m_console.chkRX2.PointToScreen(System.Drawing.Point.Empty);
+                                System.Drawing.Point f0 = m_console.PointToScreen(System.Drawing.Point.Empty);
+                                System.Drawing.Rectangle r2 = new System.Drawing.Rectangle(
+                                    s2.X - f0.X - Left, s2.Y - f0.Y - Top, m_console.chkRX2.Width, m_console.chkRX2.Height);
+                                System.Drawing.Drawing2D.CompositingMode om2 = g.CompositingMode;
+                                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                                using (SolidBrush hole2 = new SolidBrush(Color.Transparent))
+                                    g.FillRectangle(hole2, r2);
+                                g.CompositingMode = om2;
                             }
-                            int w = r.Width, h = r.Height;
-                            int dia = (int)(h * 0.60);
-                            Rectangle ring = new Rectangle(r.X + (w - dia) / 2, r.Y + (h - dia) / 2 + 1, dia, dia);
-                            using (Pen glyph = new Pen(Color.White, 3.4f))
-                            {
-                                glyph.StartCap = System.Drawing.Drawing2D.LineCap.Round;
-                                glyph.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-                                g.DrawArc(glyph, ring, -60, 300);
-                            }
-                            using (Pen bar = new Pen(Color.White, 3.4f))
-                            {
-                                bar.StartCap = System.Drawing.Drawing2D.LineCap.Round;
-                                bar.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-                                float cx = r.X + w / 2f;
-                                g.DrawLine(bar, cx, r.Y + h * 0.17f, cx, r.Y + h * 0.50f);
-                            }
+                            catch { }
                         }
                     }
 
@@ -9729,7 +9805,7 @@ namespace Thetis
                 {
                     if (c == null || !c.Visible) continue;
                     if (c is PowerDimOverlay) continue;
-                    if (c == m_console.chkPower || c == m_console.chkRX2) continue;
+                    if (c == m_console.chkPower || c == m_console.chkRX2 || c == m_console.chkRX1) continue;
                     // H1: never touch the window chrome - the console's own title bar row and the
                     // menu strip are not console controls and must not take the dim
                     if (c is System.Windows.Forms.MenuStrip || c is System.Windows.Forms.ToolStrip) continue;
@@ -9928,6 +10004,7 @@ namespace Thetis
 
         private void PowerStateWatchdog()
         {
+            H1Crumb("power-watchdog-tick");
             H1AmpButtonsSync(); // H1: keep the amp radios on the real amplifier state (idempotent)
             if (m_powerDimOverlay == null) return;
             // H1: the receiver veils answer to the saved dim option too. They are only raised when a receiver
@@ -15593,6 +15670,19 @@ namespace Thetis
                     else
                         tx_freq = VFOAFreq;
                 }
+                else if (!_rx1Active)
+                {
+                    // H1 (user 2026-11-03): RX1 is switched off - the transmitter follows RX2's VFOs
+                    // (SubVFOB first, then VFO B; SPLIT without a tick transmits on SubVFOB).
+                    if (chkSubVFOBTX.Checked && VFOBSubInUse)
+                        tx_freq = VFOBSubFreq;
+                    else if (chkVFOBTX.Checked)
+                        tx_freq = VFOBFreq;
+                    else if (chkVFOSplit.Checked && VFOBSubInUse)
+                        tx_freq = VFOBSubFreq;
+                    else
+                        tx_freq = VFOBFreq;
+                }
                 else
                 {
                     // H1: SubVFOB is RX2's sub receiver, a frequency of its own - it must be
@@ -15620,6 +15710,17 @@ namespace Thetis
                         VFOASubFreq = value; // H1: SPLIT transmits on SubVFOA, RX2 on or off
                     else
                         VFOAFreq = value;
+                }
+                else if (!_rx1Active)
+                {
+                    if (chkSubVFOBTX.Checked && VFOBSubInUse)
+                        VFOBSubFreq = value;
+                    else if (chkVFOBTX.Checked)
+                        VFOBFreq = value;
+                    else if (chkVFOSplit.Checked && VFOBSubInUse)
+                        VFOBSubFreq = value;
+                    else
+                        VFOBFreq = value;
                 }
                 else
                 {
@@ -30589,7 +30690,7 @@ namespace Thetis
                     }
 
                     if ((!Display.DataReady || !Display.WaterfallDataReady) ||
-                        (chkSplitDisplay.Checked && (!Display.DataReadyBottom || !Display.WaterfallDataReadyBottom)))
+                        ((chkSplitDisplay.Checked || Display.RX1Inactive) && (!Display.DataReadyBottom || !Display.WaterfallDataReadyBottom)))
                     {
                         if (calibration_running)
                         {
@@ -30777,7 +30878,7 @@ namespace Thetis
                                 bGetPixelIssue = !bDataReady && !bWaterfallDataReady;
                             }
 
-                            if (chkSplitDisplay.Checked &&
+                            if ((chkSplitDisplay.Checked || Display.RX1Inactive) &&
                                 (!Display.DataReadyBottom || !Display.WaterfallDataReadyBottom) &&
                                 Display.CurrentDisplayModeBottom != DisplayMode.OFF)
                             {
@@ -34206,8 +34307,346 @@ namespace Thetis
             catch { }
         }
 
+
+        // H1: build the RX1 button on the old power button's footprint. It is a CHILD of chkPower so
+        // it follows every layout pass that moves the power button, and it hides the skin art of the
+        // old power pill without touching the skin.
+
+        // H1 (debug 2026-11-03): a UI-thread heartbeat plus a background watchdog. When the UI
+        // thread stops answering for ~1.5 s the watchdog writes the last breadcrumb, so the next
+        // freeze names the call it died in instead of leaving an empty AppHang record.
+        private static long _h1Heartbeat = 0;
+        private static volatile bool _h1WatchdogOn = false;
+        private static volatile string _h1CrumbText = "startup";
+        private static void H1Crumb(string where) { _h1CrumbText = where; }
+
+        private void H1StartWatchdog()
+        {
+            if (_h1WatchdogOn) return;
+            _h1WatchdogOn = true;
+            System.Windows.Forms.Timer hb = new System.Windows.Forms.Timer();
+            hb.Interval = 250;
+            hb.Tick += (s, e) => { System.Threading.Interlocked.Increment(ref _h1Heartbeat); };
+            hb.Start();
+            System.Threading.Thread wd = new System.Threading.Thread(delegate ()
+            {
+                long seen = 0;
+                int stalled = 0;
+                System.DateTime stallStart = System.DateTime.MinValue;
+                while (_h1WatchdogOn)
+                {
+                    System.Threading.Thread.Sleep(400);
+                    long now = System.Threading.Interlocked.Read(ref _h1Heartbeat);
+                    if (now == seen)
+                    {
+                        stalled++;
+                        if (stalled == 2 && stallStart == System.DateTime.MinValue) stallStart = System.DateTime.Now;
+                        if (stalled == 8) // ~3.2 s without a heartbeat = a real stall, not slow work
+                        {
+                            H1StartupTrace("WATCHDOG: UI thread stalled - last crumb = " + _h1CrumbText);
+                            stalled = 0;
+                        }
+                    }
+                    else
+                    {
+                        if (stallStart != System.DateTime.MinValue)
+                        {
+                            H1StartupTrace("WATCHDOG: recovered after " + ((int)(System.DateTime.Now - stallStart).TotalMilliseconds) + " ms (crumb was " + _h1CrumbText + ")");
+                            stallStart = System.DateTime.MinValue;
+                        }
+                        seen = now;
+                        stalled = 0;
+                    }
+                }
+            });
+            wd.IsBackground = true;
+            wd.Name = "H1 UI watchdog";
+            wd.Start();
+            H1StartupTrace("watchdog: started");
+        }
+        private void H1CreateRx1Button()
+        {
+            if (chkRX1 != null) return;
+            chkRX1 = new CheckBoxTS();
+            chkRX1.Name = "chkRX1";
+            chkRX1.Text = ""; // H1: skin pill art carries the caption, like the RX2 button
+            chkRX1.Appearance = chkRX2.Appearance;
+            chkRX1.TextAlign = ContentAlignment.MiddleCenter;
+            chkRX1.Font = new Font(chkPower.Font.FontFamily, 9f, FontStyle.Bold);
+            chkRX1.ForeColor = chkRX2.ForeColor;
+            chkRX1.FlatStyle = chkRX2.FlatStyle;
+            chkRX1.FlatAppearance.BorderSize = 0;
+            chkRX1.BackColor = chkRX2.BackColor;
+            chkRX1.Size = chkPower.Size;
+            chkRX1.Location = new Point(0, 0);
+            chkRX1.TabStop = false;
+            chkRX1.Checked = true;
+            _rx1Active = true;
+            chkRX1.CheckedChanged += chkRX1_CheckedChanged;
+            // H1: a sibling of the power latch, not a child - the pill art has transparent
+            // corners and must show the panel background exactly as the RX2 pill does. The latch
+            // stays alive for its events and bounds but is never drawn or clicked.
+            panelPower.Controls.Add(chkRX1);
+            chkRX1.Location = chkPower.Location;
+            chkRX1.BringToFront();
+            chkPower.Visible = false;
+            // H1: a restored/programmatic chkRX2 change must never power the radio on by itself
+            chkRX2.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) _h1Rx2Clicked = true; };
+            chkPower.LocationChanged += H1Rx1FollowPower;
+            chkPower.SizeChanged += H1Rx1FollowPower;
+            chkPower.CheckedChanged += H1PowerStateChanged; // after the console's own handler
+            if (toolTip1 != null)
+            {
+            chkRX1.BackgroundImageLayout = ImageLayout.Stretch;
+            H1Rx1LoadArt();
+                toolTip1.SetToolTip(chkRX1, "RX1 - switch receiver 1 on or off." + Environment.NewLine + Environment.NewLine
+                    + "The radio powers on when the first receiver is switched on, and powers off when the last one is switched off.");
+                toolTip1.SetToolTip(chkRX2, "RX2 - switch receiver 2 on or off." + Environment.NewLine + Environment.NewLine
+                    + "With the radio off, this switches it on with RX2 as the only active receiver.");
+            }
+            H1Rx1Visual();
+        }
+
+        // H1: the radio's power latch moved (the console's own handler has already run). Bring the
+        // RX1 button and the receiver state along: a plain power-on lands on RX1, an RX2-first start
+        // leaves RX1 off, and a power-off clears both buttons.
+        private void H1PowerStateChanged(object sender, EventArgs e)
+        {
+            if (initializing || _h1Rx1Changing) return;
+            _h1Rx1Changing = true;
+            try
+            {
+                if (PowerOn)
+                {
+                    // H1: a restored session may be powered on with RX1 intentionally off
+                    bool onRx2Only = _h1StartWithRx2 || (chkRX1 != null && !chkRX1.Checked);
+                    _h1StartWithRx2 = false;
+                    _rx1Active = !onRx2Only;
+                    if (chkRX1 != null) chkRX1.Checked = _rx1Active;
+                }
+                else
+                {
+                    _rx1Active = false;
+                    if (chkRX1 != null) chkRX1.Checked = false;
+                }
+            }
+            finally { _h1Rx1Changing = false; }
+            H1Rx1Visual();
+            if (PowerOn) H1ApplyRx1State();
+        }
+
+        // H1: the RX1 button. Switches RX1 on; switches it off while RX2 keeps the radio up; and
+        // powers the radio off when RX1 was the last active receiver.
+        private void chkRX1_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing || _h1Rx1Changing) return;
+            _h1Rx1Changing = true;
+            try
+            {
+                if (chkRX1.Checked)
+                {
+                    _rx1Active = true;
+                    H1Crumb("rx1-click power-on");
+                    if (!PowerOn) chkPower.Checked = true; // the console's own power-on path
+                }
+                else
+                {
+                    if (!PowerOn)
+                    {
+                        // H1: the radio is off - this click is a start request, RX1 active
+                        _rx1Active = true;
+                        if (!chkRX1.Checked) chkRX1.Checked = true;
+                        chkPower.Checked = true;
+                        H1StartupTrace("rx1start: radio off -> RX1 start");
+                    }
+                    else
+                    {
+                    if (MOX || _tuning)
+                    {
+                        H1RefuseRxChange("The transmitter is active - RX1 stays on until it is released.");
+                        chkRX1.Checked = true;
+                        return;
+                    }
+                    if (RX2Enabled && H1TxTickOnRx1())
+                    {
+                        H1RefuseRxChange("The transmit VFO is VFO A." + Environment.NewLine + Environment.NewLine
+                            + "Move the transmit VFO to VFO B (or SubVFOB) before switching RX1 off - the transmit frequency is never moved for you.");
+                        chkRX1.Checked = true;
+                        return;
+                    }
+                    if (RX2Enabled) _rx1Active = false;    // RX2 keeps the radio up
+                    else
+                    {
+                        H1Crumb("rx1-click power-off");
+                        chkPower.Checked = false;         // last active receiver: power off
+                    }
+                    }
+                }
+            }
+            finally { _h1Rx1Changing = false; }
+            H1Rx1Visual();
+            if (PowerOn) H1ApplyRx1State();
+        }
+
+        // H1: load the RX1 pill art from the active skin (the skin loader only walks panels, so
+        // this button loads its own two images). Falls back to the caption if the skin has none.
+        private void H1Rx1LoadArt()
+        {
+            if (_h1Rx1ArtOff != null) return;
+            try
+            {
+                string skin = CurrentSkin;
+                if (string.IsNullOrEmpty(skin)) return; // not restored yet - try again later
+                string appdata = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+                    + "\\OpenHPSDR\\Skins\\" + skin + "\\Console\\";
+                string local = ".\\Skins\\" + skin + "\\Console\\";
+                foreach (string dir in new string[] { local, appdata })
+                {
+                    try
+                    {
+                        string off = dir + "chkRX1-0.png";
+                        string on = dir + "chkRX1-1.png";
+                        if (File.Exists(off) && File.Exists(on))
+                        {
+                            using (System.IO.FileStream s1 = File.OpenRead(off)) _h1Rx1ArtOff = Image.FromStream(s1);
+                            using (System.IO.FileStream s2 = File.OpenRead(on)) _h1Rx1ArtOn = Image.FromStream(s2);
+                            H1StartupTrace("rx1art: loaded from " + dir);
+                            return;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private bool H1TxTickOnRx1()
+        {
+            return (chkVFOATX != null && chkVFOATX.Checked) || (chkSubVFOATX != null && chkSubVFOATX.Checked);
+        }
+
+        private void H1RefuseRxChange(string why)
+        {
+            try
+            {
+                MessageBox.Show(why, "Receivers", MessageBoxButtons.OK, MessageBoxIcon.Information,
+                    MessageBoxDefaultButton.Button1, Common.MB_TOPMOST);
+            }
+            catch { }
+        }
+
+        // H1: transmit ticks follow the active receivers - VFO A's ticks die with RX1, VFO B's
+        // with RX2. This never moves a tick.
+        private void H1UpdateTxTickGating()
+        {
+            if (chkVFOATX != null) chkVFOATX.Enabled = _rx1Active;
+            if (chkSubVFOATX != null) chkSubVFOATX.Enabled = _rx1Active;
+            if (chkVFOBTX != null) chkVFOBTX.Enabled = rx2_enabled;
+            try { updateSubVFOBTxTick(); } catch { }
+        }
+
+        // H1: an RX2-first start is a deliberate choice made with the radio off - put the transmit
+        // tick on RX2's VFO if it sat on RX1's. Never called while transmitting.
+        private void H1MoveTxTickToRx2()
+        {
+            try
+            {
+                if (!H1TxTickOnRx1()) return;
+                bool wantSub = chkVFOSplit.Checked && VFOBSubInUse;
+                chkVFOATX.Checked = false;
+                chkSubVFOATX.Checked = false;
+                if (wantSub && chkSubVFOBTX != null) chkSubVFOBTX.Checked = true;
+                else if (chkVFOBTX != null) chkVFOBTX.Checked = true;
+                H1StartupTrace("txtick: moved to RX2 (" + (wantSub ? "SubVFOB" : "VFOB") + ") for the RX2-only start");
+            }
+            catch { }
+        }
+        // H1: keep the RX1 button on the power latch's footprint (the latch can be re-laid out by
+        // the legacy resize passes even while hidden).
+        private void H1Rx1FollowPower(object sender, EventArgs e)
+        {
+            if (chkRX1 == null || chkPower == null) return;
+            if (chkRX1.Location != chkPower.Location) chkRX1.Location = chkPower.Location;
+            if (chkRX1.Size != chkPower.Size) chkRX1.Size = chkPower.Size;
+        }
+
+        private void H1Rx1Visual()
+        {
+            H1Crumb("rx1-visual");
+            if (chkRX1 == null) return;
+            if (_h1Rx1ArtOff == null) H1Rx1LoadArt();
+            System.Drawing.Image art = chkRX1.Checked ? _h1Rx1ArtOn : _h1Rx1ArtOff;
+            if (art != null)
+            {
+                if (chkRX1.Text.Length != 0) chkRX1.Text = "";
+                if (chkRX1.BackgroundImage != art) chkRX1.BackgroundImage = art;
+            }
+            else if (chkRX1.Text.Length == 0) chkRX1.Text = "RX1"; // skin art missing - stay readable
+            Color back = chkRX1.Checked ? button_selected_color : chkRX2.BackColor;
+            if (chkRX1.BackColor != back) chkRX1.BackColor = back;
+            // H1: RX1 off means RX2 owns the whole pane and the split view is off
+            try
+            {
+                bool h1rx1off = PowerOn && !_rx1Active;
+                if (Display.RX1Inactive != h1rx1off)
+                {
+                    Display.RX1Inactive = h1rx1off;
+                    Display.H1ResetWaterfallBitmaps(); // the RX2 waterfall texture changes size
+                }
+                if (chkSplitDisplay != null)
+                {
+                    bool wantSplit = RX2Enabled && _rx1Active;
+                    if (chkSplitDisplay.Checked != wantSplit) chkSplitDisplay.Checked = wantSplit;
+                }
+                if (pnlDisplay != null) pnlDisplay.Invalidate();
+            }
+            catch { }
+            H1UpdateTxTickGating();
+            H1UpdateRX1Veil();
+            H1StartupTrace("rx1state: btn=" + chkRX1.Checked + " power=" + PowerOn + " rx2=" + RX2Enabled + " active=" + _rx1Active);
+        }
+
+        // H1: apply the RX1 side of the receiver state. RX1 off means its audio leaves the mix and
+        // its sub receiver cannot outlive it (the rule SubRX2 already follows RX2 with).
+        private void H1ApplyRx1State()
+        {
+            H1Crumb("apply-rx1 active=" + _rx1Active);
+            try
+            {
+                if (_rx1Active)
+                {
+                    Audio.MuteRX1 = false;
+                }
+                else
+                {
+                    Audio.MuteRX1 = true;
+                    if (chkEnableMultiRX != null && chkEnableMultiRX.Checked) chkEnableMultiRX.Checked = false;
+                }
+            }
+            catch { }
+        }
+
+        // H1: the restored power state comes from chkPower's saved value. Without an RX2-first start
+        // the console comes up on RX1 exactly as it always has.
+        private void H1SyncRx1AfterInit()
+        {
+            _h1Rx1Changing = true;
+            try
+            {
+                // H1: persist which receiver(s) were active - the checkbox state was restored from
+                // the database, so use it rather than forcing RX1 on with the power
+                bool wantRx1 = chkRX1 == null || chkRX1.Checked;
+                _rx1Active = PowerOn && wantRx1;
+                if (chkRX1 != null) chkRX1.Checked = wantRx1;
+            }
+            finally { _h1Rx1Changing = false; }
+            H1Rx1Visual();
+            if (PowerOn) H1ApplyRx1State();
+        }
         private void chkPower_CheckedChanged(object sender, System.EventArgs e)
         {
+            H1StartupTrace("pwr: entry checked=" + chkPower.Checked + " init=" + initializing);
+            H1Crumb("power-entry checked=" + chkPower.Checked);
             // ignore if dbman shown, prevents external sources from doing this such as midi/cat
             // whilst DB man is in use
             if (DBMan.IsVisible && chkPower.Checked)
@@ -34236,6 +34675,7 @@ namespace Thetis
                 txtVFOAMSD.ForeColor = vfo_text_light_color;
                 txtVFOALSD.ForeColor = small_vfo_color;
                 H1RigDriveForceSync(); // H1: pin the IC-7100 output power the moment the console powers up
+                H1Crumb("power-on DDCs");
                 H1LoadMeterTxModes(); // H1: re-pin the meters' selections at power-up
 
                 UpdateDDCs(rx2_enabled);
@@ -34283,12 +34723,14 @@ namespace Thetis
 
                 if (!IsSetupFormNull) SetupForm.BoardWarning = ""; // no board warning
                 TciLog.Log($"[chkPower] Calling Audio.Start()...");
+                H1Crumb("power-on Audio.Start");
                 if (!Audio.Start())   // starts JanusAudio running
                 {
                     TciLog.Log($"[chkPower] Audio.Start() FAILED!");
                     chkPower.Checked = false;
                     return;
                 }
+                H1Crumb("power-on started");
                 TciLog.Log($"[chkPower] Audio.Start() SUCCEEDED!");
 
                 if (Audio.ProcessedTXOutputEnabled) Audio.EnableProcessedTXOutput(true);
@@ -34547,6 +34989,7 @@ namespace Thetis
                 chkVFOBLock.Enabled = false; //[2.10.3.7]MW0LGE
 
                 chkPower.BackColor = SystemColors.Control;
+                H1Crumb("power-off-visuals");
                 txtVFOAFreq.ForeColor = vfo_text_dark_color;
                 txtVFOAMSD.ForeColor = vfo_text_dark_color;
                 txtVFOALSD.ForeColor = vfo_text_dark_color;
@@ -34559,12 +35002,16 @@ namespace Thetis
 
                 timer_peak_text.Enabled = false;
 
+                H1StartupTrace("pwr: off-branch start");
+                H1Crumb("power-off-start");
                 //NetworkIO.StopAudio();
+                H1Crumb("power-off Audio.Stop");
                 Audio.Stop();
 
                 if (vac_enabled)
                 {
                     ivac.SetIVACrun(0, 0);
+                    H1Crumb("power-off ivac0");
                     ivac.StopAudioIVAC(0);
                 }
 
@@ -34582,78 +35029,93 @@ namespace Thetis
 
                 if (multimeter_thread != null)
                 {
+                H1Crumb("power-off join multimeter_thread");
                     if (!multimeter_thread.Join(/*500*/Math.Max(meter_delay, meter_dig_delay) + 50)) //MW0LGE change to meter delay
                         multimeter_thread.Abort();
                 }
                 if (rx2_meter_thread != null)
                 {
+                H1Crumb("power-off join rx2_meter_thread");
                     if (!rx2_meter_thread.Join(/*500*/Math.Max(meter_delay, meter_dig_delay) + 50)) //MW0LGE change to meter delay
                         rx2_meter_thread.Abort();
                 }
                 //MW0LGE_[2.9.0.7]
                 if (multimeter2_thread_rx1 != null)
                 {
+                H1Crumb("power-off join multimeter2_thread_rx1");
                     if (!multimeter2_thread_rx1.Join(MeterManager.QuickestUpdateInterval(1, MOX)))
                         multimeter2_thread_rx1.Abort();
                 }
                 if (multimeter2_thread_rx2 != null)
                 {
+                H1Crumb("power-off join multimeter2_thread_rx2");
                     if (!multimeter2_thread_rx2.Join(MeterManager.QuickestUpdateInterval(2, MOX)))
                         multimeter2_thread_rx2.Abort();
                 }
                 //
                 if (rx2_sql_update_thread != null)
                 {
+                H1Crumb("power-off join rx2_sql_update_thread");
                     if (!rx2_sql_update_thread.Join(500))
                         rx2_sql_update_thread.Abort();
                 }
                 if (rx2_sql_update_thread != null)
                 {
+                H1Crumb("power-off join rx2_sql_update_thread");
                     if (!rx2_sql_update_thread.Join(500))
                         rx2_sql_update_thread.Abort();
                 }
                 if (sql_update_thread != null)
                 {
+                H1Crumb("power-off join sql_update_thread");
                     if (!sql_update_thread.Join(500))
                         sql_update_thread.Abort();
                 }
                 if (noise_gate_update_thread != null)
                 {
+                H1Crumb("power-off join noise_gate_update_thread");
                     if (!noise_gate_update_thread.Join(500))
                         noise_gate_update_thread.Abort();
                 }
                 if (vox_update_thread != null)
                 {
+                H1Crumb("power-off join vox_update_thread");
                     if (!vox_update_thread.Join(500))
                         vox_update_thread.Abort();
                 }
                 if (poll_ptt_thread != null)
                 {
+                H1Crumb("power-off join poll_ptt_thread");
                     if (!poll_ptt_thread.Join(500))
                         poll_ptt_thread.Abort();
                 }
                 if (poll_cw_thread != null)
                 {
+                H1Crumb("power-off join poll_cw_thread");
                     if (!poll_cw_thread.Join(500))
                         poll_cw_thread.Abort();
                 }
                 if (poll_pa_pwr_thread != null)
                 {
+                H1Crumb("power-off join poll_pa_pwr_thread");
                     if (!poll_pa_pwr_thread.Join(500))
                         poll_pa_pwr_thread.Abort();
                 }
                 if (_overload_thread != null)
                 {
+                H1Crumb("power-off join _overload_thread");
                     if (!_overload_thread.Join(500))
                         _overload_thread.Abort();
                 }
                 if (poll_tx_inhibit_thead != null)
                 {
+                H1Crumb("power-off join poll_tx_inhibit_thead");
                     if (!poll_tx_inhibit_thead.Join(500))
                         poll_tx_inhibit_thead.Abort();
                 }
                 if (display_volts_amps_thead != null)
                 {
+                H1Crumb("power-off join display_volts_amps_thead");
                     if (!display_volts_amps_thead.Join(650)) // there is a sleep 600 in there MW0LGE
                         display_volts_amps_thead.Abort();
                 }
@@ -34672,6 +35134,7 @@ namespace Thetis
             //only here will we have a valid on or valid off
             if (m_bOldPower != chkPower.Checked)
             {
+            H1Crumb("power-late power=" + chkPower.Checked);
                 PowerChangeHanders?.Invoke(m_bOldPower, chkPower.Checked);
                 m_bOldPower = chkPower.Checked;
             }
@@ -40870,6 +41333,13 @@ namespace Thetis
                 }
             }
 
+            if (PowerOn && !_rx1Active && rx2_enabled)
+            {
+                // H1: RX1 is switched off - the whole pane belongs to RX2
+                nMaxHeightRX1 = 0;
+                nMinHeightRX2 = 0;
+                nMaxHeightRX2 = pnlDisplay.Height;
+            }
             if (rx1_enabled && rx == 1)
             {
                 switch (Display.CurrentDisplayMode)
@@ -45995,6 +46465,48 @@ namespace Thetis
         private bool _old_rx2_checked = false;
         private void chkRX2_CheckedChanged(object sender, System.EventArgs e)
         {
+            // H1 (user 2026-11-03): with the radio off the RX2 button starts it, RX2 as the only
+            // active receiver. The power-on path re-enters this handler with the power on.
+            bool h1rx2click = _h1Rx2Clicked;
+            _h1Rx2Clicked = false;
+            if (!initializing && !_h1Rx1Changing && h1rx2click && !PowerOn)
+            {
+                _h1Rx1Changing = true;
+                try
+                {
+                    if (!chkRX2.Checked) chkRX2.Checked = true; // a click while off is a start request
+                    _h1StartWithRx2 = true;
+                    _rx1Active = false;
+                    RX2Enabled = true;
+                    if (chkRX1 != null) chkRX1.Checked = false;
+                    H1MoveTxTickToRx2();
+                    chkPower.Checked = true;
+                }
+                finally { _h1Rx1Changing = false; }
+                H1Rx1Visual();
+                H1ApplyRx1State();
+                H1StartupTrace("rx2start: radio off -> RX2-only start");
+                return;
+            }
+            // H1 (user 2026-11-03): with the radio off the RX2 button starts it, with RX2 as the
+            // only active receiver. The power-on path re-enters this handler with the power on.
+            if (!initializing && !_h1Rx1Changing && chkRX2.Checked && !PowerOn)
+            {
+                _h1Rx1Changing = true;
+                try
+                {
+                    _h1StartWithRx2 = true;
+                    _rx1Active = false;
+                    RX2Enabled = true;
+                    if (chkRX1 != null) chkRX1.Checked = false;
+                    chkPower.Checked = true;
+                }
+                finally { _h1Rx1Changing = false; }
+                H1Rx1Visual();
+                H1ApplyRx1State();
+                H1StartupTrace("rx2start: power off -> RX2-only start armed");
+                return;
+            }
             _pause_DisplayThread = true; //MW0LGE_21k8 hide the changes
 
             bool oldRX2Enabled = _old_rx2_checked;// RX2Enabled;
@@ -46133,6 +46645,32 @@ namespace Thetis
                 SetQuickSplit(); //[2.10.1.0] MW0LGE
                 RX2EnabledChangedHandlers?.Invoke(RX2Enabled);
                 _old_rx2_checked = chkRX2.Checked;
+            }
+            // H1 (user 2026-11-03): RX2 was the last active receiver - switching it off powers the radio down
+            if (!initializing && !_h1Rx1Changing && !chkRX2.Checked && !_rx1Active && PowerOn)
+            {
+                H1StartupTrace("rx2last: RX2 was the last active receiver -> power off");
+                _h1Rx1Changing = true;
+                try { chkPower.Checked = false; }
+                finally { _h1Rx1Changing = false; }
+            }
+            H1UpdateTxTickGating();
+            // H1 (user 2026-11-03): only a real RX2 on->off transition may power the radio down
+            // when RX1 is off (a restore or a re-entrant call must never do it).
+            if (!initializing && !_h1Rx1Changing && !chkRX2.Checked && !_rx1Active && PowerOn && oldRX2Enabled)
+            {
+                if (MOX || _tuning)
+                {
+                    H1RefuseRxChange("The transmitter is active - RX2 stays on until it is released.");
+                    _h1Rx1Changing = true;
+                    try { chkRX2.Checked = true; }
+                    finally { _h1Rx1Changing = false; }
+                    return;
+                }
+                _h1Rx1Changing = true;
+                try { chkPower.Checked = false; }
+                finally { _h1Rx1Changing = false; }
+                H1StartupTrace("rx2last: RX2 was the last active receiver -> power off");
             }
         }
 

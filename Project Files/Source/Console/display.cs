@@ -238,6 +238,7 @@ namespace Thetis
         // Rows 1-2 draw the existing RX1/RX2 buffers; a spare row draws its own pair. The regular
         // two-receiver rendering never reads these - they exist only for the H1 eight-row mode.
         public static bool H1EightRows = false;                          // set by the console while the mode is on
+    public static bool RX1Inactive = false;   // H1: RX1 switched off - RX2 owns the whole pane
         public static readonly bool[] h1row_wf_fresh = new bool[8];      // a row has a new waterfall line to add
         public static readonly double[] H1RowCentreMHz = new double[8];  // per-row centre, for the scale label
         public static float[][] h1row_display_data = new float[6][];          // stream order (streams 2..7)
@@ -3287,8 +3288,17 @@ namespace Thetis
         private static void ResetWaterfallBmp2()
         {
             int H = displayTargetHeight;
-            if (current_display_mode_bottom == DisplayMode.PANAFALL) H /= 2;
-            H /= 2; // it will always be
+            if (RX1Inactive)
+            {
+                // H1 (user 2026-11-03): RX1 is off - RX2 owns the whole pane, so its waterfall must be
+                // pane-sized. The split-view hard-coded quarter left the bottom of the pane unused.
+                if (current_display_mode_bottom == DisplayMode.PANAFALL) H = displayTargetHeight - PanafallSplitBarPos;
+            }
+            else
+            {
+                if (current_display_mode_bottom == DisplayMode.PANAFALL) H /= 2;
+                H /= 2; // it will always be
+            }
             int preservedRows = 0;
 
             lock (_objDX2Lock)
@@ -3339,6 +3349,15 @@ namespace Thetis
                 resetWaterfallBitmapAlignment(2);
             }
         }
+
+        // H1: called from the console when RX1 switches on/off. The whole-pane RX2 view needs
+        // pane-sized waterfall textures, the split view quarter-sized ones - rebuild on the change.
+        public static void H1ResetWaterfallBitmaps()
+        {
+            try { ResetWaterfallBmp(); } catch { }
+            try { ResetWaterfallBmp2(); } catch { }
+        }
+
 
         #endregion
 
@@ -4206,6 +4225,42 @@ namespace Thetis
                         m_nRX1DisplayHeight = displayTargetHeight / 8;
                         m_nRX2DisplayHeight = displayTargetHeight / 8;
                         H1DrawEightRowsDX2D(displayTargetWidth, displayTargetHeight);
+                    }
+                    // H1 (user 2026-11-03): RX1 is switched off - RX2 owns the whole pane. This is the
+                    // single-receiver branch, mirrored onto receiver 2.
+                    else if (RX1Inactive)
+                    {
+                        int h1paneH = displayTargetHeight;
+                        m_nRX1DisplayHeight = 0;
+                        m_nRX2DisplayHeight = h1paneH;
+                        switch (current_display_mode_bottom)
+                        {
+                            case DisplayMode.SPECTRUM:
+                                DrawSpectrumDX2D(2, displayTargetWidth, h1paneH, false);
+                                break;
+                            case DisplayMode.PANADAPTER:
+                                DrawPanadapterDX2D(0, displayTargetWidth, h1paneH, 2, false);
+                                if (_showTCISpots) drawSpots(2, 0, displayTargetWidth, false);
+                                break;
+                            case DisplayMode.WATERFALL:
+                                DrawWaterfallDX2D(0, displayTargetWidth, h1paneH, 2, true);
+                                if (_showTCISpots) drawSpots(2, 0, displayTargetWidth, false);
+                                break;
+                            case DisplayMode.HISTOGRAM:
+                                DrawHistogramDX2D(2, displayTargetWidth, h1paneH);
+                                break;
+                            default:
+                                // same geometry as the single-receiver panafall above, drawn for RX2
+                                lock (m_objSplitDisplayLock)
+                                {
+                                    m_nRX2DisplayHeight = (int)(h1paneH * m_fPanafallSplitPerc);
+                                    DrawPanadapterDX2D(0, displayTargetWidth, m_nRX2DisplayHeight, 2, false);
+                                    DrawWaterfallDX2D(PanafallSplitBarPos, displayTargetWidth,
+                                                      h1paneH - m_nRX2DisplayHeight, 2, true);
+                                    if (_showTCISpots) drawSpots(2, 0, displayTargetWidth, false);
+                                }
+                                break;
+                        }
                     }
                     else if (!split_display)
                     {
