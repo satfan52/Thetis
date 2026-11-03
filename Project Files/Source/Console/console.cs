@@ -8562,6 +8562,10 @@ namespace Thetis
         // with the new DDS frequency on every RX1 tune.
         private void H1EightRowsFollowRX1(double mhz)
         {
+            // H1 (user 2026-11-03): Phase 1 of the 8 independent receivers - the spare DDCs no
+            // longer ride RX1's centre; each row keeps the centre it was given on entry until the
+            // per-cell tuning lands.
+            if (Display.H1EightRows) return;
             if (!Display.H1EightRows) return;
             for (int s = 2; s < 8; s++)
             {
@@ -8579,7 +8583,7 @@ namespace Thetis
             int x = left + pnlDisplay.Width - H1ListenMargin - H1FsW;
             // H1 (user report 2026-10-05): with the eight rows up, RX2's strip rides on RX2's own
             // row (row 2); the half-way anchor belongs to the old two-panafall view
-            int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2);
+            int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);
 
             H1FsPlace(h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
             H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
@@ -8649,9 +8653,14 @@ namespace Thetis
             if (PowerOn && !_rx1Active && RX2Enabled) return true; // whole pane is RX2's
             if (Display.H1EightRows)
             {
-                int h1RowH = pnlDisplay.Height / 8;
+                // H1 (user 2026-11-03): the eight-DDC view is two columns of four - RX2 is the
+                // SECOND cell of the left column, so the old eight-row math put RX1's and RX2's
+                // tuning windows on top of each other.
+                int h1RowH = pnlDisplay.Height / 4;
                 if (h1RowH <= 0) return false;
-                return (yInDisplay / h1RowH) == 1;   // only RX2's own row counts as "the RX2 half"
+                int h1row = yInDisplay / h1RowH;
+                if (h1row < 0) h1row = 0;
+                return h1row == 1;
             }
             return yInDisplay > pnlDisplay.Height / 2;
         }
@@ -8827,7 +8836,7 @@ namespace Thetis
             int top = panelDisplay.Top + pnlDisplay.Top + H1ListenMargin;
             int pairW = 2 * H1ListenPillW + H1ListenPillGap;
             int x = left + pnlDisplay.Width - H1ListenMargin - pairW;
-            int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2);   // H1: RX2 pills ride RX2's row
+            int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);   // H1: RX2 pills ride RX2's row
             int pitch = H1ListenPillW + H1ListenPillGap;
 
             h1ListenRX1.Location = new Point(x, top);
@@ -27025,6 +27034,18 @@ namespace Thetis
         // the gesture only ever moves the transmit tick.
         private void H1SetTxWindow(int win)
         {
+            // H1: an inactive receiver cannot be the transmit source
+            if ((win == 0 || win == 1) && !_rx1Active)
+            {
+                H1SpacePttTrace("window TX: ignored - RX1 is off (receiver " + win + ")");
+                return;
+            }
+            if ((win == 2 || win == 3) && !rx2_enabled)
+            {
+                H1SpacePttTrace("window TX: ignored - RX2 is off (receiver " + win + ")");
+                return;
+            }
+
             bool gateRx1 = chkVAC1MUT != null && chkVAC1MUT.Checked;
             bool gateSub1 = chkSubRX1MUT != null && chkSubRX1MUT.Checked;
             bool gateRx2 = chkVAC2MUT != null && chkVAC2MUT.Checked;
@@ -28638,7 +28659,7 @@ namespace Thetis
             {
                 if (Display.H1EightRows)
                 {
-                    if (y >= pnlDisplay.Height / 8) y -= pnlDisplay.Height / 8;   // H1: relative to RX2's row
+                    if (y >= pnlDisplay.Height / 4) y -= pnlDisplay.Height / 4;   // H1: relative to RX2's cell
                 }
                 else if (y > pnlDisplay.Height / 2) y -= pnlDisplay.Height / 2;
 
@@ -38799,7 +38820,7 @@ namespace Thetis
             right = left + pnlDisplay.Width;
             if (Display.H1EightRows)
             {
-                top = panelDisplay.Top + pnlDisplay.Top + pnlDisplay.Height / 8;   // H1: RX2's row
+                top = panelDisplay.Top + pnlDisplay.Top + pnlDisplay.Height / 4;   // H1: RX2's cell
                 bottom = top + pnlDisplay.Height / 8;
             }
             else
@@ -60259,7 +60280,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                 getFilterEdgesInPixels(e, ref low_x, ref high_x, ref vfoa_sub_x, ref vfoa_sub_low_x, ref vfoa_sub_high_x);
 
                                 bool bOverTopOfDragSpectrum = false;
-                                if (bOverRX2 && e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2) + 15))
+                                if (bOverRX2 && e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15))
                                     bOverTopOfDragSpectrum = true;
                                 else if (bOverRX1 && e.Y < 15)
                                     bOverTopOfDragSpectrum = true;
@@ -60271,7 +60292,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                         spectrum_drag_last_x = e.X;
                                         if (_click_tune_rx2_display)
                                         {
-                                            if (e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2) + 15))
+                                            if (e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15))
                                             {
                                                 rx2_spectrum_tune_drag = true;
                                                 next_cursor = Cursors.SizeWE;
@@ -61536,7 +61557,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                 }
 
                                 if (e.Y < 15) highlightRX1 = 0; // ignore it if we up top
-                                if (e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2) + 15)) highlightRX2 = 0;
+                                if (e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15)) highlightRX2 = 0;
 
                                 //MW0LGE_21k9 added the filter info onto the cursor info, also done below on the filter drags
                                 if (highlightRX1 == -1)
@@ -62012,7 +62033,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 #endregion
 
                 // top drag area - this will override hover over filter
-                if (bOverRX2 && e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 8 : pnlDisplay.Height / 2) + 15))
+                if (bOverRX2 && e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15))
                     next_cursor = Cursors.SizeWE;
                 else if (bOverRX1 && e.Y < 15)
                     next_cursor = Cursors.SizeWE;

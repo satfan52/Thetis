@@ -6579,15 +6579,20 @@ namespace Thetis
         // renderer runs here - the regular two-receiver drawing is left completely untouched.
         unsafe static private void H1DrawEightRowsDX2D(int W, int H)
         {
-            int rowH = H / 8;
-            int specH = 52;
+            // H1 (user 2026-11-03): eight stacked rows left no usable height - lay the eight DDCs
+            // out as two columns of four.
+            int cellW = W / 2;
+            int rowH = H / 4;
+            // H1 (user 2026-11-03): give the signal pane the larger share of the cell - the
+            // spectrum is what is read, the waterfall is context.
+            int specH = (int)(rowH * 0.62);
             if (specH > rowH - 30) specH = rowH - 30;
             if (specH < 20) specH = 20;
             int wfH = rowH - specH - 1;
             if (wfH < 8) wfH = 8;
 
             // (re)create the row waterfall bitmaps when the geometry changes
-            if (_h1rowWfBmpW != W || _h1rowWfBmpH != wfH || _h1rowWfBmp[0] == null)
+            if (_h1rowWfBmpW != cellW || _h1rowWfBmpH != wfH || _h1rowWfBmp[0] == null)
             {
                 for (int r = 0; r < 8; r++)
                 {
@@ -6595,10 +6600,10 @@ namespace Thetis
                 }
                 for (int r = 0; r < 8; r++)
                 {
-                    _h1rowWfBmp[r] = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(W, wfH), new BitmapProperties(new SDXPixelFormat(_swapChain.Description.ModeDescription.Format, ALPHA_MODE)));
-                    clearWaterfallBitmapRegion(_h1rowWfBmp[r], 0, 0, W, wfH);
+                    _h1rowWfBmp[r] = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(cellW, wfH), new BitmapProperties(new SDXPixelFormat(_swapChain.Description.ModeDescription.Format, ALPHA_MODE)));
+                    clearWaterfallBitmapRegion(_h1rowWfBmp[r], 0, 0, cellW, wfH);
                 }
-                _h1rowWfBmpW = W;
+                _h1rowWfBmpW = cellW;
                 _h1rowWfBmpH = wfH;
             }
 
@@ -6612,18 +6617,35 @@ namespace Thetis
             if (high_threshold <= low_threshold) high_threshold = low_threshold + 10f;
 
             const int pixel_size = 4;
-            byte[] row = new byte[W * pixel_size];
+            byte[] row = new byte[cellW * pixel_size];
 
             if (m_nDecimation < 1) m_nDecimation = 1;
-            int nPix = W / m_nDecimation;
+            int nPix = cellW / m_nDecimation;
 
             for (int r = 0; r < 8; r++)
             {
-                int y0 = r * rowH;
-                if (y0 >= H) break;
-                int wfY = y0 + specH;
-                int hWf = Math.Min(wfH, y0 + rowH - wfY - 1);
+                int h1col = r / 4;              // DDC1-4 left column, DDC5-8 right column
+                int h1row = r % 4;
+                int x0 = h1col * cellW;
+                int yAbs = h1row * rowH;
+                if (yAbs >= H) break;
+                int y0 = 0;                     // local to the cell; the render transform places it
+                int wfY = specH;
+                int hWf = Math.Min(wfH, rowH - specH - 1);
                 if (hWf <= 0) continue;
+                Matrix3x2 h1was = _d2dRenderTarget.Transform;
+                _d2dRenderTarget.Transform = Matrix3x2.Translation(x0, yAbs);
+                // H1 (user 2026-11-03): each DDC gets a SOLID bright frame, inset by one pixel so the
+                // neighbouring cells keep a visible gutter between them.
+                SharpDX.Direct2D1.Brush h1frame = m_bDX2_data_line_pen_brush != null
+                    ? m_bDX2_data_line_pen_brush : m_bDX2_grid_pen_inb;
+                if (h1frame != null)
+                {
+                    drawLineDX2D(h1frame, 1, 1, cellW - 1, 1, 3);
+                    drawLineDX2D(h1frame, 1, rowH - 2, cellW - 1, rowH - 2, 3);
+                    drawLineDX2D(h1frame, 1, 1, 1, rowH - 1, 3);
+                    drawLineDX2D(h1frame, cellW - 2, 1, cellW - 2, rowH - 1, 3);
+                }
 
                 float[] data;
                 float[] wfData;
@@ -6643,7 +6665,7 @@ namespace Thetis
 
                 // row separator
                 if (m_bDX2_grid_pen_inb != null)
-                    drawLineDX2D(m_bDX2_grid_pen_inb, 0, y0, W, y0, 1);
+                    drawLineDX2D(m_bDX2_grid_pen_inb, 0, y0, cellW, y0, 1);
 
                 // spectrum trace - one vertical column per decimated bin, from the trace down
                 if (data != null && m_bDX2_data_line_pen_brush != null && nPix > 1)
@@ -6739,7 +6761,7 @@ namespace Thetis
                         // fill pixels into decimation spaces so we dont have gaps
                         for (int i = 0; i < nPix; i++)
                         {
-                            for (int j = 1; j < m_nDecimation && (i * m_nDecimation) + j < W; j++)
+                            for (int j = 1; j < m_nDecimation && (i * m_nDecimation) + j < cellW; j++)
                             {
                                 row[((i * m_nDecimation) + j) * pixel_size + 0] = row[(i * m_nDecimation) * pixel_size + 0];
                                 row[((i * m_nDecimation) + j) * pixel_size + 1] = row[(i * m_nDecimation) * pixel_size + 1];
@@ -6750,16 +6772,16 @@ namespace Thetis
 
                         // scroll: the new line goes on top, the rest moves down one row - the main waterfall's pattern
                         SharpDX.Direct2D1.Bitmap bmp = _h1rowWfBmp[r];
-                        SharpDX.Direct2D1.Bitmap top = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(W, wfH - 1), new BitmapProperties(new SDXPixelFormat(bmp.PixelFormat.Format, ALPHA_MODE)));
-                        top.CopyFromBitmap(bmp, new SharpDX.Point(0, 0), new SharpDX.Rectangle(0, 0, W, wfH - 1));
-                        bmp.CopyFromMemory(row, W * pixel_size, new SharpDX.Rectangle(0, 0, W, 1));
+                        SharpDX.Direct2D1.Bitmap top = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(cellW, wfH - 1), new BitmapProperties(new SDXPixelFormat(bmp.PixelFormat.Format, ALPHA_MODE)));
+                        top.CopyFromBitmap(bmp, new SharpDX.Point(0, 0), new SharpDX.Rectangle(0, 0, cellW, wfH - 1));
+                        bmp.CopyFromMemory(row, cellW * pixel_size, new SharpDX.Rectangle(0, 0, cellW, 1));
                         bmp.CopyFromBitmap(top, new SharpDX.Point(0, 1), new SharpDX.Rectangle(0, 0, W, wfH - 1));
                         Utilities.Dispose(ref top);
                     }
 
                     Matrix3x2 was = _d2dRenderTarget.Transform;
                     _d2dRenderTarget.Transform = Matrix3x2.Identity;
-                    _d2dRenderTarget.DrawBitmap(_h1rowWfBmp[r], new RectangleF(0, wfY, W, hWf), 1.0f, BitmapInterpolationMode.Linear);
+                    _d2dRenderTarget.DrawBitmap(_h1rowWfBmp[r], new RectangleF(x0, yAbs + wfY, cellW, hWf), 1.0f, BitmapInterpolationMode.Linear);
                     _d2dRenderTarget.Transform = was;
                 }
 
@@ -6778,21 +6800,21 @@ namespace Thetis
                         {
                             long localSubDiff = vfoa_sub_hz - vfoa_hz;
                             int localRit = _rx1ClickDisplayCTUN ? rit_hz : 0;
-                            int fl = (int)((float)(SubRX1FilterLow - h1Low + localSubDiff + localRit) / h1width * W);
-                            int fr = (int)((float)(SubRX1FilterHigh - h1Low + localSubDiff + localRit) / h1width * W);
+                            int fl = (int)((float)(SubRX1FilterLow - h1Low + localSubDiff + localRit) / h1width * cellW);
+                            int fr = (int)((float)(SubRX1FilterHigh - h1Low + localSubDiff + localRit) / h1width * cellW);
                             vfoa_sub_win_left = Math.Min(fl, fr);
                             vfoa_sub_win_right = Math.Max(fl, fr);
-                            H1DrawRxWindow(1, fl, fr, W, rowH, h1rx, 0, false, y0, false,
+                            H1DrawRxWindow(1, fl, fr, cellW, rowH, h1rx, 0, false, y0, false,
                                 m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                         }
                         else if (r == 1 && sub_rx2_enabled)
                         {
                             long localSub2Diff = vfob_sub_hz - vfob_hz;
-                            int fl = (int)((float)(SubRX2FilterLow - h1Low + localSub2Diff) / h1width * W);
-                            int fr = (int)((float)(SubRX2FilterHigh - h1Low + localSub2Diff) / h1width * W);
+                            int fl = (int)((float)(SubRX2FilterLow - h1Low + localSub2Diff) / h1width * cellW);
+                            int fr = (int)((float)(SubRX2FilterHigh - h1Low + localSub2Diff) / h1width * cellW);
                             vfob_sub_win_left = Math.Min(fl, fr);
                             vfob_sub_win_right = Math.Max(fl, fr);
-                            H1DrawRxWindow(3, fl, fr, W, rowH, h1rx, 0, false, y0, false,
+                            H1DrawRxWindow(3, fl, fr, cellW, rowH, h1rx, 0, false, y0, false,
                                 m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                         }
 
@@ -6803,8 +6825,8 @@ namespace Thetis
                             h1fl = -6000;
                             h1fh = 6000;
                         }
-                        int flx = (int)((float)(h1fl - h1Low - h1Diff) / h1width * W);
-                        int frx = (int)((float)(h1fh - h1Low - h1Diff) / h1width * W);
+                        int flx = (int)((float)(h1fl - h1Low - h1Diff) / h1width * cellW);
+                        int frx = (int)((float)(h1fh - h1Low - h1Diff) / h1width * cellW);
                         if (r == 0)
                         {
                             vfoa_win_left = Math.Min(flx, frx);
@@ -6815,11 +6837,20 @@ namespace Thetis
                             vfob_win_left = Math.Min(flx, frx);
                             vfob_win_right = Math.Max(flx, frx);
                         }
-                        H1DrawRxWindow(r == 0 ? 0 : 2, flx, frx, W, rowH, h1rx, 0, false, y0, false,
+                        H1DrawRxWindow(r == 0 ? 0 : 2, flx, frx, cellW, rowH, h1rx, 0, false, y0, false,
                             m_bDX2_display_filter_brush, m_bDX2_display_filter_brush_solid);
                     }
                 }
+
+                _d2dRenderTarget.Transform = h1was;
             }
+
+            // column divider between DDC1-4 and DDC5-8
+            Matrix3x2 h1end = _d2dRenderTarget.Transform;
+            _d2dRenderTarget.Transform = Matrix3x2.Identity;
+            if (m_bDX2_grid_pen_inb != null)
+                drawLineDX2D(m_bDX2_grid_pen_inb, cellW, 0, cellW, H, 1);
+            _d2dRenderTarget.Transform = h1end;
         }
 
         // H1: free the eight-row bitmaps when the mode ends
