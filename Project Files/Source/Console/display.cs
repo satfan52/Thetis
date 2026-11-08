@@ -6635,17 +6635,6 @@ namespace Thetis
                 if (hWf <= 0) continue;
                 Matrix3x2 h1was = _d2dRenderTarget.Transform;
                 _d2dRenderTarget.Transform = Matrix3x2.Translation(x0, yAbs);
-                // H1 (user 2026-11-03): each DDC gets a SOLID bright frame, inset by one pixel so the
-                // neighbouring cells keep a visible gutter between them.
-                SharpDX.Direct2D1.Brush h1frame = m_bDX2_data_line_pen_brush != null
-                    ? m_bDX2_data_line_pen_brush : m_bDX2_grid_pen_inb;
-                if (h1frame != null)
-                {
-                    drawLineDX2D(h1frame, 1, 1, cellW - 1, 1, 3);
-                    drawLineDX2D(h1frame, 1, rowH - 2, cellW - 1, rowH - 2, 3);
-                    drawLineDX2D(h1frame, 1, 1, 1, rowH - 1, 3);
-                    drawLineDX2D(h1frame, cellW - 2, 1, cellW - 2, rowH - 1, 3);
-                }
 
                 float[] data;
                 float[] wfData;
@@ -6840,6 +6829,34 @@ namespace Thetis
                         H1DrawRxWindow(r == 0 ? 0 : 2, flx, frx, cellW, rowH, h1rx, 0, false, y0, false,
                             m_bDX2_display_filter_brush, m_bDX2_display_filter_brush_solid);
                     }
+                }
+
+                // H1 (user 2026-11-03): the window centre cross - the '+' expected on a tuning
+                // window - drawn in the cell's own coordinate space
+                if (r <= 1)
+                {
+                    int h1wl = r == 0 ? vfoa_win_left : vfob_win_left;
+                    int h1wr = r == 0 ? vfoa_win_right : vfob_win_right;
+                    SharpDX.Direct2D1.Brush h1mk = m_bDX2_data_line_pen_brush != null
+                        ? m_bDX2_data_line_pen_brush : m_bDX2_grid_pen_inb;
+                    if (h1mk != null && h1wr > h1wl)
+                    {
+                        int h1cx = (h1wl + h1wr) / 2;
+                        int h1cy = specH / 2;
+                        drawLineDX2D(h1mk, h1cx - 5, h1cy, h1cx + 5, h1cy, 1);
+                        drawLineDX2D(h1mk, h1cx, h1cy - 5, h1cx, h1cy + 5, 1);
+                    }
+                }
+
+                // H1: frame drawn LAST so the trace and waterfall cannot paint over it
+                SharpDX.Direct2D1.Brush h1frame = m_bDX2_data_line_pen_brush != null
+                    ? m_bDX2_data_line_pen_brush : m_bDX2_grid_pen_inb;
+                if (h1frame != null)
+                {
+                    drawLineDX2D(h1frame, 1, 1, cellW - 1, 1, 2);
+                    drawLineDX2D(h1frame, 1, rowH - 2, cellW - 1, rowH - 2, 2);
+                    drawLineDX2D(h1frame, 1, 1, 1, rowH - 1, 2);
+                    drawLineDX2D(h1frame, cellW - 2, 1, cellW - 2, rowH - 1, 2);
                 }
 
                 _d2dRenderTarget.Transform = h1was;
