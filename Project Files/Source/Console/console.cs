@@ -6483,6 +6483,14 @@ namespace Thetis
         private void H1PlaceRX2Veil()
         {
             if (h1RX2VeilStrip == null || h1RX2VeilBelow == null) return;
+            if (Display.H1EightRows || _h1FullScreenPanafall || collapsedDisplay || _iscollapsed)
+            {
+                // H1: same rule as the RX1 side - no veil work during the full-screen relayout
+                h1RX2VeilStrip.Visible = false;
+                h1RX2VeilBelow.Visible = false;
+                if (h1RX2VeilTop != null) h1RX2VeilTop.Visible = false;
+                return;
+            }
             if (panelDisplay == null) return;
 
             int y0 = panelMultiRX != null ? panelMultiRX.Top - 20 : 740; // the layout's Y0
@@ -6568,6 +6576,16 @@ namespace Thetis
         private void H1PlaceRX1Veil()
         {
             if (h1RX1VeilTop == null || h1RX1VeilLeft == null) return;
+            if (Display.H1EightRows || _h1FullScreenPanafall || collapsedDisplay || _iscollapsed)
+            {
+                // H1 (user 2026-11-08): the controls are hidden in the full-screen view - pushing the
+                // dim veils during that relayout only risked stalling the layered windows.
+                h1RX1VeilTop.Visible = false;
+                h1RX1VeilLeft.Visible = false;
+                if (h1RX1VeilBands != null) h1RX1VeilBands.Visible = false;
+                if (h1RX1VeilAudio != null) h1RX1VeilAudio.Visible = false;
+                return;
+            }
             if (panelDisplay == null || grpVFOB == null) return;
 
             // H1: the top band must stop at the LEFTMOST RX2 widget - the two RX2 meters stand
@@ -8606,7 +8624,9 @@ namespace Thetis
         {
             try
             {
+                H1Crumb("eightrows-exit: start");
                 Display.H1EightRows = false;
+                H1Crumb("eightrows-exit: cleanup");
                 Display.H1EightRowCleanup();
                 for (int s = 2; s < 8; s++)
                 {
@@ -8614,6 +8634,7 @@ namespace Thetis
 
                 }
                 H1SpacePttTrace("eight-row panafall: spare DDC streams down");
+                H1Crumb("eightrows-exit: done");
             }
             catch { }
         }
@@ -27233,26 +27254,74 @@ namespace Thetis
             H1WireMiddleClick(this);
         }
 
+        // H1 (user 2026-11-08): a full-screen toggle can land while a display drag is in flight
+        // (the grab started on a window and the layout changed under it). The drag flags then never
+        // saw their mouse-up and keep tuning on every move, which storms the layout. Clear every
+        // display drag before the layout is swapped.
+        private void H1ClearDisplayDrags()
+        {
+            rx1_low_filter_drag = false;
+            rx1_high_filter_drag = false;
+            rx1_whole_filter_drag = false;
+            rx1_sub_low_filter_drag = false;
+            rx1_sub_high_filter_drag = false;
+            rx2_sub_low_filter_drag = false;
+            rx2_sub_high_filter_drag = false;
+            rx2_low_filter_drag = false;
+            rx2_high_filter_drag = false;
+            rx2_whole_filter_drag = false;
+            tx_low_filter_drag = false;
+            tx_high_filter_drag = false;
+            tx_whole_filter_drag = false;
+            rx1_click_tune_drag = false;
+            rx2_click_tune_drag = false;
+            rx1_spectrum_tune_drag = false;
+            rx2_spectrum_tune_drag = false;
+            rx1_spectrum_drag = false;
+            rx2_spectrum_drag = false;
+            rx1_sub_drag = false;
+            rx2_sub_drag = false;
+            agc_knee_drag = false;
+            agc_hang_drag = false;
+            gridminmaxadjust = false;
+            gridmaxadjust = false;
+            m_bDraggingPanafallSplit = false;
+            m_bDraggingNotch = false;
+            m_bDraggingNotchBW = false;
+            if (pnlDisplay != null && pnlDisplay.Capture) pnlDisplay.Capture = false;
+            H1Crumb("drag-state cleared");
+        }
+
         private void H1ToggleFullScreenPanafall(string from)
         {
             if (MOX || _tuning) return;
+            H1Crumb("fullscreen-toggle");
+            H1ClearDisplayDrags();
 
             if (collapsedDisplay || _iscollapsed)
             {
+                H1Crumb("fullscreen-exit: geometry/dim");
                 _h1FullScreenPanafall = false;
                 H1EightRowsExit();                       // H1: the eight-row view ends with the mode
                 setupTuneDriveSlider();                  // H1: the console's tune slider comes back on exit
+                H1Crumb("fullscreen-exit: expand");
                 ExpandDisplay(true);
+                H1Crumb("fullscreen-exit: restore-geometry");
                 H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
+                H1Crumb("fullscreen-exit: done");
             }
             else
             {
                 // set BEFORE collapsing: CollapseDisplay runs the hide, which is gated on this flag
                 _h1FullScreenPanafall = true;
+                H1Crumb("fullscreen-enter: capture");
                 H1FullScreenCaptureGeometry();           // H1: remember the normal geometry before the collapse
+                H1Crumb("fullscreen-enter: eightrows");
                 H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
                 setupTuneDriveSlider();                  // H1: and stays off the full-screen view
+                H1Crumb("fullscreen-enter: collapse");
                 CollapseDisplay(true);
+                H1Crumb("fullscreen-enter: done");
             }
             H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
         }
@@ -38208,11 +38277,13 @@ namespace Thetis
         {
             //[2.10.3.6]MW0LGE reimplemented all this including repopulateForms
             // can only be one true, should have an enum.. todo
+            // H1 (user 2026-11-08): in the full-screen view the band panels are hidden by the sweep.
+            bool h1full = _h1FullScreenPanafall;
             if (!force)
             {
-                if (gen && _bands_GEN_selected) return;
-                if (hf && _bands_HF_selected) return;
-                if (vhf && _bands_VHF_selected) return;
+                if (gen && _bands_GEN_selected && (h1full || panelBandGEN.Visible)) return;
+                if (hf && _bands_HF_selected && (h1full || panelBandHF.Visible)) return;
+                if (vhf && _bands_VHF_selected && (h1full || panelBandVHF.Visible)) return;
             }
 
             if (gen)
@@ -38240,12 +38311,13 @@ namespace Thetis
                 panelBandHF.Visible = false;
                 panelBandVHF.Visible = false;
             }
-            else
+            else if (!h1full)
             {
                 panelBandGEN.Visible = gen && !LegacyItemController.HideBands;
                 panelBandHF.Visible = hf && !LegacyItemController.HideBands;
                 panelBandVHF.Visible = vhf && !LegacyItemController.HideBands;
             }
+            // else: full-screen sweep owns the visibility; the flags are all that changes here.
 
             if (!all_off) // if all disabled, then do nothing with the state. This is probably done when andromeda button bar is shown to hide everything
             {
@@ -38260,7 +38332,44 @@ namespace Thetis
                 if (old_gen != _bands_GEN_selected || old_hf != _bands_HF_selected || old_vhf != _bands_VHF_selected)
                     BandPanelChangeHandlers?.Invoke(1, _bands_GEN_selected, _bands_HF_selected, _bands_VHF_selected);
             }
+
+            // H1 (user 2026-11-08): the legacy RX1 panels are data holders only - the visible menu is
+            // the H1 panel, whose page follows the same flags.
+            if (h1RX1BandPanel != null)
+            {
+                panelBandGEN.Visible = false;
+                panelBandHF.Visible = false;
+                panelBandVHF.Visible = false;
+                h1RX1VhfPage = vhf;
+                H1RX1BandVis(h1RX1BandShown);
+            }
         }
+        // H1 (user 2026-11-08): re-apply the stored band page to the real panels. The full-screen
+        // sweep snapshots every panel's visibility; a band change made while it was up updates only
+        // the stored page, so without this the returning console showed the page it had captured
+        // (or none) while the flags said something else - and a click on HF then looked broken.
+        private void H1SyncBandPanels()
+        {
+            if (_h1FullScreenPanafall || collapsedDisplay) return;
+            bool gen = BandGENSelected, hf = BandHFSelected, vhf = BandVHFSelected;
+            if (!(gen || hf || vhf)) return;
+            if (h1RX1BandPanel != null)
+            {
+                // H1: the visible RX1 menu is the H1 panel; keep the legacy data holders hidden
+                panelBandGEN.Visible = false;
+                panelBandHF.Visible = false;
+                panelBandVHF.Visible = false;
+                h1RX1VhfPage = vhf;
+                H1SyncRX1BandButtons();
+            }
+            else
+            {
+                panelBandGEN.Visible = gen && !LegacyItemController.HideBands;
+                panelBandHF.Visible = hf && !LegacyItemController.HideBands;
+                panelBandVHF.Visible = vhf && !LegacyItemController.HideBands;
+            }
+        }
+
         private void btnBandVHF_Click(object sender, System.EventArgs e)
         {
             setBandPanelVisible(false, false, true);
@@ -51788,6 +51897,7 @@ namespace Thetis
 
             this.Text = BasicTitleBar; //MW0LGE_21a moved here after expaned is true so that title text gets rebuild correctly
                     H1FullScreenRestoreControls();   // H1: put the normal view back
+            H1SyncBandPanels();               // H1: and the band page that is actually selected
 }
         private void setPAProfileLabelPos()
         {

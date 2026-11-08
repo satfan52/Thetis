@@ -4224,7 +4224,12 @@ namespace Thetis
                     {
                         m_nRX1DisplayHeight = displayTargetHeight / 8;
                         m_nRX2DisplayHeight = displayTargetHeight / 8;
-                        H1DrawEightRowsDX2D(displayTargetWidth, displayTargetHeight);
+                        // H1 (user 2026-11-08): the exit path disposes the row bitmaps; draw under the
+                        // same lock so the renderer can never touch a disposed texture.
+                        lock (_objDX2Lock)
+                        {
+                            H1DrawEightRowsDX2D(displayTargetWidth, displayTargetHeight);
+                        }
                     }
                     // H1 (user 2026-11-03): RX1 is switched off - RX2 owns the whole pane. This is the
                     // single-receiver branch, mirrored onto receiver 2.
@@ -6577,6 +6582,7 @@ namespace Thetis
         // rows 1-2 draw the existing RX1/RX2 buffers, rows 3-8 the extra DDC streams 2..7. Each row is a
         // compact panafall: scale text, the spectrum trace and a scrolling waterfall. Only this mode's
         // renderer runs here - the regular two-receiver drawing is left completely untouched.
+        private static string _h1dbgLast = "";
         unsafe static private void H1DrawEightRowsDX2D(int W, int H)
         {
             // H1 (user 2026-11-03): eight stacked rows left no usable height - lay the eight DDCs
@@ -6873,12 +6879,15 @@ namespace Thetis
         // H1: free the eight-row bitmaps when the mode ends
         public static void H1EightRowCleanup()
         {
-            for (int r = 0; r < 8; r++)
+            lock (_objDX2Lock)
             {
-                Utilities.Dispose(ref _h1rowWfBmp[r]);
+                _h1rowWfBmpW = 0;
+                _h1rowWfBmpH = 0;
+                for (int r = 0; r < 8; r++)
+                {
+                    Utilities.Dispose(ref _h1rowWfBmp[r]);
+                }
             }
-            _h1rowWfBmpW = 0;
-            _h1rowWfBmpH = 0;
         }
 
         unsafe static private bool DrawWaterfallDX2D(int nVerticalShift, int W, int H, int rx, bool bottom)
