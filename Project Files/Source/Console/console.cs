@@ -819,6 +819,8 @@ namespace Thetis
             H1CreateRX2PanSwap(); // H1: RX2 left/right swap, twin of chkPanSwap
             H1CreateRX2Notch(); // H1: RX2 MNF and +MNF
             H1CreateRX2VhfPage(); // H1: RX2 VHF page and the VHF+ button
+            H1CreateRX1BandButtons(); // H1: RX1 wears the same band menu RX2 has
+            H1CreateRX1VhfPage();
             // H1: capture the top row's RX2 furniture before RX2 is switched off
             RX2EnabledPreChangedHandlers += (bool h1on) => { if (!h1on) H1FreezeRX2Furniture(); };
 
@@ -6277,6 +6279,221 @@ namespace Thetis
             H1RX2BandVis(h1RX2BandShown);
         }
 
+        // H1 (user 2026-11-08): RX1 gets the same band menu RX2 has - the fork's own panel, grown from
+        // the legacy RX1 structure. The H1 buttons are clones; a click performs the legacy button's
+        // click, so the band setup path is exactly the one the console always used. The legacy band
+        // panels stay as hidden data holders (their radios are what the rest of the console updates).
+        private PanelTS h1RX1BandPanel;
+        private RadioButtonTS[] h1RX1BandButtons;
+        private RadioButtonTS[] h1RX1BandTwins;
+        private PanelTS h1RX1VhfPanel;
+        private RadioButtonTS[] h1RX1VhfButtons;
+        private bool h1RX1VhfPage = false;
+        private string h1RX1SyncBand;
+        private bool h1RX1BandShown = true;
+
+        private void H1CreateRX1BandButtons()
+        {
+            h1RX1BandPanel = new PanelTS();
+            h1RX1BandPanel.Name = "panelRX1BandBtns";
+            h1RX1BandPanel.Size = panelBandHF.Size;
+            h1RX1BandPanel.BackColor = panelBandHF.BackColor;
+            this.Controls.Add(h1RX1BandPanel);
+
+            object[][] spec = new object[][] {
+                new object[] { "160", "160", "160m", radBand160, 0, 0 }, new object[] { "80", "80", "80m", radBand80, 1, 0 }, new object[] { "60", "60", "60m", radBand60, 2, 0 },
+                new object[] { "40", "40", "40m", radBand40, 0, 1 }, new object[] { "30", "30", "30m", radBand30, 1, 1 }, new object[] { "20", "20", "20m", radBand20, 2, 1 },
+                new object[] { "17", "17", "17m", radBand17, 0, 2 }, new object[] { "15", "15", "15m", radBand15, 1, 2 }, new object[] { "12", "12", "12m", radBand12, 2, 2 },
+                new object[] { "10", "10", "10m", radBand10, 0, 3 }, new object[] { "6", "6", "6m", radBand6, 1, 3 }, new object[] { "2", "2m", "2m", radBand2, 2, 3 },
+                new object[] { "WWV", "WWV", "WWV", radBandWWV, 1, 4 }, new object[] { "GEN", "SWL", "GEN", radBandGEN, 2, 4 } };
+            h1RX1BandButtons = new RadioButtonTS[spec.Length];
+            h1RX1BandTwins = new RadioButtonTS[spec.Length];
+            for (int i = 0; i < spec.Length; i++)
+            {
+                RadioButtonTS src = (RadioButtonTS)spec[i][3];
+                RadioButtonTS b = new RadioButtonTS();
+                b.Name = "radRX1Band" + (string)spec[i][0];
+                b.Text = (string)spec[i][1];
+                b.Tag = (string)spec[i][2];
+                b.Appearance = src.Appearance;
+                b.FlatStyle = src.FlatStyle;
+                b.FlatAppearance.BorderSize = 0;
+                b.Font = src.Font;
+                b.ForeColor = src.ForeColor;
+                b.BackColor = src.BackColor;
+                b.TextAlign = src.TextAlign;
+                b.Size = src.Size;
+                b.TabStop = false;
+                b.Location = new Point(10 + 51 * (int)spec[i][4], 8 + 23 * (int)spec[i][5]);
+                int idx = i;
+                b.Click += (s, e) => H1RX1BandClick(idx);
+                h1RX1BandPanel.Controls.Add(b);
+                h1RX1BandButtons[i] = b;
+                h1RX1BandTwins[i] = src;
+            }
+            H1SyncRX1BandButtons();
+        }
+
+        private void H1CreateRX1VhfPage()
+        {
+            h1RX1VhfPanel = new PanelTS();
+            h1RX1VhfPanel.Name = "panelRX1BandVhfBtns";
+            h1RX1VhfPanel.Size = panelBandHF.Size;
+            h1RX1VhfPanel.BackColor = panelBandVHF.BackColor;
+            this.Controls.Add(h1RX1VhfPanel);
+
+            int[][] pos = new int[][] { new int[]{0,0}, new int[]{1,0}, new int[]{2,0}, new int[]{0,1}, new int[]{1,1}, new int[]{2,1},
+                new int[]{0,2}, new int[]{1,2}, new int[]{2,2}, new int[]{0,3}, new int[]{1,3}, new int[]{2,3}, new int[]{1,4}, new int[]{2,4} };
+            RadioButtonTS[] src = new RadioButtonTS[] { radBandVHF0, radBandVHF1, radBandVHF2, radBandVHF3, radBandVHF4, radBandVHF5, radBandVHF6,
+                radBandVHF7, radBandVHF8, radBandVHF9, radBandVHF10, radBandVHF11, radBandVHF12, radBandVHF13 };
+            h1RX1VhfButtons = new RadioButtonTS[14];
+            for (int i = 0; i < 14; i++)
+            {
+                RadioButtonTS b = new RadioButtonTS();
+                b.Name = "radRX1BandVHF" + i.ToString();
+                b.Tag = "VHF" + i.ToString();
+                b.Text = src[i].Text;
+                b.Appearance = src[i].Appearance;
+                b.FlatStyle = src[i].FlatStyle;
+                b.FlatAppearance.BorderSize = 0;
+                b.Font = src[i].Font;
+                b.ForeColor = src[i].ForeColor;
+                b.BackColor = src[i].BackColor;
+                b.TextAlign = src[i].TextAlign;
+                b.Size = src[i].Size;
+                b.TabStop = false;
+                b.Location = new Point(10 + 51 * pos[i][0], 8 + 23 * pos[i][1]);
+                int idx = i;
+                b.Click += (s, e) => H1RX1VhfClick(idx);
+                h1RX1VhfPanel.Controls.Add(b);
+                h1RX1VhfButtons[i] = b;
+            }
+            ButtonTS toHf = new ButtonTS();
+            toHf.Name = "btnRX1BandHF";
+            toHf.Text = btnBandHF.Text;
+            toHf.FlatStyle = btnBandHF.FlatStyle;
+            toHf.FlatAppearance.BorderSize = 0;
+            toHf.Font = btnBandHF.Font; toHf.ForeColor = btnBandHF.ForeColor; toHf.BackColor = btnBandHF.BackColor;
+            toHf.Size = btnBandHF.Size; toHf.TabStop = false;
+            toHf.Location = new Point(10, 100);
+            toHf.Click += (s, e) => { h1RX1VhfPage = false; H1SyncRX1BandButtons(); H1RX1BandVis(h1RX1BandShown); btnHidden.Focus(); };
+            h1RX1VhfPanel.Controls.Add(toHf);
+
+            ButtonTS toVhf = new ButtonTS();
+            toVhf.Name = "btnRX1BandVHF";
+            toVhf.Text = btnBandVHF.Text;
+            toVhf.FlatStyle = btnBandVHF.FlatStyle;
+            toVhf.FlatAppearance.BorderSize = 0;
+            toVhf.Font = btnBandVHF.Font; toVhf.ForeColor = btnBandVHF.ForeColor; toVhf.BackColor = btnBandVHF.BackColor;
+            toVhf.Size = btnBandVHF.Size; toVhf.TabStop = false;
+            toVhf.Location = new Point(10, 100);
+            toVhf.Click += (s, e) => { h1RX1VhfPage = true; H1RX1BandVis(h1RX1BandShown); btnHidden.Focus(); };
+            h1RX1BandPanel.Controls.Add(toVhf);
+            H1SyncRX1BandButtons();
+        }
+
+        private void H1RX1BandClick(int i)
+        {
+            if (h1RX1BandButtons == null || i < 0 || i >= h1RX1BandButtons.Length) return;
+            string tag = h1RX1BandButtons[i].Tag as string;
+            if (tag != null)
+            {
+                // H1: a real radio click checks the legacy button first (its CheckedChanged runs the
+                // desk/band bookkeeping) and then the click handler asks the band stack for the band.
+                RadioButtonTS twin = h1RX1BandTwins != null ? h1RX1BandTwins[i] : null;
+                if (twin != null && !twin.Checked) twin.Checked = true;
+                // H1: the legacy radios are hidden data holders - PerformClick on a hidden control
+                // does nothing. Go through the same entry point their click handlers use.
+                Band b = BandStackManager.StringToBand(tag);
+                BandPreChangeHandlers?.Invoke(1, b);
+            }
+            H1SyncRX1BandButtons();
+        }
+
+        private void H1RX1VhfClick(int i)
+        {
+            RadioButtonTS[] src = new RadioButtonTS[] { radBandVHF0, radBandVHF1, radBandVHF2, radBandVHF3, radBandVHF4, radBandVHF5, radBandVHF6,
+                radBandVHF7, radBandVHF8, radBandVHF9, radBandVHF10, radBandVHF11, radBandVHF12, radBandVHF13 };
+            if (i >= 0 && i < src.Length && src[i].Enabled)
+            {
+                if (!src[i].Checked) src[i].Checked = true;
+                BandPreChangeHandlers?.Invoke(1, BandStackManager.StringToBand("VHF" + i.ToString()));
+            }
+            H1SyncRX1BandButtons();
+        }
+
+        private void H1SyncRX1BandButtons()
+        {
+            if (h1RX1BandButtons == null) return;
+            if (h1RX1BandPanel.BackColor != panelBandHF.BackColor) h1RX1BandPanel.BackColor = panelBandHF.BackColor;
+            if (h1RX1VhfPanel != null && h1RX1VhfPanel.BackColor != panelBandVHF.BackColor) h1RX1VhfPanel.BackColor = panelBandVHF.BackColor;
+            string sb = BandToString(rx1_band);
+            if (h1RX1SyncBand != sb)
+            {
+                h1RX1SyncBand = sb;
+                if (sb.StartsWith("VHF")) h1RX1VhfPage = true;
+                else foreach (RadioButtonTS b in h1RX1BandButtons) if ((string)b.Tag == sb) { h1RX1VhfPage = false; break; }
+            }
+            for (int bi = 0; bi < h1RX1BandButtons.Length; bi++)
+            {
+                RadioButtonTS b = h1RX1BandButtons[bi];
+                RadioButtonTS s = h1RX1BandTwins[bi];
+                // H1: the skin is applied after these buttons are created - keep taking the twin's
+                // dressed state (image, appearance, colours) so the H1 panel looks like the legacy one
+                if (s != null)
+                {
+                    if (b.Appearance != s.Appearance) b.Appearance = s.Appearance;
+                    if (b.FlatStyle != s.FlatStyle) b.FlatStyle = s.FlatStyle;
+                    if (b.Image != s.Image) b.Image = s.Image;
+                    if (b.ImageAlign != s.ImageAlign) b.ImageAlign = s.ImageAlign;
+                    if (b.TextAlign != s.TextAlign) b.TextAlign = s.TextAlign;
+                    if (b.Font != s.Font) b.Font = s.Font;
+                    if (b.ForeColor != s.ForeColor) b.ForeColor = s.ForeColor;
+                    if (b.BackColor != s.BackColor) b.BackColor = s.BackColor;
+                }
+                bool on = string.Equals((string)b.Tag, sb, StringComparison.Ordinal);
+                if (b.Checked != on) b.Checked = on;
+            }
+            if (h1RX1VhfButtons != null)
+            {
+                RadioButtonTS[] src = new RadioButtonTS[] { radBandVHF0, radBandVHF1, radBandVHF2, radBandVHF3, radBandVHF4, radBandVHF5, radBandVHF6,
+                    radBandVHF7, radBandVHF8, radBandVHF9, radBandVHF10, radBandVHF11, radBandVHF12, radBandVHF13 };
+                for (int i = 0; i < h1RX1VhfButtons.Length; i++)
+                {
+                    RadioButtonTS b = h1RX1VhfButtons[i];
+                    if (b.Text != src[i].Text) b.Text = src[i].Text;
+                    if (b.Image != src[i].Image) b.Image = src[i].Image;
+                    if (b.ImageAlign != src[i].ImageAlign) b.ImageAlign = src[i].ImageAlign;
+                    if (b.Appearance != src[i].Appearance) b.Appearance = src[i].Appearance;
+                    if (b.ForeColor != src[i].ForeColor) b.ForeColor = src[i].ForeColor;
+                    if (b.BackColor != src[i].BackColor) b.BackColor = src[i].BackColor;
+                    bool en = false;
+                    try { en = XVTRForm.GetEnabled(i) && !_vfoA_lock; } catch { en = false; }
+                    if (b.Enabled != en) b.Enabled = en;
+                    bool on = string.Equals((string)b.Tag, sb, StringComparison.Ordinal);
+                    if (b.Checked != on) b.Checked = on;
+                }
+            }
+            H1RX1BandVis(h1RX1BandShown);
+        }
+
+        private void H1RX1BandVis(bool visible)
+        {
+            h1RX1BandShown = visible;
+            if (h1RX1BandPanel != null) h1RX1BandPanel.Visible = visible && !h1RX1VhfPage;
+            if (h1RX1VhfPanel != null)
+            {
+                h1RX1VhfPanel.Visible = visible && h1RX1VhfPage;
+                if (h1RX1VhfPanel.Visible)
+                {
+                    if (h1RX1BandPanel != null) h1RX1VhfPanel.Size = h1RX1BandPanel.Size;
+                    foreach (Control c in h1RX1VhfPanel.Controls) { c.Visible = true; c.BringToFront(); }
+                    h1RX1VhfPanel.BringToFront();
+                }
+            }
+        }
+
+
         // H1: the controls the RX2 side owns. Disabled, not hidden, while nothing is on the
         // second slice: each one's Enabled is remembered so RX2-on keeps the mode and band logic.
         private readonly System.Collections.Generic.Dictionary<Control, bool> h1RX2EnableSave =
@@ -7515,6 +7732,21 @@ namespace Thetis
             panelBandHF.Location = new Point(2, Y0 + 17);
             panelBandGEN.Location = new Point(2, Y0 + 17);
             panelBandVHF.Location = new Point(2, Y0 + 17);
+            // H1 (user 2026-11-08): RX1's band menu is the H1 panel now; the legacy panels stay hidden
+            // data holders (their radio buttons are what the band setup and the rest of the console use).
+            panelBandHF.Visible = false;
+            panelBandGEN.Visible = false;
+            panelBandVHF.Visible = false;
+            if (h1RX1BandPanel != null)
+            {
+                h1RX1BandPanel.Size = panelBandHF.Size;
+                h1RX1VhfPanel.Size = panelBandHF.Size;
+                h1RX1BandPanel.Location = new Point(2, Y0 + 17);
+                h1RX1VhfPanel.Location = new Point(2, Y0 + 17);
+                h1RX1BandPanel.BringToFront();
+                H1SyncRX1BandButtons();
+                H1RX1BandVis(!LegacyItemController.HideBands);
+            }
             panelDisplay2.Size = new Size(160, 76); // H1: room for the CTUN beside AVG and Peaks
             panelDisplay2.Location = new Point(12, Y0 + 170);
             H1Put(chkFWCATU, panelDisplay2, 104, 28); // H1: the CTUN tick, level with AVG and Peaks
@@ -10778,6 +11010,7 @@ namespace Thetis
                     break;
 
             }
+                    H1SyncRX1BandButtons();
         }
         public Band RX1BandForVFOB()
         {
