@@ -60279,8 +60279,14 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int vfoa_sub_high_x = 0;
                                 getFilterEdgesInPixels(e, ref low_x, ref high_x, ref vfoa_sub_x, ref vfoa_sub_low_x, ref vfoa_sub_high_x);
 
+                                // H1 (user 2026-11-08): with RX1 switched off RX2 owns the whole pane -
+                                // the spectrum-tune strip lives at the top of the PANE, not at half
+                                // height. Using the split-view offset here made every drag in the upper
+                                // half a centre-frequency drag, which is what broke CTUN with RX1 off.
+                                int h1Rx2PaneTop = (PowerOn && !_rx1Active && RX2Enabled) ? 0
+                                    : (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);
                                 bool bOverTopOfDragSpectrum = false;
-                                if (bOverRX2 && e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15))
+                                if (bOverRX2 && e.Y < h1Rx2PaneTop + 15)
                                     bOverTopOfDragSpectrum = true;
                                 else if (bOverRX1 && e.Y < 15)
                                     bOverTopOfDragSpectrum = true;
@@ -60292,9 +60298,10 @@ private void incrementMutliMeterDisplayModeRX2()
                                         spectrum_drag_last_x = e.X;
                                         if (_click_tune_rx2_display)
                                         {
-                                            if (e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15))
+                                            if (e.Y < h1Rx2PaneTop + 15)
                                             {
                                                 rx2_spectrum_tune_drag = true;
+                                                H1SpacePttTrace("ctundrag: rx2 SPECTRUM-TUNE (centre) y=" + e.Y + " paneTop=" + h1Rx2PaneTop + " ctun=" + _click_tune_rx2_display);
                                                 next_cursor = Cursors.SizeWE;
                                             }
                                             else
@@ -60302,6 +60309,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                                 if (!(Common.ShiftKeyDown && (e.X > low_x && e.X < high_x))) // ignore if shift down, so that we move the filter, and not the frequency MW0LGE_21k9d
                                                 {
                                                     rx2_click_tune_drag = true;
+                                                    H1SpacePttTrace("ctundrag: rx2 PASSBAND (ctun) y=" + e.Y + " paneTop=" + h1Rx2PaneTop + " ctun=" + _click_tune_rx2_display);
                                                     next_cursor = grabbing;
                                                 }
                                                 else
@@ -62033,7 +62041,9 @@ private void incrementMutliMeterDisplayModeRX2()
                 #endregion
 
                 // top drag area - this will override hover over filter
-                if (bOverRX2 && e.Y < ((Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2) + 15))
+                int h1Rx2PaneTopMove = (PowerOn && !_rx1Active && RX2Enabled) ? 0
+                    : (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);
+                if (bOverRX2 && e.Y < h1Rx2PaneTopMove + 15)
                     next_cursor = Cursors.SizeWE;
                 else if (bOverRX1 && e.Y < 15)
                     next_cursor = Cursors.SizeWE;
