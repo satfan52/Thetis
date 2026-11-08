@@ -6480,6 +6480,14 @@ namespace Thetis
         private void H1RX1BandVis(bool visible)
         {
             h1RX1BandShown = visible;
+            // H1 (user 2026-11-08): the full-screen sweep hides every panel; a band sync during the
+            // full-screen view must not bring the band menu back over the panafall.
+            if (_h1FullScreenPanafall || collapsedDisplay || _iscollapsed)
+            {
+                if (h1RX1BandPanel != null) h1RX1BandPanel.Visible = false;
+                if (h1RX1VhfPanel != null) h1RX1VhfPanel.Visible = false;
+                return;
+            }
             if (h1RX1BandPanel != null) h1RX1BandPanel.Visible = visible && !h1RX1VhfPage;
             if (h1RX1VhfPanel != null)
             {
@@ -6996,6 +7004,12 @@ namespace Thetis
         private void H1RX2BandVis(bool visible)
         {
             h1RX2BandShown = visible;
+            if (_h1FullScreenPanafall || collapsedDisplay || _iscollapsed)
+            {
+                if (h1RX2BandPanel != null) h1RX2BandPanel.Visible = false;
+                if (h1RX2VhfPanel != null) h1RX2VhfPanel.Visible = false;
+                return;
+            }
             if (h1RX2BandPanel != null) h1RX2BandPanel.Visible = visible && !h1RX2VhfPage;
             if (h1RX2VhfPanel != null)
             {
@@ -8893,7 +8907,11 @@ namespace Thetis
 
             int left = panelDisplay.Left + pnlDisplay.Left;
             int top = panelDisplay.Top + pnlDisplay.Top + H1ListenMargin;
-            int x = left + pnlDisplay.Width - H1ListenMargin - H1FsW;
+            // H1 (user 2026-11-08): in the two-column eight-DDC view each strip belongs to its own
+            // receiver's cell - RX1 and RX2 live in the LEFT column, rows 1 and 2 - not to the right
+            // edge of the whole display (that put them inside DDC5 and DDC6).
+            int stripWidth = Display.H1EightRows ? pnlDisplay.Width / 2 : pnlDisplay.Width;
+            int x = left + stripWidth - H1ListenMargin - H1FsW;
             // H1 (user report 2026-10-05): with the eight rows up, RX2's strip rides on RX2's own
             // row (row 2); the half-way anchor belongs to the old two-panafall view
             int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);
@@ -62412,9 +62430,13 @@ private void incrementMutliMeterDisplayModeRX2()
                     {
                         float start_freq = PixelToHz(spectrum_drag_last_x, 2);
                         float end_freq = PixelToHz(e.X, 2);
-                        spectrum_drag_last_x = e.X;
                         float delta = end_freq - start_freq;
-                        VFOBFreq -= delta * 0.0000010;
+                        // H1 (user 2026-11-08): the eight-DDC cell draws RX2's window on the pane-wide
+                        // frequency scale but half the width, which ran its drag the opposite way;
+                        // measured against the drawn window, RX2 needs the RX1 sign there.
+                        if (Display.H1EightRows) VFOBFreq += delta * 0.0000010;
+                        else VFOBFreq -= delta * 0.0000010;
+                        spectrum_drag_last_x = e.X;
                     }
                 }
 
@@ -62436,9 +62458,10 @@ private void incrementMutliMeterDisplayModeRX2()
                     {
                         float start_freq = PixelToHz(spectrum_drag_last_x, 2);
                         float end_freq = PixelToHz(e.X, 2);
-                        spectrum_drag_last_x = e.X;
                         float delta = start_freq - end_freq;
-                        VFOBFreq -= delta * 0.0000010;
+                        if (Display.H1EightRows) VFOBFreq += delta * 0.0000010;
+                        else VFOBFreq -= delta * 0.0000010;
+                        spectrum_drag_last_x = e.X;
                     }
                 }
                 #endregion
