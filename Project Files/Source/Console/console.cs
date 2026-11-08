@@ -6370,6 +6370,8 @@ namespace Thetis
         // the same dim the power-off veil uses, over the right strip and the block below it.
         private PowerDimOverlay h1RX1VeilTop;
         private PowerDimOverlay h1RX1VeilLeft;
+        private PowerDimOverlay h1RX1VeilBands;   // RX1 BANDS + RX1 PANAFALL, bottom left
+        private PowerDimOverlay h1RX1VeilAudio;   // VAC1 AUDIO block, bottom left
         private PowerDimOverlay h1RX2VeilStrip;
         private PowerDimOverlay h1RX2VeilBelow;
         private PowerDimOverlay h1RX2VeilTop;
@@ -6460,6 +6462,22 @@ namespace Thetis
             h1RX1VeilLeft.DimAlpha = 115;
             h1RX1VeilLeft.Visible = false;
             this.Controls.Add(h1RX1VeilLeft);
+
+            // H1 (user 2026-11-08): the bottom band keeps RX1-only sections outside the top/left
+            // veils - they wear the same dim so the whole RX1 side goes grey together.
+            h1RX1VeilBands = new PowerDimOverlay(this);
+            h1RX1VeilBands.Name = "h1RX1VeilBands";
+            h1RX1VeilBands.DrawPowerButton = false;
+            h1RX1VeilBands.DimAlpha = 115;
+            h1RX1VeilBands.Visible = false;
+            this.Controls.Add(h1RX1VeilBands);
+
+            h1RX1VeilAudio = new PowerDimOverlay(this);
+            h1RX1VeilAudio.Name = "h1RX1VeilAudio";
+            h1RX1VeilAudio.DrawPowerButton = false;
+            h1RX1VeilAudio.DimAlpha = 115;
+            h1RX1VeilAudio.Visible = false;
+            this.Controls.Add(h1RX1VeilAudio);
         }
 
         private void H1PlaceRX2Veil()
@@ -6526,6 +6544,27 @@ namespace Thetis
             }
         }
 
+        // H1: a control's rectangle in console-client coordinates, empty when it cannot be seen.
+        private Rectangle H1VisibleClientBounds(Control c)
+        {
+            if (c == null || !c.Visible) return Rectangle.Empty;
+            Point p = c.Parent == null ? c.Location : c.Parent.PointToScreen(c.Location);
+            Point o = PointToScreen(Point.Empty);
+            return new Rectangle(p.X - o.X, p.Y - o.Y, c.Width, c.Height);
+        }
+
+        private Rectangle H1UnionClientBounds(Control[] cs)
+        {
+            Rectangle r = Rectangle.Empty;
+            foreach (Control c in cs)
+            {
+                Rectangle b = H1VisibleClientBounds(c);
+                if (b.IsEmpty) continue;
+                r = r.IsEmpty ? b : Rectangle.Union(r, b);
+            }
+            return r;
+        }
+
         private void H1PlaceRX1Veil()
         {
             if (h1RX1VeilTop == null || h1RX1VeilLeft == null) return;
@@ -6548,24 +6587,45 @@ namespace Thetis
             h1RX1VeilLeft.Bounds = new Rectangle(0, panelDisplay.Top,
                 Math.Max(0, panelDisplay.Left), Math.Max(0, panelDisplay.Height));
 
+            // H1: bottom band, left block - RX1 BANDS and RX1 PANAFALL (captions poke above the
+            // panels, so the veil reaches up over them)
+            Rectangle h1bands = H1UnionClientBounds(new Control[] { panelBandHF, panelBandGEN, panelBandVHF, panelDisplay2 });
+            if (!h1bands.IsEmpty) h1RX1VeilBands.Bounds = Rectangle.Inflate(h1bands, 8, 8);
+            Rectangle h1bandsFull = h1RX1VeilBands.Bounds;
+            h1RX1VeilBands.Bounds = new Rectangle(h1bandsFull.X, h1bandsFull.Y - 22,
+                h1bandsFull.Width, h1bandsFull.Height + 22);
+
+            // H1: the VAC1 AUDIO block with its squelch row and the VAC pill
+            Rectangle h1audio = H1UnionClientBounds(new Control[] { panelMultiRX, chkSquelch, ptbSquelch, picSquelch, chkVAC1 });
+            if (!h1audio.IsEmpty) h1RX1VeilAudio.Bounds = Rectangle.Inflate(h1audio, 10, 8);
+            Rectangle h1audioFull = h1RX1VeilAudio.Bounds;
+            h1RX1VeilAudio.Bounds = new Rectangle(h1audioFull.X, h1audioFull.Y - 26,
+                h1audioFull.Width, h1audioFull.Height + 26);
+
             if (h1RX1VeilTop.Visible)
             {
                 h1RX1VeilTop.Push();
                 h1RX1VeilLeft.Push();
+                h1RX1VeilBands.Push();
+                h1RX1VeilAudio.Push();
                 h1RX1VeilTop.BringToFront();
                 h1RX1VeilLeft.BringToFront();
+                h1RX1VeilBands.BringToFront();
+                h1RX1VeilAudio.BringToFront();
             }
         }
 
         /// <summary>H1: RX1's controls dim while RX1 is off, exactly like RX2's do (option-driven).</summary>
         private void H1UpdateRX1Veil()
         {
-            if (h1RX1VeilTop == null || h1RX1VeilLeft == null) return;
+            if (h1RX1VeilTop == null || h1RX1VeilLeft == null || h1RX1VeilBands == null || h1RX1VeilAudio == null) return;
             bool show = PowerOn && !_rx1Active && LegacyItemController.DimUnusedReceivers;
-            if (h1RX1VeilTop.Visible != show)
+            if (h1RX1VeilTop.Visible != show || h1RX1VeilBands.Visible != show || h1RX1VeilAudio.Visible != show)
             {
                 h1RX1VeilTop.Visible = show;
                 h1RX1VeilLeft.Visible = show;
+                h1RX1VeilBands.Visible = show;
+                h1RX1VeilAudio.Visible = show;
             }
             if (show) H1PlaceRX1Veil();
         }
