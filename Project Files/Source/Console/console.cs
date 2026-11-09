@@ -8521,18 +8521,22 @@ namespace Thetis
         private CheckBoxTS h1fsCtun1, h1fsCtun2;
         private bool _h1fsBuilt = false;
         private bool _h1fsSync = false;
-        private const int H1FsW = 194;      // the whole strip
-        private const int H1FsComboW = 62;  // a dropdown - 94 read as oversized on the panafall
-        private const int H1FsGap = 6;
-        private const int H1FsPillW = 45;
-        private const int H1FsPillGap = 3;
-        // H1 (user 2026-11-09): the block was two unlabelled sliders side by side. Redesigned as one
-        // row per slider - caption, slider, value - so the AGC and AF settings and their numbers read
-        // straight off the strip: 26 + 6 + 124 + 6 + 32 = 194 (the strip width).
-        private const int H1FsCapW = 26;    // "AGC" / "AF" caption
-        private const int H1FsSliderW = 124; // a slider
-        private const int H1FsValW = 32;    // the slider's value, right aligned
-        private const int H1FsRowH = 24;    // one caption/slider/value row
+        // H1 (user 2026-11-09): the strip used to be a 194x92 block in the top-right corner of every
+        // cell. It is two slim rows now, 256x36, so the spectrum keeps its height: row 1 carries the
+        // band / mode dropdowns, CTUN and the NR / ANF / NB / BIN pills; row 2 carries the AGC and AF
+        // sliders, each with its caption and value.
+        private const int H1FsW = 268;      // the whole strip
+        private const int H1FsComboW = 46;  // band / mode dropdown
+        private const int H1FsGap = 4;
+        private const int H1FsPillW = 28;   // NR / ANF / NB / BIN (default width)
+        private const int H1FsPillGap = 2;
+        private const int H1FsCtunW = 38;   // the CTUN pill
+        private const int H1FsCapW = 24;    // "AGC" / "AF" caption
+        private const int H1FsSliderW = 76; // a slider
+        private const int H1FsValW = 22;    // the slider's value, right aligned
+        private const int H1FsRowH = 20;    // distance between the two rows
+        private const int H1FsCtrlH = 18;   // combo / pill height
+        private const int H1FsTagH = 16;    // caption / value / slider height
 
         private static readonly string[] H1FsBandNames = { "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m" };
         private static readonly Band[] H1FsBands = { Band.B160M, Band.B80M, Band.B60M, Band.B40M, Band.B30M, Band.B20M, Band.B17M, Band.B15M, Band.B12M, Band.B10M, Band.B6M };
@@ -8564,18 +8568,20 @@ namespace Thetis
             h1fsAfCap2 = H1FsNewLabel("h1fsAfCap2", "AF", false);
             h1fsAfVal2 = H1FsNewLabel("h1fsAfVal2", "", true);
 
-            h1fsNr1 = H1FsNewPill("h1fsNr1", "NR");
-            h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF");
-            h1fsNb1 = H1FsNewPill("h1fsNb1", "NB");
-            h1fsBin1 = H1FsNewPill("h1fsBin1", "BIN");
-            h1fsNr2 = H1FsNewPill("h1fsNr2", "NR");
-            h1fsAnf2 = H1FsNewPill("h1fsAnf2", "ANF");
-            h1fsNb2 = H1FsNewPill("h1fsNb2", "NB");
-            h1fsBin2 = H1FsNewPill("h1fsBin2", "BIN");
+            h1fsNr1 = H1FsNewPill("h1fsNr1", "NR", 28);
+            h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF", 32);
+            h1fsNb1 = H1FsNewPill("h1fsNb1", "NB", 26);
+            h1fsBin1 = H1FsNewPill("h1fsBin1", "BIN", 30);
+            h1fsNr2 = H1FsNewPill("h1fsNr2", "NR", 28);
+            h1fsAnf2 = H1FsNewPill("h1fsAnf2", "ANF", 32);
+            h1fsNb2 = H1FsNewPill("h1fsNb2", "NB", 26);
+            h1fsBin2 = H1FsNewPill("h1fsBin2", "BIN", 30);
             // H1 (user 2026-10-05): CTUN belongs on the strip - it is the one display control
             // that changes what a click on the panafall does. chkFWCATU is RX1's tick, chkX2TR RX2's.
             h1fsCtun1 = H1FsNewPill("h1fsCtun1", "CTUN");
             h1fsCtun2 = H1FsNewPill("h1fsCtun2", "CTUN");
+            h1fsCtun1.Size = new Size(H1FsCtunW, H1FsCtrlH);
+            h1fsCtun2.Size = new Size(H1FsCtunW, H1FsCtrlH);
 
             h1fsBand1.SelectedIndexChanged += H1FsBandChanged;
             h1fsBand2.SelectedIndexChanged += H1FsBandChanged;
@@ -8614,8 +8620,8 @@ namespace Thetis
             c.FlatStyle = FlatStyle.Flat;
             c.BackColor = Color.FromArgb(24, 26, 30);
             c.ForeColor = Color.FromArgb(170, 178, 188);
-            c.Font = new Font("Segoe UI", 8.25f);
-            c.Size = new Size(H1FsComboW, 20);
+            c.Font = new Font("Segoe UI", 7.5f);
+            c.Size = new Size(H1FsComboW, H1FsCtrlH);
             c.Visible = false;
             c.TabStop = false;
             foreach (string it in items) c.Items.Add(it);
@@ -8632,7 +8638,7 @@ namespace Thetis
             // only produced a light grey slab on the dark panafall, so the strip dresses its own:
             // a dark bed and a real thumb, which is the one thing the class knows how to move.
             t.Name = name;
-            t.Size = new Size(H1FsSliderW, 24);
+            t.Size = new Size(H1FsSliderW, H1FsTagH);
             t.Visible = false;
             t.TabStop = false;
             Controls.Add(t);
@@ -8646,9 +8652,9 @@ namespace Thetis
             l.Name = name;
             l.Text = text;
             l.AutoSize = false;
-            l.Size = new Size(rightAligned ? H1FsValW : H1FsCapW, 20);
+            l.Size = new Size(rightAligned ? H1FsValW : H1FsCapW, H1FsTagH);
             l.TextAlign = rightAligned ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft;
-            l.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            l.Font = new Font("Segoe UI", 7f, FontStyle.Bold);
             l.BackColor = Color.FromArgb(22, 26, 32);   // the slider bed, so the row reads as one block
             l.ForeColor = rightAligned ? Color.FromArgb(255, 200, 0) : Color.FromArgb(175, 182, 192);
             l.Visible = false;
@@ -8657,14 +8663,14 @@ namespace Thetis
             return l;
         }
 
-        private CheckBoxTS H1FsNewPill(string name, string text)
+        private CheckBoxTS H1FsNewPill(string name, string text, int width = 0)
         {
             CheckBoxTS c = NewSubPill(name, text);
             // H1 (user 2026-10-05): the pill dress copied from chkNR leaves the checked state as the
             // flat style's default light fill with near-white text on it - the button went blank
             // white with no readable label. The strip sets both states explicitly instead.
-            c.Size = new Size(H1FsPillW, 18);
-            c.Font = new Font("Segoe UI", 7.5f);
+            c.Size = new Size(width > 0 ? width : H1FsPillW, H1FsCtrlH);
+            c.Font = new Font("Segoe UI", 7f);
             c.UseVisualStyleBackColor = false;
             c.BackColor = Color.FromArgb(38, 42, 48);
             c.ForeColor = Color.FromArgb(175, 182, 192);
@@ -8993,31 +8999,29 @@ namespace Thetis
             Label afCap, H1FsSlider af, Label afVal,
             CheckBoxTS nr, CheckBoxTS anf, CheckBoxTS nb, CheckBoxTS bin, int x, int y)
         {
+            // row 1: band, mode, CTUN, NR, ANF, NB, BIN
             band.Location = new Point(x, y);
-            mode.Location = new Point(x + H1FsComboW + H1FsGap, y);
-            // the CTUN tick takes the rest of the row, level with the dropdowns
+            int mx = x + H1FsComboW + H1FsGap;
+            mode.Location = new Point(mx, y);
             CheckBoxTS ctun = (band == h1fsBand1) ? h1fsCtun1 : h1fsCtun2;
-            if (ctun != null) ctun.Location = new Point(x + 2 * (H1FsComboW + H1FsGap) + 2, y + 1);
-
-            // H1 (user 2026-11-09): one row per slider - caption, slider, value.
-            int sx = x + H1FsCapW + H1FsGap;
-            int vx = x + H1FsCapW + H1FsGap + H1FsSliderW + H1FsGap;
-            int ry = y + H1FsRowH;
-            agcCap.Location = new Point(x, ry + 2);
-            agc.Location = new Point(sx, ry);
-            agcVal.Location = new Point(vx, ry + 2);
-            ry += H1FsRowH;
-            afCap.Location = new Point(x, ry + 2);
-            af.Location = new Point(sx, ry);
-            afVal.Location = new Point(vx, ry + 2);
-
-            int px = x;
-            int py = y + 2 * H1FsRowH + 26;
+            int cx = mx + H1FsComboW + H1FsGap;
+            if (ctun != null) ctun.Location = new Point(cx, y);
+            int px = cx + H1FsCtunW + H1FsGap;
             foreach (CheckBoxTS c in new CheckBoxTS[] { nr, anf, nb, bin })
             {
-                c.Location = new Point(px, py);
+                c.Location = new Point(px, y);
                 px += H1FsPillW + H1FsPillGap;
             }
+
+            // row 2: AGC caption/slider/value then AF caption/slider/value
+            int ry = y + H1FsRowH;
+            agcCap.Location = new Point(x, ry);
+            agc.Location = new Point(x + H1FsCapW + 2, ry);
+            agcVal.Location = new Point(x + H1FsCapW + 2 + H1FsSliderW + 2, ry);
+            int ax = x + H1FsCapW + 2 + H1FsSliderW + 2 + H1FsValW + H1FsGap;
+            afCap.Location = new Point(ax, ry);
+            af.Location = new Point(ax + H1FsCapW + 2, ry);
+            afVal.Location = new Point(ax + H1FsCapW + 2 + H1FsSliderW + 2, ry);
         }
 
         // H1 (user 2026-11-09): the small cell S-meters of the full-window view. The console is the
