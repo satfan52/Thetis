@@ -241,6 +241,10 @@ namespace Thetis
     public static bool RX1Inactive = false;   // H1: RX1 switched off - RX2 owns the whole pane
         public static readonly bool[] h1row_wf_fresh = new bool[8];      // a row has a new waterfall line to add
         public static readonly double[] H1RowCentreMHz = new double[8];  // per-row centre, for the scale label
+        // H1 (user 2026-11-09): independent zoom for the DDC1 and DDC2 cells of the full-window view.
+        // 1.0 = the receiver's normal span; the console's ZOOM sliders set these. The cell span is
+        // anchored on the middle of the box (user choice 2A) and only the drawing/mapping changes.
+        public static readonly double[] H1CellZoom = new double[2] { 1.0, 1.0 };
         public static float[][] h1row_display_data = new float[6][];          // stream order (streams 2..7)
         public static float[][] h1row_current_display_data = new float[6][];
         public static float[][] h1row_waterfall_data = new float[6][];
@@ -6704,6 +6708,22 @@ namespace Thetis
                     data = h1row_current_display_data[r - 2]; wfData = h1row_current_waterfall_data[r - 2]; hasWf = h1row_waterfall_data[r - 2] != null;
                 }
 
+                // H1 (user 2026-11-09): the cell's visible span. DDC1/DDC2 can be zoomed about the
+                // middle of the box, independently of each other; the trace, windows, scales and the
+                // console's click/drag mapping all use this span. Other rows keep the base span.
+                int h1BaseLow = r == 1 ? rx2_display_low : rx_display_low;
+                int h1BaseHigh = r == 1 ? rx2_display_high : rx_display_high;
+                double h1Zoom = r <= 1 ? H1CellZoom[r] : 1.0;
+                if (h1Zoom < 1.0) h1Zoom = 1.0;
+                int h1Low = h1BaseLow;
+                int h1High = h1BaseHigh;
+                if (h1Zoom > 1.0001 && h1BaseHigh > h1BaseLow)
+                {
+                    double h1mid = (h1BaseLow + h1BaseHigh) * 0.5;
+                    double h1half = (h1BaseHigh - h1BaseLow) * 0.5 / h1Zoom;
+                    h1Low = (int)(h1mid - h1half);
+                    h1High = (int)(h1mid + h1half);
+                }
                 // spectrum trace - the WHOLE analyser span is mapped across the cell width.
                 // H1 (user 2026-11-09, the 2x4 regression): the cell is half the pane width but the
                 // old loop drew only the first cellW bins of the pane-sized analyser array, so each
@@ -6713,9 +6733,20 @@ namespace Thetis
                 int h1DataLen = Math.Min(h1ValidLen, data == null ? 0 : data.Length);
                 if (data != null && m_bDX2_data_line_pen_brush != null && cellW > 1 && h1DataLen > 1)
                 {
+                    // H1 (user 2026-11-09): zoomed cells sample only the slice of the analyser span
+                    // that the cell now shows, so the trace lines up with the windows and the scales.
+                    int h1Di0 = 0, h1Di1 = h1DataLen - 1;
+                    if (h1High > h1Low && h1BaseHigh > h1BaseLow)
+                    {
+                        h1Di0 = (int)((long)(h1Low - h1BaseLow) * (h1DataLen - 1) / (h1BaseHigh - h1BaseLow));
+                        h1Di1 = (int)((long)(h1High - h1BaseLow) * (h1DataLen - 1) / (h1BaseHigh - h1BaseLow));
+                        if (h1Di0 < 0) h1Di0 = 0;
+                        if (h1Di1 > h1DataLen - 1) h1Di1 = h1DataLen - 1;
+                        if (h1Di1 <= h1Di0) h1Di1 = Math.Min(h1DataLen - 1, h1Di0 + 1);
+                    }
                     for (int i = 0; i < cellW; i++)
                     {
-                        int di = (int)((long)i * h1DataLen / cellW);
+                        int di = h1Di0 + (int)((long)i * (h1Di1 - h1Di0) / cellW);
                         if (di >= h1DataLen) di = h1DataLen - 1;
                         float v = data[di];
                         if (v <= -200.0f) continue;
@@ -6735,6 +6766,7 @@ namespace Thetis
                 bool cellTx = cellMeter && H1MeterTxActive && (r == 0 ? H1MeterTx1 : H1MeterTx2);
                 int captionX = cellMeter ? 20 : 4;
                 int captionY = cellTx ? 16 : 2;
+
                 if (m_bDX2_pana_text_brush != null)
                 {
                     drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, captionX, y0 + captionY);
@@ -6744,8 +6776,7 @@ namespace Thetis
                 // its own dB (vertical) and frequency (horizontal) scales. They use the same mappings
                 // as the trace (grid max at the top, span down to specH-16) and the cell's own span,
                 // so the numbers sit on the content and line up with the tuning windows.
-                H1DrawCellScales(cellW, specH, r == 1 ? rx2_display_low : rx_display_low,
-                    r == 1 ? rx2_display_high : rx_display_high, centre, grid_max, grid_min, cellMeter ? 16 : 0);
+                H1DrawCellScales(cellW, specH, h1Low, h1High, centre, grid_max, grid_min, cellMeter ? 16 : 0);
                 if (cellMeter) H1DrawCellMeters(specH, r);
 
                 // waterfall: colour the new line, scroll the bitmap down one row, draw it
@@ -6757,9 +6788,18 @@ namespace Thetis
                     int h1WfLen = Math.Min(h1ValidLen, wfData == null ? 0 : wfData.Length);
                     if (addRow && cellW > 1 && h1WfLen > 1)
                     {
-                        for (int i = 0; i < cellW; i++)   // one cell pixel covers the whole span
+                        int h1Wf0 = 0, h1Wf1 = h1WfLen - 1;
+                        if (h1High > h1Low && h1BaseHigh > h1BaseLow)
                         {
-                            int di = (int)((long)i * h1WfLen / cellW);
+                            h1Wf0 = (int)((long)(h1Low - h1BaseLow) * (h1WfLen - 1) / (h1BaseHigh - h1BaseLow));
+                            h1Wf1 = (int)((long)(h1High - h1BaseLow) * (h1WfLen - 1) / (h1BaseHigh - h1BaseLow));
+                            if (h1Wf0 < 0) h1Wf0 = 0;
+                            if (h1Wf1 > h1WfLen - 1) h1Wf1 = h1WfLen - 1;
+                            if (h1Wf1 <= h1Wf0) h1Wf1 = Math.Min(h1WfLen - 1, h1Wf0 + 1);
+                        }
+                        for (int i = 0; i < cellW; i++)   // one cell pixel covers the shown slice
+                        {
+                            int di = h1Wf0 + (int)((long)i * (h1Wf1 - h1Wf0) / cellW);
                             if (di >= h1WfLen) di = h1WfLen - 1;
                             float v = wfData[di];
                             int R, G, B;
@@ -6841,8 +6881,6 @@ namespace Thetis
                 if (r <= 1 && !localMox(r == 0 ? 1 : 2))
                 {
                     int h1rx = r == 0 ? 1 : 2;
-                    int h1Low = r == 0 ? rx_display_low : rx2_display_low;
-                    int h1High = r == 0 ? rx_display_high : rx2_display_high;
                     int h1Diff = r == 0 ? freq_diff : rx2_freq_diff;
                     float h1width = h1High - h1Low;
                     if (h1width > 0)

@@ -8514,6 +8514,8 @@ namespace Thetis
 
         private ComboBoxTS h1fsBand1, h1fsMode1, h1fsBand2, h1fsMode2;
         private H1FsSlider h1fsAgc1, h1fsAf1, h1fsAgc2, h1fsAf2;
+        private H1FsSlider h1fsZoom1, h1fsZoom2;              // H1: per-cell zoom, DDC1 and DDC2
+        private Label h1fsZoomCap1, h1fsZoomVal1, h1fsZoomCap2, h1fsZoomVal2;
         private Label h1fsAgcCap1, h1fsAgcVal1, h1fsAfCap1, h1fsAfVal1;
         private Label h1fsAgcCap2, h1fsAgcVal2, h1fsAfCap2, h1fsAfVal2;
         private CheckBoxTS h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1;
@@ -8522,9 +8524,10 @@ namespace Thetis
         private bool _h1fsBuilt = false;
         private bool _h1fsSync = false;
         // H1 (user 2026-11-09): the strip used to be a 194x92 block in the top-right corner of every
-        // cell. It is two slim rows now, 256x36, so the spectrum keeps its height: row 1 carries the
+        // cell. It is three slim rows now, 274x56, so the spectrum keeps its height: row 1 carries the
         // band / mode dropdowns, CTUN and the NR / ANF / NB / BIN pills; row 2 carries the AGC and AF
-        // sliders, each with its caption and value.
+        // sliders, each with its caption and value; row 3 carries the cell's own ZOOM slider - DDC1's
+        // and DDC2's zooms are independent of each other and of the receiver pairs.
         private const int H1FsW = 274;      // the whole strip
         private const int H1FsComboW = 46;  // band / mode dropdown
         private const int H1FsGap = 4;
@@ -8533,10 +8536,11 @@ namespace Thetis
         private const int H1FsCtunW = 38;   // the CTUN pill
         private const int H1FsCapW = 24;    // "AGC" / "AF" caption
         private const int H1FsSliderW = 76; // a slider
-        private const int H1FsValW = 22;    // the slider's value, right aligned
+        private const int H1FsValW = 28;    // the slider's value, right aligned
         private const int H1FsRowH = 20;    // distance between the two rows
         private const int H1FsCtrlH = 18;   // combo / pill height
         private const int H1FsTagH = 16;    // caption / value / slider height
+        private const int H1FsZoomCapW = 34; // "ZOOM" caption width (the third strip row)
 
         private static readonly string[] H1FsBandNames = { "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m" };
         private static readonly Band[] H1FsBands = { Band.B160M, Band.B80M, Band.B60M, Band.B40M, Band.B30M, Band.B20M, Band.B17M, Band.B15M, Band.B12M, Band.B10M, Band.B6M };
@@ -8568,6 +8572,17 @@ namespace Thetis
             h1fsAfCap2 = H1FsNewLabel("h1fsAfCap2", "AF", false);
             h1fsAfVal2 = H1FsNewLabel("h1fsAfVal2", "", true);
 
+            // H1 (user 2026-11-09): the cell's own zoom, independent per cell (choice 1B, anchored on
+            // the middle of the box - choice 2A). Display only: no analyser, filter or audio change.
+            h1fsZoom1 = H1FsNewSlider("h1fsZoom1");
+            h1fsZoom2 = H1FsNewSlider("h1fsZoom2");
+            h1fsZoom1.Minimum = 0; h1fsZoom1.Maximum = 100;
+            h1fsZoom2.Minimum = 0; h1fsZoom2.Maximum = 100;
+            h1fsZoomCap1 = H1FsNewLabel("h1fsZoomCap1", "ZOOM", false, H1FsZoomCapW);
+            h1fsZoomVal1 = H1FsNewLabel("h1fsZoomVal1", "", true, 34);
+            h1fsZoomCap2 = H1FsNewLabel("h1fsZoomCap2", "ZOOM", false, H1FsZoomCapW);
+            h1fsZoomVal2 = H1FsNewLabel("h1fsZoomVal2", "", true, 34);
+
             h1fsNr1 = H1FsNewPill("h1fsNr1", "NR", 34);   // wide enough for the NR1..NR4 suffix
             h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF", 32);
             h1fsNb1 = H1FsNewPill("h1fsNb1", "NB", 26);
@@ -8591,6 +8606,8 @@ namespace Thetis
             h1fsAf1.ValueChanged += H1FsSliderChanged;
             h1fsAgc2.ValueChanged += H1FsSliderChanged;
             h1fsAf2.ValueChanged += H1FsSliderChanged;
+            h1fsZoom1.ValueChanged += H1FsZoomChanged;
+            h1fsZoom2.ValueChanged += H1FsZoomChanged;
             foreach (CheckBoxTS hp in new CheckBoxTS[] { h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun1, h1fsCtun2 })
             {
                 hp.MouseEnter += H1FsPillHover;
@@ -8646,13 +8663,13 @@ namespace Thetis
         }
 
         // H1 (user 2026-11-09): a strip caption ("AGC"/"AF") or a right-aligned slider value.
-        private Label H1FsNewLabel(string name, string text, bool rightAligned)
+        private Label H1FsNewLabel(string name, string text, bool rightAligned, int width = 0)
         {
             Label l = new Label();
             l.Name = name;
             l.Text = text;
             l.AutoSize = false;
-            l.Size = new Size(rightAligned ? H1FsValW : H1FsCapW, H1FsTagH);
+            l.Size = new Size(width > 0 ? width : (rightAligned ? H1FsValW : H1FsCapW), H1FsTagH);
             l.TextAlign = rightAligned ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft;
             l.Font = new Font("Segoe UI", 7f, FontStyle.Bold);
             l.BackColor = Color.FromArgb(22, 26, 32);   // the slider bed, so the row reads as one block
@@ -8710,6 +8727,9 @@ namespace Thetis
                 H1FsSliderText(h1fsAfVal1, ptbAF);
                 H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
                 H1FsSliderText(h1fsAfVal2, ptbRX2AF);
+                // H1 (user 2026-11-09): the cell zoom sliders show the display's state
+                H1FsZoomSync(h1fsZoom1, h1fsZoomVal1, Display.H1CellZoom[0]);
+                H1FsZoomSync(h1fsZoom2, h1fsZoomVal2, Display.H1CellZoom[1]);
 
                 // NR is a five-state cycle, so the pill's face is the mode, not a tick
                 int nr1 = GetSelectedNR(1), nr2 = GetSelectedNR(2);
@@ -8733,6 +8753,57 @@ namespace Thetis
                 if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
             }
             finally { _h1fsSync = false; }
+        }
+
+        // H1 (user 2026-11-09): the cell zoom runs 1x..16x on a 0..100 slider (logarithmic, so the
+        // low end has useful resolution). These helpers keep slider, label and Display in step.
+        private static double H1FsZoomFactor(int sliderValue)
+        {
+            if (sliderValue < 0) sliderValue = 0;
+            if (sliderValue > 100) sliderValue = 100;
+            return Math.Pow(16.0, sliderValue / 100.0);
+        }
+
+        private static int H1FsZoomSliderValue(double zoom)
+        {
+            if (zoom < 1.0) zoom = 1.0;
+            if (zoom > 16.0) zoom = 16.0;
+            int v = (int)Math.Round(Math.Log(zoom, 16.0) * 100.0);
+            if (v < 0) v = 0;
+            if (v > 100) v = 100;
+            return v;
+        }
+
+        private static string H1FsZoomText(double zoom)
+        {
+            if (zoom < 1.0001) return "1x";
+            return zoom >= 9.95 ? Math.Round(zoom).ToString("0") + "x" : zoom.ToString("0.0") + "x";
+        }
+
+        private static void H1FsZoomTextSet(Label l, double zoom)
+        {
+            if (l == null) return;
+            string t = H1FsZoomText(zoom);
+            if (l.Text != t) l.Text = t;
+        }
+
+        private void H1FsZoomSync(H1FsSlider s, Label l, double zoom)
+        {
+            if (s != null) s.SetValueQuiet(H1FsZoomSliderValue(zoom));
+            H1FsZoomTextSet(l, zoom);
+        }
+
+        private void H1FsZoomChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            H1FsSlider t = sender as H1FsSlider;
+            if (t == null) return;
+            int row = (t == h1fsZoom1) ? 0 : 1;
+            double zoom = H1FsZoomFactor(t.Value);
+            Display.H1CellZoom[row] = zoom;
+            H1FsZoomTextSet(row == 0 ? h1fsZoomVal1 : h1fsZoomVal2, zoom);
+            H1SpacePttTrace("cell zoom: DDC" + (row + 1) + " -> " + H1FsZoomText(zoom));
+            if (pnlDisplay != null) pnlDisplay.Invalidate();
         }
 
         // H1 (user 2026-11-09): paint a slider's number into the label beside it.
@@ -9002,20 +9073,24 @@ namespace Thetis
             int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);
 
             H1FsPlace(h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
-                h1fsAfCap1, h1fsAf1, h1fsAfVal1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
+                h1fsAfCap1, h1fsAf1, h1fsAfVal1, h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1,
+                h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
             H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
-                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
+                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
+                h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
 
             // RX2's strip is RX2's - nothing to show while RX2 is switched off
             bool rx2On = rx2_enabled && _h1FullScreenPanafall;
             foreach (Control c in new Control[] { h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
-                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
+                h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = rx2On;
         }
 
         private void H1FsPlace(ComboBoxTS band, ComboBoxTS mode,
             Label agcCap, H1FsSlider agc, Label agcVal,
             Label afCap, H1FsSlider af, Label afVal,
+            Label zoomCap, H1FsSlider zoom, Label zoomVal,
             CheckBoxTS nr, CheckBoxTS anf, CheckBoxTS nb, CheckBoxTS bin, int x, int y)
         {
             // row 1: band, mode, CTUN, NR, ANF, NB, BIN
@@ -9041,6 +9116,12 @@ namespace Thetis
             afCap.Location = new Point(ax, ry);
             af.Location = new Point(ax + H1FsCapW + 2, ry);
             afVal.Location = new Point(ax + H1FsCapW + 2 + H1FsSliderW + 2, ry);
+
+            // row 3: the cell's own ZOOM caption/slider/value
+            int zy = y + 2 * H1FsRowH;
+            zoomCap.Location = new Point(x, zy);
+            zoom.Location = new Point(x + H1FsZoomCapW + 2, zy);
+            zoomVal.Location = new Point(x + H1FsZoomCapW + 2 + H1FsSliderW + 2, zy);
         }
 
         // H1 (user 2026-11-09): the small cell S-meters of the full-window view. The console is the
@@ -9071,9 +9152,11 @@ namespace Thetis
             H1FsSync();
             foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
                                                    h1fsAfCap1, h1fsAf1, h1fsAfVal1,
+                                                   h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1,
                                                    h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
                                                    h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
                                                    h1fsAfCap2, h1fsAf2, h1fsAfVal2,
+                                                   h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
                                                    h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
             {
                 if (c == null) continue;
@@ -9095,12 +9178,15 @@ namespace Thetis
         private void H1FsHide()
         {
             if (!_h1fsBuilt) return;
+            _h1ZoomRow = -1;
             if (m_h1CellMeterTimer != null) m_h1CellMeterTimer.Stop();
             foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
                                                    h1fsAfCap1, h1fsAf1, h1fsAfVal1,
+                                                   h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1,
                                                    h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
                                                    h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
                                                    h1fsAfCap2, h1fsAf2, h1fsAfVal2,
+                                                   h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
                                                    h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = false;
         }
@@ -29135,10 +29221,41 @@ namespace Thetis
             return w;
         }
 
+        // H1 (user 2026-11-09): the cell under the pointer, for the per-cell zoom of DDC1/DDC2.
+        // -1 = not a zoomed cell. Set at the start of the display mouse handlers and cleared on up.
+        private int _h1ZoomRow = -1;
+
+        private void H1SetZoomRowFromPoint(int x, int y)
+        {
+            _h1ZoomRow = -1;
+            if (!Display.H1EightRows || pnlDisplay == null) return;
+            int w = pnlDisplay.Width, h = pnlDisplay.Height;
+            if (w < 2 || h < 8) return;
+            if (x < 0 || y < 0 || x >= w || y >= h) return;
+            int col = x < w / 2 ? 0 : 1;
+            int row = y / Math.Max(1, h / 4);
+            if (col == 0 && row <= 1) _h1ZoomRow = row;
+        }
+
+        // H1: inside a zoomed cell the visible span is narrower and anchored on the middle of the box,
+        // so the same click/drag mapping the rest of the console uses follows the picture.
+        private void H1ApplyCellZoom(int rx, ref int low, ref int high)
+        {
+            if (!Display.H1EightRows || _h1ZoomRow < 0) return;
+            if (rx != (_h1ZoomRow == 0 ? 1 : 2)) return;
+            double zoom = Display.H1CellZoom[_h1ZoomRow];
+            if (zoom <= 1.0001 || high <= low) return;
+            double mid = (low + high) * 0.5;
+            double half = (high - low) * 0.5 / zoom;
+            low = (int)(mid - half);
+            high = (int)(mid + half);
+        }
+
         private float PixelToHz(float x, int rx)
         {
             //[2.10.1.0] MW0LGE re-implemented
             getLowHighForRXn(rx, out int low, out int high);
+            H1ApplyCellZoom(rx, ref low, ref high);
 
             int width = high - low;
             return (float)(low + ((double)x / (double)H1FrequencyPixelWidth()) * (double)width);
@@ -29155,6 +29272,7 @@ namespace Thetis
             bool moxRX1 = _mox && (VFOATX || (VFOBTX && !RX2Enabled));
             bool moxRX2 = _mox && (VFOBTX && RX2Enabled);
             getLowHighForRXn(rx, out int low, out int high, false);
+            H1ApplyCellZoom(rx, ref low, ref high);
 
             // rit only rx1 when not txing
             int localRit = rx == 1 && !moxRX1 && RITOn && CTuneDisplay ? RITValue : 0;
@@ -60345,6 +60463,7 @@ private void incrementMutliMeterDisplayModeRX2()
         private void pnlDisplay_MouseDown(object sender, MouseEventArgs e)
         {
             if (Display.PausedDisplay) return;
+            H1SetZoomRowFromPoint(e.X, e.Y);
 
 
             if (m_frmNotchPopup.Visible) return;
@@ -61396,6 +61515,7 @@ private void incrementMutliMeterDisplayModeRX2()
         unsafe private void pnlDisplay_MouseMove(object sender, MouseEventArgs e)
         {
             if (Display.PausedDisplay) return;
+            H1SetZoomRowFromPoint(e.X, e.Y);
 
             try
             {
@@ -62679,6 +62799,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
         private void pnlDisplay_MouseUp(object sender, MouseEventArgs e)
         {
+            _h1ZoomRow = -1;
             if (Display.PausedDisplay) return;
 
             // H1 (user 2026-10-05): a right-click on the FREQUENCY RULER hands the whole screen to the
