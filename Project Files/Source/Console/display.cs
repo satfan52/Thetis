@@ -1,4 +1,4 @@
-//=================================================================
+﻿//=================================================================
 // display.cs
 //=================================================================
 // Thetis is a C# implementation of a Software Defined Radio.
@@ -7031,10 +7031,12 @@ namespace Thetis
                 drawFillRectangleDX2D(track, xMain - 1, top - 1, barW + 2, h + 2);
                 drawFillRectangleDX2D(track, xSub - 1, top - 1, barW + 2, h + 2);
             }
-            if (m_bDX2_h1_meter_main != null && fillMain > 0)
-                drawFillRectangleDX2D(m_bDX2_h1_meter_main, xMain, bottom - fillMain, barW, fillMain);
-            if (m_bDX2_h1_meter_sub != null && fillSub > 0)
-                drawFillRectangleDX2D(m_bDX2_h1_meter_sub, xSub, bottom - fillSub, barW, fillSub);
+            // H1 (user 2026-11-09): the bars wear the tuning windows' own colours - the solid RX window
+            // brush (white) for the main receiver and the solid SubRX window brush (blue) for the sub.
+            if (m_bDX2_display_filter_brush_solid != null && fillMain > 0)
+                drawFillRectangleDX2D(m_bDX2_display_filter_brush_solid, xMain, bottom - fillMain, barW, fillMain);
+            if (m_bDX2_sub_rx_filter_brush_solid != null && fillSub > 0)
+                drawFillRectangleDX2D(m_bDX2_sub_rx_filter_brush_solid, xSub, bottom - fillSub, barW, fillSub);
 
             // three faint ticks, S1 / S5 / S9 style, right of the bars
             if (m_bDX2_grid_pen_inb != null)
@@ -8541,8 +8543,6 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush_solid; // H1: a sub window in the audio path draws solid
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_tx_edge;               // H1: the TX window edge + tag
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_rx_tag;                // H1: the RX tag of a window in the audio path
-        private static SharpDX.Direct2D1.Brush m_bDX2_h1_meter_main;            // H1: the cell S-meter's main receiver bar
-        private static SharpDX.Direct2D1.Brush m_bDX2_h1_meter_sub;             // H1: the cell S-meter's sub receiver bar
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_zero_line_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_filter_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_cw_zero_pen;
@@ -8947,8 +8947,6 @@ namespace Thetis
             m_bDX2_display_filter_brush_solid = null;
             m_bDX2_h1_tx_edge = null;
             m_bDX2_h1_rx_tag = null;
-            m_bDX2_h1_meter_main = null;
-            m_bDX2_h1_meter_sub = null;
             m_bDX2_tx_filter_brush = null;
             m_bDX2_m_bTextCallOutActive = null;
             m_bDX2_m_bTextCallOutInactive = null;
@@ -9057,8 +9055,6 @@ namespace Thetis
 
                 m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
                 m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
-                m_bDX2_h1_meter_main = getDXBrushForColour(Color.FromArgb(255, 0, 235, 90));    // H1: the cell S-meter bars - vivid green for the main receiver
-                m_bDX2_h1_meter_sub = getDXBrushForColour(Color.FromArgb(255, 255, 70, 200));   // H1: hot pink for the sub receiver, unmistakably not green
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
                 m_bDX2_Yellow = getDXBrushForColour(Color.Yellow);
