@@ -8834,10 +8834,29 @@ namespace Thetis
             H1FsPillFace(p, p.Checked, p.Text);
         }
 
-        // H1: the console's NR button opens the NR setup tab on a right-click - the strip's does too
+        // H1 (user 2026-11-09): the NR button is a five-state cycle, so on the strip a right-click
+        // lists the profiles outright - NR off / NR1..NR4 - instead of making the user count clicks.
+        // The NR setup tab still opens from the menu's last entry.
         private void H1FsNrPillMouseDown(object sender, MouseEventArgs e)
         {
-            if (IsRightButton(e)) SetupForm.ShowSetupTab(Setup.SetupTab.NR_Tab);
+            if (!IsRightButton(e)) return;
+            CheckBoxTS p = sender as CheckBoxTS;
+            if (p == null) return;
+            int rx = (p == h1fsNr1) ? 1 : 2;
+            int cur = GetSelectedNR(rx);
+            ContextMenuStrip menu = new ContextMenuStrip();
+            menu.Font = new Font("Segoe UI", 8.5f);
+            for (int n = 0; n <= 4; n++)
+            {
+                int pick = n;
+                ToolStripMenuItem it = new ToolStripMenuItem(n == 0 ? "NR off" : "NR" + n);
+                it.Checked = (cur == pick);
+                it.Click += (s2, e2) => { SelectNR(rx, false, pick); H1FsSync(); };
+                menu.Items.Add(it);
+            }
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("NR setup...", null, (s2, e2) => SetupForm.ShowSetupTab(Setup.SetupTab.NR_Tab));
+            menu.Show(p, new Point(0, p.Height));
         }
 
         private void H1FsSliderChanged(object sender, EventArgs e)

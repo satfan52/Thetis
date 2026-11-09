@@ -770,7 +770,10 @@ namespace Thetis
 
             // H1 (user 2026-11-09): the small TX tag, and a green RX tag for a window in the audio
             // path - TX over RX when the same window both transmits and receives.
-            float ty = nVerticalShift + top + 9f;
+            // H1 (user 2026-11-09): in the full-window view the cell's control block sits over the
+            // top-right corner of the spectrum; the tags drop below it so a window dragged under
+            // the controls still shows whether it is TX or RX.
+            float ty = nVerticalShift + top + (Display.H1EightRows ? 56f : 9f);
             float tagStep = 10f;
             if (txSel) H1DrawWindowTag("TX", m_bDX2_h1_tx_edge, l, r, ty);
             if (rxSel) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, txSel ? ty + tagStep : ty);
