@@ -61260,6 +61260,40 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int vfoa_sub_high_x = 0;
                                 getFilterEdgesInPixels(e, ref low_x, ref high_x, ref vfoa_sub_x, ref vfoa_sub_low_x, ref vfoa_sub_high_x);
 
+                                // H1 (user report 2026-11-09): in the full-window view take the edge
+                                // positions from the window actually drawn in the cell under the
+                                // pointer. Deriving them from receiver offsets could arm an RX1 edge
+                                // drag from a click near the SubRX1 window, which collapsed the RX1
+                                // passband to 10 Hz (invisible except its two TX lines). No drawn
+                                // window, or a cell that is not a receiver cell, means no edge grab.
+                                if (Display.H1EightRows)
+                                {
+                                    int h1cellH = pnlDisplay.Height / 4;
+                                    int h1row = h1cellH > 0 ? e.Y / h1cellH : 0;
+                                    bool h1left = e.X < pnlDisplay.Width / 2;
+                                    bool h1have = false;
+                                    if (!_mox)
+                                    {
+                                        if (h1left && h1row == 0)
+                                        {
+                                            low_x = Display.VFOAWindowLeft;
+                                            high_x = Display.VFOAWindowRight;
+                                            h1have = true;
+                                        }
+                                        else if (h1left && h1row == 1 && rx2_enabled)
+                                        {
+                                            low_x = Display.VFOBWindowLeft;
+                                            high_x = Display.VFOBWindowRight;
+                                            h1have = true;
+                                        }
+                                    }
+                                    if (!h1have || high_x <= low_x)
+                                    {
+                                        low_x = -10000;
+                                        high_x = -10000;
+                                    }
+                                }
+
                                 // H1: where the SubRX2 window sits on the RX2 panadapter, so a click
                                 // inside it starts a sub drag instead of a VFO B filter drag
                                 int vfob_sub_low_x = 0;
