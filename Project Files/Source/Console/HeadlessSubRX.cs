@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Thetis
@@ -164,7 +164,10 @@ namespace Thetis
             var st = Get(rx);
             double main = MainHz(rx);                  // DDC centre (Hz)
             double offset = hz - main;                 // signed offset from DDC centre
-            double edge = 48000.0;                     // hard DDC edge (rate/2)
+            // H1: the passband edge is the real DDC rate's Nyquist - Thetis can run
+            // 48k..384k, so a fixed 48 kHz clamp was wrong everywhere but 96k DDCs.
+            int ddcRate = HeadlessSliceManager.Instance.GetSliceRateHz(rx);
+            double edge = ddcRate / 2.0;
             // Filter-aware passband edges: the carrier may reach the DDC edge
             // only where its passband does not extend past it (USB sits above
             // the carrier, LSB below, AM/SAM/NFM symmetric).
@@ -174,7 +177,7 @@ namespace Thetis
             if (offset > upper) offset = upper;
             if (offset < lower) offset = lower;
             if (Math.Abs(raw - offset) > 0.5)
-                TciLog.Log($"[SubFreq] rx{rx} req={hz} main={main:0} filt={st.FilterLow}/{st.FilterHigh} off={raw:0} -> {offset:0} (up={upper:0} lo={lower:0})");
+                TciLog.Log($"[SubFreq] rx{rx} req={hz} main={main:0} filt={st.FilterLow}/{st.FilterHigh} off={raw:0} -> {offset:0} (up={upper:0} lo={lower:0} rate={ddcRate})");
             // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and
             // RadioDSPRX applies SetRXAShiftFreq(-RXOsc) => effective shift = +(fB - fA).
             // We drive SetRXAShiftFreq directly, so pass the offset itself.
