@@ -9236,11 +9236,36 @@ namespace Thetis
             }
         }
 
-        // H1 (user report 2026-10-05): the display's "which receiver does this point belong to" test.
-        // In the eight-row view the halves become rows - row 1 is RX1, row 2 is RX2, and the six spare
-        // rows belong to no receiver of their own yet, so they resolve to the RX1 side of the old
-        // two-receiver branches (per-row gestures are a later stage).
-        private bool H1Rx2Half(int yInDisplay)
+        // H1 (step 2 of the eight-DDC work): map a display point to its 2x4 cell.
+        // The view is two columns of four cells: column 0 holds rows 0..3 (RX1,
+        // RX2, RX3, RX4), column 1 rows 4..7 (RX5..RX8). Returns -1 when the point
+        // is not on the display at all.
+        private int H1CellRowAt(int xInDisplay, int yInDisplay)
+        {
+            if (pnlDisplay == null) return -1;
+            int w = pnlDisplay.Width, h = pnlDisplay.Height;
+            if (w < 2 || h < 8) return -1;
+            if (xInDisplay < 0 || yInDisplay < 0 || xInDisplay >= w || yInDisplay >= h) return -1;
+            int col = xInDisplay < w / 2 ? 0 : 1;
+            int rowInCol = yInDisplay / Math.Max(1, h / 4);
+            if (rowInCol > 3) rowInCol = 3;    // the few pixels below the last cell
+            return col * 4 + rowInCol;
+        }
+
+        // H1 (step 2): a cell's receiver index (1..8). Cell 0 is RX1, cell 1 is
+        // RX2, cells 2..7 are RX3..RX8 - whose headless slice index equals the row.
+        private static int H1CellRowToRx(int row)
+        {
+            return row + 1;
+        }
+
+        // H1 (user report 2026-10-05): the display's "which of the two console
+        // receivers does this point belong to" test. In the eight-DDC view only the
+        // first two cells of the LEFT column are RX1/RX2; every other cell is a
+        // separate DDC (RX3..RX8) and so is never RX1/RX2's side. The old test used
+        // Y only, which made the right column and the spare cells under RX2 route
+        // their gestures into RX1.
+        private bool H1Rx2Half(int xInDisplay, int yInDisplay)
         {
             if (PowerOn && !_rx1Active && RX2Enabled) return true; // whole pane is RX2's
             if (Display.H1EightRows)
@@ -9248,11 +9273,7 @@ namespace Thetis
                 // H1 (user 2026-11-03): the eight-DDC view is two columns of four - RX2 is the
                 // SECOND cell of the left column, so the old eight-row math put RX1's and RX2's
                 // tuning windows on top of each other.
-                int h1RowH = pnlDisplay.Height / 4;
-                if (h1RowH <= 0) return false;
-                int h1row = yInDisplay / h1RowH;
-                if (h1row < 0) h1row = 0;
-                return h1row == 1;
+                return H1CellRowAt(xInDisplay, yInDisplay) == 1;
             }
             return yInDisplay > pnlDisplay.Height / 2;
         }
@@ -27562,7 +27583,16 @@ namespace Thetis
         {
             if (_mox) return -1;
 
-            bool rx2Half = rx2_enabled && H1Rx2Half(y);
+            // H1 (step 2): only the left column's first two cells hold the console
+            // receiver windows. The drawn bounds belong to RX1/RX2, so a point in
+            // one of the six spare cells must not hit them.
+            if (Display.H1EightRows)
+            {
+                int h1cell = H1CellRowAt(x, y);
+                if (h1cell < 0 || h1cell > 1) return -1;
+            }
+
+            bool rx2Half = rx2_enabled && H1Rx2Half(x, y);
 
             if (!rx2Half)
             {
@@ -39587,6 +39617,7 @@ namespace Thetis
             DisplayBottom,
             DisplayTop,
             Other,
+            H1SpareCell,      // H1: a spare DDC's cell - not a console receiver (step 2)
         }
 
         private TuneLocation TuneHitTest(int x, int y)
@@ -39629,11 +39660,21 @@ namespace Thetis
             right = left + pnlDisplay.Width;
             top = panelDisplay.Top + pnlDisplay.Top;
             bottom = top + pnlDisplay.Height;
-            if (!_mox && x > left && x < right && y > top && y < bottom)
+            // H1 (step 2): each cell of the eight-DDC view is a receiver of its own. The
+            // six spare cells (RX3..RX8) must not reach the console windows' hit tests -
+            // those bounds belong to RX1/RX2, which is why a wheel over a spare cell used
+            // to tune RX1. Per-cell wheel tuning comes with the per-cell slice tuning.
+            bool h1SpareCell = false;
+            if (Display.H1EightRows)
+            {
+                int h1cellRow = H1CellRowAt(x - left, y - top);
+                h1SpareCell = h1cellRow >= 2;
+            }
+            if (!_mox && !h1SpareCell && x > left && x < right && y > top && y < bottom)
             {
                 int dx = x - left;
                 int dy = y - top;
-                bool rx2Half = rx2_enabled && H1Rx2Half(dy);
+                bool rx2Half = rx2_enabled && H1Rx2Half(dx, dy);
 
                 // H1 (user 2026-10-05): overlap with the display, matching the drag grab - a window
                 // pushed against the left edge keeps its wheel tuning over the part that is visible.
@@ -39650,21 +39691,29 @@ namespace Thetis
 
             left = panelDisplay.Left + pnlDisplay.Left;
             right = left + pnlDisplay.Width;
+            top = panelDisplay.Top + pnlDisplay.Top;
+            bottom = top + pnlDisplay.Height;
+
+            // H1 (step 2): only RX1's cell (left column, first row) and RX2's cell
+            // (left column, second row) are console receivers. A spare cell is its own
+            // DDC and must not fall through to RX1's frequency; its wheel tuning is a
+            // no-op until the per-cell slice tuning lands.
             if (Display.H1EightRows)
             {
-                top = panelDisplay.Top + pnlDisplay.Top + pnlDisplay.Height / 4;   // H1: RX2's cell
-                bottom = top + pnlDisplay.Height / 4;
+                if (x > left && x < right && y > top && y < bottom)
+                {
+                    if (h1SpareCell) return TuneLocation.H1SpareCell;
+                    int h1row = H1CellRowAt(x - left, y - top);
+                    return h1row == 1 ? TuneLocation.DisplayBottom : TuneLocation.DisplayTop;
+                }
+                return TuneLocation.Other;
             }
-            else
-            {
-                top = panelDisplay.Top + pnlDisplay.Top + pnlDisplay.Height / 2;
-                bottom = top + pnlDisplay.Height / 2;
-            }
+
+            top = panelDisplay.Top + pnlDisplay.Top + pnlDisplay.Height / 2;
+            bottom = top + pnlDisplay.Height / 2;
             if (x > left && x < right && y > top && y < bottom)
                 return TuneLocation.DisplayBottom;
 
-            left = panelDisplay.Left + pnlDisplay.Left;
-            right = left + pnlDisplay.Width;
             top = panelDisplay.Top + pnlDisplay.Top;
             bottom = top + pnlDisplay.Height;
             if (x > left && x < right && y > top && y < bottom)
@@ -39895,6 +39944,11 @@ namespace Thetis
                     // MW0LGE
                     if (!m_bWheelTunesOutsideSpectral) break; // break out because we are not permitted to tune outside spectral/vfo boxes
                     goto case TuneLocation.DisplayTop;        // give me fall through c# gods
+                case TuneLocation.H1SpareCell:
+                    // H1 (step 2): a spare DDC's cell - the wheel must not tune RX1
+                    // through the old fall-through. Per-cell tuning comes later.
+                    break;
+
                 case TuneLocation.DisplayTop:
                     // MW0LGE this was other, but now we assume it is top of spectral display
                     if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
@@ -42187,6 +42241,14 @@ namespace Thetis
                 nMaxHeightRX1 = h1rowH;
                 nMinHeightRX2 = h1rowH;
                 nMaxHeightRX2 = h1rowH * 2;
+                // H1 (step 2): the right column holds RX5..RX8, so those cells are not
+                // RX1/RX2's either. The old test looked at Y only and reported the
+                // spare cells as the console receiver at that height.
+                if (x >= pnlDisplay.Width / 2)
+                {
+                    nMinHeightRX1 = nMaxHeightRX1 = 0;
+                    nMinHeightRX2 = nMaxHeightRX2 = 0;
+                }
             }
             else if (rx2_enabled)
             {
@@ -42374,7 +42436,7 @@ namespace Thetis
 
         private void getFilterEdgesInPixels(MouseEventArgs e, ref int low_x, ref int high_x, ref int vfoa_sub_x, ref int vfoa_sub_low_x, ref int vfoa_sub_high_x)
         {
-            if (rx2_enabled && H1Rx2Half(e.Y))//rx2
+            if (rx2_enabled && H1Rx2Half(e.X, e.Y))//rx2
             {
                 if (_mox)
                 {
@@ -42535,7 +42597,7 @@ namespace Thetis
         private void dragWholeFilter(MouseEventArgs e)
         {
             whole_filter_start_x = e.X;
-            if (rx2_enabled && H1Rx2Half(e.Y))
+            if (rx2_enabled && H1Rx2Half(e.X, e.Y))
             {
                 if (_mox && chkVFOBTX.Checked)
                 {
@@ -60590,6 +60652,23 @@ private void incrementMutliMeterDisplayModeRX2()
             if (Display.PausedDisplay) return;
             H1SetZoomRowFromPoint(e.X, e.Y);
 
+            // H1 (step 2): the 2x4 cells are eight receivers. Rows 0/1 of the LEFT
+            // column are the console's RX1/RX2; the other six cells are RX3..RX8 and
+            // must not start an RX1/RX2 gesture here. Until the per-cell tuning step a
+            // press there is a plain no-op - the old code routed it into RX1, which
+            // could retune RX1 or collapse its filter from another DDC's cell.
+            if (Display.H1EightRows)
+            {
+                int h1cell = H1CellRowAt(e.X, e.Y);
+                if (h1cell >= 2)
+                {
+                    H1SpacePttTrace("h1cell: press cell r" + h1cell + " RX" + H1CellRowToRx(h1cell)
+                        + " ignored (spare cell)");
+                    pnlDisplay.Cursor = _useOutlinedCrossCursor ? _cross_outlined : Cursors.Cross;
+                    return;
+                }
+            }
+
 
             if (m_frmNotchPopup.Visible) return;
             if (_highlightedSpot != null)
@@ -60824,7 +60903,7 @@ private void incrementMutliMeterDisplayModeRX2()
                             case DisplayMode.PANAFALL:
                             case DisplayMode.PANASCOPE:
                             case DisplayMode.PANADAPTER:
-                                if (rx2_enabled && H1Rx2Half(e.Y))
+                                if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                 {
                                     if (Display.AGCRX2Knee.Contains(e.X, e.Y) && show_agc)
                                     {
@@ -60942,7 +61021,7 @@ private void incrementMutliMeterDisplayModeRX2()
                         // ungrabble, which is correct: it cannot be seen.
                         if (Display.VFOASubWindowRight > Display.VFOASubWindowLeft && Display.VFOASubWindowRight > 0 &&
                             Display.VFOASubWindowLeft < pnlDisplay.Width &&
-                            (!rx2_enabled || !H1Rx2Half(e.Y)))
+                            (!rx2_enabled || !H1Rx2Half(e.X, e.Y)))
                         {
                             if (Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
                             {
@@ -61030,7 +61109,7 @@ private void incrementMutliMeterDisplayModeRX2()
                             case DisplayMode.PANASCOPE:
                                 float x = PixelToHz(e.X);
                                 double freq;
-                                if (rx2_enabled && H1Rx2Half(e.Y)) //RX2
+                                if (rx2_enabled && H1Rx2Half(e.X, e.Y)) //RX2
                                 {
                                     x = PixelToHz(e.X, 2);
 
@@ -61130,10 +61209,10 @@ private void incrementMutliMeterDisplayModeRX2()
                                 // once and the drag tunes nothing. The CTUN-on drag is armed inside this same
                                 // gate, which is why CTUN on kept working and CTUN off did not.
                                 bool h1CtunOffDrag = Display.H1EightRows && (bOverRX1 || bOverRX2) &&
-                                    (H1Rx2Half(e.Y) ? !_click_tune_rx2_display : !_click_tune_display);
+                                    (H1Rx2Half(e.X, e.Y) ? !_click_tune_rx2_display : !_click_tune_display);
                                 if (current_click_tune_mode == ClickTuneMode.Off || bOverTopOfDragSpectrum || h1CtunOffDrag)
                                 {
-                                    if (rx2_enabled && H1Rx2Half(e.Y))
+                                    if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                     {
                                         spectrum_drag_last_x = e.X;
                                         if (_click_tune_rx2_display)
@@ -61228,7 +61307,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                             {
                                                 if (!(!m_bCTUNputsZeroOnMouse && (e.X > low_x && e.X < high_x)) || current_click_tune_mode != ClickTuneMode.Off)
                                                 {
-                                                    if (!H1Rx2Half(e.Y))
+                                                    if (!H1Rx2Half(e.X, e.Y))
                                                     {
                                                         if (!rx1_spectrum_tune_drag)
                                                             VFOAFreq = Math.Round(freq, 6);
@@ -61325,7 +61404,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
                                 if (Math.Abs(e.X - low_x) < 3 && e.X < high_x)
                                 {
-                                    if (rx2_enabled && H1Rx2Half(e.Y))
+                                    if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                     {
                                         if (_mox && chkVFOBTX.Checked)
                                         {
@@ -61378,7 +61457,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                 }
                                 else if (Math.Abs(e.X - high_x) < 3)
                                 {
-                                    if (rx2_enabled && H1Rx2Half(e.Y))
+                                    if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                     {
                                         if (_mox && chkVFOBTX.Checked)
                                         {
@@ -61423,7 +61502,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     dragWholeFilter(e);
                                 }
                                 else if (chkEnableMultiRX.Checked && !_mox &&
-                                    (!rx2_enabled || !H1Rx2Half(e.Y)) &&
+                                    (!rx2_enabled || !H1Rx2Half(e.X, e.Y)) &&
                                     Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
                                     Math.Abs(e.X - Display.VFOASubWindowLeft) < 3)
                                 {
@@ -61433,7 +61512,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     rx1_sub_low_filter_drag = true;
                                 }
                                 else if (chkEnableMultiRX.Checked && !_mox &&
-                                    (!rx2_enabled || !H1Rx2Half(e.Y)) &&
+                                    (!rx2_enabled || !H1Rx2Half(e.X, e.Y)) &&
                                     Display.VFOASubWindowLeft >= 0 && Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
                                     Math.Abs(e.X - Display.VFOASubWindowRight) < 3)
                                 {
@@ -61442,7 +61521,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     rx1_sub_high_filter_drag = true;
                                 }
                                 else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
-                                    H1Rx2Half(e.Y) &&
+                                    H1Rx2Half(e.X, e.Y) &&
                                     vfob_sub_high_x > vfob_sub_low_x && Math.Abs(e.X - vfob_sub_low_x) < 3)
                                 {
                                     // H1: SubRX2 window's left edge - drag to change the sub's passband
@@ -61451,7 +61530,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     rx2_sub_low_filter_drag = true;
                                 }
                                 else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
-                                    H1Rx2Half(e.Y) &&
+                                    H1Rx2Half(e.X, e.Y) &&
                                     vfob_sub_high_x > vfob_sub_low_x && Math.Abs(e.X - vfob_sub_high_x) < 3)
                                 {
                                     sub_drag_last_x = e.X;
@@ -61459,7 +61538,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     rx2_sub_high_filter_drag = true;
                                 }
                                 else if (chkEnableMultiRX.Checked && !_mox &&
-                                    (!rx2_enabled || !H1Rx2Half(e.Y)) &&
+                                    (!rx2_enabled || !H1Rx2Half(e.X, e.Y)) &&
                                     Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
                                     Display.VFOASubWindowRight > 0 &&
                                     Display.VFOASubWindowLeft < pnlDisplay.Width &&
@@ -61470,7 +61549,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                     rx1_sub_drag = true;
                                 }
                                 else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
-                                    H1Rx2Half(e.Y) &&
+                                    H1Rx2Half(e.X, e.Y) &&
                                     Display.VFOBSubWindowRight > Display.VFOBSubWindowLeft &&
                                     Display.VFOBSubWindowRight > 0 &&
                                     Display.VFOBSubWindowLeft < pnlDisplay.Width &&
@@ -61484,7 +61563,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                 else
                                 {
                                     spectrum_drag_last_x = e.X;
-                                    if (rx2_enabled && H1Rx2Half(e.Y)) rx2_spectrum_drag = true;
+                                    if (rx2_enabled && H1Rx2Half(e.X, e.Y)) rx2_spectrum_drag = true;
                                     else rx1_spectrum_drag = true;
                                     next_cursor = Cursors.SizeWE;
                                 }
@@ -61523,7 +61602,7 @@ private void incrementMutliMeterDisplayModeRX2()
                         int rx;
                         double dFreq;
                         // add notch from cross hair mode with middle mouse
-                        if (rx2_enabled && H1Rx2Half(e.Y))
+                        if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                         {
                             dFreq = getFrequencyAtPixel(e.X, 2);
                             rx = 2;
@@ -61688,7 +61767,7 @@ private void incrementMutliMeterDisplayModeRX2()
                 int RX1diff = HzToPixel((float)((VFOAFreq - CentreFrequency) * 1e6));
                 int RX2diff = HzToPixel((float)((VFOBFreq - CentreRX2Frequency) * 1e6), 2);
 
-                if (rx2_enabled && H1Rx2Half(e.Y)) // if RX2 is enabled and the cursor is in the lower half of the display
+                if (rx2_enabled && H1Rx2Half(e.X, e.Y)) // if RX2 is enabled and the cursor is in the lower half of the display
                 {
                     if (_mox)
                     {
@@ -62236,7 +62315,7 @@ private void incrementMutliMeterDisplayModeRX2()
                             case DisplayMode.PANASCOPE:
                             case DisplayMode.PANADAPTER:
                                 float cal_offset = 0.0f;
-                                if (rx2_enabled && H1Rx2Half(e.Y))
+                                if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                     cal_offset = agcCalOffset(2);
                                 else
                                     cal_offset = agcCalOffset(1);
@@ -62245,7 +62324,7 @@ private void incrementMutliMeterDisplayModeRX2()
                                 {
                                     if (show_agc)
                                     {
-                                        if (rx2_enabled && H1Rx2Half(e.Y))
+                                        if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                         {
                                             if (Display.AGCRX2Knee.Contains(e.X, e.Y))
                                             {
@@ -62276,7 +62355,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
                                 if (agc_knee_drag && show_agc)
                                 {
-                                    if (rx2_enabled && H1Rx2Half(e.Y))
+                                    if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                     {
                                         double agc_rx2_thresh_point = (double)PixelToRx2Db(e.Y + 4);
                                         agc_rx2_thresh_point -= (double)cal_offset;
@@ -62343,7 +62422,7 @@ private void incrementMutliMeterDisplayModeRX2()
 
                                 if (agc_hang_drag && show_agc)
                                 {
-                                    if (rx2_enabled && H1Rx2Half(e.Y))
+                                    if (rx2_enabled && H1Rx2Half(e.X, e.Y))
                                     {
                                         double agc_hang_point = (double)PixelToRx2Db(e.Y + 4);
                                         agc_hang_point -= (double)cal_offset;
@@ -62411,10 +62490,10 @@ private void incrementMutliMeterDisplayModeRX2()
                                 int highlightRX2 = 0;
 
                                 bool bSubEdge = (chkEnableMultiRX.Checked && !_mox && sub1_win_r > sub1_win_l && sub1_win_l >= 0 &&
-                                                 (!rx2_enabled || !H1Rx2Half(e.Y)) &&
+                                                 (!rx2_enabled || !H1Rx2Half(e.X, e.Y)) &&
                                                  (Math.Abs(e.X - sub1_win_l) < 3 || Math.Abs(e.X - sub1_win_r) < 3)) ||
                                                 (rx2_enabled && chkEnableMultiRX2.Checked && !_mox && sub2_win_r > sub2_win_l && sub2_win_l >= 0 &&
-                                                 H1Rx2Half(e.Y) &&
+                                                 H1Rx2Half(e.X, e.Y) &&
                                                  (Math.Abs(e.X - sub2_win_l) < 3 || Math.Abs(e.X - sub2_win_r) < 3));
 
                                 if (bLowEdge || bHighEdge || bSubEdge)
@@ -62683,6 +62762,9 @@ private void incrementMutliMeterDisplayModeRX2()
 
                 #region Cursor and Info bar data
                 //re-implemented cursor info MW0LGE_21k9
+                // H1 (step 2): a spare cell is another receiver - do not show RX1's
+                // cursor frequency/level for a point over the spare DDCs.
+                if (Display.H1EightRows && H1CellRowAt(e.X, e.Y) >= 2) bShowCursorData = false;
                 if (bShowCursorData)
                 {
                     float xposHz = 0;
@@ -62699,7 +62781,7 @@ private void incrementMutliMeterDisplayModeRX2()
                     bool bShowWaterfallSeconds = false;
 
                     bool bOn60mChan;
-                    bool bRx2 = rx2_enabled && H1Rx2Half(e.Y); // if RX2 is enabled and the cursor is in the lower half of the display
+                    bool bRx2 = rx2_enabled && H1Rx2Half(e.X, e.Y); // if RX2 is enabled and the cursor is in the lower half of the display
 
                     if (bRx2)
                     {
