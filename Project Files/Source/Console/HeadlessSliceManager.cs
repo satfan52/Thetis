@@ -51,6 +51,14 @@ namespace Thetis
         public bool IsStreamingIQ { get; set; } = false;
         public double AudioGain { get; set; } = 0.5;   // Thetis-like default AF level (-6 dBFS panel gain)
         public AGCMode AgcMode { get; set; } = AGCMode.MED;   // user-selected AGC preset
+        // H1 (M2): the strip's per-slice controls. The GUI strip and the TCI servers
+        // are front-ends to the same receiver, so these live on the slice and are
+        // re-applied whenever the channel is (re)activated.
+        public double AgcTop { get; set; } = 90.0;            // AGC threshold (dB)
+        public int Nr { get; set; } = 0;                       // 0 = off, 1..4 = NRn
+        public bool Anf { get; set; } = false;
+        public bool Nb { get; set; } = false;
+        public bool Bin { get; set; } = false;
         // H1: the DDC rate this slice was last activated at. Only a fallback for
         // the live query in GetSliceRateHz when ChannelMaster cannot answer.
         public int SampleRateHz { get; set; } = 0;
@@ -398,6 +406,78 @@ namespace Thetis
             SliceFilterChanged?.Invoke(rx, lowHz, highHz);
         }
 
+        // H1 (M2): strip controls -> this slice (the TCI servers read the same state)
+        public void SetSliceAgcTop(int rx, double top)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.AgcTop = top;
+                if (slice.IsActive && cmaster.IsRadioCreated)
+                {
+                    try { WDSP.SetRXAAGCTop(slice.ChannelId, top); } catch { }
+                }
+            }
+        }
+
+        public void SetSliceNr(int rx, int mode)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.Nr = Math.Max(0, Math.Min(4, mode));
+                if (slice.IsActive && cmaster.IsRadioCreated)
+                {
+                    try { WDSP.SetRXAANRRun(slice.ChannelId, slice.Nr > 0 ? 1 : 0); } catch { }
+                }
+            }
+        }
+
+        public void SetSliceAnf(int rx, bool on)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.Anf = on;
+                if (slice.IsActive && cmaster.IsRadioCreated)
+                {
+                    try { WDSP.SetRXAANFRun(slice.ChannelId, on); } catch { }
+                }
+            }
+        }
+
+        public void SetSliceBin(int rx, bool on)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.Bin = on;
+                if (slice.IsActive && cmaster.IsRadioCreated)
+                {
+                    try { WDSP.SetRXAPanelBinaural(slice.ChannelId, on); } catch { }
+                }
+            }
+        }
+
+        public void SetSliceNb(int rx, bool on)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.Nb = on;
+                if (cmaster.IsRadioCreated)
+                {
+                    try { cmaster.SetRCVRANBRun(0, rx, on); } catch { }
+                }
+            }
+        }
+
+        // H1 (M2): the CTUN model is per slice; the strip's pill shows it.
+        public bool GetCtunMode(int rx)
+        {
+            lock (_lock) { _ctunMode.TryGetValue(rx, out bool v); return v; }
+        }
+
         public void SetSliceGain(int rx, double gain)
         {
             lock (_lock)
@@ -553,11 +633,17 @@ namespace Thetis
                     WDSP.RXANBPSetFreqs(slice.ChannelId, slice.FilterLow, slice.FilterHigh);
                     WDSP.SetRXASNBAOutputBandwidth(slice.ChannelId, slice.FilterLow, slice.FilterHigh);
                     WDSP.SetRXAAGCMode(slice.ChannelId, slice.AgcMode);   // re-init from the slice's preset, not MED
-                    WDSP.SetRXAAGCTop(slice.ChannelId, 90.0);
+                    WDSP.SetRXAAGCTop(slice.ChannelId, slice.AgcTop);
                     WDSP.SetRXAPanelGain1(slice.ChannelId, slice.AudioGain);
 
                     // Turn ON WDSP processing for this slice channel
                     WDSP.SetChannelState(slice.ChannelId, 1, 0);
+                    // H1 (M2): the noise controls are per DSP channel; NB acts on the
+                    // shared DDC stream, so it is set with the DDC-wide call.
+                    WDSP.SetRXAANRRun(slice.ChannelId, slice.Nr > 0 ? 1 : 0);
+                    WDSP.SetRXAANFRun(slice.ChannelId, slice.Anf);
+                    WDSP.SetRXAPanelBinaural(slice.ChannelId, slice.Bin);
+                    cmaster.SetRCVRANBRun(0, slice.RxIndex, slice.Nb);
                 }
                 catch { }
             }

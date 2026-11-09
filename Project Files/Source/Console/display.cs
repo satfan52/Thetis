@@ -254,6 +254,7 @@ namespace Thetis
         public static readonly int[] H1RowVfoOffsetHz = new int[8];   // VFO A - DDC centre
         public static readonly int[] H1RowRateHz = new int[8];
         public static readonly bool[] H1RowActive = new bool[8];      // any consumer holds it
+        public static readonly bool[] H1RowTci = new bool[8];         // a TCI client uses this slice too
         public static readonly bool[] H1CellAudio = new bool[8];      // TCI audio on this slice
         public static readonly bool[] H1CellTx = new bool[8];         // this slice is the digital TX
         public static readonly int[] H1RowSubLow = new int[8];
@@ -7119,6 +7120,15 @@ namespace Thetis
 
             bool txCell = H1CellTxActive && H1CellTx[r];
             bool audioCell = H1CellAudio[r];
+
+            // H1 (M2): the TCI badge - the same receiver is also a TCI client's slice
+            if (H1RowTci[r])
+            {
+                SharpDX.Direct2D1.Brush badge = m_bDX2_h1_rx_tag != null
+                    ? m_bDX2_h1_rx_tag : m_bDX2_grid_text_brush;
+                if (badge != null && fontDX2d_tag != null)
+                    drawStringDX2D("TCI", fontDX2d_tag, badge, cellW - 34, 2);
+            }
 
             // VFO A window: the slice passband placed relative to the DDC centre
             int fl = H1CellPx(h1Low, h1High, cellW, H1RowFilterLow[r] + H1RowVfoOffsetHz[r]);

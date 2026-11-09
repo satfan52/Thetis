@@ -8512,6 +8512,18 @@ namespace Thetis
             }
         }
 
+        // H1 (M2): one control strip per spare DDC cell (RX3..RX8). The two strips above
+        // remain RX1's/RX2's; these six are front-ends to the headless slices the TCI
+        // servers use (Policy A): the same set of controls, wired to slice APIs.
+        private sealed class H1CellStrip
+        {
+            public int Row;                 // 2..7
+            public ComboBoxTS Band, Mode;
+            public H1FsSlider Agc, Af, Zoom;
+            public Label AgcCap, AgcVal, AfCap, AfVal, ZoomCap, ZoomVal;
+            public CheckBoxTS Ctun, Nr, Anf, Nb, Bin;
+        }
+
         private ComboBoxTS h1fsBand1, h1fsMode1, h1fsBand2, h1fsMode2;
         private H1FsSlider h1fsAgc1, h1fsAf1, h1fsAgc2, h1fsAf2;
         private H1FsSlider h1fsZoom1, h1fsZoom2;              // H1: per-cell zoom, DDC1 and DDC2
@@ -8523,6 +8535,11 @@ namespace Thetis
         private CheckBoxTS h1fsCtun1, h1fsCtun2;
         private bool _h1fsBuilt = false;
         private bool _h1fsSync = false;
+        // H1 (M2): the six spare-cell strips
+        private H1CellStrip[] h1cellStrips;
+        private readonly List<Control> _h1CellStripControls = new List<Control>();
+        private readonly Dictionary<object, int> _h1CellStripOwner = new Dictionary<object, int>();
+        private bool _h1cellStripsBuilt = false;
         // H1 (user 2026-11-09): the strip used to be a 194x92 block, then two slim rows. It is ONE row
         // now (688 x 20) as the user asked: every control over the top of the cell, which leaves the
         // most spectrum visible. Order: band, mode, AGC, AF, CTUN, NR/ANF/NB/BIN, ZOOM - DDC1's and
@@ -8629,6 +8646,7 @@ namespace Thetis
             h1fsCtun1.CheckedChanged += H1FsPillChanged;
             h1fsCtun2.CheckedChanged += H1FsPillChanged;
 
+            H1CellStripsBuild();
             H1FsSync();
         }
 
@@ -8754,6 +8772,7 @@ namespace Thetis
                 if (h1fsAnf2.Checked != chkRX2ANF.Checked) h1fsAnf2.Checked = chkRX2ANF.Checked;
                 if (h1fsNb2.Checked != chkRX2NB.Checked) h1fsNb2.Checked = chkRX2NB.Checked;
                 if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
+                if (_h1FullScreenPanafall && _h1cellStripsBuilt) H1CellStripsSync();
             }
             finally { _h1fsSync = false; }
         }
@@ -9000,7 +9019,7 @@ namespace Thetis
                 // is layered on top of it, so leaving the full-window view restores the picture
                 try
                 {
-                    for (int zr = 0; zr < 2; zr++)
+for (int zr = 0; zr < 8; zr++)
                     {
                         SpecHPSDR zs = specRX.GetSpecRX(zr);
                         if (zs == null) continue;
@@ -9129,6 +9148,7 @@ namespace Thetis
                 h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
                 h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = rx2On;
+            H1CellStripsLayout();
         }
 
         private void H1FsPlace(ComboBoxTS band, ComboBoxTS mode,
@@ -9193,11 +9213,25 @@ namespace Thetis
 
         // H1 (M1 step 4): absolute frequency of a point in a spare cell. The cell
         // span is the analyser span its cloned spec draws (RX1's normal span).
+        // H1 (M2): the span a cell shows at its current zoom, anchored on its middle.
+        private void H1SpareCellVisibleSpan(int cell, out int low, out int high)
+        {
+            int bl = Display.RXDisplayLow, bh = Display.RXDisplayHigh;
+            double zoom = Display.H1CellZoom[cell];
+            if (zoom < 1.0) zoom = 1.0;
+            double mid = (bl + bh) * 0.5;
+            int half = (int)((bh - bl) * 0.5 / zoom);
+            low = (int)(mid - half);
+            high = low + 2 * half;
+            if (high <= low) { low = bl; high = bh; }
+        }
+
         private double H1SpareCellFreqAt(int cell, int x)
         {
-            int low = Display.RXDisplayLow, high = Display.RXDisplayHigh;
             int cellW = H1CellWidthPx();
             double centre = Display.H1RowCentreMHz[cell];
+            int low, high;
+            H1SpareCellVisibleSpan(cell, out low, out high);
             int span = high - low;
             if (span <= 0) return centre;
             int cellX = x - (cell / 4) * cellW;   // window bounds/maps are cell-local
@@ -9250,8 +9284,9 @@ namespace Thetis
             int dx = e.X - _h1SpareDragStartX;
             int cellX = e.X - (cell / 4) * H1CellWidthPx();
             if (Math.Abs(dx) > 1) _h1SpareDragMoved = true;
-            int low = Display.RXDisplayLow, high = Display.RXDisplayHigh;
             int cellW = H1CellWidthPx();
+            int low, high;
+            H1SpareCellVisibleSpan(cell, out low, out high);
             int span = high - low;
             if (span <= 0) return;
             try
@@ -9406,6 +9441,7 @@ namespace Thetis
                     Display.H1RowActive[r] = slice.IsActive;
                     Display.H1CellAudio[r] = slice.IsStreamingAudio;
                     Display.H1CellTx[r] = TxArbiter.Instance.ActiveDigitalRx == r;
+                    Display.H1RowTci[r] = slice.HasConsumer(SliceConsumer.TciAudio) || slice.HasConsumer(SliceConsumer.TciIq);
 
                     HeadlessSubRX.State sub = HeadlessSubRX.Get(r);
                     Display.H1RowSubEnabled[r] = sub.Enabled;
@@ -9476,6 +9512,7 @@ namespace Thetis
                 c.BringToFront();
             }
             H1FsLayout();   // last: it decides whether RX2's strip shows at all
+            H1CellStripsShow();
 
             if (m_h1CellMeterTimer == null)
             {
@@ -9505,8 +9542,316 @@ namespace Thetis
                                                    h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
                                                    h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = false;
+            H1CellStripsHide();
         }
 
+        private int H1CellStripRow(object sender)
+        {
+            int row;
+            if (sender != null && _h1CellStripOwner.TryGetValue(sender, out row)) return row;
+            return -1;
+        }
+
+        private void H1CellStripsBuild()
+        {
+            if (_h1cellStripsBuilt) return;
+            _h1cellStripsBuilt = true;
+            try
+            {
+            h1cellStrips = new H1CellStrip[8];
+            for (int row = 2; row < 8; row++)
+            {
+                H1CellStrip s = new H1CellStrip();
+                s.Row = row;
+                string tag = "h1cs" + row;
+                s.Band = H1FsNewCombo(tag + "Band", H1FsBandNames);
+                s.Mode = H1FsNewCombo(tag + "Mode", H1FsModeNames);
+                s.Agc = H1FsNewSlider(tag + "Agc");
+                s.Af = H1FsNewSlider(tag + "Af");
+                s.Zoom = H1FsNewSlider(tag + "Zoom");
+                s.Zoom.Minimum = 0; s.Zoom.Maximum = 100;
+                s.Zoom.Size = new Size(H1FsZoomSliderW, H1FsTagH);
+                s.AgcCap = H1FsNewLabel(tag + "AgcCap", "AGC", false);
+                s.AgcVal = H1FsNewLabel(tag + "AgcVal", "", true);
+                s.AfCap = H1FsNewLabel(tag + "AfCap", "AF", false);
+                s.AfVal = H1FsNewLabel(tag + "AfVal", "", true);
+                s.ZoomCap = H1FsNewLabel(tag + "ZoomCap", "ZOOM", false, H1FsZoomCapW);
+                s.ZoomVal = H1FsNewLabel(tag + "ZoomVal", "", true, H1FsZoomValW);
+                s.Nr = H1FsNewPill(tag + "Nr", "NR", 34);
+                s.Anf = H1FsNewPill(tag + "Anf", "ANF", 32);
+                s.Nb = H1FsNewPill(tag + "Nb", "NB", 26);
+                s.Bin = H1FsNewPill(tag + "Bin", "BIN", 30);
+                s.Ctun = H1FsNewPill(tag + "Ctun", "CTUN");
+                s.Ctun.Size = new Size(H1FsCtunW, H1FsCtrlH);
+                h1cellStrips[row] = s;
+
+                s.Band.SelectedIndexChanged += H1CellBandChanged;
+                s.Mode.SelectedIndexChanged += H1CellModeChanged;
+                s.Agc.ValueChanged += H1CellSliderChanged;
+                s.Af.ValueChanged += H1CellSliderChanged;
+                s.Zoom.ValueChanged += H1CellZoomChanged;
+                foreach (CheckBoxTS hp in new CheckBoxTS[] { s.Nr, s.Anf, s.Nb, s.Bin, s.Ctun })
+                {
+                    hp.MouseEnter += H1FsPillHover;
+                    hp.MouseLeave += H1FsPillHover;
+                    hp.CheckedChanged += H1CellPillChanged;
+                }
+                foreach (Control c in new Control[] { s.Band, s.Mode, s.Agc, s.Af, s.Zoom,
+                    s.AgcCap, s.AgcVal, s.AfCap, s.AfVal, s.ZoomCap, s.ZoomVal,
+                    s.Nr, s.Anf, s.Nb, s.Bin, s.Ctun })
+                {
+                    _h1CellStripOwner[c] = row;
+                    _h1CellStripControls.Add(c);
+                }
+            }
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("h1cs build failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
+        private void H1CellStripsShow()
+        {
+            if (!_h1cellStripsBuilt) return;
+            foreach (Control c in _h1CellStripControls)
+            {
+                c.Visible = true;
+                c.BringToFront();
+            }
+            H1CellStripsLayout();
+        }
+
+        private void H1CellStripsHide()
+        {
+            if (!_h1cellStripsBuilt) return;
+            foreach (Control c in _h1CellStripControls) c.Visible = false;
+        }
+
+        private void H1CellStripsLayout()
+        {
+            if (!_h1cellStripsBuilt || !_h1FullScreenPanafall) return;
+            int left = panelDisplay.Left + pnlDisplay.Left;
+            int top = panelDisplay.Top + pnlDisplay.Top + H1ListenMargin;
+            int cellW = pnlDisplay.Width / 2;
+            int rowH = pnlDisplay.Height / 4;
+            if (cellW < H1FsW + 8 || rowH < H1FsCtrlH + 8) return;
+            for (int row = 2; row < 8; row++)
+            {
+                H1CellStrip s = h1cellStrips[row];
+                if (s == null) continue;
+                int col = row / 4, rowInCol = row % 4;
+                int x = left + (col + 1) * cellW - H1ListenMargin - H1FsW;
+                int y = top + rowInCol * rowH;
+                H1CellStripPlace(s, x, y);
+            }
+        }
+
+        private void H1CellStripPlace(H1CellStrip s, int x, int y)
+        {
+            int x0 = x;
+            s.Band.Location = new Point(x0, y); x0 += H1FsComboW + H1FsGap;
+            s.Mode.Location = new Point(x0, y); x0 += H1FsComboW + H1FsGap;
+            s.AgcCap.Location = new Point(x0, y + 2); x0 += H1FsCapW + 2;
+            s.Agc.Location = new Point(x0, y + 2); x0 += H1FsSliderW + 2;
+            s.AgcVal.Location = new Point(x0, y + 2); x0 += H1FsValW + H1FsGap;
+            s.AfCap.Location = new Point(x0, y + 2); x0 += H1FsCapW + 2;
+            s.Af.Location = new Point(x0, y + 2); x0 += H1FsSliderW + 2;
+            s.AfVal.Location = new Point(x0, y + 2); x0 += H1FsValW + H1FsGap;
+            s.Ctun.Location = new Point(x0, y); x0 += H1FsCtunW + H1FsGap;
+            foreach (CheckBoxTS c in new CheckBoxTS[] { s.Nr, s.Anf, s.Nb, s.Bin })
+            {
+                c.Location = new Point(x0, y);
+                x0 += c.Width + H1FsPillGap;
+            }
+            s.ZoomCap.Location = new Point(x0, y + 2); x0 += H1FsZoomCapW + 2;
+            s.Zoom.Location = new Point(x0, y + 2); x0 += H1FsZoomSliderW + 2;
+            s.ZoomVal.Location = new Point(x0, y + 2);
+        }
+
+        // H1 (M2): read the slices into the six strips.
+        private void H1CellStripsSync()
+        {
+            if (!_h1cellStripsBuilt) return;
+            bool oldSync = _h1fsSync;
+            _h1fsSync = true;
+            try
+            {
+            for (int row = 2; row < 8; row++)
+            {
+                H1CellStrip s = h1cellStrips[row];
+                HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(row);
+                if (s == null || sl == null) continue;
+                Band band = Band.LAST;
+                try { band = BandStackManager.GetNearestBandForFrequency(sl.FrequencyMHz, false, false); } catch { }
+                int bi = Array.IndexOf(H1FsBands, band);
+                if (bi >= 0 && s.Band.SelectedIndex != bi) s.Band.SelectedIndex = bi;
+                int mi = Array.IndexOf(H1FsModes, sl.Mode);
+                if (mi >= 0 && s.Mode.SelectedIndex != mi) s.Mode.SelectedIndex = mi;
+                int agc = H1FsClamp((int)Math.Round(sl.AgcTop), -20, 120);
+                if (s.Agc.Minimum != -20) s.Agc.Minimum = -20;
+                if (s.Agc.Maximum != 120) s.Agc.Maximum = 120;
+                s.Agc.SetValueQuiet(agc);
+                s.AgcVal.Text = agc.ToString();
+                int af = H1FsClamp((int)Math.Round(sl.AudioGain * 100.0), 0, 100);
+                s.Af.Minimum = 0; s.Af.Maximum = 100;
+                s.Af.SetValueQuiet(af);
+                s.AfVal.Text = af.ToString();
+                H1FsZoomSync(s.Zoom, s.ZoomVal, Display.H1CellZoom[row]);
+                H1FsPillFace(s.Nr, sl.Nr > 0, sl.Nr > 0 ? "NR" + sl.Nr : "NR");
+                H1FsPillFace(s.Anf, sl.Anf, "ANF");
+                H1FsPillFace(s.Nb, sl.Nb, "NB");
+                H1FsPillFace(s.Bin, sl.Bin, "BIN");
+                H1FsPillFace(s.Ctun, HeadlessSliceManager.Instance.GetCtunMode(row), "CTUN");
+            }
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("h1cs sync failed: " + ex.GetType().Name + ": " + ex.Message);
+            }
+            finally { _h1fsSync = oldSync; }
+        }
+
+        // ---- the strips acting on their slices ----
+        private void H1CellBandChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            int row = H1CellStripRow(sender);
+            ComboBoxTS c = sender as ComboBoxTS;
+            if (row < 2 || c == null || c.SelectedIndex < 0) return;
+            H1CellApplyBand(row, H1FsBands[c.SelectedIndex]);
+            H1SpacePttTrace("h1cs: band rx" + row + " -> " + H1FsBandNames[c.SelectedIndex]);
+            H1FsSync();
+        }
+
+        private void H1CellModeChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            int row = H1CellStripRow(sender);
+            ComboBoxTS c = sender as ComboBoxTS;
+            if (row < 2 || c == null || c.SelectedIndex < 0) return;
+            DSPMode mode = H1FsModes[c.SelectedIndex];
+            HeadlessSliceManager.Instance.SetMode(row, mode);
+            H1CellSetDefaultFilter(row, mode);
+            H1SpacePttTrace("h1cs: mode rx" + row + " -> " + H1FsModeNames[c.SelectedIndex]);
+            H1FsSync();
+        }
+
+        private void H1CellSliderChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            int row = H1CellStripRow(sender);
+            if (row < 2) return;
+            H1CellStrip s = h1cellStrips[row];
+            if (s == null) return;
+            if (sender == s.Agc)
+            {
+                s.AgcVal.Text = s.Agc.Value.ToString();
+                HeadlessSliceManager.Instance.SetSliceAgcTop(row, s.Agc.Value);
+            }
+            else if (sender == s.Af)
+            {
+                s.AfVal.Text = s.Af.Value.ToString();
+                HeadlessSliceManager.Instance.SetSliceGain(row, Math.Max(0.001, s.Af.Value / 100.0));
+            }
+        }
+
+        private void H1CellZoomChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            int row = H1CellStripRow(sender);
+            if (row < 2 || h1cellStrips[row] == null) return;
+            H1FsSlider t = sender as H1FsSlider;
+            if (t == null) return;
+            double zoom = H1FsZoomFactor(t.Value);
+            Display.H1CellZoom[row] = zoom;
+            H1FsZoomTextSet(h1cellStrips[row].ZoomVal, zoom);
+            H1ApplyCellAnalyserZoom(row);
+            if (pnlDisplay != null) pnlDisplay.Invalidate();
+            H1SpacePttTrace("h1cs: zoom rx" + row + " -> " + H1FsZoomText(zoom));
+        }
+
+        private void H1CellPillChanged(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            int row = H1CellStripRow(sender);
+            if (row < 2) return;
+            H1CellStrip s = h1cellStrips[row];
+            CheckBoxTS p = sender as CheckBoxTS;
+            HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(row);
+            if (s == null || p == null || sl == null) return;
+            if (p == s.Nr)
+            {
+                // a five-state cycle like the console's NR pill
+                int next = sl.Nr + 1;
+                if (next > 4) next = 0;
+                HeadlessSliceManager.Instance.SetSliceNr(row, next);
+            }
+            else if (p == s.Anf) HeadlessSliceManager.Instance.SetSliceAnf(row, p.Checked);
+            else if (p == s.Nb) HeadlessSliceManager.Instance.SetSliceNb(row, p.Checked);
+            else if (p == s.Bin) HeadlessSliceManager.Instance.SetSliceBin(row, p.Checked);
+            else if (p == s.Ctun) HeadlessSliceManager.Instance.SetCtunMode(row, p.Checked);
+            H1SpacePttTrace("h1cs: pill rx" + row + " " + p.Text + "=" + p.Checked);
+            H1FsSync();
+        }
+
+        // H1 (M2): band -> this slice's QSY. The RX1 band stack holds the last used
+        // frequency/mode for a band, so the spare cells land where the operator last
+        // was on that band, like RX2 does.
+        private void H1CellApplyBand(int row, Band band)
+        {
+            try
+            {
+                BandStackFilter bsf = BandStackManager.GetFilter(band);
+                BandStackEntry bse = bsf != null ? bsf.LastVisited : null;
+                if (bse == null && bsf != null) bse = bsf.First();
+                double mhz = (bse != null && bse.Frequency > 0) ? bse.Frequency : H1DefaultBandFreq(band);
+                DSPMode mode = bse != null ? bse.Mode : DSPMode.LSB;
+                HeadlessSliceManager.Instance.SetVFOA(row, mhz);
+                HeadlessSliceManager.Instance.SetMode(row, mode);
+                H1CellSetDefaultFilter(row, mode);
+            }
+            catch { }
+        }
+
+        // H1 (M2): a mode change loads a mode-appropriate passband (the console's own
+        // filter tables do the same; through the slice the TCI side sees it too).
+        private void H1CellSetDefaultFilter(int row, DSPMode mode)
+        {
+            int low, high;
+            switch (mode)
+            {
+                case DSPMode.LSB: case DSPMode.DIGL: low = -3000; high = -300; break;
+                case DSPMode.CWL: low = -500; high = -100; break;
+                case DSPMode.CWU: low = 100; high = 500; break;
+                case DSPMode.USB: case DSPMode.DIGU: low = 300; high = 3000; break;
+                case DSPMode.AM: case DSPMode.SAM: low = -4000; high = 4000; break;
+                case DSPMode.DSB: low = -4000; high = 4000; break;
+                case DSPMode.FM: low = -8000; high = 8000; break;
+                case DSPMode.SPEC: case DSPMode.DRM: low = -6000; high = 6000; break;
+                default: low = 300; high = 3000; break;
+            }
+            HeadlessSliceManager.Instance.SetFilter(row, low, high);
+        }
+
+        private static double H1DefaultBandFreq(Band band)
+        {
+            switch (band)
+            {
+                case Band.B160M: return 1.900;
+                case Band.B80M: return 3.700;
+                case Band.B60M: return 5.350;
+                case Band.B40M: return 7.100;
+                case Band.B30M: return 10.125;
+                case Band.B20M: return 14.100;
+                case Band.B17M: return 18.100;
+                case Band.B15M: return 21.100;
+                case Band.B12M: return 24.900;
+                case Band.B10M: return 28.400;
+                case Band.B6M: return 50.200;
+                default: return 14.100;
+            }
+        }
         private void H1FsDisplayResized(object sender, EventArgs e)
         {
             if (_h1FullScreenPanafall)
@@ -29572,8 +29917,8 @@ namespace Thetis
         private int _h1ZoomRow = -1;
         // H1 (zoom option A): the receiver analysers' own zoom/pan while in the full-window view, saved
         // on entry so a cell zoom can be layered on top of the normal-view zoom and undone cleanly.
-        private readonly double[] _h1BaseZoomSlider = new double[2];
-        private readonly double[] _h1BasePanSlider = new double[2];
+private readonly double[] _h1BaseZoomSlider = new double[8];
+private readonly double[] _h1BasePanSlider = new double[8];
         private bool _h1BaseZoomSaved = false;
 
         // slider value -> span divisor (the same curve the analyser uses: width = intervals*(1-(1-1/100)*log10(9z+1)))
@@ -29604,7 +29949,7 @@ namespace Thetis
         {
             try
             {
-                if (row < 0 || row > 1) return;
+                if (row < 0 || row > 7) return;
                 SpecHPSDR sp = specRX.GetSpecRX(row);
                 if (sp == null) return;
                 double cellZoom = Display.H1CellZoom[row];
@@ -29637,7 +29982,7 @@ namespace Thetis
             try
             {
                 if (!_h1BaseZoomSaved) return;
-                for (int row = 0; row < 2; row++)
+                for (int row = 0; row < 8; row++)
                 {
                     Display.H1RowSpanValid[row] = false;
                     SpecHPSDR sp = specRX.GetSpecRX(row);
