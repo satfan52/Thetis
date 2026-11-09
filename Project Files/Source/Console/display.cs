@@ -241,22 +241,51 @@ namespace Thetis
     public static bool RX1Inactive = false;   // H1: RX1 switched off - RX2 owns the whole pane
         public static readonly bool[] h1row_wf_fresh = new bool[8];      // a row has a new waterfall line to add
         public static readonly double[] H1RowCentreMHz = new double[8];  // per-row centre, for the scale label
-        // H1 (user 2026-11-09): independent zoom for the DDC1 and DDC2 cells of the full-window view.
-        // 1.0 = the receiver's normal span; the console's ZOOM sliders set these. The cell span is
-        // anchored on the middle of the box (user choice 2A) and only the drawing/mapping changes.
-        public static readonly double[] H1CellZoom = new double[2] { 1.0, 1.0 };
-        // H1 (user 2026-11-09, zoom option A): DDC1/DDC2 have their own analyser reconfigured when
-        // their cell is zoomed, so their pixel data already spans the zoomed range. The analyser
-        // publishes that span here (instead of the receiver's normal display span) and the renderer
-        // uses it; the receiver's own display variables keep the normal-view span untouched.
-        public static readonly int[] H1RowDisplayLow = new int[2];
-        public static readonly int[] H1RowDisplayHigh = new int[2];
-        public static readonly bool[] H1RowSpanValid = new bool[2];
+        // H1 (M1 steps 3-5): the 2x4 view is eight receivers. Cells 0/1 keep the
+        // console receiver variables (RX1/RX2); cells 2..7 publish their slice
+        // state here and the renderer paints them from these arrays.
+        public static readonly double[] H1CellZoom = new double[8] { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
+        public static readonly int[] H1RowDisplayLow = new int[8];
+        public static readonly int[] H1RowDisplayHigh = new int[8];
+        public static readonly bool[] H1RowSpanValid = new bool[8];
+        // per-cell slice state, published by the console every 150 ms
+        public static readonly int[] H1RowFilterLow = new int[8];
+        public static readonly int[] H1RowFilterHigh = new int[8];
+        public static readonly int[] H1RowVfoOffsetHz = new int[8];   // VFO A - DDC centre
+        public static readonly int[] H1RowRateHz = new int[8];
+        public static readonly bool[] H1RowActive = new bool[8];      // any consumer holds it
+        public static readonly bool[] H1CellAudio = new bool[8];      // TCI audio on this slice
+        public static readonly bool[] H1CellTx = new bool[8];         // this slice is the digital TX
+        public static readonly int[] H1RowSubLow = new int[8];
+        public static readonly int[] H1RowSubHigh = new int[8];
+        public static readonly int[] H1RowSubOffsetHz = new int[8];   // VFO B - DDC centre
+        public static readonly bool[] H1RowSubEnabled = new bool[8];
+        // per-cell S-meter values and the pixel bounds of the windows the
+        // renderer drew, so the console's grabs hit exactly what is on screen
+        public static readonly float[] H1CellMeterMain = new float[8];
+        public static readonly float[] H1CellMeterSub = new float[8];
+        public static bool H1CellTxActive = false;
+        public static float H1CellMeterSwr = 1f;
+        public static readonly int[] H1RowWinLeft = new int[8];
+        public static readonly int[] H1RowWinRight = new int[8];
+        public static readonly int[] H1RowSubWinLeft = new int[8];
+        public static readonly int[] H1RowSubWinRight = new int[8];
+        static Display()
+        {
+            for (int z = 0; z < 8; z++)
+            {
+                H1RowWinLeft[z] = H1RowWinRight[z] = -1;
+                H1RowSubWinLeft[z] = H1RowSubWinRight[z] = -1;
+                H1CellMeterMain[z] = -200f;
+                H1CellMeterSub[z] = -200f;
+            }
+        }
+
 
         // called by the analyser when it finishes configuring a zoomed cell: store that cell's span
         public static bool H1StoreCellSpan(int row, int low, int high)
         {
-            if (!H1EightRows || row < 0 || row > 1) return false;
+            if (!H1EightRows || row < 0 || row > 7) return false;
             if (H1CellZoom[row] <= 1.0001) return false;
             H1RowDisplayLow[row] = low;
             H1RowDisplayHigh[row] = high;
@@ -6732,14 +6761,14 @@ namespace Thetis
                 // console's click/drag mapping all use this span. Other rows keep the base span.
                 int h1BaseLow = r == 1 ? rx2_display_low : rx_display_low;
                 int h1BaseHigh = r == 1 ? rx2_display_high : rx_display_high;
-                double h1Zoom = r <= 1 ? H1CellZoom[r] : 1.0;
+                double h1Zoom = H1CellZoom[r];
                 if (h1Zoom < 1.0) h1Zoom = 1.0;
                 int h1Low = h1BaseLow;
                 int h1High = h1BaseHigh;
                 // H1 (user 2026-11-09, option A): a zoomed cell's analyser was reconfigured and its
                 // pixels already cover the zoomed span - take the span it published and do not crop
                 // the data a second time. Until that span arrives, fall back to the display crop.
-                if (r <= 1 && h1Zoom > 1.0001 && H1RowSpanValid[r])
+                if (h1Zoom > 1.0001 && H1RowSpanValid[r])
                 {
                     h1Low = H1RowDisplayLow[r];
                     h1High = H1RowDisplayHigh[r];
@@ -6791,7 +6820,7 @@ namespace Thetis
                 // H1 (user 2026-11-09): DDC1/DDC2 carry a horizontal S-meter in the free space at the
                 // left of their control row, so the caption stays at the top-left and the meter sits
                 // level with the controls.
-                bool cellMeter = r <= 1;
+                // H1 (M1 step 5): every cell carries its own S-meter now
 
                 if (m_bDX2_pana_text_brush != null)
                 {
@@ -6803,7 +6832,7 @@ namespace Thetis
                 // as the trace (grid max at the top, span down to specH-16) and the cell's own span,
                 // so the numbers sit on the content and line up with the tuning windows.
                 H1DrawCellScales(cellW, specH, h1Low, h1High, centre, grid_max, grid_min, 0);
-                if (cellMeter) H1DrawCellSMeter(r);
+                H1DrawCellSMeter(r);
 
                 // waterfall: colour the new line, scroll the bitmap down one row, draw it
                 if (hasWf && wfData != null && _h1rowWfBmp[r] != null && hWf == wfH)
@@ -6957,6 +6986,12 @@ namespace Thetis
                     }
                 }
 
+                else if (r >= 2)
+                {
+                    // H1 (M1 step 3): the six spare DDC cells draw their own
+                    // slice windows from the state the console publishes.
+                    H1DrawSpareCellWindow(r, h1Low, h1High, cellW, rowH);
+                }
                 // H1 (user 2026-11-03): the window centre cross - the '+' expected on a tuning
                 // window - drawn in the cell's own coordinate space
                 if (r <= 1)
@@ -7059,6 +7094,82 @@ namespace Thetis
             }
         }
 
+        // H1 (M1 step 3): per-cell window for one of the six spare DDC cells. The
+        // slice state (passband, VFO offsets, sub window) is published by the
+        // console; this maps it onto the cell and paints it with the same
+        // overlay/edge/tag language the RX1/RX2 cells use. The drawn pixel bounds
+        // are stored so the console's edge grabs hit exactly what is on screen.
+        private static int H1CellPx(int low, int high, int cellW, int hz)
+        {
+            if (high <= low) return 0;
+            long px = (long)(hz - low) * cellW / (high - low);
+            if (px < -100000) px = -100000;
+            if (px > 100000) px = 100000;
+            return (int)px;
+        }
+
+        private static void H1DrawSpareCellWindow(int r, int h1Low, int h1High, int cellW, int rowH)
+        {
+            if (r < 2 || r > 7 || cellW < 16) return;
+            H1RowWinLeft[r] = H1RowWinRight[r] = -1;
+            H1RowSubWinLeft[r] = H1RowSubWinRight[r] = -1;
+            if (!H1RowActive[r]) return;
+            int span = h1High - h1Low;
+            if (span <= 0) return;
+
+            bool txCell = H1CellTxActive && H1CellTx[r];
+            bool audioCell = H1CellAudio[r];
+
+            // VFO A window: the slice passband placed relative to the DDC centre
+            int fl = H1CellPx(h1Low, h1High, cellW, H1RowFilterLow[r] + H1RowVfoOffsetHz[r]);
+            int fr = H1CellPx(h1Low, h1High, cellW, H1RowFilterHigh[r] + H1RowVfoOffsetHz[r]);
+            H1RowWinLeft[r] = Math.Min(fl, fr);
+            H1RowWinRight[r] = Math.Max(fl, fr);
+            H1DrawCellWindow(H1RowWinLeft[r], H1RowWinRight[r], cellW, rowH,
+                m_bDX2_display_filter_brush, txCell, audioCell, false);
+
+            // VFO B window, when this slice's sub receiver is on
+            if (H1RowSubEnabled[r])
+            {
+                int sl = H1CellPx(h1Low, h1High, cellW, H1RowSubLow[r] + H1RowSubOffsetHz[r]);
+                int sr = H1CellPx(h1Low, h1High, cellW, H1RowSubHigh[r] + H1RowSubOffsetHz[r]);
+                H1RowSubWinLeft[r] = Math.Min(sl, sr);
+                H1RowSubWinRight[r] = Math.Max(sl, sr);
+                H1DrawCellWindow(H1RowSubWinLeft[r], H1RowSubWinRight[r], cellW, rowH,
+                    m_bDX2_sub_rx_filter_brush, txCell, audioCell, true);
+            }
+
+            // the tuning cross, centred in the VFO A window like the RX1/RX2 cells
+            SharpDX.Direct2D1.Brush marker = m_bDX2_data_line_pen_brush != null
+                ? m_bDX2_data_line_pen_brush : m_bDX2_grid_pen_inb;
+            if (marker != null && H1RowWinRight[r] > H1RowWinLeft[r])
+            {
+                int cx = (H1RowWinLeft[r] + H1RowWinRight[r]) / 2;
+                int cy = (rowH * 62) / 100 / 2;
+                drawLineDX2D(marker, cx - 5, cy, cx + 5, cy, 1);
+                drawLineDX2D(marker, cx, cy - 5, cx, cy + 5, 1);
+            }
+        }
+
+        // one spare cell's window: translucent fill, TX edge/tag when transmitting,
+        // RX tag when the slice is in the audio path (same language as RX1/RX2)
+        private static void H1DrawCellWindow(int left, int right, int cellW, int rowH,
+            SharpDX.Direct2D1.Brush normal, bool txSel, bool audioSel, bool isSub)
+        {
+            int l = Math.Max(0, left);
+            int r = Math.Min(cellW, right);
+            if (r <= l || normal == null) return;
+            drawFilterOverlayDX2D(normal, l, r, cellW, rowH, 1, 0, false, 0);
+
+            if (txSel && m_bDX2_h1_tx_edge != null)
+            {
+                drawLineDX2D(m_bDX2_h1_tx_edge, l, 0, l, rowH, 2);
+                drawLineDX2D(m_bDX2_h1_tx_edge, r, 0, r, rowH, 2);
+            }
+            float ty = 56f;   // below the cell's top control row, as in the eight-row cells
+            if (txSel) H1DrawWindowTag("TX", m_bDX2_h1_tx_edge, l, r, ty);
+            else if (audioSel && !isSub) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, ty);
+        }
         // H1 (user 2026-11-09): a very small S-meter at the left edge of the DDC1/DDC2 cells of the
         // full-window view: two thin bars, main receiver (green) and its sub (teal). While that side
         // is selected to transmit and the radio is keyed, one amber SWR bar and its value take over.
@@ -7103,7 +7214,7 @@ namespace Thetis
             const int w = x1 - x0;
             const int barY = H1SMeterBarY;
             const int barH = H1SMeterBarH;
-            bool txCell = H1MeterTxActive && (r == 0 ? H1MeterTx1 : H1MeterTx2);
+            bool txCell = H1CellTxActive && H1CellTx[r];
 
             // the bed
             if (m_bDX2_h1_cell_frame_dark != null)
@@ -7121,7 +7232,7 @@ namespace Thetis
                         drawLineDX2D(m_bDX2_grid_pen_inb, x, barY, x, barY + barH, 1);
                     }
                 }
-                float swr = H1MeterSwr;
+                float swr = H1CellMeterSwr;
                 if (swr < 1f) swr = 1f;
                 if (swr > 5f) swr = 5f;
                 int fill = (int)((swr - 1f) / 4f * w);
@@ -7171,8 +7282,8 @@ namespace Thetis
             }
 
             // needles and readouts - larger text so the S value can be read at a glance
-            float main = r == 0 ? H1MeterMain1 : H1MeterMain2;
-            float sub = r == 0 ? H1MeterSub1 : H1MeterSub2;
+            float main = H1CellMeterMain[r];
+            float sub = H1CellMeterSub[r];
             if (m_bDX2_display_filter_brush_solid != null && main > -200f)
             {
                 int xm = H1SMeterPixel(main, x0, w);

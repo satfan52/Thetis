@@ -9014,8 +9014,7 @@ namespace Thetis
                 double centre = Display.CentreFreqRX1;
                 for (int s = 2; s < 8; s++)
                 {
-                    try { NetworkIO.VFOfreq(H1StreamToDdc[s], centre, 0); } catch (Exception ex1) { H1SpacePttTrace("eight-row setup: VFO for stream " + s + " failed: " + ex1.Message); }
-                    Display.H1RowCentreMHz[s] = centre;
+                    // H1 (M1): the spares are tuned through their slices below
                     try { cmaster.SetRunPanadapter(s, true); } catch (Exception ex2) { H1SpacePttTrace("eight-row setup: run-pan for stream " + s + " failed: " + ex2.Message); }
                     try
                     {
@@ -9036,6 +9035,25 @@ namespace Thetis
                 }
                 try { UpdateDDCs(Display.RX2Enabled); } catch (Exception exd) { H1SpacePttTrace("eight-row setup: UpdateDDCs failed: " + exd.Message); }
                 Display.H1EightRows = true;
+
+                // H1 (M1): give every spare DDC a display consumer so its WDSP
+                // channel runs (S-meter and GUI tuning), then apply the slice's own
+                // frequency to its DDC. A slice a TCI client owns keeps its state;
+                // a dormant one starts from RX1's centre as this view always did.
+                for (int rx = 2; rx < 8; rx++)
+                {
+                    try
+                    {
+                        HeadlessSliceManager.Instance.AddConsumer(rx, SliceConsumer.Display);
+                        HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(rx);
+                        if (slice == null) continue;
+                        bool tciOwned = slice.HasConsumer(SliceConsumer.TciAudio) || slice.HasConsumer(SliceConsumer.TciIq);
+                        HeadlessSliceManager.Instance.SetVFOA(rx, tciOwned ? slice.FrequencyMHz : centre);
+                        Display.H1RowCentreMHz[rx] = HeadlessSliceManager.Instance.GetDisplayCenterMHz(rx);
+                    }
+                    catch (Exception exa) { H1SpacePttTrace("eight-row setup: slice rx" + rx + " failed: " + exa.Message); }
+                }
+                H1PublishCellMeters();
                 H1SpacePttTrace("eight-row panafall: six spare DDC streams up, spares at " + centre.ToString("f6") + " MHz");
             }
             catch { }
@@ -9047,6 +9065,12 @@ namespace Thetis
             {
                 H1Crumb("eightrows-exit: start");
                 Display.H1EightRows = false;
+                // H1 (M1): release the display consumers - a slice TCI still uses
+                // stays up, only the last consumer switches it off.
+                for (int rx = 2; rx < 8; rx++)
+                {
+                    try { HeadlessSliceManager.Instance.RemoveConsumer(rx, SliceConsumer.Display); } catch { }
+                }
                 H1Crumb("eightrows-exit: cleanup");
                 Display.H1EightRowCleanup();
                 H1RestoreCellAnalysers();   // H1 (zoom option A): put the normal-view zoom back
@@ -9147,6 +9171,184 @@ namespace Thetis
         // the normal meters show, the SWR is the transmitter's, and the flags say which side is TX.
         private System.Windows.Forms.Timer m_h1CellMeterTimer;
 
+        // H1 (M1 step 4): the spare-cell gesture in flight. kind: 0 = VFO A follows
+        // the pointer, 1 = DDC centre pan, 2/3 = main passband low/high edge,
+        // 4 = VFO B follows the pointer, 5/6 = sub passband low/high edge.
+        private int _h1SpareDragCell = -1;
+        private int _h1SpareDragKind = -1;
+        private int _h1SpareDragStartX;
+        private bool _h1SpareDragMoved;
+        private double _h1SpareDragStartCentre;
+        private double _h1SpareDragStartFreq;
+        private int _h1SpareDragStartLow, _h1SpareDragStartHigh;
+        private int _h1SpareSubStartLow, _h1SpareSubStartHigh;
+        // the cell the wheel hit test resolved (headless slice index, -1 = none)
+        private int _h1TuneCellRx = -1;
+
+        private int H1CellWidthPx()
+        {
+            int w = pnlDisplay != null ? pnlDisplay.Width / 2 : 1;
+            return w > 1 ? w : 1;
+        }
+
+        // H1 (M1 step 4): absolute frequency of a point in a spare cell. The cell
+        // span is the analyser span its cloned spec draws (RX1's normal span).
+        private double H1SpareCellFreqAt(int cell, int x)
+        {
+            int low = Display.RXDisplayLow, high = Display.RXDisplayHigh;
+            int cellW = H1CellWidthPx();
+            double centre = Display.H1RowCentreMHz[cell];
+            int span = high - low;
+            if (span <= 0) return centre;
+            int cellX = x - (cell / 4) * cellW;   // window bounds/maps are cell-local
+            if (cellX < 0) cellX = 0;
+            if (cellX > cellW) cellX = cellW;
+            x = cellX;
+            return centre + (low + (double)x / cellW * span) * 1e-6;
+        }
+
+        private void H1SpareCellMouseDown(MouseEventArgs e, int cell)
+        {
+            HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(cell);
+            if (slice == null) return;
+
+            _h1SpareDragCell = cell;
+            _h1SpareDragKind = 0;
+            _h1SpareDragStartX = e.X;
+            _h1SpareDragMoved = false;
+            _h1SpareDragStartCentre = Display.H1RowCentreMHz[cell];
+            _h1SpareDragStartFreq = H1SpareCellFreqAt(cell, e.X);
+            _h1SpareDragStartLow = slice.FilterLow;
+            _h1SpareDragStartHigh = slice.FilterHigh;
+            HeadlessSubRX.State sub = HeadlessSubRX.Get(cell);
+            _h1SpareSubStartLow = sub.FilterLow;
+            _h1SpareSubStartHigh = sub.FilterHigh;
+
+            int wl = Display.H1RowWinLeft[cell], wr = Display.H1RowWinRight[cell];
+            int sl = Display.H1RowSubWinLeft[cell], sr = Display.H1RowSubWinRight[cell];
+            int cellTop = (cell % 4) * (pnlDisplay.Height / 4);
+            int cellX = e.X - (cell / 4) * H1CellWidthPx();
+
+            if (wl >= 0 && wr > wl && Math.Abs(cellX - wl) < 3) _h1SpareDragKind = 2;
+            else if (wl >= 0 && wr > wl && Math.Abs(cellX - wr) < 3) _h1SpareDragKind = 3;
+            else if (sub.Enabled && sl >= 0 && sr > sl && Math.Abs(cellX - sl) < 3) _h1SpareDragKind = 5;
+            else if (sub.Enabled && sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
+            else if (sub.Enabled && sl >= 0 && sr > sl && cellX > sl && cellX < sr) _h1SpareDragKind = 4;
+            else if (e.Y - cellTop < 16) _h1SpareDragKind = 1;   // top strip pans the DDC
+            else _h1SpareDragKind = 0;
+
+            pnlDisplay.Cursor = Cursors.SizeWE;
+            H1SpacePttTrace("h1cell: press cell r" + cell + " kind=" + _h1SpareDragKind
+                + " x=" + e.X + " win=" + wl + ".." + wr + " sub=" + sl + ".." + sr);
+        }
+
+        private void H1SpareCellMouseMove(MouseEventArgs e)
+        {
+            if (_h1SpareDragCell < 0) return;
+            int cell = _h1SpareDragCell;
+            int rx = cell;
+            int dx = e.X - _h1SpareDragStartX;
+            int cellX = e.X - (cell / 4) * H1CellWidthPx();
+            if (Math.Abs(dx) > 1) _h1SpareDragMoved = true;
+            int low = Display.RXDisplayLow, high = Display.RXDisplayHigh;
+            int cellW = H1CellWidthPx();
+            int span = high - low;
+            if (span <= 0) return;
+            try
+            {
+                switch (_h1SpareDragKind)
+                {
+                    case 0:
+                        {
+                            // start-freq + pixel delta: the classic model recentres
+                            // the DDC on every SetVFOA, so an absolute pointer map
+                            // would compound the recentring under the drag
+                            double f = _h1SpareDragStartFreq + (e.X - _h1SpareDragStartX) * (double)span / cellW * 1e-6;
+                            HeadlessSliceManager.Instance.SetVFOA(rx, f);
+                            if (TxArbiter.Instance.ActiveDigitalRx == rx)
+                                TxArbiter.Instance.UpdateDigitalTxFrequency(rx, f);
+                            break;
+                        }
+                    case 1:
+                        {
+                            double hzPerPx = (double)span / cellW;
+                            double f = _h1SpareDragStartCentre + dx * hzPerPx * 1e-6;
+                            HeadlessSliceManager.Instance.SetDDCCenter(rx, f);
+                            break;
+                        }
+                    case 2:
+                    case 3:
+                        {
+                            double hz = low + (double)cellX / cellW * span - Display.H1RowVfoOffsetHz[cell];
+                            int v = (int)Math.Round(hz);
+                            int nlow = _h1SpareDragStartLow, nhigh = _h1SpareDragStartHigh;
+                            if (_h1SpareDragKind == 2) nlow = Math.Min(v, nhigh - 10);
+                            else nhigh = Math.Max(v, nlow + 10);
+                            HeadlessSliceManager.Instance.SetFilter(rx, nlow, nhigh);
+                            break;
+                        }
+                    case 4:
+                        {
+                            long hz = (long)Math.Round(H1SpareCellFreqAt(cell, e.X) * 1e6);
+                            HeadlessSubRX.SetFreq(rx, hz);
+                            break;
+                        }
+                    case 5:
+                    case 6:
+                        {
+                            double hz = low + (double)cellX / cellW * span - Display.H1RowSubOffsetHz[cell];
+                            int v = (int)Math.Round(hz);
+                            int nlow = _h1SpareSubStartLow, nhigh = _h1SpareSubStartHigh;
+                            if (_h1SpareDragKind == 5) nlow = Math.Min(v, nhigh - 10);
+                            else nhigh = Math.Max(v, nlow + 10);
+                            HeadlessSubRX.ApplyFilter(rx, nlow, nhigh);
+                            break;
+                        }
+                }
+            }
+            catch { }
+        }
+
+        private void H1SpareCellMouseUp(MouseEventArgs e)
+        {
+            if (_h1SpareDragCell < 0) return;
+            int cell = _h1SpareDragCell;
+            int rx = cell;
+            bool moved = _h1SpareDragMoved;
+            int kind = _h1SpareDragKind;
+            _h1SpareDragCell = -1;
+            _h1SpareDragKind = -1;
+            try
+            {
+                if (!moved && kind == 0)
+                {
+                    double f = H1SpareCellFreqAt(cell, e.X);
+                    HeadlessSliceManager.Instance.SetVFOA(rx, f);
+                    if (TxArbiter.Instance.ActiveDigitalRx == rx)
+                        TxArbiter.Instance.UpdateDigitalTxFrequency(rx, f);
+                }
+            }
+            catch { }
+            pnlDisplay.Cursor = _useOutlinedCrossCursor ? _cross_outlined : Cursors.Cross;
+            H1SpacePttTrace("h1cell: release cell r" + cell + " kind=" + kind + " moved=" + moved);
+        }
+
+        // H1 (M1 step 4): the wheel over a spare DDC cell tunes that cell's slice.
+        private void H1SpareCellWheel(int rx, int step, int num_steps)
+        {
+            if (rx < 2 || rx > 7) return;
+            try
+            {
+                HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(rx);
+                if (slice == null) return;
+                double f = SnapTune(slice.FrequencyMHz, step, num_steps);
+                HeadlessSliceManager.Instance.SetVFOA(rx, f);
+                if (TxArbiter.Instance.ActiveDigitalRx == rx)
+                    TxArbiter.Instance.UpdateDigitalTxFrequency(rx, f);
+                H1SpacePttTrace("h1cell: wheel cell rx" + rx + " -> " + f.ToString("f6"));
+            }
+            catch { }
+        }
         private void H1PublishCellMeters()
         {
             try
@@ -9158,24 +9360,102 @@ namespace Thetis
                 // use (signal strength + receiver offset). This also ignores the user's multimeter
                 // display mode, so an ADC/level mode cannot be mistaken for an S reading.
                 bool on = chkPower.Checked;
-                Display.H1MeterMain1 = on
-                    ? WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(1)
-                    : -200.0f;
-                Display.H1MeterSub1 = on && chkEnableMultiRX.Checked
-                    ? WDSP.CalculateRXMeter(0, 1, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(1)
-                    : -200.0f;
-                Display.H1MeterMain2 = on && rx2_enabled
-                    ? WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(2)
-                    : -200.0f;
-                Display.H1MeterSub2 = on && rx2_enabled && chkEnableMultiRX2.Checked
-                    ? WDSP.CalculateRXMeter(2, 1, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(2)
-                    : -200.0f;
+                float m1 = on ? WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(1) : -200.0f;
+                float s1 = on && chkEnableMultiRX.Checked ? WDSP.CalculateRXMeter(0, 1, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(1) : -200.0f;
+                float m2 = on && rx2_enabled ? WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(2) : -200.0f;
+                float s2 = on && rx2_enabled && chkEnableMultiRX2.Checked ? WDSP.CalculateRXMeter(2, 1, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(2) : -200.0f;
+                Display.H1MeterMain1 = m1;
+                Display.H1MeterSub1 = s1;
+                Display.H1MeterMain2 = m2;
+                Display.H1MeterSub2 = s2;
                 Display.H1MeterSwr = H1TxSwr;
                 Display.H1MeterTxActive = _mox || _tuning;
                 Display.H1MeterTx1 = chkVFOATX.Checked || (chkSubVFOATX != null && chkSubVFOATX.Checked);
                 Display.H1MeterTx2 = rx2_enabled && (chkVFOBTX.Checked || (chkSubVFOBTX != null && chkSubVFOBTX.Checked));
+
+                // H1 (M1 steps 3-5): per-cell slice state and meters for all eight cells.
+                if (!Display.H1EightRows) return;
+                Display.H1CellTxActive = _mox || _tuning;
+                Display.H1CellMeterSwr = H1TxSwr;
+                for (int r = 0; r < 8; r++)
+                {
+                    if (r == 0)
+                    {
+                        Display.H1CellMeterMain[0] = m1;
+                        Display.H1CellMeterSub[0] = s1;
+                        Display.H1CellTx[0] = Display.H1MeterTx1;
+                        Display.H1CellAudio[0] = false;
+                        continue;
+                    }
+                    if (r == 1)
+                    {
+                        Display.H1CellMeterMain[1] = m2;
+                        Display.H1CellMeterSub[1] = s2;
+                        Display.H1CellTx[1] = Display.H1MeterTx2;
+                        Display.H1CellAudio[1] = false;
+                        continue;
+                    }
+                    HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(r);
+                    if (slice == null) continue;
+                    double centre = HeadlessSliceManager.Instance.GetDisplayCenterMHz(r);
+                    Display.H1RowCentreMHz[r] = centre;
+                    Display.H1RowFilterLow[r] = slice.FilterLow;
+                    Display.H1RowFilterHigh[r] = slice.FilterHigh;
+                    Display.H1RowVfoOffsetHz[r] = (int)Math.Round((slice.FrequencyMHz - centre) * 1e6);
+                    Display.H1RowRateHz[r] = HeadlessSliceManager.Instance.GetSliceRateHz(r);
+                    Display.H1RowActive[r] = slice.IsActive;
+                    Display.H1CellAudio[r] = slice.IsStreamingAudio;
+                    Display.H1CellTx[r] = TxArbiter.Instance.ActiveDigitalRx == r;
+
+                    HeadlessSubRX.State sub = HeadlessSubRX.Get(r);
+                    Display.H1RowSubEnabled[r] = sub.Enabled;
+                    Display.H1RowSubLow[r] = sub.FilterLow;
+                    Display.H1RowSubHigh[r] = sub.FilterHigh;
+                    // a sub that was just switched on has no frequency yet: draw its
+                    // window on the centre rather than at a huge negative offset
+                    Display.H1RowSubOffsetHz[r] = (sub.Enabled && sub.FreqHz > 0) ? (int)Math.Round(sub.FreqHz - centre * 1e6) : 0;
+
+                    // running slice: the WDSP S-meter; dormant slice: the analyser
+                    // trace peak is the honest fallback (its channel meter is frozen).
+                    if (on && slice.IsActive)
+                    {
+                        Display.H1CellMeterMain[r] = (float)WDSP.GetRXAMeter(2 * r, WDSP.rxaMeterType.RXA_S_PK) + RXOffset(1);
+                        Display.H1CellMeterSub[r] = sub.Enabled
+                            ? (float)WDSP.GetRXAMeter(2 * r + 1, WDSP.rxaMeterType.RXA_S_PK) + RXOffset(1)
+                            : -200.0f;
+                    }
+                    else
+                    {
+                        Display.H1CellMeterMain[r] = H1AnalyserCellMeter(r);
+                        Display.H1CellMeterSub[r] = -200.0f;
+                    }
+                }
             }
             catch { }
+        }
+
+        // H1 (M1 step 5): fallback level for a dormant spare cell - the highest
+        // analyser sample of that cell, in dBm. Once the slice runs, the WDSP
+        // meter replaces it with the receiver's true S-meter.
+        private float H1AnalyserCellMeter(int r)
+        {
+            try
+            {
+                if (r < 2 || r > 7) return -200f;
+                float[] data = Display.h1row_current_display_data[r - 2];
+                float[] full = Display.h1row_display_data[r - 2];
+                if (data == null || full == null) return -200f;
+                int n = full.Length;
+                if (n > 4096) n = 4096;    // only the analyser's prefix carries this pass
+                float peak = -200f;
+                for (int i = 0; i < n; i++)
+                {
+                    float v = data[i];
+                    if (v > peak) peak = v;
+                }
+                return peak;
+            }
+            catch { return -200f; }
         }
 
         private void H1FsShow()
@@ -39622,6 +39902,7 @@ namespace Thetis
 
         private TuneLocation TuneHitTest(int x, int y)
         {
+            _h1TuneCellRx = -1;
             int left, right, top, bottom;
             left = grpVFOA.Left + txtVFOAFreq.Left;
             right = left + txtVFOAFreq.Width;
@@ -39702,9 +39983,13 @@ namespace Thetis
             {
                 if (x > left && x < right && y > top && y < bottom)
                 {
-                    if (h1SpareCell) return TuneLocation.H1SpareCell;
-                    int h1row = H1CellRowAt(x - left, y - top);
-                    return h1row == 1 ? TuneLocation.DisplayBottom : TuneLocation.DisplayTop;
+                    int h1spareRow = H1CellRowAt(x - left, y - top);
+                    if (h1spareRow >= 2)
+{
+                    _h1TuneCellRx = h1spareRow;
+                    return TuneLocation.H1SpareCell;
+                }
+                    return h1spareRow == 1 ? TuneLocation.DisplayBottom : TuneLocation.DisplayTop;
                 }
                 return TuneLocation.Other;
             }
@@ -39945,8 +40230,8 @@ namespace Thetis
                     if (!m_bWheelTunesOutsideSpectral) break; // break out because we are not permitted to tune outside spectral/vfo boxes
                     goto case TuneLocation.DisplayTop;        // give me fall through c# gods
                 case TuneLocation.H1SpareCell:
-                    // H1 (step 2): a spare DDC's cell - the wheel must not tune RX1
-                    // through the old fall-through. Per-cell tuning comes later.
+                    // H1 (M1 step 4): the wheel tunes that spare cell's slice
+                    H1SpareCellWheel(_h1TuneCellRx, step, num_steps);
                     break;
 
                 case TuneLocation.DisplayTop:
@@ -60662,9 +60947,9 @@ private void incrementMutliMeterDisplayModeRX2()
                 int h1cell = H1CellRowAt(e.X, e.Y);
                 if (h1cell >= 2)
                 {
-                    H1SpacePttTrace("h1cell: press cell r" + h1cell + " RX" + H1CellRowToRx(h1cell)
-                        + " ignored (spare cell)");
-                    pnlDisplay.Cursor = _useOutlinedCrossCursor ? _cross_outlined : Cursors.Cross;
+                    if (e.Button == MouseButtons.Left) H1SpareCellMouseDown(e, h1cell);
+                    else H1SpacePttTrace("h1cell: press cell r" + h1cell + " RX" + H1CellRowToRx(h1cell)
+                        + " (button " + e.Button + ")");
                     return;
                 }
             }
@@ -61727,6 +62012,11 @@ private void incrementMutliMeterDisplayModeRX2()
         private void pnlDisplay_MouseLeave(object sender, EventArgs e)
         {
             if (Display.PausedDisplay) return;
+            if (_h1SpareDragCell >= 0)
+            {
+                _h1SpareDragCell = -1;
+                _h1SpareDragKind = -1;
+            }
 
             if (!m_frmNotchPopup.Visible) SelectedNotch = null; // clear the selected notch (if there was one)
             m_bDraggingPanafallSplit = false;
@@ -61753,6 +62043,11 @@ private void incrementMutliMeterDisplayModeRX2()
         unsafe private void pnlDisplay_MouseMove(object sender, MouseEventArgs e)
         {
             if (Display.PausedDisplay) return;
+            if (_h1SpareDragCell >= 0)
+            {
+                H1SpareCellMouseMove(e);
+                return;
+            }
             H1SetZoomRowFromPoint(e.X, e.Y);
 
             try
@@ -63042,6 +63337,11 @@ private void incrementMutliMeterDisplayModeRX2()
         {
             _h1ZoomRow = -1;
             if (Display.PausedDisplay) return;
+            if (_h1SpareDragCell >= 0)
+            {
+                H1SpareCellMouseUp(e);
+                return;
+            }
 
             // H1 (user 2026-10-05): a right-click on the FREQUENCY RULER hands the whole screen to the
             // panafall, and Escape brings the controls back. The display engine computes that strip
