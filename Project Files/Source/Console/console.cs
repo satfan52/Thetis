@@ -8808,6 +8808,7 @@ namespace Thetis
             Display.H1CellZoom[row] = zoom;
             H1FsZoomTextSet(row == 0 ? h1fsZoomVal1 : h1fsZoomVal2, zoom);
             H1SpacePttTrace("cell zoom: DDC" + (row + 1) + " -> " + H1FsZoomText(zoom));
+            H1ApplyCellAnalyserZoom(row);
             if (pnlDisplay != null) pnlDisplay.Invalidate();
         }
 
@@ -8997,6 +8998,21 @@ namespace Thetis
         {
             try
             {
+                // H1 (zoom option A): remember the receivers' normal-view zoom/pan before a cell zoom
+                // is layered on top of it, so leaving the full-window view restores the picture
+                try
+                {
+                    for (int zr = 0; zr < 2; zr++)
+                    {
+                        SpecHPSDR zs = specRX.GetSpecRX(zr);
+                        if (zs == null) continue;
+                        _h1BaseZoomSlider[zr] = zs.ZoomSlider;
+                        _h1BasePanSlider[zr] = zs.PanSlider;
+                    }
+                    _h1BaseZoomSaved = true;
+                }
+                catch (Exception zex) { H1SpacePttTrace("eight-row setup: saving analyser zoom failed: " + zex.Message); }
+
                 double centre = Display.CentreFreqRX1;
                 for (int s = 2; s < 8; s++)
                 {
@@ -9035,6 +9051,7 @@ namespace Thetis
                 Display.H1EightRows = false;
                 H1Crumb("eightrows-exit: cleanup");
                 Display.H1EightRowCleanup();
+                H1RestoreCellAnalysers();   // H1 (zoom option A): put the normal-view zoom back
                 for (int s = 2; s < 8; s++)
                 {
                     try { cmaster.SetRunPanadapter(s, false); } catch { }
@@ -9178,6 +9195,10 @@ namespace Thetis
             }
             H1PublishCellMeters();
             m_h1CellMeterTimer.Start();
+
+            // H1 (zoom option A): re-apply any zoom the cells were left with
+            H1ApplyCellAnalyserZoom(0);
+            H1ApplyCellAnalyserZoom(1);
         }
 
         private void H1FsHide()
@@ -29229,6 +29250,85 @@ namespace Thetis
         // H1 (user 2026-11-09): the cell under the pointer, for the per-cell zoom of DDC1/DDC2.
         // -1 = not a zoomed cell. Set at the start of the display mouse handlers and cleared on up.
         private int _h1ZoomRow = -1;
+        // H1 (zoom option A): the receiver analysers' own zoom/pan while in the full-window view, saved
+        // on entry so a cell zoom can be layered on top of the normal-view zoom and undone cleanly.
+        private readonly double[] _h1BaseZoomSlider = new double[2];
+        private readonly double[] _h1BasePanSlider = new double[2];
+        private bool _h1BaseZoomSaved = false;
+
+        // slider value -> span divisor (the same curve the analyser uses: width = intervals*(1-(1-1/100)*log10(9z+1)))
+        private static double H1ZoomFactorFromSlider(double z)
+        {
+            if (z < 0.0) z = 0.0;
+            if (z > 1.0) z = 1.0;
+            double factor = 1.0 / (1.0 - 0.99 * Math.Log10(9.0 * z + 1.0));
+            if (factor < 1.0) factor = 1.0;
+            return factor;
+        }
+
+        private static double H1SliderFromZoomFactor(double factor)
+        {
+            if (factor < 1.0) factor = 1.0;
+            const double fmax = 99.0;   // the analyser's own zoom limit is 1/100 of the span
+            if (factor > fmax) factor = fmax;
+            double l = (1.0 - 1.0 / factor) / 0.99;
+            double z = (Math.Pow(10.0, l) - 1.0) / 9.0;
+            if (z < 0.0) z = 0.0;
+            if (z > 1.0) z = 1.0;
+            return z;
+        }
+
+        // H1 (zoom option A): make the cell's own analyser produce its pixels across the zoomed span.
+        // Zoom is anchored on the middle of the box (choice 2A) via the analyser's pan slider = 0.5.
+        private void H1ApplyCellAnalyserZoom(int row)
+        {
+            try
+            {
+                if (row < 0 || row > 1) return;
+                SpecHPSDR sp = specRX.GetSpecRX(row);
+                if (sp == null) return;
+                double cellZoom = Display.H1CellZoom[row];
+                if (!_h1BaseZoomSaved || cellZoom <= 1.0001)
+                {
+                    Display.H1RowSpanValid[row] = false;
+                    if (_h1BaseZoomSaved && Display.H1EightRows)
+                    {
+                        if (sp.ZoomSlider != _h1BaseZoomSlider[row]) sp.ZoomSlider = _h1BaseZoomSlider[row];
+                        if (sp.PanSlider != _h1BasePanSlider[row]) sp.PanSlider = _h1BasePanSlider[row];
+                    }
+                    return;
+                }
+                double want = H1ZoomFactorFromSlider(_h1BaseZoomSlider[row]) * cellZoom;
+                double zNew = H1SliderFromZoomFactor(want);
+                if (sp.PanSlider != 0.5) sp.PanSlider = 0.5;
+                sp.ZoomSlider = zNew;
+                H1SpacePttTrace("cell zoom: DDC" + (row + 1) + " analyser zoom " + zNew.ToString("F4")
+                    + " span/1x " + want.ToString("F1"));
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("cell zoom: analyser for DDC" + (row + 1) + " failed: " + ex.Message);
+            }
+        }
+
+        // H1 (zoom option A): put the receiver analysers back the way the normal view expects them
+        private void H1RestoreCellAnalysers()
+        {
+            try
+            {
+                if (!_h1BaseZoomSaved) return;
+                for (int row = 0; row < 2; row++)
+                {
+                    Display.H1RowSpanValid[row] = false;
+                    SpecHPSDR sp = specRX.GetSpecRX(row);
+                    if (sp == null) continue;
+                    sp.ZoomSlider = _h1BaseZoomSlider[row];
+                    sp.PanSlider = _h1BasePanSlider[row];
+                }
+                _h1BaseZoomSaved = false;
+            }
+            catch { }
+        }
 
         private void H1SetZoomRowFromPoint(int x, int y)
         {
@@ -29247,9 +29347,19 @@ namespace Thetis
         private void H1ApplyCellZoom(int rx, ref int low, ref int high)
         {
             if (!Display.H1EightRows || _h1ZoomRow < 0) return;
-            if (rx != (_h1ZoomRow == 0 ? 1 : 2)) return;
-            double zoom = Display.H1CellZoom[_h1ZoomRow];
-            if (zoom <= 1.0001 || high <= low) return;
+            int row = _h1ZoomRow;
+            if (rx != (row == 0 ? 1 : 2)) return;
+            double zoom = Display.H1CellZoom[row];
+            if (zoom <= 1.0001) return;
+            // H1 (zoom option A): the cell's analyser is zoomed, so use the span it published
+            if (Display.H1RowSpanValid[row])
+            {
+                low = Display.H1RowDisplayLow[row];
+                high = Display.H1RowDisplayHigh[row];
+                return;
+            }
+            // fallback while the analyser's first zoomed frame has not arrived yet
+            if (high <= low) return;
             double mid = (low + high) * 0.5;
             double half = (high - low) * 0.5 / zoom;
             low = (int)(mid - half);

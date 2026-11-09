@@ -1,4 +1,4 @@
-/*
+﻿/*
 *
 * Copyright (C) 2010-2018  Doug Wigley 
 * 
@@ -630,10 +630,15 @@ namespace Thetis
             switch (disp)
             {
                 case 0:
+                    // H1 (user 2026-11-09, zoom option A): a zoomed DDC1 cell owns analyser 0 - publish
+                    // its zoomed span to the cell row, leaving the normal-view display span alone
+                    if (Display.H1StoreCellSpan(0, _low_freq, _high_freq)) break;
                     Display.RXDisplayLow = _low_freq;
                     Display.RXDisplayHigh = _high_freq;
                      break;
                 case 1:
+                    // same for a zoomed DDC2 cell (analyser 1)
+                    if (Display.H1StoreCellSpan(1, _low_freq, _high_freq)) break;
                     Display.RX2DisplayLow = _low_freq;
                     Display.RX2DisplayHigh = _high_freq;
                     break;

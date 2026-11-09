@@ -245,6 +245,24 @@ namespace Thetis
         // 1.0 = the receiver's normal span; the console's ZOOM sliders set these. The cell span is
         // anchored on the middle of the box (user choice 2A) and only the drawing/mapping changes.
         public static readonly double[] H1CellZoom = new double[2] { 1.0, 1.0 };
+        // H1 (user 2026-11-09, zoom option A): DDC1/DDC2 have their own analyser reconfigured when
+        // their cell is zoomed, so their pixel data already spans the zoomed range. The analyser
+        // publishes that span here (instead of the receiver's normal display span) and the renderer
+        // uses it; the receiver's own display variables keep the normal-view span untouched.
+        public static readonly int[] H1RowDisplayLow = new int[2];
+        public static readonly int[] H1RowDisplayHigh = new int[2];
+        public static readonly bool[] H1RowSpanValid = new bool[2];
+
+        // called by the analyser when it finishes configuring a zoomed cell: store that cell's span
+        public static bool H1StoreCellSpan(int row, int low, int high)
+        {
+            if (!H1EightRows || row < 0 || row > 1) return false;
+            if (H1CellZoom[row] <= 1.0001) return false;
+            H1RowDisplayLow[row] = low;
+            H1RowDisplayHigh[row] = high;
+            H1RowSpanValid[row] = true;
+            return true;
+        }
         public static float[][] h1row_display_data = new float[6][];          // stream order (streams 2..7)
         public static float[][] h1row_current_display_data = new float[6][];
         public static float[][] h1row_waterfall_data = new float[6][];
@@ -6718,7 +6736,17 @@ namespace Thetis
                 if (h1Zoom < 1.0) h1Zoom = 1.0;
                 int h1Low = h1BaseLow;
                 int h1High = h1BaseHigh;
-                if (h1Zoom > 1.0001 && h1BaseHigh > h1BaseLow)
+                // H1 (user 2026-11-09, option A): a zoomed cell's analyser was reconfigured and its
+                // pixels already cover the zoomed span - take the span it published and do not crop
+                // the data a second time. Until that span arrives, fall back to the display crop.
+                if (r <= 1 && h1Zoom > 1.0001 && H1RowSpanValid[r])
+                {
+                    h1Low = H1RowDisplayLow[r];
+                    h1High = H1RowDisplayHigh[r];
+                    h1BaseLow = h1Low;
+                    h1BaseHigh = h1High;
+                }
+                else if (h1Zoom > 1.0001 && h1BaseHigh > h1BaseLow)
                 {
                     double h1mid = (h1BaseLow + h1BaseHigh) * 0.5;
                     double h1half = (h1BaseHigh - h1BaseLow) * 0.5 / h1Zoom;
