@@ -756,16 +756,17 @@ namespace Thetis
             // H1 (user 2026-11-09): a window selected for RX (or transmitting) used to swap its
             // translucent fill for a solid one. The TX/RX tags say that plainly already, so the fill
             // stays translucent now and the trace under the window remains visible in both views.
-            drawFilterOverlayDX2D(normal, left, right, W, H, rx, top, bottom, nVerticalShift);
-
-            if (right <= 0 || left >= W) return;
+            // H1 (user 2026-11-09): clamp to the cell before painting. A window tuned outside the
+            // zoomed span reaches far past the cell edge, and the eight cells share one render target,
+            // so an unclamped fill painted straight into the neighbouring DDC's cell.
+            int l = Math.Max(0, left);
+            int r = Math.Min(W, right);
+            if (r <= l) return;
+            drawFilterOverlayDX2D(normal, l, r, W, H, rx, top, bottom, nVerticalShift);
 
             bool txSel = ((h1_rx_tx_mask >> idx) & 1) != 0;
             bool rxSel = H1RxAudible(idx);
             if (!txSel && !rxSel) return;
-
-            int l = Math.Max(0, left);
-            int r = Math.Min(W, right);
             if (txSel)
             {
                 drawLineDX2D(m_bDX2_h1_tx_edge, l, nVerticalShift + top, l, nVerticalShift + top + H, 2);

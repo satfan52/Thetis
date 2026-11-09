@@ -8524,11 +8524,12 @@ namespace Thetis
         private bool _h1fsBuilt = false;
         private bool _h1fsSync = false;
         // H1 (user 2026-11-09): the strip used to be a 194x92 block in the top-right corner of every
-        // cell. It is three slim rows now, 274x56, so the spectrum keeps its height: row 1 carries the
-        // band / mode dropdowns, CTUN and the NR / ANF / NB / BIN pills; row 2 carries the AGC and AF
-        // sliders, each with its caption and value; row 3 carries the cell's own ZOOM slider - DDC1's
-        // and DDC2's zooms are independent of each other and of the receiver pairs.
-        private const int H1FsW = 274;      // the whole strip
+        // cell. It is two slim rows now, 416x36, so the spectrum keeps its height: row 1 carries the
+        // band / mode dropdowns, CTUN, the NR / ANF / NB / BIN pills and then the cell's own ZOOM
+        // slider (DDC1's and DDC2's zooms are independent of each other); row 2 carries the AGC and
+        // AF sliders, each with its caption and value. Keeping ZOOM in row 1 rather than on a third
+        // row was the user's choice - it intrudes least on the spectrum.
+        private const int H1FsW = 416;      // the whole strip
         private const int H1FsComboW = 46;  // band / mode dropdown
         private const int H1FsGap = 4;
         private const int H1FsPillW = 28;   // NR / ANF / NB / BIN (default width)
@@ -8540,7 +8541,9 @@ namespace Thetis
         private const int H1FsRowH = 20;    // distance between the two rows
         private const int H1FsCtrlH = 18;   // combo / pill height
         private const int H1FsTagH = 16;    // caption / value / slider height
-        private const int H1FsZoomCapW = 34; // "ZOOM" caption width (the third strip row)
+        private const int H1FsZoomCapW = 34;   // "ZOOM" caption width (end of the first strip row)
+        private const int H1FsZoomSliderW = 70; // the per-cell zoom slider
+        private const int H1FsZoomValW = 34;   // "4.0x" - the zoom value
 
         private static readonly string[] H1FsBandNames = { "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m" };
         private static readonly Band[] H1FsBands = { Band.B160M, Band.B80M, Band.B60M, Band.B40M, Band.B30M, Band.B20M, Band.B17M, Band.B15M, Band.B12M, Band.B10M, Band.B6M };
@@ -8578,10 +8581,12 @@ namespace Thetis
             h1fsZoom2 = H1FsNewSlider("h1fsZoom2");
             h1fsZoom1.Minimum = 0; h1fsZoom1.Maximum = 100;
             h1fsZoom2.Minimum = 0; h1fsZoom2.Maximum = 100;
+            h1fsZoom1.Size = new Size(H1FsZoomSliderW, H1FsTagH);
+            h1fsZoom2.Size = new Size(H1FsZoomSliderW, H1FsTagH);
             h1fsZoomCap1 = H1FsNewLabel("h1fsZoomCap1", "ZOOM", false, H1FsZoomCapW);
-            h1fsZoomVal1 = H1FsNewLabel("h1fsZoomVal1", "", true, 34);
+            h1fsZoomVal1 = H1FsNewLabel("h1fsZoomVal1", "", true, H1FsZoomValW);
             h1fsZoomCap2 = H1FsNewLabel("h1fsZoomCap2", "ZOOM", false, H1FsZoomCapW);
-            h1fsZoomVal2 = H1FsNewLabel("h1fsZoomVal2", "", true, 34);
+            h1fsZoomVal2 = H1FsNewLabel("h1fsZoomVal2", "", true, H1FsZoomValW);
 
             h1fsNr1 = H1FsNewPill("h1fsNr1", "NR", 34);   // wide enough for the NR1..NR4 suffix
             h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF", 32);
@@ -9107,6 +9112,12 @@ namespace Thetis
                 px += H1FsPillW + H1FsPillGap;
             }
 
+            // end of row 1: the cell's ZOOM caption/slider/value
+            int zx = px + H1FsGap;
+            zoomCap.Location = new Point(zx, y + 1);
+            zoom.Location = new Point(zx + H1FsZoomCapW + 2, y + 1);
+            zoomVal.Location = new Point(zx + H1FsZoomCapW + 2 + H1FsZoomSliderW + 2, y + 1);
+
             // row 2: AGC caption/slider/value then AF caption/slider/value
             int ry = y + H1FsRowH;
             agcCap.Location = new Point(x, ry);
@@ -9116,12 +9127,6 @@ namespace Thetis
             afCap.Location = new Point(ax, ry);
             af.Location = new Point(ax + H1FsCapW + 2, ry);
             afVal.Location = new Point(ax + H1FsCapW + 2 + H1FsSliderW + 2, ry);
-
-            // row 3: the cell's own ZOOM caption/slider/value
-            int zy = y + 2 * H1FsRowH;
-            zoomCap.Location = new Point(x, zy);
-            zoom.Location = new Point(x + H1FsZoomCapW + 2, zy);
-            zoomVal.Location = new Point(x + H1FsZoomCapW + 2 + H1FsSliderW + 2, zy);
         }
 
         // H1 (user 2026-11-09): the small cell S-meters of the full-window view. The console is the
