@@ -1,4 +1,4 @@
-﻿//=================================================================
+//=================================================================
 // display.cs
 //=================================================================
 // Thetis is a C# implementation of a Software Defined Radio.
@@ -9057,8 +9057,8 @@ namespace Thetis
 
                 m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
                 m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
-                m_bDX2_h1_meter_main = getDXBrushForColour(Color.FromArgb(255, 90, 230, 130));  // H1: the cell S-meter bars
-                m_bDX2_h1_meter_sub = getDXBrushForColour(Color.FromArgb(255, 70, 180, 195));
+                m_bDX2_h1_meter_main = getDXBrushForColour(Color.FromArgb(255, 0, 235, 90));    // H1: the cell S-meter bars - vivid green for the main receiver
+                m_bDX2_h1_meter_sub = getDXBrushForColour(Color.FromArgb(255, 255, 70, 200));   // H1: hot pink for the sub receiver, unmistakably not green
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
                 m_bDX2_Yellow = getDXBrushForColour(Color.Yellow);
