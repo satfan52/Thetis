@@ -749,7 +749,10 @@ namespace Thetis
             bool bottom, int nVerticalShift, bool bIsWaterfall,
             SharpDX.Direct2D1.Brush normal, SharpDX.Direct2D1.Brush solid)
         {
-            drawFilterOverlayDX2D(H1RxAudible(idx) ? solid : normal, left, right, W, H, rx, top, bottom, nVerticalShift);
+            // H1 (user 2026-11-09): a window selected for RX (or transmitting) used to swap its
+            // translucent fill for a solid one. The TX/RX tags say that plainly already, so the fill
+            // stays translucent now and the trace under the window remains visible in both views.
+            drawFilterOverlayDX2D(normal, left, right, W, H, rx, top, bottom, nVerticalShift);
 
             if (right <= 0 || left >= W) return;
 
