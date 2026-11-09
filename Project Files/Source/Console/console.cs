@@ -8525,7 +8525,7 @@ namespace Thetis
         // cell. It is two slim rows now, 256x36, so the spectrum keeps its height: row 1 carries the
         // band / mode dropdowns, CTUN and the NR / ANF / NB / BIN pills; row 2 carries the AGC and AF
         // sliders, each with its caption and value.
-        private const int H1FsW = 268;      // the whole strip
+        private const int H1FsW = 274;      // the whole strip
         private const int H1FsComboW = 46;  // band / mode dropdown
         private const int H1FsGap = 4;
         private const int H1FsPillW = 28;   // NR / ANF / NB / BIN (default width)
@@ -8568,11 +8568,11 @@ namespace Thetis
             h1fsAfCap2 = H1FsNewLabel("h1fsAfCap2", "AF", false);
             h1fsAfVal2 = H1FsNewLabel("h1fsAfVal2", "", true);
 
-            h1fsNr1 = H1FsNewPill("h1fsNr1", "NR", 28);
+            h1fsNr1 = H1FsNewPill("h1fsNr1", "NR", 34);   // wide enough for the NR1..NR4 suffix
             h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF", 32);
             h1fsNb1 = H1FsNewPill("h1fsNb1", "NB", 26);
             h1fsBin1 = H1FsNewPill("h1fsBin1", "BIN", 30);
-            h1fsNr2 = H1FsNewPill("h1fsNr2", "NR", 28);
+            h1fsNr2 = H1FsNewPill("h1fsNr2", "NR", 34);   // wide enough for the NR1..NR4 suffix
             h1fsAnf2 = H1FsNewPill("h1fsAnf2", "ANF", 32);
             h1fsNb2 = H1FsNewPill("h1fsNb2", "NB", 26);
             h1fsBin2 = H1FsNewPill("h1fsBin2", "BIN", 30);
