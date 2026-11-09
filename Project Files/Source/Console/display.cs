@@ -715,6 +715,19 @@ namespace Thetis
         public static int H1RxTxMask { get { return h1_rx_tx_mask; } set { h1_rx_tx_mask = value; } }
         private static bool H1RxAudible(int idx) { return ((h1_rx_audio_mask >> idx) & 1) != 0; }
 
+        // H1 (user 2026-11-09): draw a window's RX/TX tag with the small tag font, centred inside the
+        // drawn window where it fits, else just inside its left edge.
+        private static void H1DrawWindowTag(string text, SharpDX.Direct2D1.Brush brush, int l, int r, float y)
+        {
+            if (brush == null) return;
+            if (l < 0) l = 0;
+            if (r < l) return;
+            SizeF sz = measureStringDX2D(text, fontDX2d_tag);
+            float x = l + 1f;
+            if (r - l > sz.Width + 2f) x = l + ((r - l) - sz.Width) / 2f;
+            drawStringDX2D(text, fontDX2d_tag, brush, x, y);
+        }
+
         // H1: one receiver's window. idx selects the receiver, normal is the translucent brush the
         // window has always worn, solid the same colour at full opacity for a window in the audio path.
         private static void H1DrawRxWindow(int idx, int left, int right, int W, int H, int rx, int top,
@@ -723,21 +736,29 @@ namespace Thetis
         {
             drawFilterOverlayDX2D(H1RxAudible(idx) ? solid : normal, left, right, W, H, rx, top, bottom, nVerticalShift);
 
-            if (((h1_rx_tx_mask >> idx) & 1) == 0) return;
             if (right <= 0 || left >= W) return;
+
+            bool txSel = ((h1_rx_tx_mask >> idx) & 1) != 0;
+            bool rxSel = H1RxAudible(idx);
+            if (!txSel && !rxSel) return;
 
             int l = Math.Max(0, left);
             int r = Math.Min(W, right);
-            drawLineDX2D(m_bDX2_h1_tx_edge, l, nVerticalShift + top, l, nVerticalShift + top + H, 2);
-            drawLineDX2D(m_bDX2_h1_tx_edge, r, nVerticalShift + top, r, nVerticalShift + top + H, 2);
-
-            // the tag belongs on the panadapter only - the window spans both panes
-            if (!bIsWaterfall)
+            if (txSel)
             {
-                int tx = l + 2;
-                if (tx + 24 > W) tx = Math.Max(0, r - 24);
-                drawStringDX2D("TX", fontDX2d_font9, m_bDX2_h1_tx_edge, tx, nVerticalShift + top + 2);
+                drawLineDX2D(m_bDX2_h1_tx_edge, l, nVerticalShift + top, l, nVerticalShift + top + H, 2);
+                drawLineDX2D(m_bDX2_h1_tx_edge, r, nVerticalShift + top, r, nVerticalShift + top + H, 2);
             }
+
+            // the tags belong on the panadapter only - the window spans both panes
+            if (bIsWaterfall) return;
+
+            // H1 (user 2026-11-09): the small TX tag, and a green RX tag for a window in the audio
+            // path - TX over RX when the same window both transmits and receives.
+            float ty = nVerticalShift + top + 9f;
+            float tagStep = 10f;
+            if (txSel) H1DrawWindowTag("TX", m_bDX2_h1_tx_edge, l, r, ty);
+            if (rxSel) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, txSel ? ty + tagStep : ty);
         }
         public static bool SubRX2Enabled
         {
@@ -8429,6 +8450,7 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush;
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush_solid; // H1: a sub window in the audio path draws solid
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_tx_edge;               // H1: the TX window edge + tag
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_rx_tag;                // H1: the RX tag of a window in the audio path
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_zero_line_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_filter_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_cw_zero_pen;
@@ -8832,6 +8854,7 @@ namespace Thetis
             m_bDX2_display_filter_brush = null;
             m_bDX2_display_filter_brush_solid = null;
             m_bDX2_h1_tx_edge = null;
+            m_bDX2_h1_rx_tag = null;
             m_bDX2_tx_filter_brush = null;
             m_bDX2_m_bTextCallOutActive = null;
             m_bDX2_m_bTextCallOutInactive = null;
@@ -8939,6 +8962,7 @@ namespace Thetis
                 m_bDX2_grid_pen_inb = convertBrush((SolidBrush)grid_pen_inb.Brush);
 
                 m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
+                m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
                 m_bDX2_Yellow = getDXBrushForColour(Color.Yellow);
@@ -8990,6 +9014,9 @@ namespace Thetis
         private static SharpDX.DirectWrite.TextFormat fontDX2d_font9;
         private static SharpDX.DirectWrite.TextFormat fontDX2d_font9b;
         private static SharpDX.DirectWrite.TextFormat fontDX2d_font9c;
+        // H1 (user 2026-11-09): the RX/TX tags worn by the receiver windows. Small, so "TX" fits
+        // inside the narrow eight-DDC tuning windows instead of spilling over them.
+        private static SharpDX.DirectWrite.TextFormat fontDX2d_tag;
         private static SharpDX.DirectWrite.TextFormat fontDX2d_panafont;
         private static SharpDX.DirectWrite.TextFormat fontDX2d_font10;
         private static SharpDX.DirectWrite.TextFormat fontDX2d_font12;
@@ -9004,6 +9031,7 @@ namespace Thetis
             if (fontDX2d_font9 != null) Utilities.Dispose(ref fontDX2d_font9);
             if (fontDX2d_font9b != null) Utilities.Dispose(ref fontDX2d_font9b);
             if (fontDX2d_font9c != null) Utilities.Dispose(ref fontDX2d_font9c);
+            if (fontDX2d_tag != null) Utilities.Dispose(ref fontDX2d_tag);
             if (fontDX2d_panafont != null) Utilities.Dispose(ref fontDX2d_panafont);
             if (fontDX2d_font10 != null) Utilities.Dispose(ref fontDX2d_font10);
             if (fontDX2d_font12 != null) Utilities.Dispose(ref fontDX2d_font12);
@@ -9018,6 +9046,7 @@ namespace Thetis
             fontDX2d_font9 = null;
             fontDX2d_font9b = null;
             fontDX2d_font9c = null;
+            fontDX2d_tag = null;
             fontDX2d_panafont = null;
             fontDX2d_font10 = null;
             fontDX2d_font12 = null;
@@ -9042,6 +9071,8 @@ namespace Thetis
                 fontDX2d_font9 = new SharpDX.DirectWrite.TextFormat(fontFactory, font9.FontFamily.Name, (font9.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_font9b = new SharpDX.DirectWrite.TextFormat(fontFactory, font9b.FontFamily.Name, SharpDX.DirectWrite.FontWeight.Bold, SharpDX.DirectWrite.FontStyle.Normal, (font9b.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_font9c = new SharpDX.DirectWrite.TextFormat(fontFactory, font95.FontFamily.Name, (font95.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
+                fontDX2d_tag = new SharpDX.DirectWrite.TextFormat(fontFactory, font9.FontFamily.Name, SharpDX.DirectWrite.FontWeight.Bold,
+                    SharpDX.DirectWrite.FontStyle.Normal, (7f / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_panafont = new SharpDX.DirectWrite.TextFormat(fontFactory, pana_font.FontFamily.Name, (pana_font.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_font10 = new SharpDX.DirectWrite.TextFormat(fontFactory, font10.FontFamily.Name, (font10.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_font12 = new SharpDX.DirectWrite.TextFormat(fontFactory, font12.FontFamily.Name, (font12.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
