@@ -6788,25 +6788,22 @@ namespace Thetis
 
                 // scale: the row's centre frequency, on the left of the spectrum strip
                 double centre = r == 0 ? CentreFreqRX1 : (r == 1 ? CentreFreqRX2 : H1RowCentreMHz[r]);
-                // H1 (user 2026-11-09): DDC1/DDC2 carry a small S-meter on the left edge, so their
-                // caption and number scale start right of it; while that side transmits the meter
-                // shows SWR and the caption drops below the SWR readout.
+                // H1 (user 2026-11-09): DDC1/DDC2 carry a horizontal S-meter in the free space at the
+                // left of their control row, so the caption stays at the top-left and the meter sits
+                // level with the controls.
                 bool cellMeter = r <= 1;
-                bool cellTx = cellMeter && H1MeterTxActive && (r == 0 ? H1MeterTx1 : H1MeterTx2);
-                int captionX = cellMeter ? 20 : 4;
-                int captionY = cellTx ? 16 : 2;
 
                 if (m_bDX2_pana_text_brush != null)
                 {
-                    drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, captionX, y0 + captionY);
+                    drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, 4, y0 + 2);
                 }
 
                 // H1 (user 2026-11-09): the 2x4 cells had only the centre caption - give every DDC
                 // its own dB (vertical) and frequency (horizontal) scales. They use the same mappings
                 // as the trace (grid max at the top, span down to specH-16) and the cell's own span,
                 // so the numbers sit on the content and line up with the tuning windows.
-                H1DrawCellScales(cellW, specH, h1Low, h1High, centre, grid_max, grid_min, cellMeter ? 16 : 0);
-                if (cellMeter) H1DrawCellMeters(specH, r);
+                H1DrawCellScales(cellW, specH, h1Low, h1High, centre, grid_max, grid_min, 0);
+                if (cellMeter) H1DrawCellSMeter(r);
 
                 // waterfall: colour the new line, scroll the bitmap down one row, draw it
                 if (hasWf && wfData != null && _h1rowWfBmp[r] != null && hWf == wfH)
@@ -7066,69 +7063,127 @@ namespace Thetis
         // full-window view: two thin bars, main receiver (green) and its sub (teal). While that side
         // is selected to transmit and the radio is keyed, one amber SWR bar and its value take over.
         // The console publishes the values (H1Meter* above); this only paints them.
-        private static void H1DrawCellMeters(int specH, int r)
-        {
-            int top = 8;
-            int bottom = specH - 18;
-            int h = bottom - top;
-            if (h < 24) return;
-            const int barW = 4;
-            const int xMain = 6;    // right of the cell frame's dark band
-            const int xSub = 11;
+        // H1 (user 2026-11-09): a horizontal true S-meter in the free space left of the control row.
+        // Scale: S0 (-127 dBm) at the left to S9+60 (-13 dBm) at the right; S9 is the taller tick,
+        // the over-scale marks are S9+20 and S9+40. The main receiver is the white needle and text,
+        // the sub receiver the blue one; the readouts say the actual S value, e.g. "S7" or "S9+12".
+        // While that cell's side transmits the bar becomes an amber SWR bar (1..5) with its value.
+        private const int H1SMeterX0 = 72;     // right of the centre caption
+        private const int H1SMeterX1 = 196;    // left of the control block
+        private const int H1SMeterReadX = 202; // "S7" / "SWR 1.3" text column
+        private const int H1SMeterBarY = 15;   // level with the control row
+        private const int H1SMeterBarH = 6;
+        private const float H1SMeterMinDbm = -127f;   // S0
+        private const float H1SMeterMaxDbm = -13f;    // S9+60
 
-            SharpDX.Direct2D1.Brush track = m_bDX2_h1_cell_frame_dark;
+        private static string H1SMeterText(float dbm)
+        {
+            if (dbm <= -200f) return "--";
+            if (dbm < -73f)
+            {
+                int s = (int)Math.Round(9.0 + (dbm + 73.0) / 6.0);
+                if (s < 0) s = 0;
+                return "S" + s.ToString();
+            }
+            return "S9+" + ((int)Math.Round(dbm + 73.0)).ToString();
+        }
+
+        private static int H1SMeterPixel(float dbm, int x0, int w)
+        {
+            float v = dbm;
+            if (v < H1SMeterMinDbm) v = H1SMeterMinDbm;
+            if (v > H1SMeterMaxDbm) v = H1SMeterMaxDbm;
+            return x0 + (int)((v - H1SMeterMinDbm) / (H1SMeterMaxDbm - H1SMeterMinDbm) * w);
+        }
+
+        private static void H1DrawCellSMeter(int r)
+        {
+            const int x0 = H1SMeterX0;
+            const int x1 = H1SMeterX1;
+            const int w = x1 - x0;
+            const int barY = H1SMeterBarY;
+            const int barH = H1SMeterBarH;
             bool txCell = H1MeterTxActive && (r == 0 ? H1MeterTx1 : H1MeterTx2);
+
+            // the bed
+            if (m_bDX2_h1_cell_frame_dark != null)
+                drawFillRectangleDX2D(m_bDX2_h1_cell_frame_dark, x0 - 1, barY - 1, w + 2, barH + 2);
 
             if (txCell)
             {
-                if (track != null) drawFillRectangleDX2D(track, xMain - 1, top - 1, barW + 2, h + 2);
+                // SWR: 1.0 at the left to 5.0 at the right, amber
+                if (m_bDX2_grid_pen_inb != null)
+                {
+                    float[] marks = { 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 5.0f };
+                    foreach (float m in marks)
+                    {
+                        int x = x0 + (int)((m - 1.0f) / 4.0f * w);
+                        drawLineDX2D(m_bDX2_grid_pen_inb, x, barY, x, barY + barH, 1);
+                    }
+                }
                 float swr = H1MeterSwr;
                 if (swr < 1f) swr = 1f;
                 if (swr > 5f) swr = 5f;
-                int fill = (int)((swr - 1f) / 4f * h);
+                int fill = (int)((swr - 1f) / 4f * w);
                 if (m_bDX2_h1_tx_edge != null)
                 {
-                    if (fill > 0) drawFillRectangleDX2D(m_bDX2_h1_tx_edge, xMain, bottom - fill, barW, fill);
+                    if (fill > 0) drawFillRectangleDX2D(m_bDX2_h1_tx_edge, x0, barY, fill, barH);
                     if (fontDX2d_tag != null)
-                        drawStringDX2D("SWR " + swr.ToString("F1"), fontDX2d_tag, m_bDX2_h1_tx_edge, 16, 2);
+                        drawStringDX2D("SWR " + swr.ToString("F1"), fontDX2d_tag, m_bDX2_h1_tx_edge, H1SMeterReadX, 5);
                 }
                 return;
             }
 
-            float main = r == 0 ? H1MeterMain1 : H1MeterMain2;
-            float sub = r == 0 ? H1MeterSub1 : H1MeterSub2;
-            int fillMain = H1MeterBarPixels(main, h);
-            int fillSub = H1MeterBarPixels(sub, h);
-            if (track != null)
-            {
-                drawFillRectangleDX2D(track, xMain - 1, top - 1, barW + 2, h + 2);
-                drawFillRectangleDX2D(track, xSub - 1, top - 1, barW + 2, h + 2);
-            }
-            // H1 (user 2026-11-09): the bars wear the tuning windows' own colours - the solid RX window
-            // brush (white) for the main receiver and the solid SubRX window brush (blue) for the sub.
-            if (m_bDX2_display_filter_brush_solid != null && fillMain > 0)
-                drawFillRectangleDX2D(m_bDX2_display_filter_brush_solid, xMain, bottom - fillMain, barW, fillMain);
-            if (m_bDX2_sub_rx_filter_brush_solid != null && fillSub > 0)
-                drawFillRectangleDX2D(m_bDX2_sub_rx_filter_brush_solid, xSub, bottom - fillSub, barW, fillSub);
-
-            // three faint ticks, S1 / S5 / S9 style, right of the bars
+            // S scale ticks: S0..S9 every 6 dB, then +20 / +40 over S9
             if (m_bDX2_grid_pen_inb != null)
             {
-                for (int i = 1; i <= 3; i++)
+                for (int k = 0; k <= 9; k++)
                 {
-                    int y = bottom - (int)((double)i / 4.0 * h);
-                    drawLineDX2D(m_bDX2_grid_pen_inb, xSub + barW + 1, y, xSub + barW + 3, y, 1);
+                    float dbm = H1SMeterMinDbm + k * 6f;
+                    int x = H1SMeterPixel(dbm, x0, w);
+                    bool s9 = (k == 9);
+                    int ty0 = s9 ? barY - 3 : barY;
+                    int ty1 = s9 ? barY + barH + 3 : barY + barH;
+                    drawLineDX2D(m_bDX2_grid_pen_inb, x, ty0, x, ty1, 1);
+                }
+                foreach (float over in new float[] { 10f, 20f, 40f })
+                {
+                    int x = H1SMeterPixel(-73f + over, x0, w);
+                    drawLineDX2D(m_bDX2_grid_pen_inb, x, barY - 2, x, barY + barH + 2, 1);
                 }
             }
-        }
 
-        // dBm to bar pixels: -125 dBm at the bottom, -40 dBm at the top (S-meter fashion)
-        private static int H1MeterBarPixels(float dbm, int h)
-        {
-            float v = dbm;
-            if (v < -125f) v = -125f;
-            if (v > -40f) v = -40f;
-            return (int)((v + 125f) / 85f * h);
+            // small scale labels under the bar: 9 (S9), +20, +40
+            if (fontDX2d_tag != null && m_bDX2_grid_text_brush != null)
+            {
+                int x9 = H1SMeterPixel(-73f, x0, w);
+                drawStringDX2D("9", fontDX2d_tag, m_bDX2_grid_text_brush, x9 - 2, barY + barH + 3);
+                int x20 = H1SMeterPixel(-73f + 20f, x0, w);
+                drawStringDX2D("+20", fontDX2d_tag, m_bDX2_grid_text_brush, x20 - 6, barY + barH + 3);
+                int x40 = H1SMeterPixel(-73f + 40f, x0, w);
+                drawStringDX2D("+40", fontDX2d_tag, m_bDX2_grid_text_brush, x40 - 6, barY + barH + 3);
+            }
+
+            // needles and readouts
+            float main = r == 0 ? H1MeterMain1 : H1MeterMain2;
+            float sub = r == 0 ? H1MeterSub1 : H1MeterSub2;
+            if (m_bDX2_display_filter_brush_solid != null && main > -200f)
+            {
+                int xm = H1SMeterPixel(main, x0, w);
+                drawFillRectangleDX2D(m_bDX2_display_filter_brush_solid, xm - 1, barY - 3, 2, barH + 6);
+            }
+            if (m_bDX2_sub_rx_filter_brush_solid != null && sub > -200f)
+            {
+                int xs = H1SMeterPixel(sub, x0, w);
+                drawFillRectangleDX2D(m_bDX2_sub_rx_filter_brush_solid, xs - 1, barY + 2, 2, barH + 4);
+            }
+            if (fontDX2d_tag != null)
+            {
+                if (m_bDX2_display_filter_brush_solid != null)
+                    drawStringDX2D(H1SMeterText(main), fontDX2d_tag, m_bDX2_display_filter_brush_solid, H1SMeterReadX, 5);
+                if (m_bDX2_sub_rx_filter_brush_solid != null)
+                    drawStringDX2D(H1SMeterText(sub), fontDX2d_tag, m_bDX2_sub_rx_filter_brush_solid, H1SMeterReadX, 16);
+            }
         }
 
         // H1: free the eight-row bitmaps when the mode ends
