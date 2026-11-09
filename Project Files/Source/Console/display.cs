@@ -7068,11 +7068,11 @@ namespace Thetis
         // the over-scale marks are S9+20 and S9+40. The main receiver is the white needle and text,
         // the sub receiver the blue one; the readouts say the actual S value, e.g. "S7" or "S9+12".
         // While that cell's side transmits the bar becomes an amber SWR bar (1..5) with its value.
-        private const int H1SMeterX0 = 72;     // right of the centre caption
-        private const int H1SMeterX1 = 196;    // left of the control block
-        private const int H1SMeterReadX = 202; // "S7" / "SWR 1.3" text column
-        private const int H1SMeterBarY = 15;   // level with the control row
-        private const int H1SMeterBarH = 6;
+        private const int H1SMeterX0 = 64;     // right of the centre caption
+        private const int H1SMeterX1 = 214;    // left of the control block
+        private const int H1SMeterReadX = 220; // "S7" / "SWR 1.3" text column
+        private const int H1SMeterBarY = 13;   // level with the control row
+        private const int H1SMeterBarH = 8;
         private const float H1SMeterMinDbm = -127f;   // S0
         private const float H1SMeterMaxDbm = -13f;    // S9+60
 
@@ -7128,8 +7128,9 @@ namespace Thetis
                 if (m_bDX2_h1_tx_edge != null)
                 {
                     if (fill > 0) drawFillRectangleDX2D(m_bDX2_h1_tx_edge, x0, barY, fill, barH);
-                    if (fontDX2d_tag != null)
-                        drawStringDX2D("SWR " + swr.ToString("F1"), fontDX2d_tag, m_bDX2_h1_tx_edge, H1SMeterReadX, 5);
+                    SharpDX.DirectWrite.TextFormat tf = fontDX2d_font9 != null ? fontDX2d_font9 : fontDX2d_tag;
+                    if (tf != null)
+                        drawStringDX2D("SWR " + swr.ToString("F1"), tf, m_bDX2_h1_tx_edge, H1SMeterReadX, 2);
                 }
                 return;
             }
@@ -7153,36 +7154,42 @@ namespace Thetis
                 }
             }
 
-            // small scale labels under the bar: 9 (S9), +20, +40
+            // scale labels under the bar: S1, S5, S9, +20, +40
             if (fontDX2d_tag != null && m_bDX2_grid_text_brush != null)
             {
+                int ylab = barY + barH + 2;
+                int xs1 = H1SMeterPixel(-121f, x0, w);
+                drawStringDX2D("S1", fontDX2d_tag, m_bDX2_grid_text_brush, xs1 - 4, ylab);
+                int xs5 = H1SMeterPixel(-97f, x0, w);
+                drawStringDX2D("S5", fontDX2d_tag, m_bDX2_grid_text_brush, xs5 - 4, ylab);
                 int x9 = H1SMeterPixel(-73f, x0, w);
-                drawStringDX2D("9", fontDX2d_tag, m_bDX2_grid_text_brush, x9 - 2, barY + barH + 3);
+                drawStringDX2D("S9", fontDX2d_tag, m_bDX2_grid_text_brush, x9 - 4, ylab);
                 int x20 = H1SMeterPixel(-73f + 20f, x0, w);
-                drawStringDX2D("+20", fontDX2d_tag, m_bDX2_grid_text_brush, x20 - 6, barY + barH + 3);
+                drawStringDX2D("+20", fontDX2d_tag, m_bDX2_grid_text_brush, x20 - 6, ylab);
                 int x40 = H1SMeterPixel(-73f + 40f, x0, w);
-                drawStringDX2D("+40", fontDX2d_tag, m_bDX2_grid_text_brush, x40 - 6, barY + barH + 3);
+                drawStringDX2D("+40", fontDX2d_tag, m_bDX2_grid_text_brush, x40 - 6, ylab);
             }
 
-            // needles and readouts
+            // needles and readouts - larger text so the S value can be read at a glance
             float main = r == 0 ? H1MeterMain1 : H1MeterMain2;
             float sub = r == 0 ? H1MeterSub1 : H1MeterSub2;
             if (m_bDX2_display_filter_brush_solid != null && main > -200f)
             {
                 int xm = H1SMeterPixel(main, x0, w);
-                drawFillRectangleDX2D(m_bDX2_display_filter_brush_solid, xm - 1, barY - 3, 2, barH + 6);
+                drawFillRectangleDX2D(m_bDX2_display_filter_brush_solid, xm - 1, barY - 4, 3, barH + 8);
             }
             if (m_bDX2_sub_rx_filter_brush_solid != null && sub > -200f)
             {
                 int xs = H1SMeterPixel(sub, x0, w);
-                drawFillRectangleDX2D(m_bDX2_sub_rx_filter_brush_solid, xs - 1, barY + 2, 2, barH + 4);
+                drawFillRectangleDX2D(m_bDX2_sub_rx_filter_brush_solid, xs - 1, barY + 3, 3, barH + 5);
             }
-            if (fontDX2d_tag != null)
+            SharpDX.DirectWrite.TextFormat rt = fontDX2d_font9 != null ? fontDX2d_font9 : fontDX2d_tag;
+            if (rt != null)
             {
                 if (m_bDX2_display_filter_brush_solid != null)
-                    drawStringDX2D(H1SMeterText(main), fontDX2d_tag, m_bDX2_display_filter_brush_solid, H1SMeterReadX, 5);
+                    drawStringDX2D(H1SMeterText(main), rt, m_bDX2_display_filter_brush_solid, H1SMeterReadX, 5);
                 if (m_bDX2_sub_rx_filter_brush_solid != null)
-                    drawStringDX2D(H1SMeterText(sub), fontDX2d_tag, m_bDX2_sub_rx_filter_brush_solid, H1SMeterReadX, 16);
+                    drawStringDX2D(H1SMeterText(sub), rt, m_bDX2_sub_rx_filter_brush_solid, H1SMeterReadX, 17);
             }
         }
 

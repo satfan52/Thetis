@@ -9151,10 +9151,25 @@ namespace Thetis
         {
             try
             {
-                Display.H1MeterMain1 = new_meter_data;        // RX1 signal (dBm)
-                Display.H1MeterSub1 = sub_meter_value[0];     // SubRX1 signal (dBm)
-                Display.H1MeterMain2 = rx2_meter_new_data;    // RX2 signal (dBm)
-                Display.H1MeterSub2 = sub_meter_value[1];     // SubRX2 signal (dBm)
+                // H1 (user report 2026-11-09): the legacy meters' values were frozen while the
+                // full-window view was up - their Paint handlers are what release the meter thread
+                // for the next reading, and those controls are hidden here. Each cell meter is
+                // computed directly instead, with the same expressions the console's own S-meters
+                // use (signal strength + receiver offset). This also ignores the user's multimeter
+                // display mode, so an ADC/level mode cannot be mistaken for an S reading.
+                bool on = chkPower.Checked;
+                Display.H1MeterMain1 = on
+                    ? WDSP.CalculateRXMeter(0, 0, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(1)
+                    : -200.0f;
+                Display.H1MeterSub1 = on && chkEnableMultiRX.Checked
+                    ? WDSP.CalculateRXMeter(0, 1, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(1)
+                    : -200.0f;
+                Display.H1MeterMain2 = on && rx2_enabled
+                    ? WDSP.CalculateRXMeter(2, 0, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(2)
+                    : -200.0f;
+                Display.H1MeterSub2 = on && rx2_enabled && chkEnableMultiRX2.Checked
+                    ? WDSP.CalculateRXMeter(2, 1, WDSP.MeterType.SIGNAL_STRENGTH) + RXOffset(2)
+                    : -200.0f;
                 Display.H1MeterSwr = H1TxSwr;
                 Display.H1MeterTxActive = _mox || _tuning;
                 Display.H1MeterTx1 = chkVFOATX.Checked || (chkSubVFOATX != null && chkSubVFOATX.Checked);
