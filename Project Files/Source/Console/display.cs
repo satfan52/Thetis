@@ -713,6 +713,21 @@ namespace Thetis
         private static int h1_rx_tx_mask = 0x01;
         public static int H1RxAudioMask { get { return h1_rx_audio_mask; } set { h1_rx_audio_mask = value; } }
         public static int H1RxTxMask { get { return h1_rx_tx_mask; } set { h1_rx_tx_mask = value; } }
+
+        // H1 (user 2026-11-09): the small S-meters at the left edge of the DDC1 and DDC2 cells in the
+        // full-window view. The console publishes the four signal levels (dBm), the SWR and which side
+        // is transmitting; the renderer only reads them.
+        private static float h1meter_main1 = -200f, h1meter_sub1 = -200f, h1meter_main2 = -200f, h1meter_sub2 = -200f;
+        private static float h1meter_swr = 1f;
+        private static bool h1meter_txactive, h1meter_tx1, h1meter_tx2;
+        public static float H1MeterMain1 { get { return h1meter_main1; } set { h1meter_main1 = value; } }
+        public static float H1MeterSub1 { get { return h1meter_sub1; } set { h1meter_sub1 = value; } }
+        public static float H1MeterMain2 { get { return h1meter_main2; } set { h1meter_main2 = value; } }
+        public static float H1MeterSub2 { get { return h1meter_sub2; } set { h1meter_sub2 = value; } }
+        public static float H1MeterSwr { get { return h1meter_swr; } set { h1meter_swr = value; } }
+        public static bool H1MeterTxActive { get { return h1meter_txactive; } set { h1meter_txactive = value; } }
+        public static bool H1MeterTx1 { get { return h1meter_tx1; } set { h1meter_tx1 = value; } }
+        public static bool H1MeterTx2 { get { return h1meter_tx2; } set { h1meter_tx2 = value; } }
         private static bool H1RxAudible(int idx) { return ((h1_rx_audio_mask >> idx) & 1) != 0; }
 
         // H1 (user 2026-11-09): draw a window's RX/TX tag with the small tag font, centred inside the
@@ -6707,9 +6722,16 @@ namespace Thetis
 
                 // scale: the row's centre frequency, on the left of the spectrum strip
                 double centre = r == 0 ? CentreFreqRX1 : (r == 1 ? CentreFreqRX2 : H1RowCentreMHz[r]);
+                // H1 (user 2026-11-09): DDC1/DDC2 carry a small S-meter on the left edge, so their
+                // caption and number scale start right of it; while that side transmits the meter
+                // shows SWR and the caption drops below the SWR readout.
+                bool cellMeter = r <= 1;
+                bool cellTx = cellMeter && H1MeterTxActive && (r == 0 ? H1MeterTx1 : H1MeterTx2);
+                int captionX = cellMeter ? 20 : 4;
+                int captionY = cellTx ? 16 : 2;
                 if (m_bDX2_pana_text_brush != null)
                 {
-                    drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, 4, y0 + 2);
+                    drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, captionX, y0 + captionY);
                 }
 
                 // H1 (user 2026-11-09): the 2x4 cells had only the centre caption - give every DDC
@@ -6717,7 +6739,8 @@ namespace Thetis
                 // as the trace (grid max at the top, span down to specH-16) and the cell's own span,
                 // so the numbers sit on the content and line up with the tuning windows.
                 H1DrawCellScales(cellW, specH, r == 1 ? rx2_display_low : rx_display_low,
-                    r == 1 ? rx2_display_high : rx_display_high, centre, grid_max, grid_min);
+                    r == 1 ? rx2_display_high : rx_display_high, centre, grid_max, grid_min, cellMeter ? 16 : 0);
+                if (cellMeter) H1DrawCellMeters(specH, r);
 
                 // waterfall: colour the new line, scroll the bitmap down one row, draw it
                 if (hasWf && wfData != null && _h1rowWfBmp[r] != null && hWf == wfH)
@@ -6920,7 +6943,7 @@ namespace Thetis
         // H1 (user 2026-11-09): per-cell dB (vertical) and frequency (horizontal) scales for the
         // eight-DDC view. Drawn under the cell's render transform, so coordinates are cell-local.
         private static void H1DrawCellScales(int cellW, int specH, int low, int high, double centreMhz,
-            int gridMax, int gridMin)
+            int gridMax, int gridMin, int labelInset)
         {
             if (cellW < 120 || specH < 48) return;
             int range = high - low;
@@ -6940,7 +6963,7 @@ namespace Thetis
                 if (m_bDX2_hgrid_pen != null)
                     drawLineDX2D(m_bDX2_hgrid_pen, 0, y, cellW, y, 1);
                 if (y >= 26)   // leave the top to the cells centre caption
-                    drawStringDX2D(db.ToString(), fontDX2d_font9, m_bDX2_grid_text_brush, 3, y - 8);
+                    drawStringDX2D(db.ToString(), fontDX2d_font9, m_bDX2_grid_text_brush, 3 + labelInset, y - 8);
             }
 
             // ---- frequency scale: vertical grid lines and their labels ----
@@ -6964,6 +6987,73 @@ namespace Thetis
                 if (tx + (int)sz.Width > cellW - 2) tx = cellW - 2 - (int)sz.Width;
                 drawStringDX2D(label, fontDX2d_font9, m_bDX2_grid_text_brush, tx, labelY);
             }
+        }
+
+        // H1 (user 2026-11-09): a very small S-meter at the left edge of the DDC1/DDC2 cells of the
+        // full-window view: two thin bars, main receiver (green) and its sub (teal). While that side
+        // is selected to transmit and the radio is keyed, one amber SWR bar and its value take over.
+        // The console publishes the values (H1Meter* above); this only paints them.
+        private static void H1DrawCellMeters(int specH, int r)
+        {
+            int top = 8;
+            int bottom = specH - 18;
+            int h = bottom - top;
+            if (h < 24) return;
+            const int barW = 4;
+            const int xMain = 6;    // right of the cell frame's dark band
+            const int xSub = 11;
+
+            SharpDX.Direct2D1.Brush track = m_bDX2_h1_cell_frame_dark;
+            bool txCell = H1MeterTxActive && (r == 0 ? H1MeterTx1 : H1MeterTx2);
+
+            if (txCell)
+            {
+                if (track != null) drawFillRectangleDX2D(track, xMain - 1, top - 1, barW + 2, h + 2);
+                float swr = H1MeterSwr;
+                if (swr < 1f) swr = 1f;
+                if (swr > 5f) swr = 5f;
+                int fill = (int)((swr - 1f) / 4f * h);
+                if (m_bDX2_h1_tx_edge != null)
+                {
+                    if (fill > 0) drawFillRectangleDX2D(m_bDX2_h1_tx_edge, xMain, bottom - fill, barW, fill);
+                    if (fontDX2d_tag != null)
+                        drawStringDX2D("SWR " + swr.ToString("F1"), fontDX2d_tag, m_bDX2_h1_tx_edge, 16, 2);
+                }
+                return;
+            }
+
+            float main = r == 0 ? H1MeterMain1 : H1MeterMain2;
+            float sub = r == 0 ? H1MeterSub1 : H1MeterSub2;
+            int fillMain = H1MeterBarPixels(main, h);
+            int fillSub = H1MeterBarPixels(sub, h);
+            if (track != null)
+            {
+                drawFillRectangleDX2D(track, xMain - 1, top - 1, barW + 2, h + 2);
+                drawFillRectangleDX2D(track, xSub - 1, top - 1, barW + 2, h + 2);
+            }
+            if (m_bDX2_h1_meter_main != null && fillMain > 0)
+                drawFillRectangleDX2D(m_bDX2_h1_meter_main, xMain, bottom - fillMain, barW, fillMain);
+            if (m_bDX2_h1_meter_sub != null && fillSub > 0)
+                drawFillRectangleDX2D(m_bDX2_h1_meter_sub, xSub, bottom - fillSub, barW, fillSub);
+
+            // three faint ticks, S1 / S5 / S9 style, right of the bars
+            if (m_bDX2_grid_pen_inb != null)
+            {
+                for (int i = 1; i <= 3; i++)
+                {
+                    int y = bottom - (int)((double)i / 4.0 * h);
+                    drawLineDX2D(m_bDX2_grid_pen_inb, xSub + barW + 1, y, xSub + barW + 3, y, 1);
+                }
+            }
+        }
+
+        // dBm to bar pixels: -125 dBm at the bottom, -40 dBm at the top (S-meter fashion)
+        private static int H1MeterBarPixels(float dbm, int h)
+        {
+            float v = dbm;
+            if (v < -125f) v = -125f;
+            if (v > -40f) v = -40f;
+            return (int)((v + 125f) / 85f * h);
         }
 
         // H1: free the eight-row bitmaps when the mode ends
@@ -8451,6 +8541,8 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush_solid; // H1: a sub window in the audio path draws solid
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_tx_edge;               // H1: the TX window edge + tag
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_rx_tag;                // H1: the RX tag of a window in the audio path
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_meter_main;            // H1: the cell S-meter's main receiver bar
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_meter_sub;             // H1: the cell S-meter's sub receiver bar
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_zero_line_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_filter_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_cw_zero_pen;
@@ -8855,6 +8947,8 @@ namespace Thetis
             m_bDX2_display_filter_brush_solid = null;
             m_bDX2_h1_tx_edge = null;
             m_bDX2_h1_rx_tag = null;
+            m_bDX2_h1_meter_main = null;
+            m_bDX2_h1_meter_sub = null;
             m_bDX2_tx_filter_brush = null;
             m_bDX2_m_bTextCallOutActive = null;
             m_bDX2_m_bTextCallOutInactive = null;
@@ -8963,6 +9057,8 @@ namespace Thetis
 
                 m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
                 m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
+                m_bDX2_h1_meter_main = getDXBrushForColour(Color.FromArgb(255, 90, 230, 130));  // H1: the cell S-meter bars
+                m_bDX2_h1_meter_sub = getDXBrushForColour(Color.FromArgb(255, 70, 180, 195));
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
                 m_bDX2_Yellow = getDXBrushForColour(Color.Yellow);

@@ -9020,6 +9020,28 @@ namespace Thetis
             }
         }
 
+        // H1 (user 2026-11-09): the small cell S-meters of the full-window view. The console is the
+        // only place that can read the meter values, so a 150 ms timer publishes them to Display while
+        // the full-window strips are up. Nothing is measured here: the four values are the same ones
+        // the normal meters show, the SWR is the transmitter's, and the flags say which side is TX.
+        private System.Windows.Forms.Timer m_h1CellMeterTimer;
+
+        private void H1PublishCellMeters()
+        {
+            try
+            {
+                Display.H1MeterMain1 = new_meter_data;        // RX1 signal (dBm)
+                Display.H1MeterSub1 = sub_meter_value[0];     // SubRX1 signal (dBm)
+                Display.H1MeterMain2 = rx2_meter_new_data;    // RX2 signal (dBm)
+                Display.H1MeterSub2 = sub_meter_value[1];     // SubRX2 signal (dBm)
+                Display.H1MeterSwr = H1TxSwr;
+                Display.H1MeterTxActive = _mox || _tuning;
+                Display.H1MeterTx1 = chkVFOATX.Checked || (chkSubVFOATX != null && chkSubVFOATX.Checked);
+                Display.H1MeterTx2 = rx2_enabled && (chkVFOBTX.Checked || (chkSubVFOBTX != null && chkSubVFOBTX.Checked));
+            }
+            catch { }
+        }
+
         private void H1FsShow()
         {
             if (!_h1fsBuilt) return;
@@ -9036,11 +9058,21 @@ namespace Thetis
                 c.BringToFront();
             }
             H1FsLayout();   // last: it decides whether RX2's strip shows at all
+
+            if (m_h1CellMeterTimer == null)
+            {
+                m_h1CellMeterTimer = new System.Windows.Forms.Timer();
+                m_h1CellMeterTimer.Interval = 150;
+                m_h1CellMeterTimer.Tick += (s, ev) => H1PublishCellMeters();
+            }
+            H1PublishCellMeters();
+            m_h1CellMeterTimer.Start();
         }
 
         private void H1FsHide()
         {
             if (!_h1fsBuilt) return;
+            if (m_h1CellMeterTimer != null) m_h1CellMeterTimer.Stop();
             foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
                                                    h1fsAfCap1, h1fsAf1, h1fsAfVal1,
                                                    h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
