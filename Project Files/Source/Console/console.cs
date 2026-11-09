@@ -62479,12 +62479,11 @@ private void incrementMutliMeterDisplayModeRX2()
                         float start_freq = PixelToHz(spectrum_drag_last_x, 2);
                         float end_freq = PixelToHz(e.X, 2);
                         float delta = start_freq - end_freq;
-                        // H1 (user 2026-11-08): RX2's window offset convention is mirrored in the
-                        // eight-DDC cell - the CTUN-on window only follows the pointer with the RX1
-                        // sign. The CTUN-off spectrum drag is NOT mirrored, so its compensation is
-                        // gone (it only papered over the half-width cell mapping).
-                        if (Display.H1EightRows) VFOBFreq += delta * 0.0000010;
-                        else VFOBFreq -= delta * 0.0000010;
+                        // H1 (user 2026-11-09): with the cell-scale frequency mapping in place RX2
+                        // takes the same arithmetic as RX1 in the eight-DDC view too. The old
+                        // eight-DDC sign flip was compensating the half-width cell mapping and now
+                        // ran the window the opposite way to the drag.
+                        VFOBFreq -= delta * 0.0000010;
                         spectrum_drag_last_x = e.X;
                     }
                 }
