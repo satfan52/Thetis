@@ -8545,6 +8545,7 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_data_line_fpen_brush;
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_data_line_pen_brush;
 
+        private const int H1SubWindowAlpha = 150;   // H1: the SubRX window fill's opacity cap (0..255)
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush;
         private static SharpDX.Direct2D1.Brush m_bDX2_sub_rx_filter_brush_solid; // H1: a sub window in the audio path draws solid
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_tx_edge;               // H1: the TX window edge + tag
@@ -9078,7 +9079,12 @@ namespace Thetis
                 m_bDX2_dhp1 = getDXBrushForColour(Color.FromArgb(150, 0, 0, 255));
                 m_bDX2_dhp2 = getDXBrushForColour(Color.FromArgb(150, 255, 0, 0));
 
-                m_bDX2_sub_rx_filter_brush = convertBrush((SolidBrush)sub_rx_filter_brush);
+                // H1 (user 2026-11-09): the SubRX windows are drawn a good deal lighter than the
+                // configured fill so the trace under them stays readable; the colour itself is the
+                // sub window colour, only its alpha is capped.
+                m_bDX2_sub_rx_filter_brush = convertBrush(new SolidBrush(Color.FromArgb(
+                    Math.Min((int)sub_rx_filter_color.A, H1SubWindowAlpha),
+                    sub_rx_filter_color.R, sub_rx_filter_color.G, sub_rx_filter_color.B)));
                 m_bDX2_sub_rx_filter_brush_solid = convertBrush(new SolidBrush(Color.FromArgb(255, sub_rx_filter_color)));
                 m_bDX2_sub_rx_zero_line_pen = convertBrush((SolidBrush)sub_rx_zero_line_pen.Brush);
                 m_bDX2_tx_filter_pen = convertBrush((SolidBrush)tx_filter_pen.Brush);
