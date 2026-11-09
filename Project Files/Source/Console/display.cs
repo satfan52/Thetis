@@ -6626,7 +6626,11 @@ namespace Thetis
             byte[] row = new byte[cellW * pixel_size];
 
             if (m_nDecimation < 1) m_nDecimation = 1;
-            int nPix = cellW / m_nDecimation;
+            // H1: the pooled display buffers are BUFFER_SIZE long, but only the analyser prefix
+            // (one sample per display pixel divided by the decimation) carries this pass's data;
+            // the rest is stale pool content. The cell must map that prefix across its width.
+            int h1ValidLen = displayTargetWidth / m_nDecimation;
+            if (h1ValidLen < 2) h1ValidLen = 2;
 
             for (int r = 0; r < 8; r++)
             {
@@ -6662,18 +6666,25 @@ namespace Thetis
                 if (m_bDX2_grid_pen_inb != null)
                     drawLineDX2D(m_bDX2_grid_pen_inb, 0, y0, cellW, y0, 1);
 
-                // spectrum trace - one vertical column per decimated bin, from the trace down
-                if (data != null && m_bDX2_data_line_pen_brush != null && nPix > 1)
+                // spectrum trace - the WHOLE analyser span is mapped across the cell width.
+                // H1 (user 2026-11-09, the 2x4 regression): the cell is half the pane width but the
+                // old loop drew only the first cellW bins of the pane-sized analyser array, so each
+                // cell showed the lower half of its span at the pane scale while the windows/overlays
+                // (and later the drag mapping) used the full span across the cell - CTUN off then
+                // panned at the wrong rate and the window no longer sat on the trace.
+                int h1DataLen = Math.Min(h1ValidLen, data == null ? 0 : data.Length);
+                if (data != null && m_bDX2_data_line_pen_brush != null && cellW > 1 && h1DataLen > 1)
                 {
-                    for (int i = 0; i < nPix; i++)
+                    for (int i = 0; i < cellW; i++)
                     {
-                        float v = data[i];
+                        int di = (int)((long)i * h1DataLen / cellW);
+                        if (di >= h1DataLen) di = h1DataLen - 1;
+                        float v = data[di];
                         if (v <= -200.0f) continue;
                         float p = (grid_max - v) / span;
                         if (p < 0f) p = 0f; else if (p > 1f) p = 1f;
-                        int x = i * m_nDecimation;
                         int y = y0 + (int)(p * (specH - 16));
-                        drawLineDX2D(m_bDX2_data_line_pen_brush, x, y, x, y0 + specH - 2, m_nDecimation);
+                        drawLineDX2D(m_bDX2_data_line_pen_brush, i, y, i, y0 + specH - 2, 1);
                     }
                 }
 
@@ -6690,11 +6701,14 @@ namespace Thetis
                     bool addRow = h1row_wf_fresh[r];
                     h1row_wf_fresh[r] = false;
 
-                    if (addRow && nPix > 1)
+                    int h1WfLen = Math.Min(h1ValidLen, wfData == null ? 0 : wfData.Length);
+                    if (addRow && cellW > 1 && h1WfLen > 1)
                     {
-                        for (int i = 0; i < nPix; i++)   // for each pixel in the new line
+                        for (int i = 0; i < cellW; i++)   // one cell pixel covers the whole span
                         {
-                            float v = wfData[i];
+                            int di = (int)((long)i * h1WfLen / cellW);
+                            if (di >= h1WfLen) di = h1WfLen - 1;
+                            float v = wfData[di];
                             int R, G, B;
                             if (v <= low_threshold)
                             {
@@ -6748,21 +6762,10 @@ namespace Thetis
                                 }
                             }
 
-                            row[(i * m_nDecimation) * pixel_size + 0] = (byte)B;
-                            row[(i * m_nDecimation) * pixel_size + 1] = (byte)G;
-                            row[(i * m_nDecimation) * pixel_size + 2] = (byte)R;
-                            row[(i * m_nDecimation) * pixel_size + 3] = 255;
-                        }
-                        // fill pixels into decimation spaces so we dont have gaps
-                        for (int i = 0; i < nPix; i++)
-                        {
-                            for (int j = 1; j < m_nDecimation && (i * m_nDecimation) + j < cellW; j++)
-                            {
-                                row[((i * m_nDecimation) + j) * pixel_size + 0] = row[(i * m_nDecimation) * pixel_size + 0];
-                                row[((i * m_nDecimation) + j) * pixel_size + 1] = row[(i * m_nDecimation) * pixel_size + 1];
-                                row[((i * m_nDecimation) + j) * pixel_size + 2] = row[(i * m_nDecimation) * pixel_size + 2];
-                                row[((i * m_nDecimation) + j) * pixel_size + 3] = row[(i * m_nDecimation) * pixel_size + 3];
-                            }
+                            row[i * pixel_size + 0] = (byte)B;
+                            row[i * pixel_size + 1] = (byte)G;
+                            row[i * pixel_size + 2] = (byte)R;
+                            row[i * pixel_size + 3] = 255;
                         }
 
                         // scroll: the new line goes on top, the rest moves down one row - the main waterfall's pattern
@@ -6770,7 +6773,7 @@ namespace Thetis
                         SharpDX.Direct2D1.Bitmap top = new SharpDX.Direct2D1.Bitmap(_d2dRenderTarget, new Size2(cellW, wfH - 1), new BitmapProperties(new SDXPixelFormat(bmp.PixelFormat.Format, ALPHA_MODE)));
                         top.CopyFromBitmap(bmp, new SharpDX.Point(0, 0), new SharpDX.Rectangle(0, 0, cellW, wfH - 1));
                         bmp.CopyFromMemory(row, cellW * pixel_size, new SharpDX.Rectangle(0, 0, cellW, 1));
-                        bmp.CopyFromBitmap(top, new SharpDX.Point(0, 1), new SharpDX.Rectangle(0, 0, W, wfH - 1));
+                        bmp.CopyFromBitmap(top, new SharpDX.Point(0, 1), new SharpDX.Rectangle(0, 0, cellW, wfH - 1));
                         Utilities.Dispose(ref top);
                     }
 

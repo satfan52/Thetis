@@ -28966,13 +28966,24 @@ namespace Thetis
             return PixelToHz(x, 1);
         }
 
+        // H1 (user 2026-11-09): in the eight-DDC view each cell draws a whole receiver's span
+        // across half the pane, so the frequency/pixel scale of the display is the CELL width.
+        // Using the pane width here made every drag and filter-edge test run at half rate.
+        private int H1FrequencyPixelWidth()
+        {
+            int w = pnlDisplay.Width;
+            if (Display.H1EightRows) w /= 2;
+            if (w < 1) w = 1;
+            return w;
+        }
+
         private float PixelToHz(float x, int rx)
         {
             //[2.10.1.0] MW0LGE re-implemented
             getLowHighForRXn(rx, out int low, out int high);
 
             int width = high - low;
-            return (float)(low + ((double)x / (double)pnlDisplay.Width) * (double)width);
+            return (float)(low + ((double)x / (double)H1FrequencyPixelWidth()) * (double)width);
         }
 
         private int HzToPixel(float freq)
@@ -29004,7 +29015,7 @@ namespace Thetis
             }
 
             int width = high - low;
-            return (int)((double)(freq - low + localRit + localXit) / (double)width * (double)pnlDisplay.Width);
+            return (int)((double)(freq - low + localRit + localXit) / (double)width * (double)H1FrequencyPixelWidth());
         }
 
         private float PixelToDb(float y)
@@ -39241,7 +39252,7 @@ namespace Thetis
             if (Display.H1EightRows)
             {
                 top = panelDisplay.Top + pnlDisplay.Top + pnlDisplay.Height / 4;   // H1: RX2's cell
-                bottom = top + pnlDisplay.Height / 8;
+                bottom = top + pnlDisplay.Height / 4;
             }
             else
             {
@@ -41766,10 +41777,10 @@ namespace Thetis
 
             if (Display.H1EightRows)
             {
-                // H1 (user report 2026-10-06): the eight-row view - row 1 is RX1, row 2 is RX2, and
-                // the six spare rows belong to no receiver yet, so nothing claims a point outside
-                // the first two rows. This is what gates the RX2 drag-tune and sub-window grabs.
-                int h1rowH = pnlDisplay.Height / 8;
+                // H1 (user report 2026-10-06): rows 1-2 of the two-column layout are RX1 and RX2;
+                // a cell is a quarter of the pane high, not an eighth - the old /8 left the lower
+                // part of each receiver's cell unclaimed, so drags there started nothing.
+                int h1rowH = pnlDisplay.Height / 4;
                 if (h1rowH <= 0) h1rowH = 1;
                 nMinHeightRX1 = 0;
                 nMaxHeightRX1 = h1rowH;
@@ -60712,7 +60723,13 @@ private void incrementMutliMeterDisplayModeRX2()
                                 else if (bOverRX1 && e.Y < 15)
                                     bOverTopOfDragSpectrum = true;
 
-                                if (current_click_tune_mode == ClickTuneMode.Off || bOverTopOfDragSpectrum)
+                                // H1 (user 2026-11-09): with CTUN off the panafall must stay draggable even
+                                // while the click-tune crosshair mode is on - otherwise the press only retunes
+                                // once and the drag tunes nothing. The CTUN-on drag is armed inside this same
+                                // gate, which is why CTUN on kept working and CTUN off did not.
+                                bool h1CtunOffDrag = Display.H1EightRows && (bOverRX1 || bOverRX2) &&
+                                    (H1Rx2Half(e.Y) ? !_click_tune_rx2_display : !_click_tune_display);
+                                if (current_click_tune_mode == ClickTuneMode.Off || bOverTopOfDragSpectrum || h1CtunOffDrag)
                                 {
                                     if (rx2_enabled && H1Rx2Half(e.Y))
                                     {
@@ -61006,7 +61023,11 @@ private void incrementMutliMeterDisplayModeRX2()
                                     rx2_sub_high_filter_drag = true;
                                 }
                                 else if (chkEnableMultiRX.Checked && !_mox &&
-                                    (e.X > vfoa_sub_low_x - 3 && e.X < vfoa_sub_high_x + 3))
+                                    (!rx2_enabled || !H1Rx2Half(e.Y)) &&
+                                    Display.VFOASubWindowRight > Display.VFOASubWindowLeft &&
+                                    Display.VFOASubWindowRight > 0 &&
+                                    Display.VFOASubWindowLeft < pnlDisplay.Width &&
+                                    e.X > Display.VFOASubWindowLeft - 3 && e.X < Display.VFOASubWindowRight + 3)
                                 {
                                     sub_drag_last_x = e.X;
                                     sub_drag_start_freq = VFOASubFreq; // H1: dragging the sub tunes SubVFOA, RX2 or not
@@ -61014,7 +61035,10 @@ private void incrementMutliMeterDisplayModeRX2()
                                 }
                                 else if (rx2_enabled && chkEnableMultiRX2.Checked && !_mox &&
                                     H1Rx2Half(e.Y) &&
-                                    (e.X > vfob_sub_low_x - 3 && e.X < vfob_sub_high_x + 3))
+                                    Display.VFOBSubWindowRight > Display.VFOBSubWindowLeft &&
+                                    Display.VFOBSubWindowRight > 0 &&
+                                    Display.VFOBSubWindowLeft < pnlDisplay.Width &&
+                                    e.X > Display.VFOBSubWindowLeft - 3 && e.X < Display.VFOBSubWindowRight + 3)
                                 {
                                     // H1: dragging the SubRX2 window tunes SubVFOB, the sub of RX2
                                     sub_drag_last_x = e.X;
@@ -62431,11 +62455,7 @@ private void incrementMutliMeterDisplayModeRX2()
                         float start_freq = PixelToHz(spectrum_drag_last_x, 2);
                         float end_freq = PixelToHz(e.X, 2);
                         float delta = end_freq - start_freq;
-                        // H1 (user 2026-11-08): the eight-DDC cell draws RX2's window on the pane-wide
-                        // frequency scale but half the width, which ran its drag the opposite way;
-                        // measured against the drawn window, RX2 needs the RX1 sign there.
-                        if (Display.H1EightRows) VFOBFreq += delta * 0.0000010;
-                        else VFOBFreq -= delta * 0.0000010;
+                        VFOBFreq -= delta * 0.0000010;
                         spectrum_drag_last_x = e.X;
                     }
                 }
@@ -62459,6 +62479,10 @@ private void incrementMutliMeterDisplayModeRX2()
                         float start_freq = PixelToHz(spectrum_drag_last_x, 2);
                         float end_freq = PixelToHz(e.X, 2);
                         float delta = start_freq - end_freq;
+                        // H1 (user 2026-11-08): RX2's window offset convention is mirrored in the
+                        // eight-DDC cell - the CTUN-on window only follows the pointer with the RX1
+                        // sign. The CTUN-off spectrum drag is NOT mirrored, so its compensation is
+                        // gone (it only papered over the half-width cell mapping).
                         if (Display.H1EightRows) VFOBFreq += delta * 0.0000010;
                         else VFOBFreq -= delta * 0.0000010;
                         spectrum_drag_last_x = e.X;
