@@ -8523,13 +8523,11 @@ namespace Thetis
         private CheckBoxTS h1fsCtun1, h1fsCtun2;
         private bool _h1fsBuilt = false;
         private bool _h1fsSync = false;
-        // H1 (user 2026-11-09): the strip used to be a 194x92 block in the top-right corner of every
-        // cell. It is two slim rows now, 416x36, so the spectrum keeps its height: row 1 carries the
-        // band / mode dropdowns, CTUN, the NR / ANF / NB / BIN pills and then the cell's own ZOOM
-        // slider (DDC1's and DDC2's zooms are independent of each other); row 2 carries the AGC and
-        // AF sliders, each with its caption and value. Keeping ZOOM in row 1 rather than on a third
-        // row was the user's choice - it intrudes least on the spectrum.
-        private const int H1FsW = 416;      // the whole strip
+        // H1 (user 2026-11-09): the strip used to be a 194x92 block, then two slim rows. It is ONE row
+        // now (688 x 20) as the user asked: every control over the top of the cell, which leaves the
+        // most spectrum visible. Order: band, mode, AGC, AF, CTUN, NR/ANF/NB/BIN, ZOOM - DDC1's and
+        // DDC2's zooms stay independent of each other.
+        private const int H1FsW = 688;      // the whole strip, one row
         private const int H1FsComboW = 46;  // band / mode dropdown
         private const int H1FsGap = 4;
         private const int H1FsPillW = 28;   // NR / ANF / NB / BIN (default width)
@@ -9115,35 +9113,32 @@ namespace Thetis
             Label zoomCap, H1FsSlider zoom, Label zoomVal,
             CheckBoxTS nr, CheckBoxTS anf, CheckBoxTS nb, CheckBoxTS bin, int x, int y)
         {
-            // row 1: band, mode, CTUN, NR, ANF, NB, BIN
-            band.Location = new Point(x, y);
-            int mx = x + H1FsComboW + H1FsGap;
-            mode.Location = new Point(mx, y);
+            // one row, left to right: band, mode, AGC, AF, CTUN, NR, ANF, NB, BIN, ZOOM
+            int x0 = x;
+            band.Location = new Point(x0, y); x0 += H1FsComboW + H1FsGap;
+            mode.Location = new Point(x0, y); x0 += H1FsComboW + H1FsGap;
+
+            agcCap.Location = new Point(x0, y + 2); x0 += H1FsCapW + 2;
+            agc.Location = new Point(x0, y + 2); x0 += H1FsSliderW + 2;
+            agcVal.Location = new Point(x0, y + 2); x0 += H1FsValW + H1FsGap;
+
+            afCap.Location = new Point(x0, y + 2); x0 += H1FsCapW + 2;
+            af.Location = new Point(x0, y + 2); x0 += H1FsSliderW + 2;
+            afVal.Location = new Point(x0, y + 2); x0 += H1FsValW + H1FsGap;
+
             CheckBoxTS ctun = (band == h1fsBand1) ? h1fsCtun1 : h1fsCtun2;
-            int cx = mx + H1FsComboW + H1FsGap;
-            if (ctun != null) ctun.Location = new Point(cx, y);
-            int px = cx + H1FsCtunW + H1FsGap;
+            if (ctun != null) ctun.Location = new Point(x0, y);
+            x0 += H1FsCtunW + H1FsGap;
+
             foreach (CheckBoxTS c in new CheckBoxTS[] { nr, anf, nb, bin })
             {
-                c.Location = new Point(px, y);
-                px += H1FsPillW + H1FsPillGap;
+                c.Location = new Point(x0, y);
+                x0 += c.Width + H1FsPillGap;   // the pills have individual widths (NR needs room)
             }
 
-            // end of row 1: the cell's ZOOM caption/slider/value
-            int zx = px + H1FsGap;
-            zoomCap.Location = new Point(zx, y + 1);
-            zoom.Location = new Point(zx + H1FsZoomCapW + 2, y + 1);
-            zoomVal.Location = new Point(zx + H1FsZoomCapW + 2 + H1FsZoomSliderW + 2, y + 1);
-
-            // row 2: AGC caption/slider/value then AF caption/slider/value
-            int ry = y + H1FsRowH;
-            agcCap.Location = new Point(x, ry);
-            agc.Location = new Point(x + H1FsCapW + 2, ry);
-            agcVal.Location = new Point(x + H1FsCapW + 2 + H1FsSliderW + 2, ry);
-            int ax = x + H1FsCapW + 2 + H1FsSliderW + 2 + H1FsValW + H1FsGap;
-            afCap.Location = new Point(ax, ry);
-            af.Location = new Point(ax + H1FsCapW + 2, ry);
-            afVal.Location = new Point(ax + H1FsCapW + 2 + H1FsSliderW + 2, ry);
+            zoomCap.Location = new Point(x0, y + 2); x0 += H1FsZoomCapW + 2;
+            zoom.Location = new Point(x0, y + 2); x0 += H1FsZoomSliderW + 2;
+            zoomVal.Location = new Point(x0, y + 2);
         }
 
         // H1 (user 2026-11-09): the small cell S-meters of the full-window view. The console is the
