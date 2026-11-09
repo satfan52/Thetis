@@ -8514,17 +8514,25 @@ namespace Thetis
 
         private ComboBoxTS h1fsBand1, h1fsMode1, h1fsBand2, h1fsMode2;
         private H1FsSlider h1fsAgc1, h1fsAf1, h1fsAgc2, h1fsAf2;
+        private Label h1fsAgcCap1, h1fsAgcVal1, h1fsAfCap1, h1fsAfVal1;
+        private Label h1fsAgcCap2, h1fsAgcVal2, h1fsAfCap2, h1fsAfVal2;
         private CheckBoxTS h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1;
         private CheckBoxTS h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2;
         private CheckBoxTS h1fsCtun1, h1fsCtun2;
         private bool _h1fsBuilt = false;
         private bool _h1fsSync = false;
         private const int H1FsW = 194;      // the whole strip
-        private const int H1FsHalf = 94;    // a slider
         private const int H1FsComboW = 62;  // a dropdown - 94 read as oversized on the panafall
         private const int H1FsGap = 6;
         private const int H1FsPillW = 45;
         private const int H1FsPillGap = 3;
+        // H1 (user 2026-11-09): the block was two unlabelled sliders side by side. Redesigned as one
+        // row per slider - caption, slider, value - so the AGC and AF settings and their numbers read
+        // straight off the strip: 26 + 6 + 124 + 6 + 32 = 194 (the strip width).
+        private const int H1FsCapW = 26;    // "AGC" / "AF" caption
+        private const int H1FsSliderW = 124; // a slider
+        private const int H1FsValW = 32;    // the slider's value, right aligned
+        private const int H1FsRowH = 24;    // one caption/slider/value row
 
         private static readonly string[] H1FsBandNames = { "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m" };
         private static readonly Band[] H1FsBands = { Band.B160M, Band.B80M, Band.B60M, Band.B40M, Band.B30M, Band.B20M, Band.B17M, Band.B15M, Band.B12M, Band.B10M, Band.B6M };
@@ -8545,6 +8553,16 @@ namespace Thetis
             h1fsAf1 = H1FsNewSlider("h1fsAf1");
             h1fsAgc2 = H1FsNewSlider("h1fsAgc2");
             h1fsAf2 = H1FsNewSlider("h1fsAf2");
+
+            // H1 (user 2026-11-09): name each slider and show its value next to it
+            h1fsAgcCap1 = H1FsNewLabel("h1fsAgcCap1", "AGC", false);
+            h1fsAgcVal1 = H1FsNewLabel("h1fsAgcVal1", "", true);
+            h1fsAfCap1 = H1FsNewLabel("h1fsAfCap1", "AF", false);
+            h1fsAfVal1 = H1FsNewLabel("h1fsAfVal1", "", true);
+            h1fsAgcCap2 = H1FsNewLabel("h1fsAgcCap2", "AGC", false);
+            h1fsAgcVal2 = H1FsNewLabel("h1fsAgcVal2", "", true);
+            h1fsAfCap2 = H1FsNewLabel("h1fsAfCap2", "AF", false);
+            h1fsAfVal2 = H1FsNewLabel("h1fsAfVal2", "", true);
 
             h1fsNr1 = H1FsNewPill("h1fsNr1", "NR");
             h1fsAnf1 = H1FsNewPill("h1fsAnf1", "ANF");
@@ -8614,11 +8632,29 @@ namespace Thetis
             // only produced a light grey slab on the dark panafall, so the strip dresses its own:
             // a dark bed and a real thumb, which is the one thing the class knows how to move.
             t.Name = name;
-            t.Size = new Size(H1FsHalf, 24);
+            t.Size = new Size(H1FsSliderW, 24);
             t.Visible = false;
             t.TabStop = false;
             Controls.Add(t);
             return t;
+        }
+
+        // H1 (user 2026-11-09): a strip caption ("AGC"/"AF") or a right-aligned slider value.
+        private Label H1FsNewLabel(string name, string text, bool rightAligned)
+        {
+            Label l = new Label();
+            l.Name = name;
+            l.Text = text;
+            l.AutoSize = false;
+            l.Size = new Size(rightAligned ? H1FsValW : H1FsCapW, 20);
+            l.TextAlign = rightAligned ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft;
+            l.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            l.BackColor = Color.FromArgb(22, 26, 32);   // the slider bed, so the row reads as one block
+            l.ForeColor = rightAligned ? Color.FromArgb(255, 200, 0) : Color.FromArgb(175, 182, 192);
+            l.Visible = false;
+            l.TabStop = false;
+            Controls.Add(l);
+            return l;
         }
 
         private CheckBoxTS H1FsNewPill(string name, string text)
@@ -8663,6 +8699,11 @@ namespace Thetis
                 H1FsSliderFit(h1fsAf1, ptbAF);
                 H1FsSliderFit(h1fsAgc2, ptbRX2RF);
                 H1FsSliderFit(h1fsAf2, ptbRX2AF);
+                // H1 (user 2026-11-09): the numbers beside the sliders
+                H1FsSliderText(h1fsAgcVal1, ptbRF);
+                H1FsSliderText(h1fsAfVal1, ptbAF);
+                H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
+                H1FsSliderText(h1fsAfVal2, ptbRX2AF);
 
                 // NR is a five-state cycle, so the pill's face is the mode, not a tick
                 int nr1 = GetSelectedNR(1), nr2 = GetSelectedNR(2);
@@ -8686,6 +8727,14 @@ namespace Thetis
                 if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
             }
             finally { _h1fsSync = false; }
+        }
+
+        // H1 (user 2026-11-09): paint a slider's number into the label beside it.
+        private void H1FsSliderText(Label l, PrettyTrackBar src)
+        {
+            if (l == null || src == null) return;
+            string t = src.Value.ToString();
+            if (l.Text != t) l.Text = t;
         }
 
         // H1: a strip slider takes its whole range from the control it drives, then shows that
@@ -8795,10 +8844,10 @@ namespace Thetis
             // NOT raise Scroll, so a programmatic set moved the picture and nothing else. That is why
             // the sliders slid with no effect. The console's own code sets the value and then calls
             // the handler by hand; the strip does the same.
-            if (t == h1fsAgc1) { ptbRF.Value = H1FsClamp(t.Value, ptbRF.Minimum, ptbRF.Maximum); ptbRF_Scroll(ptbRF, EventArgs.Empty); }
-            else if (t == h1fsAf1) { ptbAF.Value = H1FsClamp(t.Value, ptbAF.Minimum, ptbAF.Maximum); ptbAF_Scroll(ptbAF, EventArgs.Empty); }
-            else if (t == h1fsAgc2) { ptbRX2RF.Value = H1FsClamp(t.Value, ptbRX2RF.Minimum, ptbRX2RF.Maximum); ptbRX2RF_Scroll(ptbRX2RF, EventArgs.Empty); }
-            else if (t == h1fsAf2) { ptbRX2AF.Value = H1FsClamp(t.Value, ptbRX2AF.Minimum, ptbRX2AF.Maximum); ptbRX2AF_Scroll(ptbRX2AF, EventArgs.Empty); }
+            if (t == h1fsAgc1) { ptbRF.Value = H1FsClamp(t.Value, ptbRF.Minimum, ptbRF.Maximum); ptbRF_Scroll(ptbRF, EventArgs.Empty); H1FsSliderText(h1fsAgcVal1, ptbRF); }
+            else if (t == h1fsAf1) { ptbAF.Value = H1FsClamp(t.Value, ptbAF.Minimum, ptbAF.Maximum); ptbAF_Scroll(ptbAF, EventArgs.Empty); H1FsSliderText(h1fsAfVal1, ptbAF); }
+            else if (t == h1fsAgc2) { ptbRX2RF.Value = H1FsClamp(t.Value, ptbRX2RF.Minimum, ptbRX2RF.Maximum); ptbRX2RF_Scroll(ptbRX2RF, EventArgs.Empty); H1FsSliderText(h1fsAgcVal2, ptbRX2RF); }
+            else if (t == h1fsAf2) { ptbRX2AF.Value = H1FsClamp(t.Value, ptbRX2AF.Minimum, ptbRX2AF.Maximum); ptbRX2AF_Scroll(ptbRX2AF, EventArgs.Empty); H1FsSliderText(h1fsAfVal2, ptbRX2AF); }
         }
 
         private void H1FsPillChanged(object sender, EventArgs e)
@@ -8927,16 +8976,21 @@ namespace Thetis
             // row (row 2); the half-way anchor belongs to the old two-panafall view
             int y2 = top + (Display.H1EightRows ? pnlDisplay.Height / 4 : pnlDisplay.Height / 2);
 
-            H1FsPlace(h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
-            H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
+            H1FsPlace(h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
+                h1fsAfCap1, h1fsAf1, h1fsAfVal1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, x, top);
+            H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
+                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
 
             // RX2's strip is RX2's - nothing to show while RX2 is switched off
             bool rx2On = rx2_enabled && _h1FullScreenPanafall;
-            foreach (Control c in new Control[] { h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+            foreach (Control c in new Control[] { h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
+                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = rx2On;
         }
 
-        private void H1FsPlace(ComboBoxTS band, ComboBoxTS mode, H1FsSlider agc, H1FsSlider af,
+        private void H1FsPlace(ComboBoxTS band, ComboBoxTS mode,
+            Label agcCap, H1FsSlider agc, Label agcVal,
+            Label afCap, H1FsSlider af, Label afVal,
             CheckBoxTS nr, CheckBoxTS anf, CheckBoxTS nb, CheckBoxTS bin, int x, int y)
         {
             band.Location = new Point(x, y);
@@ -8944,10 +8998,21 @@ namespace Thetis
             // the CTUN tick takes the rest of the row, level with the dropdowns
             CheckBoxTS ctun = (band == h1fsBand1) ? h1fsCtun1 : h1fsCtun2;
             if (ctun != null) ctun.Location = new Point(x + 2 * (H1FsComboW + H1FsGap) + 2, y + 1);
-            agc.Location = new Point(x, y + 23);
-            af.Location = new Point(x + H1FsHalf + H1FsGap, y + 23);
+
+            // H1 (user 2026-11-09): one row per slider - caption, slider, value.
+            int sx = x + H1FsCapW + H1FsGap;
+            int vx = x + H1FsCapW + H1FsGap + H1FsSliderW + H1FsGap;
+            int ry = y + H1FsRowH;
+            agcCap.Location = new Point(x, ry + 2);
+            agc.Location = new Point(sx, ry);
+            agcVal.Location = new Point(vx, ry + 2);
+            ry += H1FsRowH;
+            afCap.Location = new Point(x, ry + 2);
+            af.Location = new Point(sx, ry);
+            afVal.Location = new Point(vx, ry + 2);
+
             int px = x;
-            int py = y + 50;
+            int py = y + 2 * H1FsRowH + 26;
             foreach (CheckBoxTS c in new CheckBoxTS[] { nr, anf, nb, bin })
             {
                 c.Location = new Point(px, py);
@@ -8959,8 +9024,12 @@ namespace Thetis
         {
             if (!_h1fsBuilt) return;
             H1FsSync();
-            foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
-                                                   h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+            foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
+                                                   h1fsAfCap1, h1fsAf1, h1fsAfVal1,
+                                                   h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
+                                                   h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
+                                                   h1fsAfCap2, h1fsAf2, h1fsAfVal2,
+                                                   h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
             {
                 if (c == null) continue;
                 c.Visible = true;
@@ -8972,8 +9041,12 @@ namespace Thetis
         private void H1FsHide()
         {
             if (!_h1fsBuilt) return;
-            foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgc1, h1fsAf1, h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
-                                                   h1fsBand2, h1fsMode2, h1fsAgc2, h1fsAf2, h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
+            foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
+                                                   h1fsAfCap1, h1fsAf1, h1fsAfVal1,
+                                                   h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
+                                                   h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
+                                                   h1fsAfCap2, h1fsAf2, h1fsAfVal2,
+                                                   h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = false;
         }
 
