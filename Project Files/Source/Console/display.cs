@@ -6662,10 +6662,6 @@ namespace Thetis
                     data = h1row_current_display_data[r - 2]; wfData = h1row_current_waterfall_data[r - 2]; hasWf = h1row_waterfall_data[r - 2] != null;
                 }
 
-                // row separator
-                if (m_bDX2_grid_pen_inb != null)
-                    drawLineDX2D(m_bDX2_grid_pen_inb, 0, y0, cellW, y0, 1);
-
                 // spectrum trace - the WHOLE analyser span is mapped across the cell width.
                 // H1 (user 2026-11-09, the 2x4 regression): the cell is half the pane width but the
                 // old loop drew only the first cellW bins of the pane-sized analyser array, so each
@@ -6694,6 +6690,13 @@ namespace Thetis
                 {
                     drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, 4, y0 + 2);
                 }
+
+                // H1 (user 2026-11-09): the 2x4 cells had only the centre caption - give every DDC
+                // its own dB (vertical) and frequency (horizontal) scales. They use the same mappings
+                // as the trace (grid max at the top, span down to specH-16) and the cell's own span,
+                // so the numbers sit on the content and line up with the tuning windows.
+                H1DrawCellScales(cellW, specH, r == 1 ? rx2_display_low : rx_display_low,
+                    r == 1 ? rx2_display_high : rx_display_high, centre, grid_max, grid_min);
 
                 // waterfall: colour the new line, scroll the bitmap down one row, draw it
                 if (hasWf && wfData != null && _h1rowWfBmp[r] != null && hWf == wfH)
@@ -6857,26 +6860,89 @@ namespace Thetis
                     }
                 }
 
-                // H1: frame drawn LAST so the trace and waterfall cannot paint over it
-                SharpDX.Direct2D1.Brush h1frame = m_bDX2_data_line_pen_brush != null
-                    ? m_bDX2_data_line_pen_brush : m_bDX2_grid_pen_inb;
-                if (h1frame != null)
-                {
-                    drawLineDX2D(h1frame, 1, 1, cellW - 1, 1, 2);
-                    drawLineDX2D(h1frame, 1, rowH - 2, cellW - 1, rowH - 2, 2);
-                    drawLineDX2D(h1frame, 1, 1, 1, rowH - 1, 2);
-                    drawLineDX2D(h1frame, cellW - 2, 1, cellW - 2, rowH - 1, 2);
-                }
+                // H1 (user 2026-11-09): a clear frame around every cell, drawn LAST so the trace and
+                // waterfall cannot paint over it. The old frame used the semi-transparent trace brush,
+                // which vanished against the waterfall; this one is a solid dark band with a light
+                // inner line, and the 2 px inset leaves a gutter between neighbouring cells.
+                H1DrawCellFrame(cellW, rowH);
 
                 _d2dRenderTarget.Transform = h1was;
             }
 
-            // column divider between DDC1-4 and DDC5-8
-            Matrix3x2 h1end = _d2dRenderTarget.Transform;
-            _d2dRenderTarget.Transform = Matrix3x2.Identity;
-            if (m_bDX2_grid_pen_inb != null)
-                drawLineDX2D(m_bDX2_grid_pen_inb, cellW, 0, cellW, H, 1);
-            _d2dRenderTarget.Transform = h1end;
+            // H1: the per-cell frames separate the columns; no extra divider needed
+        }
+
+        // H1 (user 2026-11-09): clear frame around one eight-DDC cell. A 4 px near-black band with a
+        // 1 px light line down its middle; drawn with a 2 px inset so adjacent cells keep a gutter.
+        // Coordinates are cell-local (the caller has the cell's translate transform in place).
+        private static void H1DrawCellFrame(int cellW, int rowH)
+        {
+            if (cellW < 16 || rowH < 16) return;
+            float left = 2f, top = 2f, right = cellW - 3f, bottom = rowH - 3f;
+            if (m_bDX2_h1_cell_frame_dark != null)
+            {
+                const float band = 4f;
+                drawLineDX2D(m_bDX2_h1_cell_frame_dark, left, top, right, top, band);
+                drawLineDX2D(m_bDX2_h1_cell_frame_dark, left, bottom, right, bottom, band);
+                drawLineDX2D(m_bDX2_h1_cell_frame_dark, left, top, left, bottom, band);
+                drawLineDX2D(m_bDX2_h1_cell_frame_dark, right, top, right, bottom, band);
+            }
+            if (m_bDX2_h1_cell_frame_light != null)
+            {
+                drawLineDX2D(m_bDX2_h1_cell_frame_light, left, top, right, top, 1);
+                drawLineDX2D(m_bDX2_h1_cell_frame_light, left, bottom, right, bottom, 1);
+                drawLineDX2D(m_bDX2_h1_cell_frame_light, left, top, left, bottom, 1);
+                drawLineDX2D(m_bDX2_h1_cell_frame_light, right, top, right, bottom, 1);
+            }
+        }
+
+        // H1 (user 2026-11-09): per-cell dB (vertical) and frequency (horizontal) scales for the
+        // eight-DDC view. Drawn under the cell's render transform, so coordinates are cell-local.
+        private static void H1DrawCellScales(int cellW, int specH, int low, int high, double centreMhz,
+            int gridMax, int gridMin)
+        {
+            if (cellW < 120 || specH < 48) return;
+            int range = high - low;
+            int dbRange = gridMax - gridMin;
+            if (range <= 0 || dbRange <= 0) return;
+            if (m_bDX2_grid_text_brush == null) return;
+
+            int traceBottom = specH - 16;   // the trace's own bottom margin
+            int labelY = specH - 13;        // frequency labels sit in the bottom margin
+
+            // ---- dB scale: horizontal grid lines and their labels ----
+            int dbStep = dbRange >= 70 ? 10 : (dbRange >= 35 ? 5 : 2);
+            for (int db = gridMax - dbStep; db > gridMin; db -= dbStep)
+            {
+                int y = (int)((double)(gridMax - db) / dbRange * (specH - 16));
+                if (y <= 8 || y > traceBottom) continue;
+                if (m_bDX2_hgrid_pen != null)
+                    drawLineDX2D(m_bDX2_hgrid_pen, 0, y, cellW, y, 1);
+                if (y >= 26)   // leave the top to the cells centre caption
+                    drawStringDX2D(db.ToString(), fontDX2d_font9, m_bDX2_grid_text_brush, 3, y - 8);
+            }
+
+            // ---- frequency scale: vertical grid lines and their labels ----
+            int raw = Math.Max(1, range / 7);
+            int mag = 1;
+            while (mag * 10 <= raw) mag *= 10;
+            int norm = raw / mag;
+            int step = norm <= 1 ? mag : (norm <= 2 ? 2 * mag : (norm <= 5 ? 5 * mag : 10 * mag));
+            int first = (int)(Math.Ceiling((double)low / step) * step);
+            string fmt = step >= 10000 ? "f3" : "f4";
+            for (int off = first; off <= high; off += step)
+            {
+                int x = (int)((double)(off - low) / range * cellW);
+                if (x <= 2 || x >= cellW - 2) continue;
+                if (m_bDX2_grid_pen_inb != null)
+                    drawLineDX2D(m_bDX2_grid_pen_inb, x, 0, x, traceBottom, 1);
+                string label = (centreMhz + off / 1000000.0).ToString(fmt);
+                SizeF sz = measureStringDX2D(label, fontDX2d_font9);
+                int tx = x - (int)(sz.Width / 2);
+                if (tx < 2) tx = 2;
+                if (tx + (int)sz.Width > cellW - 2) tx = cellW - 2 - (int)sz.Width;
+                drawStringDX2D(label, fontDX2d_font9, m_bDX2_grid_text_brush, tx, labelY);
+            }
         }
 
         // H1: free the eight-row bitmaps when the mode ends
@@ -8395,6 +8461,10 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_tx_vgrid_pen_inb;
         private static SharpDX.Direct2D1.Brush m_bDX2_band_edge_pen;
         private static SharpDX.Direct2D1.Brush m_bDX2_grid_pen_inb;
+        // H1 (user 2026-11-09): the eight-DDC cell frames - two opaque brushes so the panes read as
+        // separate receivers instead of the old semi-transparent trace-brush frame.
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_cell_frame_dark;
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_cell_frame_light;
         private static SharpDX.Direct2D1.Brush m_bDX2_Red;
         private static SharpDX.Direct2D1.Brush m_bDX2_Yellow;
         private static SharpDX.Direct2D1.Brush m_bDX2_YellowGreen;
@@ -8671,6 +8741,8 @@ namespace Thetis
             if (m_bDX2_data_fill_fpen_brush != null) Utilities.Dispose(ref m_bDX2_data_fill_fpen_brush);
             if (m_bDX2_data_fill_fpen_brush_tx != null) Utilities.Dispose(ref m_bDX2_data_fill_fpen_brush_tx);
             if (m_bDX2_data_line_pen_brush != null) Utilities.Dispose(ref m_bDX2_data_line_pen_brush);
+            if (m_bDX2_h1_cell_frame_dark != null) Utilities.Dispose(ref m_bDX2_h1_cell_frame_dark);
+            if (m_bDX2_h1_cell_frame_light != null) Utilities.Dispose(ref m_bDX2_h1_cell_frame_light);
             if (m_bDX2_data_line_pen_brush_tx != null) Utilities.Dispose(ref m_bDX2_data_line_pen_brush_tx);
             if (m_bDX2_tx_data_line_fpen_brush != null) Utilities.Dispose(ref m_bDX2_tx_data_line_fpen_brush);
             if (m_bDX2_tx_data_line_pen_brush != null) Utilities.Dispose(ref m_bDX2_tx_data_line_pen_brush);
@@ -8736,6 +8808,8 @@ namespace Thetis
             m_bDX2_data_fill_fpen_brush = null;
             m_bDX2_data_fill_fpen_brush_tx = null;
             m_bDX2_data_line_pen_brush = null;
+            m_bDX2_h1_cell_frame_dark = null;
+            m_bDX2_h1_cell_frame_light = null;
             m_bDX2_data_line_pen_brush_tx = null;
             m_bDX2_tx_data_line_fpen_brush = null;
             m_bDX2_tx_data_line_pen_brush = null;
@@ -8827,6 +8901,10 @@ namespace Thetis
                 m_bDX2_data_fill_fpen_brush = convertBrush((SolidBrush)data_fill_fpen.Brush);
                 m_bDX2_data_fill_fpen_brush_tx = convertBrush((SolidBrush)data_fill_fpen_tx.Brush);
                 m_bDX2_data_line_pen_brush = convertBrush((SolidBrush)data_line_pen.Brush);
+
+                // H1: opaque frame colours - near-black inside edge, light grey highlight
+                m_bDX2_h1_cell_frame_dark = convertBrush(new SolidBrush(Color.FromArgb(255, 16, 16, 18)));
+                m_bDX2_h1_cell_frame_light = convertBrush(new SolidBrush(Color.FromArgb(255, 214, 220, 226)));
                 m_bDX2_data_line_pen_brush_tx = convertBrush((SolidBrush)tx_data_line_pen.Brush);
                 m_bDX2_tx_data_line_fpen_brush = convertBrush((SolidBrush)tx_data_line_fpen.Brush);
                 m_bDX2_tx_data_line_pen_brush = convertBrush((SolidBrush)tx_data_line_pen.Brush);
