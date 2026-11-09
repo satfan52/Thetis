@@ -6892,17 +6892,28 @@ namespace Thetis
             SetSubVeil(h1SubRX2Veil, dim && !on2);
         }
 
+        // H1 (user 2026-11-09, crash): the watchdog called this and this called the watchdog again.
+        // When a veil's Visible could not match what the watchdog expected - while the full-screen
+        // eight-DDC view is up the normal controls behind a veil are hidden, so Control.Visible
+        // reads false however often it is set true - the two recursed until the stack overflowed
+        // inside GDI+ (dumps: H1RefreshUnusedDim / PowerStateWatchdog repeated ~14400 times,
+        // fault in gdiplus Bitmap.GetHbitmap). Refreshing is single-entry now, and the power veil
+        // is refreshed directly instead of by re-entering the watchdog.
+        private bool _h1InDimRefresh;
         /// <summary>H1: re-evaluate every dim veil when the option is switched.</summary>
         public void H1RefreshUnusedDim()
         {
+            if (_h1InDimRefresh) return;
+            _h1InDimRefresh = true;
             try
             {
                 UpdateSubVeilStates();
                 H1UpdateRX1Veil();
                 H1RX2Grey(SecondSliceActive, RX2Enabled);
-                PowerStateWatchdog(); // the power-off veil answers to the option too
+                H1RefreshPowerVeil(); // the power-off veil answers to the option too
             }
             catch { }
+            finally { _h1InDimRefresh = false; }
         }
 
         private void SetSubVeil(PowerDimOverlay veil, bool show)
@@ -10349,6 +10360,38 @@ namespace Thetis
         private System.Windows.Forms.Timer m_powerSettleTimer;
         private System.Windows.Forms.Timer m_powerWatchdog;
 
+        // H1 (user 2026-11-09, crash): the power-off veil refresh, callable from the watchdog and
+        // from a dim-option change without the two re-entering each other.
+        private void H1RefreshPowerVeil()
+        {
+            if (m_powerDimOverlay == null) return;
+            try
+            {
+                // the dimming option governs this veil too - with it off the console stays readable
+                // from the moment it starts, only the radio being off remains
+                bool show = !chkPower.Checked && LegacyItemController.DimUnusedReceivers;
+                if (m_powerDimOverlay.Visible != show)
+                {
+                    m_powerDimOverlay.Visible = show;
+                    if (show)
+                    {
+                        m_powerDimOverlay.Bounds = ClientRectangle;
+                        m_powerDimOverlay.Push();
+                    }
+                }
+                if (show)
+                {
+                    if (m_powerDimOverlay.Bounds != ClientRectangle)
+                    {
+                        m_powerDimOverlay.Bounds = ClientRectangle;
+                        m_powerDimOverlay.Push();
+                    }
+                    m_powerDimOverlay.BringToFront();
+                }
+            }
+            catch { }
+        }
+
         private void PowerStateWatchdog()
         {
             H1Crumb("power-watchdog-tick");
@@ -10359,7 +10402,12 @@ namespace Thetis
             // Compare what should show with what shows, and refresh only on a mismatch - nothing is written.
             try
             {
-                if (h1ConsoleReady && !initializing && h1RX2VeilStrip != null && h1SubRX1Veil != null && h1SubRX2Veil != null)
+                // H1 (user 2026-11-09, crash): only the normal layout has a displayable veil to police.
+                // In the full-screen eight-DDC view the controls behind the veils are hidden, so their
+                // Visible reads false no matter what was set - the old expectation could never match
+                // there and the refresh call below re-entered the watchdog until the stack died.
+                if (!_h1InDimRefresh && !Display.H1EightRows &&
+                    h1ConsoleReady && !initializing && h1RX2VeilStrip != null && h1SubRX1Veil != null && h1SubRX2Veil != null)
                 {
                     bool dimOn = LegacyItemController.DimUnusedReceivers;
                     bool want2 = dimOn && !RX2Enabled;
@@ -10373,27 +10421,9 @@ namespace Thetis
             // H1: the sub ticks take their look from the skin's image sets (Skin.cs
             // mirrors the sub ticks onto the main ticks' tiles), so no colour forcing is
             // needed here any more.
-            // H1: the dimming option governs this veil too - with it off the console stays
-            // readable from the moment it starts, only the radio being off remains
-            bool show = !chkPower.Checked && LegacyItemController.DimUnusedReceivers;
-            if (m_powerDimOverlay.Visible != show)
-            {
-                m_powerDimOverlay.Visible = show;
-                if (show)
-                {
-                    m_powerDimOverlay.Bounds = ClientRectangle;
-                    m_powerDimOverlay.Push();
-                }
-            }
-            if (show)
-            {
-                if (m_powerDimOverlay.Bounds != ClientRectangle)
-                {
-                    m_powerDimOverlay.Bounds = ClientRectangle;
-                    m_powerDimOverlay.Push();
-                }
-                m_powerDimOverlay.BringToFront();
-            }
+            // H1: the power-off veil, refreshed here every tick and by H1RefreshUnusedDim()
+            // through the same helper - no call path enters the watchdog again.
+            H1RefreshPowerVeil();
 
             // H1: the IC-7100 output power follows the active power slider while the TX Output
             // route is enabled; this catches band recalls, power-up and any other value change.
