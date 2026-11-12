@@ -2160,6 +2160,8 @@ namespace Thetis
             H1LoadSliceSettings();   // H1 (M2): the spare DDC receivers' own settings
             H1LoadBandPower(); // H1 round 2: overlay the per-band mirror (survives task-kill restarts)
             H1LoadTagSettings(); // H1 (user 2026-11-20): restore the TX/RX tags, subs and spare selections
+            H1LoadApfSettings(); // H1 (user 2026-11-22): per-channel APF for RX2 sub + the spare DDCs
+            H1ApfBus.ChannelActivated = H1ApfOnChannelActivated; // H1: re-apply a spare's APF when it comes up
             LogTool.Completed("CONFIG");
 
             // setup additional spectrum analysers, used by meter system
@@ -3419,6 +3421,7 @@ namespace Thetis
         {
             H1SaveSliceSettings();   // H1 (M2): keep the spare DDC settings
             H1SaveTagSettings();     // H1 (user 2026-11-20): TX/RX tags, subs and spare selections
+            H1SaveApfSettings();     // H1 (user 2026-11-22): per-channel APF for RX2 sub + the spare DDCs
             if (DB.Merged) return;
 
             if (_current_breakin_mode == BreakIn.QSK)
@@ -8057,6 +8060,7 @@ namespace Thetis
                     // current mode's panel and hides the other three - never hide them here.
                 }
             H1StyleApfTypeButton(); // H1 (user 2026-11-22): the APF-type button has no skin art
+            H1ApfRefreshTarget(false); // H1 (user 2026-11-22): APF group follows the TX tag
             H1StartupTrace("txblock: phone=" + (panelModeSpecificPhone != null && panelModeSpecificPhone.Visible)
                 + " cw=" + (panelModeSpecificCW != null && panelModeSpecificCW.Visible)
                 + " dig=" + (panelModeSpecificDigital != null && panelModeSpecificDigital.Visible)
@@ -10267,15 +10271,25 @@ for (int zr = 0; zr < 8; zr++)
         private void H1TxTickChanged(object sender, EventArgs e)
         {
             if (_h1TxTicksGuard) return;
-            H1RefreshTxPanel(); // H1 (user 2026-11-22): the transmit block follows the TX VFO
-            if (_h1VoiceTxRx < 0) return;
             CheckBox c = sender as CheckBox;
-            if (c == null || !c.Checked) return;
+            if (_h1VoiceTxRx < 0)
+            {
+                H1RefreshTxPanel(); // H1 (user 2026-11-22): the transmit block follows the TX VFO
+                return;
+            }
+            if (c == null || !c.Checked)
+            {
+                H1RefreshTxPanel();
+                return;
+            }
             _h1VoiceTxRx = -1;
             _h1VoiceTxSub = false;
             _h1VoiceTxSavedTicks = 0;
             H1PublishCellMeters();
             H1SpacePttTrace("voice TX: RX1/RX2 tick selected - spare TX VFO dropped");
+            // H1 (user 2026-11-22): refresh AFTER the spare source is dropped, otherwise the
+            // APF group (and the transmit block) would keep following the spare.
+            H1RefreshTxPanel();
         }
 
         private void H1ToggleVoiceTxSlice(int row, bool sub)
@@ -26466,6 +26480,7 @@ for (int zr = 0; zr < 8; zr++)
                 udCWPitch.Value = cw_pitch;
                 Display.CWPitch = cw_pitch;
                 NetworkIO.SetCWSidetoneFreq(cw_pitch);
+                H1ApfPitchChanged(); // H1 (user 2026-11-22): keep every APF peak on the new pitch
 
                 //-W2PA June 2017
                 //      This centers the passband of the CW filters on the pitch frequency, but if CWPitch setter is called by mode buttons,  
@@ -26835,15 +26850,447 @@ for (int zr = 0; zr < 8; zr++)
             }
         }
 
+        // ============================================================================================
+        // H1 (user 2026-11-22): the CW panel's APF group follows the transmitter.
+        //
+        // Every receiver channel (rx 0..7, sub 0/1) keeps its own APF state, and the group edits
+        // whichever channel currently holds the TX tag: VFO A -> RX1, VFO B -> RX2, SubVFOA ->
+        // SubRX1, SubVFOB -> SubRX2; in the full-window view a spare cell holding the tag edits
+        // that spare (main or sub). RX1/RX1 sub/RX2 main persist through Setup's APF pages (as
+        // before); RX2 sub and the twelve spare channels get their own versioned DB record.
+        // ============================================================================================
+        private struct H1ApfState
+        {
+            public bool Enabled;
+            public int Tune;        // Hz relative to the CW pitch
+            public int Bandwidth;   // Hz
+            public int Gain;        // 10 x dB, the same units as the CW panel's gain slider
+            public int Type;        // 0=Double Pole, 1=Matched, 2=Gaussian, 3=Bi-Quad
+        }
+        private const int H1_APF_CHANNELS = 16;   // 2*rx + sub
+        private const string H1_APF_VERSION = "ver/1";
+        private H1ApfState[] _h1Apf = new H1ApfState[H1_APF_CHANNELS];
+        private int _h1ApfChannel = -1;           // channel the console APF group currently edits
+        private bool _h1ApfLoading = false;       // true while the group's controls are being loaded
+        private bool _h1ApfSyncing = false;       // true while writing through to Setup
+
+        private static int H1ApfCh(int rx, int sub) { return rx * 2 + sub; }
+
+        // RX1 main/sub and RX2 main have a Setup APF page; RX2 sub and RX3..RX8 do not.
+        private static bool H1ApfInSetup(int rx, int sub)
+        {
+            return rx == 0 || (rx == 1 && sub == 0);
+        }
+
+        private static string H1ApfShort(int rx, int sub)
+        {
+            if (rx == 0) return sub == 0 ? "RX1" : "SUB1";
+            if (rx == 1) return sub == 0 ? "RX2" : "SUB2";
+            return (sub == 0 ? "RX" : "SUB") + (rx + 1).ToString();
+        }
+
+        private static string H1ApfLong(int rx, int sub)
+        {
+            return (sub == 0 ? "RX" : "SubRX") + (rx + 1).ToString();
+        }
+
+        private static string H1ApfTypeText(int t)
+        {
+            switch (t)
+            {
+                case 0: return "DP";
+                case 1: return "MA";
+                case 2: return "GA";
+                default: return "BI";
+            }
+        }
+
+        private static int H1ApfClamp(int v, int lo, int hi)
+        {
+            return v < lo ? lo : (v > hi ? hi : v);
+        }
+
+        // Which channel currently holds the TX tag (the same source the transmit block follows).
+        private void H1ApfTxChannel(out int rx, out int sub)
+        {
+            rx = 0; sub = 0;
+            try
+            {
+                if (_h1VoiceTxRx >= 2 && _h1VoiceTxRx <= 7)
+                {
+                    rx = _h1VoiceTxRx;
+                    sub = _h1VoiceTxSub ? 1 : 0;
+                    return;
+                }
+                if (rx2_enabled && chkSubVFOBTX.Checked) { rx = 1; sub = 1; return; }
+                if (rx2_enabled && chkVFOBTX.Checked) { rx = 1; sub = 0; return; }
+                if (chkSubVFOATX.Checked) { rx = 0; sub = 1; return; }
+                rx = 0; sub = 0;
+            }
+            catch { rx = 0; sub = 0; }
+        }
+
+        private H1ApfState H1ApfRead(int rx, int sub)
+        {
+            H1ApfState s;
+            s.Enabled = false; s.Tune = 0; s.Bandwidth = 150; s.Gain = 0; s.Type = 3;
+            if (rx > 1 || (rx == 1 && sub == 1)) return _h1Apf[H1ApfCh(rx, sub)];
+            try
+            {
+                RadioDSPRX r = radio.GetDSPRX(rx, sub);
+                s.Type = r.RXAPFType;
+                s.Enabled = r.RXAPFRun;
+                if (!IsSetupFormNull)
+                {
+                    if (rx == 0 && sub == 0)
+                    {
+                        s.Enabled = SetupForm.RX1APFEnable;
+                        s.Tune = SetupForm.RX1APFFreq;
+                        s.Bandwidth = SetupForm.RX1APFBandwidth;
+                        s.Gain = SetupForm.RX1APFGain;
+                    }
+                    else if (rx == 0)
+                    {
+                        s.Enabled = SetupForm.RX1subAPFEnable;
+                        s.Tune = SetupForm.RX1subAPFFreq;
+                        s.Bandwidth = SetupForm.RX1subAPFBandwidth;
+                        s.Gain = SetupForm.RX1subAPFGain;
+                    }
+                    else if (sub == 0)
+                    {
+                        s.Enabled = SetupForm.RX2APFEnable;
+                        s.Tune = SetupForm.RX2APFFreq;
+                        s.Bandwidth = SetupForm.RX2APFBandwidth;
+                        s.Gain = SetupForm.RX2APFGain;
+                    }
+                    else
+                    {
+                        s.Tune = (int)Math.Round(r.RXAPFFreq - CWPitch);
+                        s.Bandwidth = (int)Math.Round(r.RXAPFBw);
+                        s.Gain = (int)Math.Round(200.0 * Math.Log10(r.RXAPFGain > 0 ? r.RXAPFGain : 1.0));
+                    }
+                }
+                else
+                {
+                    s.Tune = (int)Math.Round(r.RXAPFFreq - CWPitch);
+                    s.Bandwidth = (int)Math.Round(r.RXAPFBw);
+                    s.Gain = (int)Math.Round(200.0 * Math.Log10(r.RXAPFGain > 0 ? r.RXAPFGain : 1.0));
+                }
+            }
+            catch { }
+            return s;
+        }
+
+        // Push one channel's state to its WDSP channel (radio wrapper for RX1/RX2, direct WDSP
+        // call for the spare DDCs - radio.GetDSPRX must never be used for those).
+        private void H1ApfApplyChannel(int rx, int sub, H1ApfState s)
+        {
+            try
+            {
+                double gain = Math.Pow(10.0, s.Gain / 200.0);
+                if (rx < 2)
+                {
+                    RadioDSPRX r = radio.GetDSPRX(rx, sub);
+                    r.RXAPFFreq = CWPitch + s.Tune;
+                    r.RXAPFBw = s.Bandwidth;
+                    r.RXAPFGain = gain;
+                    r.RXAPFType = s.Type;
+                    r.RXAPFRun = s.Enabled;
+                }
+                else
+                {
+                    int ch = H1ApfCh(rx, sub);
+                    WDSP.SetRXASPCWFreq(ch, CWPitch + s.Tune);
+                    WDSP.SetRXASPCWBandwidth(ch, s.Bandwidth);
+                    WDSP.SetRXASPCWGain(ch, gain);
+                    WDSP.SetRXASPCWSelection(ch, s.Type);
+                    WDSP.SetRXASPCWRun(ch, s.Enabled);
+                }
+            }
+            catch { }
+        }
+
+        // Write the state through: Setup's pages for the three legacy channels (keeps their own
+        // storage/UI coherent), the H1Apf store for RX2 sub and the spare channels.
+        private void H1ApfApplyState(int rx, int sub, H1ApfState s)
+        {
+            if (H1ApfInSetup(rx, sub) && !IsSetupFormNull)
+            {
+                _h1ApfSyncing = true;
+                try
+                {
+                    if (rx == 0 && sub == 0)
+                    {
+                        SetupForm.RX1APFFreq = H1ApfClamp(s.Tune, -250, 250);
+                        SetupForm.RX1APFBandwidth = H1ApfClamp(s.Bandwidth, 10, 150);
+                        SetupForm.RX1APFGain = H1ApfClamp(s.Gain, 0, 100);
+                        SetupForm.SetAPFTypeForChannel(0, s.Type);
+                        SetupForm.RX1APFEnable = s.Enabled;
+                    }
+                    else if (rx == 0)
+                    {
+                        SetupForm.RX1subAPFFreq = H1ApfClamp(s.Tune, -250, 250);
+                        SetupForm.RX1subAPFBandwidth = H1ApfClamp(s.Bandwidth, 10, 150);
+                        SetupForm.RX1subAPFGain = H1ApfClamp(s.Gain, 0, 100);
+                        SetupForm.SetAPFTypeForChannel(1, s.Type);
+                        SetupForm.RX1subAPFEnable = s.Enabled;
+                    }
+                    else
+                    {
+                        SetupForm.RX2APFFreq = H1ApfClamp(s.Tune, -250, 250);
+                        SetupForm.RX2APFBandwidth = H1ApfClamp(s.Bandwidth, 10, 150);
+                        SetupForm.RX2APFGain = H1ApfClamp(s.Gain, 0, 100);
+                        SetupForm.SetAPFTypeForChannel(2, s.Type);
+                        SetupForm.RX2APFEnable = s.Enabled;
+                    }
+                }
+                finally { _h1ApfSyncing = false; }
+            }
+            else
+            {
+                _h1Apf[H1ApfCh(rx, sub)] = s;
+                H1ApfApplyChannel(rx, sub, s);
+            }
+            // the Setup enable handler is mode-gated for the main receiver's mode; setting the
+            // channel directly as well keeps a sub tick (whose own mode is CW) working.
+            if (rx < 2 && H1ApfInSetup(rx, sub) && !IsSetupFormNull)
+                H1ApfApplyChannel(rx, sub, s);
+        }
+
+        private void H1ApfUpdateUi(int rx, int sub, H1ApfState s)
+        {
+            _h1ApfLoading = true;
+            try
+            {
+                apf_freq = s.Tune;
+                apf_bandwidth = s.Bandwidth;
+                apf_gain = s.Gain;
+                _apf_type = s.Type;
+                if (chkCWAPFEnabled != null)
+                {
+                    chkCWAPFEnabled.Checked = s.Enabled;
+                    chkCWAPFEnabled.Text = H1ApfShort(rx, sub);
+                    toolTip1.SetToolTip(chkCWAPFEnabled,
+                        "Audio Peak Filter for " + H1ApfLong(rx, sub) + " - the receiver that currently holds the TX tag."
+                        + Environment.NewLine + Environment.NewLine
+                        + "The console's APF group follows the transmitter: VFO A = RX1, VFO B = RX2, "
+                        + "SubVFOA = SubRX1, SubVFOB = SubRX2; in the full-window view, the spare cell that holds the TX tag."
+                        + Environment.NewLine + Environment.NewLine
+                        + "Right-click opens the APF settings in Setup.");
+                }
+                if (ptbCWAPFFreq != null)
+                {
+                    ptbCWAPFFreq.Value = H1ApfClamp(s.Tune, ptbCWAPFFreq.Minimum, ptbCWAPFFreq.Maximum);
+                    lblCWAPFTune.Text = "Tune:  " + ptbCWAPFFreq.Value.ToString();
+                }
+                if (ptbCWAPFBandwidth != null)
+                {
+                    ptbCWAPFBandwidth.Value = H1ApfClamp(s.Bandwidth, ptbCWAPFBandwidth.Minimum, ptbCWAPFBandwidth.Maximum);
+                    lblCWAPFBandwidth.Text = "Bandwidth:  " + ptbCWAPFBandwidth.Value.ToString();
+                }
+                if (ptbCWAPFGain != null)
+                {
+                    ptbCWAPFGain.Value = H1ApfClamp(s.Gain, ptbCWAPFGain.Minimum, ptbCWAPFGain.Maximum);
+                    lblCWAPFGain.Text = "Gain:  " + Math.Round(ptbCWAPFGain.Value / 10.0, 0).ToString();
+                }
+                if (btnAPF_type != null)
+                {
+                    btnAPF_type.Text = H1ApfTypeText(s.Type);
+                    toolTip1.SetToolTip(btnAPF_type,
+                        "Cycle through available APF types. Double Pole, Matched, Gaussian, Bi-Quad."
+                        + Environment.NewLine + Environment.NewLine
+                        + "The type is kept per receiver; this button edits " + H1ApfLong(rx, sub)
+                        + " - the receiver that currently holds the TX tag.");
+                }
+            }
+            finally { _h1ApfLoading = false; }
+        }
+
+        // Load the group for the channel the TX tag is on. Safe to call on every layout/selection.
+        private void H1ApfRefreshTarget(bool force)
+        {
+            if (initializing || _h1ApfLoading) return;
+            int rx, sub;
+            H1ApfTxChannel(out rx, out sub);
+            int ch = H1ApfCh(rx, sub);
+            if (!force && ch == _h1ApfChannel) return;
+            H1ApfState s = H1ApfRead(rx, sub);
+            _h1ApfChannel = ch;
+            H1ApfUpdateUi(rx, sub, s);
+            H1ApfApplyChannel(rx, sub, s);
+            H1SpacePttTrace("apf: follows " + H1ApfShort(rx, sub) + " (ch=" + ch + ") enabled=" + s.Enabled
+                + " tune=" + s.Tune + " bw=" + s.Bandwidth + " gain=" + s.Gain + " type=" + s.Type);
+        }
+
+        private void H1ApfSetEnabled(bool on)
+        {
+            if (_h1ApfChannel < 0 || _h1ApfLoading || _h1ApfSyncing) return;
+            int rx = _h1ApfChannel / 2, sub = _h1ApfChannel % 2;
+            H1ApfState s = H1ApfRead(rx, sub);
+            bool old = s.Enabled;
+            if (old == on)
+            {
+                apf_freq = s.Tune; apf_bandwidth = s.Bandwidth; apf_gain = s.Gain; _apf_type = s.Type;
+                return;
+            }
+            s.Enabled = on;
+            H1ApfApplyState(rx, sub, s);
+            apf_freq = s.Tune; apf_bandwidth = s.Bandwidth; apf_gain = s.Gain; _apf_type = s.Type;
+            if (rx < 2) { try { APFChangedHandlers?.Invoke(rx + 1, old, on); } catch { } }
+            H1SpacePttTrace("apf: " + H1ApfShort(rx, sub) + " " + (on ? "on" : "off") + " (ch=" + _h1ApfChannel + ")");
+        }
+
+        private void H1ApfSetTune(int v)
+        {
+            if (_h1ApfChannel < 0 || _h1ApfLoading || _h1ApfSyncing) return;
+            int rx = _h1ApfChannel / 2, sub = _h1ApfChannel % 2;
+            H1ApfState s = H1ApfRead(rx, sub);
+            s.Tune = H1ApfClamp(v, -250, 250);
+            H1ApfApplyState(rx, sub, s);
+            apf_freq = s.Tune;
+            H1SpacePttTrace("apf: " + H1ApfShort(rx, sub) + " tune=" + s.Tune);
+        }
+
+        private void H1ApfSetBandwidth(int v)
+        {
+            if (_h1ApfChannel < 0 || _h1ApfLoading || _h1ApfSyncing) return;
+            int rx = _h1ApfChannel / 2, sub = _h1ApfChannel % 2;
+            H1ApfState s = H1ApfRead(rx, sub);
+            s.Bandwidth = H1ApfClamp(v, 10, 150);
+            H1ApfApplyState(rx, sub, s);
+            apf_bandwidth = s.Bandwidth;
+            H1SpacePttTrace("apf: " + H1ApfShort(rx, sub) + " bw=" + s.Bandwidth);
+        }
+
+        private void H1ApfSetGain(int v)
+        {
+            if (_h1ApfChannel < 0 || _h1ApfLoading || _h1ApfSyncing) return;
+            int rx = _h1ApfChannel / 2, sub = _h1ApfChannel % 2;
+            H1ApfState s = H1ApfRead(rx, sub);
+            s.Gain = H1ApfClamp(v, 0, 100);
+            H1ApfApplyState(rx, sub, s);
+            apf_gain = s.Gain;
+            H1SpacePttTrace("apf: " + H1ApfShort(rx, sub) + " gain=" + s.Gain);
+        }
+
+        private void H1ApfSetType(int t)
+        {
+            if (t < 0 || t > 3) return;
+            if (_h1ApfChannel < 0 || _h1ApfLoading || _h1ApfSyncing) return;
+            int rx = _h1ApfChannel / 2, sub = _h1ApfChannel % 2;
+            H1ApfState s = H1ApfRead(rx, sub);
+            s.Type = t;
+            H1ApfApplyState(rx, sub, s);
+            _apf_type = t;
+            if (btnAPF_type != null) btnAPF_type.Text = H1ApfTypeText(t);
+            H1SpacePttTrace("apf: " + H1ApfShort(rx, sub) + " type=" + H1ApfTypeText(t));
+        }
+
+        // H1: the APF peak is CWPitch + tune, so a pitch change must move every channel's peak.
+        private void H1ApfPitchChanged()
+        {
+            if (initializing) return;
+            try
+            {
+                for (int rx = 0; rx <= 7; rx++)
+                {
+                    for (int sub = 0; sub <= 1; sub++)
+                    {
+                        H1ApfState s = H1ApfRead(rx, sub);
+                        H1ApfApplyChannel(rx, sub, s);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // H1: a spare channel just came up - give it the APF state the console holds for it.
+        private void H1ApfOnChannelActivated(int rx, int sub)
+        {
+            try
+            {
+                if (rx < 2) return;
+                H1ApfState s = _h1Apf[H1ApfCh(rx, sub)];
+                H1ApfApplyChannel(rx, sub, s);
+                H1SpacePttTrace("apf: re-applied " + H1ApfShort(rx, sub) + " enabled=" + s.Enabled
+                    + " tune=" + s.Tune + " bw=" + s.Bandwidth + " gain=" + s.Gain + " type=" + s.Type);
+            }
+            catch { }
+        }
+
+        private void H1SaveApfSettings()
+        {
+            try
+            {
+                List<string> list = new List<string>();
+                list.Add(H1_APF_VERSION);
+                for (int rx = 0; rx <= 7; rx++)
+                {
+                    for (int sub = 0; sub <= 1; sub++)
+                    {
+                        if (H1ApfInSetup(rx, sub)) continue;
+                        int ch = H1ApfCh(rx, sub);
+                        H1ApfState s = _h1Apf[ch];
+                        list.Add("ch" + ch + "/" + (s.Enabled ? "1" : "0") + "," + s.Tune + ","
+                            + s.Bandwidth + "," + s.Gain + "," + s.Type);
+                    }
+                }
+                DB.SaveVars("H1Apf", list);
+            }
+            catch { }
+        }
+
+        private void H1LoadApfSettings()
+        {
+            try
+            {
+                for (int ch = 0; ch < H1_APF_CHANNELS; ch++)
+                {
+                    H1ApfState s;
+                    s.Enabled = false; s.Tune = 0; s.Bandwidth = 150; s.Gain = 0; s.Type = 3;
+                    _h1Apf[ch] = s;
+                }
+                List<string> list = DB.GetVars("H1Apf");
+                if (list == null || list.Count == 0) return;
+                bool versioned = false;
+                foreach (string e in list) if (e.Trim() == H1_APF_VERSION) { versioned = true; break; }
+                if (!versioned) return;
+                foreach (string entry in list)
+                {
+                    int slash = entry.IndexOf('/');
+                    if (slash <= 0) continue;
+                    string key = entry.Substring(0, slash);
+                    if (!key.StartsWith("ch")) continue;
+                    int ch;
+                    if (!int.TryParse(key.Substring(2), out ch) || ch < 0 || ch >= H1_APF_CHANNELS) continue;
+                    string[] p = entry.Substring(slash + 1).Split(',');
+                    if (p.Length < 5) continue;
+                    H1ApfState s;
+                    s.Enabled = p[0].Trim() == "1";
+                    if (!int.TryParse(p[1], out s.Tune)) s.Tune = 0;
+                    if (!int.TryParse(p[2], out s.Bandwidth)) s.Bandwidth = 150;
+                    if (!int.TryParse(p[3], out s.Gain)) s.Gain = 0;
+                    if (!int.TryParse(p[4], out s.Type)) s.Type = 3;
+                    _h1Apf[ch] = s;
+                }
+            }
+            catch { }
+        }
+
         private int apf_freq = 0;
         public int APFFreq
         {
             get { return apf_freq; }
             set
             {
-                apf_freq = value;
-                ptbCWAPFFreq.Value = value;
-                lblCWAPFTune.Text = "Tune:  " + ptbCWAPFFreq.Value.ToString();
+                if (_h1ApfLoading || _h1ApfSyncing)
+                {
+                    apf_freq = value;
+                    if (ptbCWAPFFreq != null) ptbCWAPFFreq.Value = H1ApfClamp(value, ptbCWAPFFreq.Minimum, ptbCWAPFFreq.Maximum);
+                    if (lblCWAPFTune != null) lblCWAPFTune.Text = "Tune:  " + value.ToString();
+                    return;
+                }
+                H1ApfSetTune(value);
             }
         }
 
@@ -26853,9 +27300,14 @@ for (int zr = 0; zr < 8; zr++)
             get { return apf_bandwidth; }
             set
             {
-                apf_bandwidth = value;
-                ptbCWAPFBandwidth.Value = value;
-                lblCWAPFBandwidth.Text = "Bandwidth:  " + ptbCWAPFBandwidth.Value.ToString();
+                if (_h1ApfLoading || _h1ApfSyncing)
+                {
+                    apf_bandwidth = value;
+                    if (ptbCWAPFBandwidth != null) ptbCWAPFBandwidth.Value = H1ApfClamp(value, ptbCWAPFBandwidth.Minimum, ptbCWAPFBandwidth.Maximum);
+                    if (lblCWAPFBandwidth != null) lblCWAPFBandwidth.Text = "Bandwidth:  " + value.ToString();
+                    return;
+                }
+                H1ApfSetBandwidth(value);
             }
         }
 
@@ -26865,13 +27317,15 @@ for (int zr = 0; zr < 8; zr++)
             get { return apf_gain; }
             set
             {
-                if (ptbCWAPFGain != null)
+                if (ptbCWAPFGain == null) return;
+                if (_h1ApfLoading || _h1ApfSyncing)
                 {
                     apf_gain = value;
-                    ptbCWAPFGain.Value = value;
-                    double gain_value = Math.Round(ptbCWAPFGain.Value / 10.0, 0);
-                    lblCWAPFGain.Text = "Gain:  " + gain_value.ToString();
+                    ptbCWAPFGain.Value = H1ApfClamp(value, ptbCWAPFGain.Minimum, ptbCWAPFGain.Maximum);
+                    if (lblCWAPFGain != null) lblCWAPFGain.Text = "Gain:  " + Math.Round(ptbCWAPFGain.Value / 10.0, 0).ToString();
+                    return;
                 }
+                H1ApfSetGain(value);
             }
         }
         private int _apf_type = 3; // default to bi-quad
@@ -26881,27 +27335,13 @@ for (int zr = 0; zr < 8; zr++)
             set
             {
                 if (value < 0 || value > 3) return;
-                if (value == _apf_type) return; // also prevents recurson from setup
-
-                _apf_type = value;
-                SetupForm.SetAPFType(_apf_type);
-
-                if (btnAPF_type == null) return; // belts & braces
-                switch (_apf_type)
+                if (_h1ApfLoading || _h1ApfSyncing)
                 {
-                    case 0:
-                        btnAPF_type.Text = "DP";
-                        break;
-                    case 1:
-                        btnAPF_type.Text = "MA";
-                        break;
-                    case 2:
-                        btnAPF_type.Text = "GA";
-                        break;
-                    case 3:
-                        btnAPF_type.Text = "BI";
-                        break;
+                    _apf_type = value;
+                    if (btnAPF_type != null) btnAPF_type.Text = H1ApfTypeText(value);
+                    return;
                 }
+                H1ApfSetType(value);
             }
         }
 
@@ -41097,58 +41537,18 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         private void chkCWAPFEnabled_CheckedChanged(object sender, System.EventArgs e)
         {
-            int rx = 0;
-            bool oldState = false;
-            if (!IsSetupFormNull)
-            {
-                if (SetupForm.RX1APFControls)
-                {
-                    rx = 1;
-                    oldState = radio.GetDSPRX(0, 0).RXAPFRun;
-                }
-                else if (SetupForm.RX1subAPFControls)
-                {
-                    rx = 1;
-                    oldState = radio.GetDSPRX(0, 1).RXAPFRun;
-                }
-                else if (SetupForm.RX2APFControls)
-                {
-                    rx = 2;
-                    oldState = radio.GetDSPRX(1, 0).RXAPFRun;
-                }
-            }
-
-            if (!IsSetupFormNull)
-            {
-                if (SetupForm.RX1APFControls)
-                    SetupForm.RX1APFEnable = chkCWAPFEnabled.Checked;
-                if (SetupForm.RX1subAPFControls)
-                    SetupForm.RX1subAPFEnable = chkCWAPFEnabled.Checked;
-                if (SetupForm.RX2APFControls)
-                    SetupForm.RX2APFEnable = chkCWAPFEnabled.Checked;
-                else SetupForm.RX2APFEnable = SetupForm.RX2APFEnable;
-
-                if (chkCWAPFEnabled.Checked) _cat_apf_status = 1; //-W2PA Added to enable extended CAT control
-                else _cat_apf_status = 0;
-            }
-
-            if (rx != 0 && oldState != chkCWAPFEnabled.Checked)
-                APFChangedHandlers?.Invoke(rx, oldState, chkCWAPFEnabled.Checked);
+            // H1 (user 2026-11-22): the APF group follows the transmitter - this toggles the
+            // APF of whichever receiver currently holds the TX tag, not Setup's owner channel.
+            if (_h1ApfLoading || _h1ApfSyncing) return;
+            H1ApfSetEnabled(chkCWAPFEnabled.Checked);
+            _cat_apf_status = chkCWAPFEnabled.Checked ? 1 : 0; //-W2PA extended CAT control
         }
 
         private void ptbCWAPFFreq_Scroll(object sender, System.EventArgs e)
         {
-            if (!IsSetupFormNull)
-            {
-                if (SetupForm.RX1APFControls)
-                    SetupForm.RX1APFFreq = ptbCWAPFFreq.Value;
-                if (SetupForm.RX1subAPFControls)
-                    SetupForm.RX1subAPFFreq = ptbCWAPFFreq.Value;
-                if (SetupForm.RX2APFControls)
-                    SetupForm.RX2APFFreq = ptbCWAPFFreq.Value;
-            }
+            if (!_h1ApfLoading && !_h1ApfSyncing) H1ApfSetTune(ptbCWAPFFreq.Value);
             lblCWAPFTune.Text = "Tune:  " + ptbCWAPFFreq.Value.ToString();
-            if (sender.GetType() == typeof(PrettyTrackBar))
+            if (sender != null && sender.GetType() == typeof(PrettyTrackBar))
             {
                 ptbCWAPFFreq.Focus();
             }
@@ -41156,18 +41556,9 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         private void ptbCWAPFBandwidth_Scroll(object sender, System.EventArgs e)
         {
-            if (!IsSetupFormNull)
-            {
-                if (SetupForm.RX1APFControls)
-                    SetupForm.RX1APFBandwidth = ptbCWAPFBandwidth.Value;
-                if (SetupForm.RX1subAPFControls)
-                    SetupForm.RX1subAPFBandwidth = ptbCWAPFBandwidth.Value;
-                if (SetupForm.RX2APFControls)
-                    SetupForm.RX2APFBandwidth = ptbCWAPFBandwidth.Value;
-            }
+            if (!_h1ApfLoading && !_h1ApfSyncing) H1ApfSetBandwidth(ptbCWAPFBandwidth.Value);
             lblCWAPFBandwidth.Text = "Bandwidth:  " + ptbCWAPFBandwidth.Value.ToString();
-
-            if (sender.GetType() == typeof(PrettyTrackBar))
+            if (sender != null && sender.GetType() == typeof(PrettyTrackBar))
             {
                 ptbCWAPFBandwidth.Focus();
             }
@@ -41175,20 +41566,12 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         private void ptbCWAPFGain_Scroll(object sender, System.EventArgs e)
         {
-            if (!IsSetupFormNull)
-            {
-                if (SetupForm.RX1APFControls)
-                    SetupForm.RX1APFGain = ptbCWAPFGain.Value;
-                if (SetupForm.RX1subAPFControls)
-                    SetupForm.RX1subAPFGain = ptbCWAPFGain.Value;
-                if (SetupForm.RX2APFControls)
-                    SetupForm.RX2APFGain = ptbCWAPFGain.Value;
-            }
+            if (!_h1ApfLoading && !_h1ApfSyncing) H1ApfSetGain(ptbCWAPFGain.Value);
             double gain_value = Math.Round(ptbCWAPFGain.Value / 10.0, 0);
 
             lblCWAPFGain.Text = "Gain:  " + gain_value.ToString();
 
-            if (sender.GetType() == typeof(PrettyTrackBar))
+            if (sender != null && sender.GetType() == typeof(PrettyTrackBar))
             {
                 ptbCWAPFGain.Focus();
             }
@@ -54369,6 +54752,10 @@ private readonly double[] _h1BasePanSlider = new double[8];
 }
         private void setPAProfileLabelPos()
         {
+            // H1 (user 2026-11-22): called on every layout/mode change - keep the APF group on
+            // the receiver that currently holds the TX tag (cheap when it has not moved).
+            if (!initializing) H1ApfRefreshTarget(false);
+
             // H1 (user 2026-10-05): in the full-screen panafall this readout is clutter and must stay
             // hidden - this method runs after the full-screen hide and would otherwise re-show it.
             if (_h1FullScreenPanafall) { lblPAProfile.Visible = false; return; }
@@ -67340,9 +67727,11 @@ private void incrementMutliMeterDisplayModeRX2()
         }
         private void btnAPF_type_Click(object sender, EventArgs e)
         {
-            if (IsSetupFormNull) return;
-
-            SetupForm.CycleAPFType();
+            // H1 (user 2026-11-22): cycle the type of the channel the TX tag is on.
+            if (_h1ApfChannel < 0 || _h1ApfLoading || _h1ApfSyncing) return;
+            int rx = _h1ApfChannel / 2, sub = _h1ApfChannel % 2;
+            H1ApfState s = H1ApfRead(rx, sub);
+            H1ApfSetType((s.Type + 1) % 4);
         }
 
         private void btnAPF_type_MouseDown(object sender, MouseEventArgs e)
@@ -67857,4 +68246,11 @@ private void incrementMutliMeterDisplayModeRX2()
         }
     }
     #endregion
+
+    // H1 (user 2026-11-22): RX3..RX8 have no radio.GetDSPRX wrapper, so their APF state is
+    // applied through this hook whenever their WDSP channel comes up (main or sub).
+    public static class H1ApfBus
+    {
+        public static Action<int, int> ChannelActivated;
+    }
 }

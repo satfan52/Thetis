@@ -648,6 +648,9 @@ namespace Thetis
                     WDSP.SetRXAANFRun(slice.ChannelId, slice.Anf);
                     WDSP.SetRXAPanelBinaural(slice.ChannelId, slice.Bin);
                     cmaster.SetRCVRANBRun(0, slice.RxIndex, slice.Nb);
+                    // H1 (user 2026-11-22): the CW APF follows the TX tag - give this spare its
+                    // stored APF state whenever the channel comes up.
+                    try { H1ApfBus.ChannelActivated?.Invoke(slice.RxIndex, 0); } catch { }
                 }
                 catch { }
             }

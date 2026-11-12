@@ -131,6 +131,25 @@ namespace Thetis
             InitializeComponent();
             InitializeProcessedTXOutputControls();
 
+            // H1 (user 2026-11-22): the console's CW APF group now follows the transmitter, so the
+            // "Console APF Controls" owner radios are obsolete. Hide them and explain the rule in
+            // the footprint they used; the three per-channel APF groups on this page stay as they are.
+            grpDSPAudAPFControls.Visible = false;
+            System.Windows.Forms.LabelTS apfFollowNote = new System.Windows.Forms.LabelTS();
+            apfFollowNote.Name = "lblH1ApfFollowsTx";
+            apfFollowNote.AutoSize = false;
+            apfFollowNote.Location = grpDSPAudAPFControls.Location;
+            apfFollowNote.Size = new System.Drawing.Size(430, 46);
+            apfFollowNote.Font = new System.Drawing.Font(apfFollowNote.Font.FontFamily, 7.5f);
+            apfFollowNote.Text = "APF follows the transmitter (TX tag):\r\nVFO A = RX1, VFO B = RX2, SubVFOA = SubRX1, SubVFOB = SubRX2\r\nfull-window view = the spare cell that holds the tag.";
+            toolTip1.SetToolTip(apfFollowNote,
+                "The console's CW-panel APF group edits the receiver that currently holds the TX tag."
+                + System.Environment.NewLine + System.Environment.NewLine
+                + "VFO A = RX1, VFO B = RX2, SubVFOA = SubRX1, SubVFOB = SubRX2; in the full-window view, the spare cell that holds the tag."
+                + System.Environment.NewLine + System.Environment.NewLine
+                + "The three per-channel APF groups on this page still edit their own channel directly.");
+            tpDSPAudio.Controls.Add(apfFollowNote);
+
             _original_pnlP1_adcs_location = pnlP1_adcs.Location;
 
             _recording_keybind_timer.Interval = 5000;
@@ -18551,8 +18570,7 @@ namespace Thetis
                 console.RX1DSPMode == DSPMode.CWU)
                 console.radio.GetDSPRX(0, 0).RXAPFRun = chkDSPRX1APFEnable.Checked;
 
-            if (radDSPRX1APFControls.Checked)
-                console.APFEnabled = chkDSPRX1APFEnable.Checked;
+
 
             if (chkDSPRX1APFEnable.Checked)
             {
@@ -18570,8 +18588,7 @@ namespace Thetis
                 console.RX1DSPMode == DSPMode.CWU)
                 console.radio.GetDSPRX(0, 1).RXAPFRun = chkDSPRX1subAPFEnable.Checked;
 
-            if (radDSPRX1subAPFControls.Checked)
-                console.APFEnabled = chkDSPRX1subAPFEnable.Checked;
+
 
             if (chkDSPRX1subAPFEnable.Checked)
             {
@@ -18590,8 +18607,7 @@ namespace Thetis
                  console.RX2DSPMode == DSPMode.CWU)
                 console.radio.GetDSPRX(1, 0).RXAPFRun = chkDSPRX2APFEnable.Checked;
 
-            if (radDSPRX2APFControls.Checked)
-                console.APFEnabled = chkDSPRX2APFEnable.Checked;
+
 
             if (chkDSPRX2APFEnable.Checked) console.RX2APFlabel = "APF";
             else console.RX2APFlabel = "";
@@ -18602,141 +18618,80 @@ namespace Thetis
         {
             if (initializing) return;
             console.radio.GetDSPRX(0, 0).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX1APFGain.Value / 200.0);
-            if (radDSPRX1APFControls.Checked)
-                console.APFGain = tbDSPAudRX1APFGain.Value;
+
         }
 
         private void tbDSPAudRX1subAPFGain_ValueChanged(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(0, 1).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX1subAPFGain.Value / 200.0);
-            if (radDSPRX1subAPFControls.Checked)
-                console.APFGain = tbDSPAudRX1subAPFGain.Value;
+
         }
 
         private void tbDSPAudRX2APFGain_ValueChanged(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(1, 0).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX2APFGain.Value / 200.0);
-            if (radDSPRX2APFControls.Checked)
-                console.APFGain = tbDSPAudRX2APFGain.Value;
+
         }
 
         private void tbRX1APFTune_Scroll(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(0, 0).RXAPFFreq = console.CWPitch + (double)tbRX1APFTune.Value;
-            if (radDSPRX1APFControls.Checked)
-                console.APFFreq = tbRX1APFTune.Value;
+
         }
 
         private void tbRX1subAPFTune_Scroll(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(0, 1).RXAPFFreq = console.CWPitch + (double)tbRX1subAPFTune.Value;
-            if (radDSPRX1subAPFControls.Checked)
-                console.APFFreq = tbRX1subAPFTune.Value;
+
         }
 
         private void tbRX2APFTune_Scroll(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(1, 0).RXAPFFreq = console.CWPitch + (double)tbRX2APFTune.Value;
-            if (radDSPRX2APFControls.Checked)
-                console.APFFreq = tbRX2APFTune.Value;
+
         }
 
         private void tbRX1APFBW_Scroll(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(0, 0).RXAPFBw = (double)tbRX1APFBW.Value;
-            if (radDSPRX1APFControls.Checked)
-                console.APFBandwidth = tbRX1APFBW.Value;
+
         }
 
         private void tbRX1subAPFBW_Scroll(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(0, 1).RXAPFBw = (double)tbRX1subAPFBW.Value;
-            if (radDSPRX1subAPFControls.Checked)
-                console.APFBandwidth = tbRX1subAPFBW.Value;
+
         }
 
         private void tbRX2APFBW_Scroll(object sender, EventArgs e)
         {
             if (initializing) return;
             console.radio.GetDSPRX(1, 0).RXAPFBw = (double)tbRX2APFBW.Value;
-            if (radDSPRX2APFControls.Checked)
-                console.APFBandwidth = tbRX2APFBW.Value;
+
         }
 
         private void radDSPRX1APFControls_CheckedChanged(object sender, EventArgs e)
         {
-            if (initializing) return;
-            if (radDSPRX1APFControls.Checked)
-            {
-                chkDSPRX1APFEnable.Checked = console.APFEnabled;
-                if (console.RX1DSPMode == DSPMode.CWL ||
-                    console.RX1DSPMode == DSPMode.CWU)
-                    console.radio.GetDSPRX(0, 0).RXAPFRun = chkDSPRX1APFEnable.Checked;
-                tbDSPAudRX1APFGain.Value = console.APFGain;
-                console.radio.GetDSPRX(0, 0).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX1APFGain.Value / 200.0);
-                tbRX1APFTune.Value = console.APFFreq;
-                console.radio.GetDSPRX(0, 0).RXAPFFreq = console.CWPitch + (double)tbRX1APFTune.Value;
-                tbRX1APFBW.Value = console.APFBandwidth;
-                console.radio.GetDSPRX(0, 0).RXAPFBw = (double)tbRX1APFBW.Value;
-
-                //apf type
-                SetAPFType(console.APFType);
-
-                console.APFbtn = "RX1";
-            }
+            // H1 (user 2026-11-22): the console APF group follows the TX tag now, so this owner
+            // radio is obsolete (its group is hidden on this page). Setup's per-channel APF
+            // controls still edit their own channel directly - this handler must not touch them.
         }
 
         private void radDSPRX1subAPFControls_CheckedChanged(object sender, EventArgs e)
         {
-            if (initializing) return;
-            if (radDSPRX1subAPFControls.Checked)
-            {
-                chkDSPRX1subAPFEnable.Checked = console.APFEnabled;
-                if (console.RX1DSPMode == DSPMode.CWL ||
-                    console.RX1DSPMode == DSPMode.CWU)
-                    console.radio.GetDSPRX(0, 1).RXAPFRun = chkDSPRX1subAPFEnable.Checked;
-                tbDSPAudRX1subAPFGain.Value = console.APFGain;
-                console.radio.GetDSPRX(0, 1).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX1subAPFGain.Value / 200.0);
-                tbRX1subAPFTune.Value = console.APFFreq;
-                console.radio.GetDSPRX(0, 1).RXAPFFreq = console.CWPitch + (double)tbRX1subAPFTune.Value;
-                tbRX1subAPFBW.Value = console.APFBandwidth;
-                console.radio.GetDSPRX(0, 1).RXAPFBw = (double)tbRX1subAPFBW.Value;
-
-                //apf type
-                SetAPFType(console.APFType);
-
-                console.APFbtn = "SUB";
-            }
+            // H1 (user 2026-11-22): obsolete owner radio - see radDSPRX1APFControls_CheckedChanged.
         }
 
         private void radDSPRX2APFControls_CheckedChanged(object sender, EventArgs e)
         {
-            if (initializing) return;
-            if (radDSPRX2APFControls.Checked)
-            {
-                chkDSPRX2APFEnable.Checked = console.APFEnabled;
-                if (console.RX2DSPMode == DSPMode.CWL ||
-                    console.RX2DSPMode == DSPMode.CWU)
-                    console.radio.GetDSPRX(1, 0).RXAPFRun = chkDSPRX2APFEnable.Checked;
-                tbDSPAudRX2APFGain.Value = console.APFGain;
-                console.radio.GetDSPRX(1, 0).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX2APFGain.Value / 200.0);
-                tbRX2APFTune.Value = console.APFFreq;
-                console.radio.GetDSPRX(1, 0).RXAPFFreq = console.CWPitch + (double)tbRX2APFTune.Value;
-                tbRX2APFBW.Value = console.APFBandwidth;
-                console.radio.GetDSPRX(1, 0).RXAPFBw = (double)tbRX2APFBW.Value;
-
-                //apf type
-                SetAPFType(console.APFType);
-
-                console.APFbtn = "RX2";
-            }
+            // H1 (user 2026-11-22): obsolete owner radio - see radDSPRX1APFControls_CheckedChanged.
         }
 
         private void chkDSPRX1DollyEnable_CheckedChanged(object sender, EventArgs e)
@@ -37070,15 +37025,15 @@ namespace Thetis
             {
                 case "rx1":
                     console.radio.GetDSPRX(0, 0).RXAPFType = type;
-                    if (radDSPRX1APFControls.Checked) console.APFType = type;
+
                     break;
                 case "rx1sub":
                     console.radio.GetDSPRX(0, 1).RXAPFType = type;
-                    if (radDSPRX1subAPFControls.Checked) console.APFType = type;
+
                     break;
                 case "rx2":
                     console.radio.GetDSPRX(1, 0).RXAPFType = type;
-                    if (radDSPRX2APFControls.Checked) console.APFType = type;
+
                     break;
             }
         }
@@ -37107,6 +37062,22 @@ namespace Thetis
 
                 SetAPFType(next);
             }
+        }
+        // H1 (user 2026-11-22): the console APF group follows the transmitter, so the type button
+        // must set the combo of the channel it is editing (not the old owner radio's channel).
+        public void SetAPFTypeForChannel(int channel, int type)
+        {
+            if (type < 0 || type > 3) return;
+            System.Windows.Forms.ComboBoxTS c = null;
+            switch (channel)
+            {
+                case 0: c = comboAPF_type_rx1; break;
+                case 1: c = comboAPF_type_rx1sub; break;
+                case 2: c = comboAPF_type_rx2; break;
+            }
+            if (c == null) return;
+            if (c.SelectedIndex == type) comboAPF_type_SelectedIndexChanged(c, EventArgs.Empty);
+            else c.SelectedIndex = type;
         }
         public void SetAPFType(int type)
         {

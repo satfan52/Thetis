@@ -103,6 +103,12 @@ namespace Thetis
                 }
                 WDSP.SetChannelState(Ch(rx, 1), on ? 1 : 0, on ? 0 : 1);
                 s.Enabled = on;
+                if (on)
+                {
+                    // H1 (user 2026-11-22): the CW APF follows the TX tag - re-apply this sub's
+                    // stored APF state now that its channel runs.
+                    try { H1ApfBus.ChannelActivated?.Invoke(rx, 1); } catch { }
+                }
                 TciLog.Log($"[SubRX] rx{rx} enabled={on} ok");
                 return true;
             }
