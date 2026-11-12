@@ -7646,6 +7646,51 @@ namespace Thetis
             AmpLanControllerInstance.RequestAutoTuneStop(); // H1: right-click arms manual again
         }
 
+        // H1 (user 2026-11-22): the CW panel's APF-type button (btnAPF_type, texts BI/DP/MA/GA)
+        // has no images in any of the skins - the skin engine only builds a button image list when
+        // <name>-0.png exists - so it fell back to a white flat button with white text. Give it the
+        // APF enable pill's own skin image as a stretched background, which draws behind the
+        // button text, and a dark fallback if even that image is missing.
+        private void H1StyleApfTypeButton()
+        {
+            try
+            {
+                if (btnAPF_type == null) return;
+                if (btnAPF_type.BackgroundImage != null) return;
+                string skin = CurrentSkin;
+                if (!string.IsNullOrEmpty(skin))
+                {
+                    string appdata = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+                        + "\\OpenHPSDR\\Skins\\" + skin + "\\Console\\";
+                    string local = ".\\Skins\\" + skin + "\\Console\\";
+                    foreach (string dir in new string[] { local, appdata })
+                    {
+                        string p = dir + "chkCWAPFEnabled-0.png";
+                        if (System.IO.File.Exists(p))
+                        {
+                            using (System.IO.FileStream fs = new System.IO.FileStream(p, System.IO.FileMode.Open, System.IO.FileAccess.Read))
+                                btnAPF_type.BackgroundImage = Image.FromStream(fs);
+                            btnAPF_type.BackgroundImageLayout = ImageLayout.Stretch;
+                            btnAPF_type.BackColor = Color.Transparent;
+                            btnAPF_type.FlatAppearance.BorderSize = 0;
+                            btnAPF_type.FlatAppearance.MouseOverBackColor = Color.Transparent;
+                            btnAPF_type.FlatAppearance.MouseDownBackColor = Color.Transparent;
+                            btnAPF_type.ForeColor = Color.White;
+                            btnAPF_type.TextAlign = ContentAlignment.MiddleCenter;
+                            btnAPF_type.Refresh();
+                            return;
+                        }
+                    }
+                }
+                // no pill art in this skin: at least make it a dark button instead of a white box
+                btnAPF_type.BackColor = Color.FromArgb(52, 52, 52);
+                btnAPF_type.FlatAppearance.BorderColor = Color.FromArgb(90, 90, 90);
+                btnAPF_type.ForeColor = Color.White;
+                btnAPF_type.Refresh();
+            }
+            catch { }
+        }
+
         private void H1LayoutV4()
         {
             int W = this.ClientSize.Width;
@@ -8011,6 +8056,7 @@ namespace Thetis
                     // readout; visibility belongs to SelectModeDependentPanel(), which shows the
                     // current mode's panel and hides the other three - never hide them here.
                 }
+            H1StyleApfTypeButton(); // H1 (user 2026-11-22): the APF-type button has no skin art
             H1StartupTrace("txblock: phone=" + (panelModeSpecificPhone != null && panelModeSpecificPhone.Visible)
                 + " cw=" + (panelModeSpecificCW != null && panelModeSpecificCW.Visible)
                 + " dig=" + (panelModeSpecificDigital != null && panelModeSpecificDigital.Visible)
@@ -45309,6 +45355,10 @@ private readonly double[] _h1BasePanSlider = new double[8];
             _rx1_dsp_mode = new_mode;
 
             SelectModeDependentPanel(); //MW0LGE_21k9d
+            // H1 (user 2026-11-22): the mode panel has a different height of used space than
+            // the phone panel - the PA-profile label must move to where the new panel puts it,
+            // or it lands on the CW panel's pitch row (reported as a garbled transmit block).
+            setPAProfileLabelPos();
 
             if (_rx1_dsp_mode != DSPMode.SPEC && _rx1_dsp_mode != DSPMode.FM && _rx1_dsp_mode != DSPMode.DRM)
             {
