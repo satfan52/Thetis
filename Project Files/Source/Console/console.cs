@@ -2157,6 +2157,7 @@ namespace Thetis
 
             LogTool.AddLogEntry("    Recovering setup config...", "CONFIG");
             GetState(); // recall saved state
+            H1LoadSliceSettings();   // H1 (M2): the spare DDC receivers' own settings
             H1LoadBandPower(); // H1 round 2: overlay the per-band mirror (survives task-kill restarts)
             LogTool.Completed("CONFIG");
 
@@ -3415,6 +3416,7 @@ namespace Thetis
 
         public void SaveState()
         {
+            H1SaveSliceSettings();   // H1 (M2): keep the spare DDC settings
             if (DB.Merged) return;
 
             if (_current_breakin_mode == BreakIn.QSK)
@@ -8540,6 +8542,28 @@ namespace Thetis
         private readonly List<Control> _h1CellStripControls = new List<Control>();
         private readonly Dictionary<object, int> _h1CellStripOwner = new Dictionary<object, int>();
         private bool _h1cellStripsBuilt = false;
+        // H1 (M2): local audio (aamix) state, driven by the middle-click on a window
+        private int _h1SpareAudioMask = 0;
+        private bool _h1SpareVacAutoOn = false;   // we switched VAC1 on for the spare audio
+        // H1 (option A): the spare slice selected as voice-TX target, and whether we
+        // have keyed the rig for it (so release restores the radio exactly once).
+        private int _h1VoiceTxRx = -1;
+        private bool _h1VoiceTxSub = false;       // the sub window is the selected TX VFO
+        private int _h1VoiceTxSavedTicks = 0;     // RX1/RX2 TX ticks to restore when the spare is dropped
+        private bool _h1TxTicksGuard = false;     // our own tick writes are not user choices
+        // H1: normal-view panels that must stay hidden while the full-window view is up
+        private Control[] _h1NormalPanels = null;
+        private Dictionary<Control, bool> _h1NormalPanelSaved = null;
+        private bool _h1PanelGuard = false;
+        private bool _h1VoiceTxKeyed = false;
+        private DSPMode _h1VoiceTxSavedMode = DSPMode.USB;
+        // H1 (M2): one SUB toggle per cell - all eight receivers, so RX1/RX2 stay coherent
+        private readonly Dictionary<int, CheckBoxTS> h1cellSub = new Dictionary<int, CheckBoxTS>();
+        private readonly List<Control> _h1CellSubControls = new List<Control>();
+        // H1 (M2): a spare that has ever been positioned (restored or tuned) keeps its
+        // own frequency when the full-window view opens instead of jumping to RX1's centre.
+        private readonly bool[] _h1SlicePositioned = new bool[8];
+        private bool _h1SliceEnterInit = false;   // the view's own centre retune is not a position
         // H1 (user 2026-11-09): the strip used to be a 194x92 block, then two slim rows. It is ONE row
         // now (688 x 20) as the user asked: every control over the top of the cell, which leaves the
         // most spectrum visible. Order: band, mode, AGC, AF, CTUN, NR/ANF/NB/BIN, ZOOM - DDC1's and
@@ -8557,13 +8581,105 @@ namespace Thetis
         private const int H1FsCtrlH = 18;   // combo / pill height
         private const int H1FsTagH = 16;    // caption / value / slider height
         private const int H1FsZoomCapW = 34;   // "ZOOM" caption width (end of the first strip row)
-        private const int H1FsZoomSliderW = 70; // the per-cell zoom slider
+        private const int H1FsZoomSliderW = 22; // the per-cell zoom slider (short: the SUB toggle follows it)
         private const int H1FsZoomValW = 34;   // "4.0x" - the zoom value
 
         private static readonly string[] H1FsBandNames = { "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m" };
         private static readonly Band[] H1FsBands = { Band.B160M, Band.B80M, Band.B60M, Band.B40M, Band.B30M, Band.B20M, Band.B17M, Band.B15M, Band.B12M, Band.B10M, Band.B6M };
         private static readonly string[] H1FsModeNames = { "LSB", "USB", "DSB", "CWL", "CWU", "FM", "AM", "SAM", "SPEC", "DIGL", "DIGU", "DRM" };
         private static readonly DSPMode[] H1FsModes = { DSPMode.LSB, DSPMode.USB, DSPMode.DSB, DSPMode.CWL, DSPMode.CWU, DSPMode.FM, DSPMode.AM, DSPMode.SAM, DSPMode.SPEC, DSPMode.DIGL, DSPMode.DIGU, DSPMode.DRM };
+
+        // H1 (M2): per-slice persistence - each headless receiver keeps its own
+        // frequency, mode, filter, AGC/AF, noise controls and CTUN model across restarts,
+        // so the six spare DDC cells come back where they were left. The sub receiver is
+        // TCI-owned and not persisted here.
+        // H1 (M2): every slice's settings are banked at power-down and on exit; the
+        // leading flag only records whether the operator positioned that receiver, which
+        // decides whether the full-window view keeps its frequency next time.
+        private void H1SaveSliceSettings()
+        {
+            try
+            {
+                List<string> list = new List<string>();
+                for (int rx = 2; rx < 8; rx++)
+                {
+                    HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(rx);
+                    if (sl == null) continue;
+                    bool tci = sl.HasConsumer(SliceConsumer.TciAudio) || sl.HasConsumer(SliceConsumer.TciIq);
+                    bool positioned = _h1SlicePositioned[rx] || tci;
+                    HeadlessSubRX.State sub = HeadlessSubRX.Get(rx);
+                    string v = string.Join(",", new string[] {
+                        positioned ? "1" : "0",
+                        sl.FrequencyMHz.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                        ((int)sl.Mode).ToString(),
+                        sl.FilterLow.ToString(), sl.FilterHigh.ToString(),
+                        sl.AgcTop.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                        sl.AudioGain.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                        sl.Nr.ToString(), sl.Anf ? "1" : "0", sl.Nb ? "1" : "0", sl.Bin ? "1" : "0",
+                        HeadlessSliceManager.Instance.GetCtunMode(rx) ? "1" : "0",
+                        sub.Enabled ? "1" : "0", sub.FreqHz.ToString(),
+                        sub.FilterLow.ToString(), sub.FilterHigh.ToString(),
+                        Display.H1CellZoom[rx].ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
+                    list.Add("slice" + rx + "/" + v);
+                }
+                list.Add("ver/3");
+                DB.SaveVars("H1Slices", list);
+            }
+            catch { }
+        }
+
+        private void H1LoadSliceSettings()
+        {
+            try
+            {
+                List<string> list = DB.GetVars("H1Slices");
+                if (list == null || list.Count == 0) return;
+                // H1 (M2): a version marker makes pre-version rows ignore-able instead of
+                // being restored as operator positions.
+                bool versioned = false;
+                foreach (string e in list)
+                {
+                    if (e.Trim() == "ver/3") { versioned = true; break; }
+                }
+                if (!versioned) return;
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                foreach (string entry in list)
+                {
+                    int slash = entry.IndexOf('/');
+                    if (slash <= 0) continue;
+                    string key = entry.Substring(0, slash);
+                    if (!key.StartsWith("slice")) continue;
+                    int rx;
+                    if (!int.TryParse(key.Substring(5), out rx) || rx < 2 || rx > 7) continue;
+                    string[] p = entry.Substring(slash + 1).Split(',');
+                    if (p.Length < 17) continue;
+                    bool positioned = p[0] == "1";
+                    HeadlessSliceManager.Instance.SetMode(rx, (DSPMode)int.Parse(p[2]));
+                    HeadlessSliceManager.Instance.SetFilter(rx, int.Parse(p[3]), int.Parse(p[4]));
+                    HeadlessSliceManager.Instance.SetSliceAgcTop(rx, double.Parse(p[5], inv));
+                    HeadlessSliceManager.Instance.SetSliceGain(rx, double.Parse(p[6], inv));
+                    HeadlessSliceManager.Instance.SetSliceNr(rx, int.Parse(p[7]));
+                    HeadlessSliceManager.Instance.SetSliceAnf(rx, p[8] == "1");
+                    HeadlessSliceManager.Instance.SetSliceNb(rx, p[9] == "1");
+                    HeadlessSliceManager.Instance.SetSliceBin(rx, p[10] == "1");
+                    HeadlessSliceManager.Instance.SetCtunMode(rx, p[11] == "1");
+                    if (positioned)
+                    {
+                        HeadlessSliceManager.Instance.SetVFOA(rx, double.Parse(p[1], inv));
+                        _h1SlicePositioned[rx] = true;
+                    }
+                    HeadlessSubRX.State sub = HeadlessSubRX.Get(rx);
+                    sub.Enabled = p[12] == "1";
+                    sub.FreqHz = long.Parse(p[13]);
+                    sub.FilterLow = int.Parse(p[14]);
+                    sub.FilterHigh = int.Parse(p[15]);
+                    Display.H1CellZoom[rx] = double.Parse(p[16], inv);
+                    H1SpacePttTrace("h1cs: restored rx" + rx + " " + p[1] + " mode=" + p[2] + " positioned=" + positioned);
+                }
+            }
+            catch { }
+        }
+
 
         private void H1FsBuild()
         {
@@ -8646,6 +8762,17 @@ namespace Thetis
             h1fsCtun1.CheckedChanged += H1FsPillChanged;
             h1fsCtun2.CheckedChanged += H1FsPillChanged;
 
+            // H1 (M2): the TCI server and the GUI are front-ends to the same slice, so
+            // a change from the TCI side refreshes the GUI strips (marshalled to UI).
+            HeadlessSliceManager.Instance.SliceFrequencyChanged += H1SliceFrontEndChangedFreq;
+            HeadlessSliceManager.Instance.SliceModeChanged += H1SliceFrontEndChangedMode;
+            HeadlessSliceManager.Instance.SliceFilterChanged += H1SliceFrontEndChangedFilter;
+            MoxChangeHandlers += H1VoiceTxMoxChanged;   // H1 option A: PTT keys the selected DDC
+            if (chkVFOATX != null) chkVFOATX.CheckedChanged += H1TxTickChanged;
+            if (chkSubVFOATX != null) chkSubVFOATX.CheckedChanged += H1TxTickChanged;
+            if (chkVFOBTX != null) chkVFOBTX.CheckedChanged += H1TxTickChanged;
+            if (chkSubVFOBTX != null) chkSubVFOBTX.CheckedChanged += H1TxTickChanged;
+            H1InitNormalPanelGuard();
             H1CellStripsBuild();
             H1FsSync();
         }
@@ -9031,6 +9158,7 @@ for (int zr = 0; zr < 8; zr++)
                 catch (Exception zex) { H1SpacePttTrace("eight-row setup: saving analyser zoom failed: " + zex.Message); }
 
                 double centre = Display.CentreFreqRX1;
+                _h1SliceEnterInit = true;
                 for (int s = 2; s < 8; s++)
                 {
                     // H1 (M1): the spares are tuned through their slices below
@@ -9067,12 +9195,17 @@ for (int zr = 0; zr < 8; zr++)
                         HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(rx);
                         if (slice == null) continue;
                         bool tciOwned = slice.HasConsumer(SliceConsumer.TciAudio) || slice.HasConsumer(SliceConsumer.TciIq);
-                        HeadlessSliceManager.Instance.SetVFOA(rx, tciOwned ? slice.FrequencyMHz : centre);
+                        if (tciOwned) _h1SlicePositioned[rx] = true;
+                        bool keepPosition = tciOwned || _h1SlicePositioned[rx];
+                        HeadlessSliceManager.Instance.SetVFOA(rx, keepPosition ? slice.FrequencyMHz : centre);
+                        // a sub restored from the database has state but no channel yet
+                        if (HeadlessSubRX.IsEnabled(rx)) HeadlessSubRX.SetEnabled(rx, true);
                         Display.H1RowCentreMHz[rx] = HeadlessSliceManager.Instance.GetDisplayCenterMHz(rx);
                     }
                     catch (Exception exa) { H1SpacePttTrace("eight-row setup: slice rx" + rx + " failed: " + exa.Message); }
                 }
                 H1PublishCellMeters();
+                _h1SliceEnterInit = false;
                 H1SpacePttTrace("eight-row panafall: six spare DDC streams up, spares at " + centre.ToString("f6") + " MHz");
             }
             catch { }
@@ -9080,6 +9213,18 @@ for (int zr = 0; zr < 8; zr++)
 
         private void H1EightRowsExit()
         {
+            if (_h1VoiceTxKeyed)
+            {
+                _h1VoiceTxKeyed = false;
+                try { if (CIVControllerInstance != null) CIVControllerInstance.ReleaseDigitalTx(); } catch { }
+            }
+            _h1VoiceTxRx = -1;
+            _h1VoiceTxSub = false;
+            if (_h1VoiceTxSavedTicks != 0)
+            {
+                H1SetTxTicks(_h1VoiceTxSavedTicks);
+                _h1VoiceTxSavedTicks = 0;
+            }
             try
             {
                 H1Crumb("eightrows-exit: start");
@@ -9243,6 +9388,7 @@ for (int zr = 0; zr < 8; zr++)
 
         private void H1SpareCellMouseDown(MouseEventArgs e, int cell)
         {
+            if (cell >= 2 && cell < 8) _h1SlicePositioned[cell] = true;
             HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(cell);
             if (slice == null) return;
 
@@ -9371,6 +9517,7 @@ for (int zr = 0; zr < 8; zr++)
         // H1 (M1 step 4): the wheel over a spare DDC cell tunes that cell's slice.
         private void H1SpareCellWheel(int rx, int step, int num_steps)
         {
+            if (rx >= 2 && rx < 8) _h1SlicePositioned[rx] = true;
             if (rx < 2 || rx > 7) return;
             try
             {
@@ -9410,7 +9557,9 @@ for (int zr = 0; zr < 8; zr++)
 
                 // H1 (M1 steps 3-5): per-cell slice state and meters for all eight cells.
                 if (!Display.H1EightRows) return;
-                Display.H1CellTxActive = _mox || _tuning;
+                // H1 (M2): a digital slice keys the rig through CI-V without the
+                // console's MOX, so its cell still counts as the TX cell.
+                Display.H1CellTxActive = _mox || _tuning || TxArbiter.Instance.ActiveDigitalRx >= 0;
                 Display.H1CellMeterSwr = H1TxSwr;
                 for (int r = 0; r < 8; r++)
                 {
@@ -9420,6 +9569,8 @@ for (int zr = 0; zr < 8; zr++)
                         Display.H1CellMeterSub[0] = s1;
                         Display.H1CellTx[0] = Display.H1MeterTx1;
                         Display.H1CellAudio[0] = false;
+                        Display.H1RowTxMask[0] = 0;
+                        Display.H1RowSubEnabled[0] = Display.SubRX1Enabled;
                         continue;
                     }
                     if (r == 1)
@@ -9428,6 +9579,8 @@ for (int zr = 0; zr < 8; zr++)
                         Display.H1CellMeterSub[1] = s2;
                         Display.H1CellTx[1] = Display.H1MeterTx2;
                         Display.H1CellAudio[1] = false;
+                        Display.H1RowTxMask[1] = 0;
+                        Display.H1RowSubEnabled[1] = Display.SubRX2Enabled;
                         continue;
                     }
                     HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(r);
@@ -9442,6 +9595,7 @@ for (int zr = 0; zr < 8; zr++)
                     Display.H1CellAudio[r] = slice.IsStreamingAudio;
                     Display.H1CellTx[r] = TxArbiter.Instance.ActiveDigitalRx == r;
                     Display.H1RowTci[r] = slice.HasConsumer(SliceConsumer.TciAudio) || slice.HasConsumer(SliceConsumer.TciIq);
+                    Display.H1RowTxMask[r] = (_h1VoiceTxRx == r) ? (_h1VoiceTxSub ? 2 : 1) : 0;
 
                     HeadlessSubRX.State sub = HeadlessSubRX.Get(r);
                     Display.H1RowSubEnabled[r] = sub.Enabled;
@@ -9524,8 +9678,7 @@ for (int zr = 0; zr < 8; zr++)
             m_h1CellMeterTimer.Start();
 
             // H1 (zoom option A): re-apply any zoom the cells were left with
-            H1ApplyCellAnalyserZoom(0);
-            H1ApplyCellAnalyserZoom(1);
+            for (int zr = 0; zr < 8; zr++) H1ApplyCellAnalyserZoom(zr);
         }
 
         private void H1FsHide()
@@ -9604,6 +9757,20 @@ for (int zr = 0; zr < 8; zr++)
                     _h1CellStripControls.Add(c);
                 }
             }
+
+            // H1 (M2): a SUB toggle in every cell's caption row. RX1/RX2 drive the
+            // console's multi-RX ticks, RX3..RX8 their headless sub receivers.
+            for (int row = 0; row < 8; row++)
+            {
+                CheckBoxTS sp = NewSubPill("h1sub" + row, "SUB");
+                sp.Size = new Size(45, 16);
+                sp.Visible = false;
+                sp.TabStop = false;
+                sp.CheckedChanged += H1CellSubChanged;
+                Controls.Add(sp);
+                h1cellSub[row] = sp;
+                _h1CellSubControls.Add(sp);
+            }
             }
             catch (Exception ex)
             {
@@ -9619,13 +9786,21 @@ for (int zr = 0; zr < 8; zr++)
                 c.Visible = true;
                 c.BringToFront();
             }
+            foreach (Control c in _h1CellSubControls)
+            {
+                if (c == null) continue;
+                c.Visible = true;
+                c.BringToFront();
+            }
             H1CellStripsLayout();
         }
 
         private void H1CellStripsHide()
         {
             if (!_h1cellStripsBuilt) return;
+            H1ClearSpareAudio();
             foreach (Control c in _h1CellStripControls) c.Visible = false;
+            foreach (Control c in _h1CellSubControls) { if (c != null) c.Visible = false; }
         }
 
         private void H1CellStripsLayout()
@@ -9644,6 +9819,18 @@ for (int zr = 0; zr < 8; zr++)
                 int x = left + (col + 1) * cellW - H1ListenMargin - H1FsW;
                 int y = top + rowInCol * rowH;
                 H1CellStripPlace(s, x, y);
+            }
+
+            // H1 (M2): the SUB toggles sit in every cell's caption row, left of the strip
+            for (int srow = 0; srow < 8; srow++)
+            {
+                CheckBoxTS sp = null;
+                if (h1cellSub != null) h1cellSub.TryGetValue(srow, out sp);
+                if (sp == null) continue;
+                int scol = srow / 4, srowInCol = srow % 4;
+                int stripX = left + scol * cellW + cellW - H1ListenMargin - H1FsW;
+                int stripY = top + srowInCol * rowH;
+                sp.Location = new Point(stripX + H1FsW - 45, stripY + 1);
             }
         }
 
@@ -9670,6 +9857,449 @@ for (int zr = 0; zr < 8; zr++)
         }
 
         // H1 (M2): read the slices into the six strips.
+        // H1 (M2): TCI-side slice changes reach the GUI strips through these events;
+        // they arrive on TCI client threads, so the sync is marshalled to the UI thread.
+        // H1 (M2): local audio for one spare receiver. The console aamix takes 16 DSP
+        // inputs (channel id == mixin id); the RX1/RX2 pills gate ids 0..3, so a spare
+        // gates id 2*rx. UpdateAAudioMixerStates() rewrites the whole state mask, so the
+        // enabled spares are re-applied after it.
+        // H1 (M2): local audio for one receiver (main or sub) in the full-window view,
+        // driven by the middle-click on its window - the same gesture RX1/RX2 use. The
+        // console aamix takes 16 DSP inputs (channel id == mixin id); the audio state mask
+        // is rewritten by UpdateAAudioMixerStates, so the open inputs are re-applied after it.
+        private unsafe void H1SetSpareAudio(int rx, bool sub, bool on)
+        {
+            if (rx < 0 || rx > 7) return;
+            if (sub && !HeadlessSubRX.IsEnabled(rx)) return;
+            int id = 2 * rx + (sub ? 1 : 0);
+            try
+            {
+                cmaster.SetAAudioMixState((void*)0, 0, id, on);
+                cmaster.SetAAudioMixWhat((void*)0, 0, id, on);
+                if (on) _h1SpareAudioMask |= (1 << id);
+                else _h1SpareAudioMask &= ~(1 << id);
+                if (H1SpareSliceHasAudio(rx))
+                    HeadlessSliceManager.Instance.AddConsumer(rx, SliceConsumer.GuiAudio);
+                else
+                    HeadlessSliceManager.Instance.RemoveConsumer(rx, SliceConsumer.GuiAudio);
+            }
+            catch { }
+            // H1 (audio): the audible listening path is VAC1/VAC2 - route this
+            // receiver's audio there too, and switch VAC1 on if neither VAC is on.
+            try
+            {
+                int route = 0;
+                bool audible = H1SpareSliceHasAudio(rx);
+                if (audible)
+                {
+                    bool v1 = chkVAC1 != null && chkVAC1.Checked;
+                    bool v2 = chkVAC2 != null && chkVAC2.Checked;
+                    if (!v1 && !v2 && chkVAC1 != null)
+                    {
+                        chkVAC1.Checked = true;
+                        v1 = true;
+                        _h1SpareVacAutoOn = true;
+                        H1SpacePttTrace("window click: VAC1 switched on for the spare audio");
+                    }
+                    if (v1) route |= 1;
+                    if (v2) route |= 2;
+                    // H1: only the sub's audio is on - send the sub channel alone,
+                    // not the main+sub mix, so the sub window really plays the sub.
+                    bool mainOn = (_h1SpareAudioMask & (1 << (2 * rx))) != 0;
+                    bool subOn = (_h1SpareAudioMask & (1 << (2 * rx + 1))) != 0;
+                    if (subOn && !mainOn) route |= 4;
+                }
+                cmaster.SetSpareVACRoute(rx, route);
+                // H1: the last spare switched off - undo the VAC we switched on for it,
+                // otherwise the console falls back to RX1 audio and the speaker keeps
+                // playing although the cell was switched off.
+                if (!audible && _h1SpareAudioMask == 0 && _h1SpareVacAutoOn)
+                {
+                    _h1SpareVacAutoOn = false;
+                    if (chkVAC1 != null) chkVAC1.Checked = false;
+                    H1SpacePttTrace("window click: VAC1 switched off again (auto)");
+                }
+            }
+            catch { }
+            if (!Display.H1EightRows || rx < 2) return;
+            HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(rx);
+            Display.H1CellAudio[rx] = (_h1SpareAudioMask & (1 << (2 * rx))) != 0
+                || (sl != null && sl.HasConsumer(SliceConsumer.TciAudio));
+            Display.H1RowSubAudio[rx] = sub && (_h1SpareAudioMask & (1 << (2 * rx + 1))) != 0;
+        }
+
+        private bool H1SpareSliceHasAudio(int rx)
+        {
+            int bits = (1 << (2 * rx)) | (1 << (2 * rx + 1));
+            return (_h1SpareAudioMask & bits) != 0;
+        }
+
+        // H1 (option A): pick the spare DDC the console's PTT should transmit on.
+        // RX1/RX2 keep their own VFO TX ticks; a spare selection is independent of them.
+        // H1: the normal-view control groups. CollapseDisplay hides them once, but
+        // second-slice updates re-show some of them; while the eight-row view is up they
+        // are captured, hidden, and any later re-show is vetoed. On exit the captured
+        // state is restored exactly.
+        private void H1InitNormalPanelGuard()
+        {
+            if (_h1NormalPanels != null) return;
+            _h1NormalPanels = new Control[]
+            {
+                panelPower, panelRX2Power, panelOptions, panelSoundControls,
+                panelVFO, panelMode, panelDSP, panelFilter, panelDisplay2, panelMultiRX,
+                panelRX2Mode, panelRX2DSP, panelRX2Filter, panelRX2RF, panelRX2Display,
+                panelRX2Mixer, panelBandHF, panelBandVHF, panelBandGEN,
+                grpVFOBetween, grpMultimeter,
+                lblRX2Band, comboRX2Band, lblRX2RF, ptbRX2RF, lblRX2AF, ptbRX2AF,
+                lblRX2Preamp, comboRX2Preamp, lblRX2AGCLabel, comboRX2AGC,
+                chkRX2Mute, chkRX2Squelch, ptbRX2Squelch, picRX2Squelch,
+                chkSquelch, ptbSquelch, picSquelch
+            };
+            foreach (Control c in _h1NormalPanels)
+            {
+                if (c != null) c.VisibleChanged += H1NormalPanelVisibleChanged;
+            }
+        }
+
+        private void H1NormalPanelVisibleChanged(object sender, EventArgs e)
+        {
+            if (!_h1FullScreenPanafall || _h1PanelGuard) return;
+            Control c = sender as Control;
+            if (c == null || !c.Visible) return;
+            // something re-showed a normal-view group in the eight-row view - veto it
+            _h1PanelGuard = true;
+            try { c.Visible = false; }
+            finally { _h1PanelGuard = false; }
+        }
+
+        private void H1HideNormalViewPanels()
+        {
+            H1InitNormalPanelGuard();
+            _h1NormalPanelSaved = new Dictionary<Control, bool>();
+            _h1PanelGuard = true;
+            try
+            {
+                foreach (Control c in _h1NormalPanels)
+                {
+                    if (c == null) continue;
+                    _h1NormalPanelSaved[c] = c.Visible;
+                    if (c.Visible) c.Visible = false;
+                }
+            }
+            finally { _h1PanelGuard = false; }
+        }
+
+        private void H1RestoreNormalViewPanels()
+        {
+            if (_h1NormalPanelSaved == null) return;
+            _h1PanelGuard = true;
+            try
+            {
+                foreach (KeyValuePair<Control, bool> kv in _h1NormalPanelSaved)
+                {
+                    if (kv.Key == null) continue;
+                    kv.Key.Visible = kv.Value;
+                }
+            }
+            finally { _h1PanelGuard = false; }
+            _h1NormalPanelSaved = null;
+        }
+
+        // H1 (option A): read/write the four RX1/RX2 TX ticks. Our own writes are
+        // guarded, so the tick handler does not mistake them for the operator choosing
+        // an RX1/RX2 transmit VFO.
+        private int H1TxTicksMask()
+        {
+            int m = 0;
+            if (chkVFOATX != null && chkVFOATX.Checked) m |= 1;
+            if (chkSubVFOATX != null && chkSubVFOATX.Checked) m |= 2;
+            if (chkVFOBTX != null && chkVFOBTX.Checked) m |= 4;
+            if (chkSubVFOBTX != null && chkSubVFOBTX.Checked) m |= 8;
+            return m;
+        }
+
+        private void H1SetTxTicks(int mask)
+        {
+            _h1TxTicksGuard = true;
+            try
+            {
+                if (chkVFOATX != null) chkVFOATX.Checked = (mask & 1) != 0;
+                if (chkSubVFOATX != null) chkSubVFOATX.Checked = (mask & 2) != 0;
+                if (chkVFOBTX != null) chkVFOBTX.Checked = (mask & 4) != 0;
+                if (chkSubVFOBTX != null) chkSubVFOBTX.Checked = (mask & 8) != 0;
+            }
+            finally { _h1TxTicksGuard = false; }
+            H1RxWindowSync();
+        }
+
+        // The operator picked an RX1/RX2 transmit VFO: that becomes the TX source and
+        // the spare selection is dropped.
+        private void H1TxTickChanged(object sender, EventArgs e)
+        {
+            if (_h1TxTicksGuard) return;
+            if (_h1VoiceTxRx < 0) return;
+            CheckBox c = sender as CheckBox;
+            if (c == null || !c.Checked) return;
+            _h1VoiceTxRx = -1;
+            _h1VoiceTxSub = false;
+            _h1VoiceTxSavedTicks = 0;
+            H1PublishCellMeters();
+            H1SpacePttTrace("voice TX: RX1/RX2 tick selected - spare TX VFO dropped");
+        }
+
+        private void H1ToggleVoiceTxSlice(int row, bool sub)
+        {
+            if (row < 2 || row > 7)
+            {
+                H1SpacePttTrace("voice TX: select a spare cell (RX1/RX2 use the VFO TX ticks)");
+                return;
+            }
+            if (_h1VoiceTxKeyed)
+            {
+                _h1VoiceTxKeyed = false;
+                try { if (CIVControllerInstance != null) CIVControllerInstance.ReleaseDigitalTx(); } catch { }
+            }
+            bool clear = (_h1VoiceTxRx == row && _h1VoiceTxSub == sub);
+            if (!clear && _h1VoiceTxRx < 0)
+            {
+                // entering the spare as TX source: remember and clear the RX1/RX2 ticks
+                _h1VoiceTxSavedTicks = H1TxTicksMask();
+                H1SetTxTicks(0);
+            }
+            _h1VoiceTxRx = clear ? -1 : row;
+            _h1VoiceTxSub = clear ? false : sub;
+            if (clear && _h1VoiceTxSavedTicks != 0)
+            {
+                H1SetTxTicks(_h1VoiceTxSavedTicks);
+                _h1VoiceTxSavedTicks = 0;
+            }
+            H1PublishCellMeters();
+            H1SpacePttTrace(clear
+                ? "voice TX slice cleared (PTT uses the normal console TX) ticks=" + H1TxTicksMask()
+                : "voice TX: RX" + (row + 1) + (sub ? " SUB" : "") + " is the TX VFO, RX1/RX2 ticks now=" + H1TxTicksMask());
+        }
+
+        // H1 (option A): console MOX on -> steer the IC-7100 to the selected DDC and
+        // key it through CI-V; MOX off -> unkey and restore the radio state.
+        private void H1VoiceTxMoxChanged(int rx, bool oldMox, bool newMox)
+        {
+            try
+            {
+                if (newMox)
+                {
+                    if (_h1VoiceTxRx < 2) return;
+                    if (_tuning || (chkTUN != null && chkTUN.Checked))
+                    {
+                        H1SpacePttTrace("voice TX: tune active - the tune path owns the rig");
+                        return;
+                    }
+                    HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(_h1VoiceTxRx);
+                    if (sl == null) return;
+                    if (CIVControllerInstance == null || !CIVControllerInstance.IsOpen)
+                    {
+                        H1SpacePttTrace("voice TX: CI-V is not open - cannot key the rig");
+                        return;
+                    }
+                    double f = sl.FrequencyMHz;
+                    DSPMode m = sl.Mode;
+                    if (_h1VoiceTxSub)
+                    {
+                        HeadlessSubRX.State h1sub = HeadlessSubRX.Get(_h1VoiceTxRx);
+                        if (h1sub.Enabled && h1sub.FreqHz > 0)
+                        {
+                            f = h1sub.FreqHz / 1e6;
+                            m = h1sub.Mode;
+                        }
+                    }
+                    // the transmitted sideband must match the selected slice's mode
+                    try
+                    {
+                        var dspTx = radio.GetDSPTX(0);
+                        if (dspTx != null)
+                        {
+                            _h1VoiceTxSavedMode = dspTx.CurrentDSPMode;
+                            dspTx.CurrentDSPMode = m;
+                        }
+                    }
+                    catch { }
+                    CIVControllerInstance.SteerAndKeyForDigitalTx(f, m);
+                    _h1VoiceTxKeyed = true;
+                    H1SpacePttTrace("voice TX: RX" + (_h1VoiceTxRx + 1) + " keyed via CI-V at "
+                        + f.ToString("f6") + " " + m);
+                }
+                else if (_h1VoiceTxKeyed)
+                {
+                    _h1VoiceTxKeyed = false;
+                    try { if (CIVControllerInstance != null) CIVControllerInstance.ReleaseDigitalTx(); } catch { }
+                    try
+                    {
+                        var dspTx = radio.GetDSPTX(0);
+                        if (dspTx != null) dspTx.CurrentDSPMode = _h1VoiceTxSavedMode;
+                    }
+                    catch { }
+                    H1SpacePttTrace("voice TX: unkeyed, radio and TX mode restored");
+                }
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("voice TX failed: " + ex.Message);
+            }
+        }
+
+        private void H1ToggleSpareAudio(int rx, bool sub)
+        {
+            bool on = (_h1SpareAudioMask & (1 << (2 * rx + (sub ? 1 : 0)))) == 0;
+            // H1 (audio): the audible VAC output carries one receiver at a time. Switch
+            // the new one on first, then the other spare cells off - the VAC stays on
+            // across the hand-over instead of blipping off and on again.
+            H1SetSpareAudio(rx, sub, on);
+            if (on)
+            {
+                for (int other = 2; other < 8; other++)
+                {
+                    if (other == rx) continue;
+                    if (H1SpareSliceHasAudio(other))
+                    {
+                        H1SetSpareAudio(other, false, false);
+                        H1SetSpareAudio(other, true, false);
+                    }
+                }
+            }
+            H1PublishCellMeters();
+            H1SpacePttTrace("window click: RX" + (rx + 1) + (sub ? " SUB" : "")
+                + " audio " + (on ? "on" : "off") + " mask=0x" + _h1SpareAudioMask.ToString("X"));
+        }
+
+        private unsafe void H1ReapplySpareAudioStates()
+        {
+            int mask = _h1SpareAudioMask;
+            if (mask == 0) return;
+            for (int id = 0; id < 16; id++)
+            {
+                if ((mask & (1 << id)) == 0) continue;
+                try
+                {
+                    cmaster.SetAAudioMixState((void*)0, 0, id, true);
+                    cmaster.SetAAudioMixWhat((void*)0, 0, id, true);
+                }
+                catch { }
+            }
+        }
+
+        // H1 (M2): a SUB toggle acts on that receiver's sub - the console's multi-RX ticks
+        // for RX1/RX2, the headless sub receiver for RX3..RX8.
+        private void H1CellSubChanged(object sender, EventArgs e)
+        {
+            // the sync sets the pill face from the console/sub state - that is not a click
+            if (_h1fsSync) return;
+            int row = -1;
+            foreach (KeyValuePair<int, CheckBoxTS> kv in h1cellSub)
+            {
+                if (kv.Value == sender) { row = kv.Key; break; }
+            }
+            if (row < 0) return;
+            CheckBoxTS sp = sender as CheckBoxTS;
+            if (sp == null) return;
+            try
+            {
+                if (row == 0) { if (chkEnableMultiRX != null) chkEnableMultiRX.Checked = sp.Checked; }
+                else if (row == 1) { if (chkEnableMultiRX2 != null) chkEnableMultiRX2.Checked = sp.Checked; }
+                else HeadlessSubRX.SetEnabled(row, sp.Checked);
+            }
+            catch { }
+            H1CellSubFace(sp);
+            H1PublishCellMeters();
+            H1SpacePttTrace("cell SUB: RX" + (row + 1) + " = " + sp.Checked);
+            H1FsSync();
+        }
+
+        private void H1CellSubFace(CheckBoxTS sp)
+        {
+            if (sp == null) return;
+            Color back = sp.Checked ? Color.FromArgb(255, 216, 56) : Color.FromArgb(48, 48, 48);
+            Color fore = sp.Checked ? Color.Black : Color.FromArgb(180, 180, 180);
+            sp.BackColor = back;
+            sp.ForeColor = fore;
+            sp.FlatAppearance.CheckedBackColor = back;
+            sp.FlatAppearance.MouseOverBackColor = back;
+            sp.FlatAppearance.MouseDownBackColor = back;
+        }
+
+        // H1 (M2): leaving the view stops the spare listens - the windows remain but the
+        // audio state is not left running behind a hidden view.
+        private void H1ClearSpareAudio()
+        {
+            int mask = _h1SpareAudioMask;
+            _h1SpareAudioMask = 0;
+            for (int id = 0; id < 16; id++)
+            {
+                if ((mask & (1 << id)) == 0) continue;
+                try
+                {
+                    unsafe
+                    {
+                        cmaster.SetAAudioMixState((void*)0, 0, id, false);
+                        cmaster.SetAAudioMixWhat((void*)0, 0, id, false);
+                    }
+                }
+                catch { }
+            }
+            for (int rx = 0; rx < 8; rx++)
+            {
+                try { cmaster.SetSpareVACRoute(rx, 0); } catch { }
+            }
+            if (_h1SpareVacAutoOn)
+            {
+                _h1SpareVacAutoOn = false;
+                if (chkVAC1 != null) chkVAC1.Checked = false;
+            }
+            for (int rx = 2; rx < 8; rx++)
+            {
+                try { HeadlessSliceManager.Instance.RemoveConsumer(rx, SliceConsumer.GuiAudio); } catch { }
+                if (Display.H1EightRows)
+                {
+                    HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(rx);
+                    Display.H1CellAudio[rx] = sl != null && sl.HasConsumer(SliceConsumer.TciAudio);
+                    Display.H1RowSubAudio[rx] = false;
+                }
+            }
+        }
+
+
+
+
+        // H1 (M2): leaving the view stops the spare listens - the pills are hidden
+        // there, so audio must not be left on with no visible control.
+        // H1 (M2): the listen pill's colour - green means the receiver is in the mix.
+
+
+        private void H1SliceFrontEndChangedFreq(int rx, double mhz)
+        {
+            // H1 (M2): a frequency change from the GUI or TCI is an operator position;
+            // the view's own centre retune is not (it must not persist).
+            if (rx >= 2 && rx < 8 && !_h1SliceEnterInit) _h1SlicePositioned[rx] = true;
+            H1CellStripsRefreshFromSlice();
+        }
+        private void H1SliceFrontEndChangedMode(int rx, DSPMode mode) { H1CellStripsRefreshFromSlice(); }
+        private void H1SliceFrontEndChangedFilter(int rx, int low, int high) { H1CellStripsRefreshFromSlice(); }
+
+        private void H1CellStripsRefreshFromSlice()
+        {
+            if (!_h1FullScreenPanafall || !_h1cellStripsBuilt) return;
+            try
+            {
+                if (IsHandleCreated && InvokeRequired) BeginInvoke((MethodInvoker)H1CellStripsRefreshUi);
+                else H1CellStripsRefreshUi();
+            }
+            catch { }
+        }
+
+        private void H1CellStripsRefreshUi()
+        {
+            if (!_h1FullScreenPanafall) return;
+            H1FsSync();
+        }
+
         private void H1CellStripsSync()
         {
             if (!_h1cellStripsBuilt) return;
@@ -9704,6 +10334,17 @@ for (int zr = 0; zr < 8; zr++)
                 H1FsPillFace(s.Bin, sl.Bin, "BIN");
                 H1FsPillFace(s.Ctun, HeadlessSliceManager.Instance.GetCtunMode(row), "CTUN");
             }
+            for (int srow = 0; srow < 8; srow++)
+            {
+                CheckBoxTS sp = null;
+                if (h1cellSub != null) h1cellSub.TryGetValue(srow, out sp);
+                if (sp == null) continue;
+                bool subOn = srow == 0 ? (chkEnableMultiRX != null && chkEnableMultiRX.Checked)
+                           : srow == 1 ? (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked)
+                           : HeadlessSubRX.IsEnabled(srow);
+                if (sp.Checked != subOn) sp.Checked = subOn;
+                H1CellSubFace(sp);
+            }
             }
             catch (Exception ex)
             {
@@ -9719,6 +10360,7 @@ for (int zr = 0; zr < 8; zr++)
             int row = H1CellStripRow(sender);
             ComboBoxTS c = sender as ComboBoxTS;
             if (row < 2 || c == null || c.SelectedIndex < 0) return;
+            _h1SlicePositioned[row] = true;
             H1CellApplyBand(row, H1FsBands[c.SelectedIndex]);
             H1SpacePttTrace("h1cs: band rx" + row + " -> " + H1FsBandNames[c.SelectedIndex]);
             H1FsSync();
@@ -24086,7 +24728,7 @@ for (int zr = 0; zr < 8; zr++)
                 // ticked and it is the source - either selected, or the fall-back while
                 // the amplifier stands by (also bridging the one-second derived-source
                 // cache). Untick it and the SDR readings stay for the whole episode.
-                return _mox && _h1TrxMeterIC7100 && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
+                return H1MoxOrDigitalTx && _h1TrxMeterIC7100 && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
                     && H1RigRouteActive && CIVControllerInstance.RigPoFresh(2000);
             }
         }
@@ -24094,7 +24736,7 @@ for (int zr = 0; zr < 8; zr++)
         {
             get
             {
-                return _mox && _h1TrxMeterIC7100 && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
+                return H1MoxOrDigitalTx && _h1TrxMeterIC7100 && (_h1MeterSource == 1 || (_h1MeterSource == 2 && H1AmpStandbyNow))
                     && H1RigRouteActive && CIVControllerInstance.RigSwrFresh(2000);
             }
         }
@@ -24520,13 +25162,19 @@ for (int zr = 0; zr < 8; zr++)
             H1UpdateMeterSource(); // H1 round 5: keep the derived meter source current
             H1AmpButtonsVis(); // H1: the console amp controls follow the same enable condition
         }
+        // H1 (M2): a headless digital TX keys the rig through CI-V without asserting
+        // the console's MOX, so the rig/amp meter sources must treat it as a transmit.
+        private bool H1MoxOrDigitalTx
+        {
+            get { return _mox || TxArbiter.Instance.ActiveDigitalRx >= 0; }
+        }
         private bool H1AmpFwdLive
         {
-            get { return _mox && _h1MeterSource == 2 && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000); }
+            get { return H1MoxOrDigitalTx && _h1MeterSource == 2 && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000); }
         }
         private bool H1AmpSwrLive
         {
-            get { return _mox && _h1MeterSource == 2 && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000) && AmpLanControllerInstance.RefFresh(2000); }
+            get { return H1MoxOrDigitalTx && _h1MeterSource == 2 && AmpLanControllerInstance != null && AmpLanControllerInstance.IsOpen && AmpLanControllerInstance.FwdFresh(2000) && AmpLanControllerInstance.RefFresh(2000); }
         }
         private bool H1AmpRefLive
         {
@@ -28189,10 +28837,33 @@ for (int zr = 0; zr < 8; zr++)
             // and e.X/e.Y would be in whichever one fired.
             Point pp = pnlDisplay.PointToClient(Cursor.Position);
             int win = H1WindowUnder(pp.X, pp.Y);
+            bool h1Shift = (ModifierKeys & Keys.Shift) == Keys.Shift || Common.ShiftKeyDown;
+            int h1CellAt = Display.H1EightRows ? H1CellRowAt(pp.X, pp.Y) : -1;
+            H1SpacePttTrace("middle-click: win=" + win + " shift=" + h1Shift
+                + " cell=" + h1CellAt + " x=" + pp.X + " y=" + pp.Y);
 
+            // H1 (option A): shift+middle-click anywhere in a spare cell selects that
+            // DDC as the voice-TX slice - the passband window is only a few pixels wide,
+            // so requiring it made the gesture unusable.
+            if (h1Shift && Display.H1EightRows && h1CellAt >= 2 && win < 100)
+            {
+                H1ToggleVoiceTxSlice(h1CellAt, false);
+                return;
+            }
+
+            if (win >= 100)
+            {
+                int h1row = (win - 100) / 2;
+                bool h1sub = ((win - 100) % 2) == 1;
+                // H1 (option A): shift-click selects this spare as the voice transmit
+                // slice; the console's PTT then keys the rig on its frequency/mode.
+                if (h1Shift) H1ToggleVoiceTxSlice(h1row, h1sub);
+                else H1ToggleSpareAudio(h1row, h1sub);
+                return;
+            }
             if (win >= 0)
             {
-                if ((ModifierKeys & Keys.Shift) == Keys.Shift) H1SetTxWindow(win);
+                if (h1Shift) H1SetTxWindow(win);
                 else H1ToggleRxAudio(win);
                 return;
             }
@@ -28214,7 +28885,17 @@ for (int zr = 0; zr < 8; zr++)
             if (Display.H1EightRows)
             {
                 int h1cell = H1CellRowAt(x, y);
-                if (h1cell < 0 || h1cell > 1) return -1;
+                if (h1cell < 0) return -1;
+                int w8 = pnlDisplay.Width / 2;
+                int cellX = x - (h1cell / 4) * w8;
+                if (Display.H1RowSubEnabled[h1cell] &&
+                    Display.H1RowSubWinRight[h1cell] > Display.H1RowSubWinLeft[h1cell] &&
+                    cellX > Display.H1RowSubWinLeft[h1cell] - 3 && cellX < Display.H1RowSubWinRight[h1cell] + 3)
+                    return h1cell <= 1 ? h1cell * 2 + 1 : 100 + h1cell * 2 + 1;
+                if (Display.H1RowWinRight[h1cell] > Display.H1RowWinLeft[h1cell] &&
+                    cellX > Display.H1RowWinLeft[h1cell] - 3 && cellX < Display.H1RowWinRight[h1cell] + 3)
+                    return h1cell <= 1 ? h1cell * 2 : 100 + h1cell * 2;
+                return -1;
             }
 
             bool rx2Half = rx2_enabled && H1Rx2Half(x, y);
@@ -28494,6 +29175,7 @@ for (int zr = 0; zr < 8; zr++)
                 ExpandDisplay(true);
                 H1Crumb("fullscreen-exit: restore-geometry");
                 H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
+                H1RestoreNormalViewPanels();             // H1: put the normal-view panels back exactly
                 H1Crumb("fullscreen-exit: done");
             }
             else
@@ -28507,6 +29189,7 @@ for (int zr = 0; zr < 8; zr++)
                 setupTuneDriveSlider();                  // H1: and stays off the full-screen view
                 H1Crumb("fullscreen-enter: collapse");
                 CollapseDisplay(true);
+                H1HideNormalViewPanels();   // H1: no normal-view panels in the eight-row view
                 H1Crumb("fullscreen-enter: done");
             }
             H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
@@ -36792,6 +37475,8 @@ private readonly double[] _h1BasePanSlider = new double[8];
                     }
                     break;
             }
+            // H1 (M2): keep the spare receivers' local audio in the console mix
+            H1ReapplySpareAudioStates();
         }
         public void comboDisplayMode_SelectedIndexChanged(object sender, System.EventArgs e)
         {

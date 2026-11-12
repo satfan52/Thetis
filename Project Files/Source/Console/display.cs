@@ -255,6 +255,8 @@ namespace Thetis
         public static readonly int[] H1RowRateHz = new int[8];
         public static readonly bool[] H1RowActive = new bool[8];      // any consumer holds it
         public static readonly bool[] H1RowTci = new bool[8];         // a TCI client uses this slice too
+        public static readonly bool[] H1RowSubAudio = new bool[8];     // the slice's sub is in the mix too
+        public static readonly int[] H1RowTxMask = new int[8];      // bit0 main, bit1 sub (TX source)
         public static readonly bool[] H1CellAudio = new bool[8];      // TCI audio on this slice
         public static readonly bool[] H1CellTx = new bool[8];         // this slice is the digital TX
         public static readonly int[] H1RowSubLow = new int[8];
@@ -6936,6 +6938,8 @@ namespace Thetis
                 // with their listen and transmit state. Rows 3-8 are display-only for now.
                 if (r <= 1 && !localMox(r == 0 ? 1 : 2))
                 {
+                    H1RowWinLeft[r] = H1RowWinRight[r] = -1;
+                    H1RowSubWinLeft[r] = H1RowSubWinRight[r] = -1;
                     int h1rx = r == 0 ? 1 : 2;
                     int h1Diff = r == 0 ? freq_diff : rx2_freq_diff;
                     float h1width = h1High - h1Low;
@@ -6949,6 +6953,8 @@ namespace Thetis
                             int fr = (int)((float)(SubRX1FilterHigh - h1Low + localSubDiff + localRit) / h1width * cellW);
                             vfoa_sub_win_left = Math.Min(fl, fr);
                             vfoa_sub_win_right = Math.Max(fl, fr);
+                            H1RowSubWinLeft[0] = vfoa_sub_win_left;
+                            H1RowSubWinRight[0] = vfoa_sub_win_right;
                             H1DrawRxWindow(1, fl, fr, cellW, rowH, h1rx, 0, false, y0, false,
                                 m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                         }
@@ -6959,6 +6965,8 @@ namespace Thetis
                             int fr = (int)((float)(SubRX2FilterHigh - h1Low + localSub2Diff) / h1width * cellW);
                             vfob_sub_win_left = Math.Min(fl, fr);
                             vfob_sub_win_right = Math.Max(fl, fr);
+                            H1RowSubWinLeft[1] = vfob_sub_win_left;
+                            H1RowSubWinRight[1] = vfob_sub_win_right;
                             H1DrawRxWindow(3, fl, fr, cellW, rowH, h1rx, 0, false, y0, false,
                                 m_bDX2_sub_rx_filter_brush, m_bDX2_sub_rx_filter_brush_solid);
                         }
@@ -6976,11 +6984,15 @@ namespace Thetis
                         {
                             vfoa_win_left = Math.Min(flx, frx);
                             vfoa_win_right = Math.Max(flx, frx);
+                            H1RowWinLeft[0] = vfoa_win_left;
+                            H1RowWinRight[0] = vfoa_win_right;
                         }
                         else
                         {
                             vfob_win_left = Math.Min(flx, frx);
                             vfob_win_right = Math.Max(flx, frx);
+                            H1RowWinLeft[1] = vfob_win_left;
+                            H1RowWinRight[1] = vfob_win_right;
                         }
                         H1DrawRxWindow(r == 0 ? 0 : 2, flx, frx, cellW, rowH, h1rx, 0, false, y0, false,
                             m_bDX2_display_filter_brush, m_bDX2_display_filter_brush_solid);
@@ -7119,7 +7131,10 @@ namespace Thetis
             if (span <= 0) return;
 
             bool txCell = H1CellTxActive && H1CellTx[r];
+            bool txMainSel = (H1RowTxMask[r] & 1) != 0;
+            bool txSubSel = (H1RowTxMask[r] & 2) != 0;
             bool audioCell = H1CellAudio[r];
+            bool subAudioCell = H1RowSubAudio[r];
 
             // H1 (M2): the TCI badge - the same receiver is also a TCI client's slice
             if (H1RowTci[r])
@@ -7136,7 +7151,7 @@ namespace Thetis
             H1RowWinLeft[r] = Math.Min(fl, fr);
             H1RowWinRight[r] = Math.Max(fl, fr);
             H1DrawCellWindow(H1RowWinLeft[r], H1RowWinRight[r], cellW, rowH,
-                m_bDX2_display_filter_brush, txCell, audioCell, false);
+                m_bDX2_display_filter_brush, txCell || txMainSel, audioCell, false);
 
             // VFO B window, when this slice's sub receiver is on
             if (H1RowSubEnabled[r])
@@ -7146,7 +7161,7 @@ namespace Thetis
                 H1RowSubWinLeft[r] = Math.Min(sl, sr);
                 H1RowSubWinRight[r] = Math.Max(sl, sr);
                 H1DrawCellWindow(H1RowSubWinLeft[r], H1RowSubWinRight[r], cellW, rowH,
-                    m_bDX2_sub_rx_filter_brush, txCell, audioCell, true);
+                    m_bDX2_sub_rx_filter_brush, txCell || txSubSel, subAudioCell, true);
             }
 
             // the tuning cross, centred in the VFO A window like the RX1/RX2 cells
@@ -7178,7 +7193,7 @@ namespace Thetis
             }
             float ty = 56f;   // below the cell's top control row, as in the eight-row cells
             if (txSel) H1DrawWindowTag("TX", m_bDX2_h1_tx_edge, l, r, ty);
-            else if (audioSel && !isSub) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, ty);
+            else if (audioSel) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, ty);
         }
         // H1 (user 2026-11-09): a very small S-meter at the left edge of the DDC1/DDC2 cells of the
         // full-window view: two thin bars, main receiver (green) and its sub (teal). While that side

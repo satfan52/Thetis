@@ -29,6 +29,28 @@ warren@wpratt.com
 pipe pip  = {0};
 PIPE ppip = &pip;
 
+// H1: per-receiver VAC routing for the spare DDCs. bit0 = VAC1, bit1 = VAC2.
+// The console sets this while a cell's audio is switched on, so a spare
+// receiver's audio reaches the same VAC output the operator listens to.
+static int spare_vac_route[cmMAXrcvr] = { 0 };
+static int spare_vac_takeover = 0;		// bit0: a spare owns VAC1, bit1: VAC2
+
+static void update_spare_vac_takeover(void)
+{
+	int i, t = 0;
+	for (i = 0; i < cmMAXrcvr; i++) t |= spare_vac_route[i] & 3;
+	spare_vac_takeover = t;
+}
+
+PORT void SetSpareVACRoute(int rx, int mask)
+{
+	if (rx >= 0 && rx < cmMAXrcvr)
+	{
+		spare_vac_route[rx] = mask & 7;
+		update_spare_vac_takeover();
+	}
+}
+
 void create_spc0()
 {
 	int i;
@@ -211,7 +233,9 @@ void xpipe (int stream, int pos, double** buffs)
 				for (j = 0; j < 2 * pcm->rcvr[rx].ch_outsize; j++)
 					ppip->rbuff[rx][j] += buffs[i][j];
 			xscope(rx, 0, ppip->rbuff[rx]);														// scope
-			xvacOUT(rx, 1, ppip->rbuff[rx]);													// data to VAC
+			// H1: a selected spare receiver owns VAC1 while it listens, so RX1's own
+			// VAC feed pauses - two writers on one mixer input would interleave.
+			if (!(spare_vac_takeover & 1)) xvacOUT(rx, 1, ppip->rbuff[rx]);	// data to VAC
 			// H1: TCI rx audio is the same mix scaled by the client's channel
 			// selection (main/sub/both). The copy keeps VAC, the wav recorder and
 			// the console's own listening exactly as they were.
@@ -248,7 +272,15 @@ void xpipe (int stream, int pos, double** buffs)
 			for (i = 1; i < pcm->cmSubRCVR; i++)
 				for (j = 0; j < 2 * pcm->rcvr[rx].ch_outsize; j++)
 					ppip->rbuff[rx][j] += buffs[i][j];
-			xvacOUT(rx, 1, ppip->rbuff[rx]);													// data to VAC
+			// H1: same takeover rule for VAC2 (RX2's own feed pauses while a spare owns it)
+			if (!(rx == 1 && (spare_vac_takeover & 2))) xvacOUT(rx, 1, ppip->rbuff[rx]);	// data to VAC
+			// H1: a spare receiver's audio can be routed into the console's VAC
+			// outputs; the GUI's window middle-click sets this route.
+			{
+				double* spare_src = (spare_vac_route[rx] & 4) ? buffs[1] : ppip->rbuff[rx];
+				if (spare_vac_route[rx] & 1) xvacOUT(0, 1, spare_src);
+				if (spare_vac_route[rx] & 2) xvacOUT(1, 1, spare_src);
+			}
 			// H1: TCI rx audio is the same mix scaled by the client's channel
 			// selection (main/sub/both). The copy keeps VAC, the wav recorder and
 			// the console's own listening exactly as they were.
