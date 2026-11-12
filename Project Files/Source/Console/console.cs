@@ -2159,6 +2159,7 @@ namespace Thetis
             GetState(); // recall saved state
             H1LoadSliceSettings();   // H1 (M2): the spare DDC receivers' own settings
             H1LoadBandPower(); // H1 round 2: overlay the per-band mirror (survives task-kill restarts)
+            H1LoadTagSettings(); // H1 (user 2026-11-20): restore the TX/RX tags, subs and spare selections
             LogTool.Completed("CONFIG");
 
             // setup additional spectrum analysers, used by meter system
@@ -3417,6 +3418,7 @@ namespace Thetis
         public void SaveState()
         {
             H1SaveSliceSettings();   // H1 (M2): keep the spare DDC settings
+            H1SaveTagSettings();     // H1 (user 2026-11-20): TX/RX tags, subs and spare selections
             if (DB.Merged) return;
 
             if (_current_breakin_mode == BreakIn.QSK)
@@ -6887,6 +6889,16 @@ namespace Thetis
         private void UpdateSubVeilStates()
         {
             if (h1SubRX1Veil == null || h1SubRX2Veil == null) return;
+            // H1 (bug fix 2026-11-12): the dim veils are normal-view furniture. Over the
+            // full-window eight-DDC view they must never show - a veil at the normal-view
+            // SubRX2 strip position lands on the DDC8 cell ("strange dimming on DDC8 when
+            // SUB is pressed on DDC2").
+            if (Display.H1EightRows || _h1FullScreenPanafall)
+            {
+                SetSubVeil(h1SubRX1Veil, false);
+                SetSubVeil(h1SubRX2Veil, false);
+                return;
+            }
             bool on1 = chkEnableMultiRX != null && chkEnableMultiRX.Checked;
             bool on2 = chkRX2 != null && chkRX2.Checked && chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked;
             bool dim = LegacyItemController.DimUnusedReceivers; // H1: the user's option
@@ -6920,6 +6932,9 @@ namespace Thetis
 
         private void SetSubVeil(PowerDimOverlay veil, bool show)
         {
+            // H1 (bug fix 2026-11-12): never over the full-window eight-DDC view - see
+            // UpdateSubVeilStates for the DDC8 dimming report.
+            if (Display.H1EightRows || _h1FullScreenPanafall) show = false;
             if (veil.Visible != show) veil.Visible = show;
             if (show)
             {
@@ -7322,8 +7337,10 @@ namespace Thetis
         internal void H1AmpButtonsVis()
         {
             if (h1AmpMode == null) return;
-            // H1 round 4: the block is opt-in - hidden by default (user requirement 2026-10-02)
-            bool on = _h1AmpBlockVisible && (_h1AmpMeterEnabled || _h1AmpTuneStandbyEnabled || _h1BandGuardEnabled);
+            // H1 (user 2026-11-22): the block is shown by default; the amp LAN options no longer
+            // decide whether the block exists - they only decide what it can do. A fresh database
+            // (or a restore before the Setup options load) must not make the block disappear.
+            bool on = _h1AmpBlockVisible;
             if (h1AmpMode.Visible != on) h1AmpMode.Visible = on;
             if (h1AmpPower != null && h1AmpPower.Visible != on) h1AmpPower.Visible = on;
             if (h1AmpAutoTune != null && h1AmpAutoTune.Visible != on) h1AmpAutoTune.Visible = on;
@@ -8159,14 +8176,7 @@ namespace Thetis
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkSubRX2MUT != null && chkSubRX2MUT.Checked) // H1: moving the SubRX2 volume brings its stream back
             { _h1MutFromSlider = true; chkSubRX2MUT.Checked = false; }
 
-            if (chkRX2Mute.Checked && m_bMuteWillMuteVAC2)
-            {
-                radio.GetDSPRX(1, 1).RXOutputGain = 0.0;
-            }
-            else
-            {
-                radio.GetDSPRX(1, 1).RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
-            }
+            H1ApplyRxGain(3);
         }
 
         // H1: the SubRX2 pan - the RX2 sub channel, WDSP 1,1. The mirror of
@@ -8545,6 +8555,16 @@ namespace Thetis
         // H1 (M2): local audio (aamix) state, driven by the middle-click on a window
         private int _h1SpareAudioMask = 0;
         private bool _h1SpareVacAutoOn = false;   // we switched VAC1 on for the spare audio
+        // H1 (user 2026-11-20): the listen tags of the spare cells are remembered when the
+        // full-window view is left - the audio stops and the tag stays; clicking that window
+        // again resumes the audio. Live audio and the remembered tag are therefore separate.
+        private int _h1SpareListenMask = 0;
+        // H1 (user 2026-11-20): the sub state a receiver carried when it was switched off,
+        // handed back when it returns - symmetric for RX1 and RX2. The transmit tag is NOT
+        // moved back on switch-on (user round 2): it only moves when a receiver is switched
+        // off, so enabling a receiver never steals the transmit VFO.
+        private bool _h1Rx1SavedSub = false;
+        private bool _h1Rx2SavedSub = false;
         // H1 (option A): the spare slice selected as voice-TX target, and whether we
         // have keyed the rig for it (so release restores the radio exactly once).
         private int _h1VoiceTxRx = -1;
@@ -8676,6 +8696,139 @@ namespace Thetis
                     Display.H1CellZoom[rx] = double.Parse(p[16], inv);
                     H1SpacePttTrace("h1cs: restored rx" + rx + " " + p[1] + " mode=" + p[2] + " positioned=" + positioned);
                 }
+            }
+            catch { }
+        }
+
+        // H1 (user 2026-11-20, round 2): switching a receiver back on hands back only its
+        // sub state. The transmit tag is deliberately left where it is: it may only move
+        // when a receiver is switched off, never when one is enabled again.
+        private void H1RestoreRx1Sub()
+        {
+            try
+            {
+                if (!PowerOn || !chkRX1.Checked || !_rx1Active) return;
+                if (_h1Rx1SavedSub)
+                {
+                    _h1Rx1SavedSub = false;
+                    if (chkEnableMultiRX != null && !chkEnableMultiRX.Checked)
+                    {
+                        chkEnableMultiRX.Checked = true;
+                        H1SpacePttTrace("rx1on: sub state restored");
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void H1RestoreRx2Sub()
+        {
+            try
+            {
+                if (!PowerOn || !chkRX2.Checked) return;
+                if (_h1Rx2SavedSub)
+                {
+                    _h1Rx2SavedSub = false;
+                    if (chkEnableMultiRX2 != null && !chkEnableMultiRX2.Checked)
+                    {
+                        chkEnableMultiRX2.Checked = true;
+                        H1SpacePttTrace("rx2on: sub state restored");
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // H1 (user 2026-11-20): the tag model is kept in its own database record. The
+        // ordinary control state cannot carry it: a receiver that is switched off when the
+        // console closes has its sub and transmit ticks forced off, and the full-window
+        // spare selections do not exist as controls at all.
+        private const string H1_TAGS_VERSION = "ver/1";
+
+        private void H1SaveTagSettings()
+        {
+            try
+            {
+                List<string> list = new List<string>();
+                list.Add(H1_TAGS_VERSION);
+                list.Add("tx/" + H1TxTicksMask() + "," + _h1VoiceTxRx + ","
+                    + (_h1VoiceTxSub ? 1 : 0) + "," + _h1VoiceTxSavedTicks);
+                int h1mut = 0;
+                if (chkVAC1MUT != null && chkVAC1MUT.Checked) h1mut |= 1;
+                if (chkSubRX1MUT != null && chkSubRX1MUT.Checked) h1mut |= 2;
+                if (chkVAC2MUT != null && chkVAC2MUT.Checked) h1mut |= 4;
+                if (chkSubRX2MUT != null && chkSubRX2MUT.Checked) h1mut |= 8;
+                list.Add("mutes/" + h1mut);
+                list.Add("rx1/" + (_h1Rx1SavedSub ? 1 : 0));
+                list.Add("rx2/" + (_h1Rx2SavedSub ? 1 : 0));
+                list.Add("spare/" + _h1SpareListenMask);
+                DB.SaveVars("H1Tags", list);
+            }
+            catch { }
+        }
+
+        private void H1LoadTagSettings()
+        {
+            try
+            {
+                List<string> list = DB.GetVars("H1Tags");
+                if (list == null || list.Count == 0) return;
+                bool versioned = false;
+                foreach (string e in list) if (e.Trim() == H1_TAGS_VERSION) { versioned = true; break; }
+                if (!versioned) return;
+                int h1tx = 0, h1vrx = -1, h1vst = 0, h1mut = 0, h1spare = 0;
+                bool h1vsub = false, h1r1sub = false, h1r2sub = false;
+                foreach (string entry in list)
+                {
+                    int slash = entry.IndexOf('/');
+                    if (slash <= 0) continue;
+                    string key = entry.Substring(0, slash);
+                    string val = entry.Substring(slash + 1).Trim();
+                    string[] p = val.Split(',');
+                    try
+                    {
+                        switch (key)
+                        {
+                            case "tx":
+                                if (p.Length >= 4)
+                                {
+                                    int.TryParse(p[0], out h1tx);
+                                    int.TryParse(p[1], out h1vrx);
+                                    h1vsub = p[2].Trim() == "1";
+                                    int.TryParse(p[3], out h1vst);
+                                }
+                                break;
+                            case "mutes": int.TryParse(val, out h1mut); break;
+                            case "rx1":
+                                // ver/1 wrote "ticks,sub,moved"; the current format writes "sub"
+                                if (p.Length >= 3) h1r1sub = p[1].Trim() == "1";
+                                else if (p.Length >= 1) h1r1sub = p[0].Trim() == "1";
+                                break;
+                            case "rx2":
+                                if (p.Length >= 3) h1r2sub = p[1].Trim() == "1";
+                                else if (p.Length >= 1) h1r2sub = p[0].Trim() == "1";
+                                break;
+                            case "spare": int.TryParse(val, out h1spare); break;
+                        }
+                    }
+                    catch { }
+                }
+                _h1VoiceTxRx = h1vrx;
+                _h1VoiceTxSub = h1vsub;
+                _h1VoiceTxSavedTicks = h1vst;
+                _h1SpareListenMask = h1spare;
+                _h1Rx1SavedSub = h1r1sub;
+                _h1Rx2SavedSub = h1r2sub;
+                if (chkVAC1MUT != null) chkVAC1MUT.Checked = (h1mut & 1) != 0;
+                if (chkSubRX1MUT != null) chkSubRX1MUT.Checked = (h1mut & 2) != 0;
+                if (chkVAC2MUT != null) chkVAC2MUT.Checked = (h1mut & 4) != 0;
+                if (chkSubRX2MUT != null) chkSubRX2MUT.Checked = (h1mut & 8) != 0;
+                H1SetTxTicks(_h1VoiceTxRx >= 2 ? 0 : h1tx);
+                H1RxWindowSync();
+                H1PublishCellMeters();
+                H1SpacePttTrace("h1tags: restored tx=" + h1tx + " voiceRx=" + _h1VoiceTxRx
+                    + " sub1=" + _h1Rx1SavedSub + " sub2=" + _h1Rx2SavedSub
+                    + " listen=0x" + _h1SpareListenMask.ToString("X"));
             }
             catch { }
         }
@@ -9021,6 +9174,10 @@ namespace Thetis
             {
                 BandPreChangeHandlers?.Invoke(1, H1FsBands[c.SelectedIndex]);
             }
+            if (rx == 2)
+                H1SpacePttTrace("fs strip: band rx2 applied: band=" + RX2Band
+                    + " vfob=" + VFOBFreq.ToString("f6") + " centre=" + CentreRX2Frequency.ToString("f6")
+                    + " rx2en=" + rx2_enabled + " setBandRunning=" + m_bSetBandRunning);
             H1SpacePttTrace("fs strip: band rx" + rx + " -> " + H1FsBandNames[c.SelectedIndex]);
         }
 
@@ -9182,6 +9339,14 @@ for (int zr = 0; zr < 8; zr++)
                 }
                 try { UpdateDDCs(Display.RX2Enabled); } catch (Exception exd) { H1SpacePttTrace("eight-row setup: UpdateDDCs failed: " + exd.Message); }
                 Display.H1EightRows = true;
+                // H1 (bug fix 2026-11-12): the normal-view dim veils must not show over the
+                // full-window cells - hide them the moment the view opens.
+                if (h1SubRX1Veil != null) h1SubRX1Veil.Visible = false;
+                if (h1SubRX2Veil != null) h1SubRX2Veil.Visible = false;
+                if (h1RX1VeilTop != null) h1RX1VeilTop.Visible = false;
+                if (h1RX1VeilLeft != null) h1RX1VeilLeft.Visible = false;
+                if (h1RX1VeilBands != null) h1RX1VeilBands.Visible = false;
+                if (h1RX1VeilAudio != null) h1RX1VeilAudio.Visible = false;
 
                 // H1 (M1): give every spare DDC a display consumer so its WDSP
                 // channel runs (S-meter and GUI tuning), then apply the slice's own
@@ -9218,13 +9383,11 @@ for (int zr = 0; zr < 8; zr++)
                 _h1VoiceTxKeyed = false;
                 try { if (CIVControllerInstance != null) CIVControllerInstance.ReleaseDigitalTx(); } catch { }
             }
-            _h1VoiceTxRx = -1;
-            _h1VoiceTxSub = false;
-            if (_h1VoiceTxSavedTicks != 0)
-            {
-                H1SetTxTicks(_h1VoiceTxSavedTicks);
-                _h1VoiceTxSavedTicks = 0;
-            }
+            // H1 (user 2026-11-20): a spare selected as the TX source is remembered across
+            // the view boundary. The normal view shows no TX tick and no tag for it (the
+            // choice has no RX1/RX2 equivalent), PTT keeps steering the rig to that spare,
+            // and the tag is back when the full-window view returns.
+            H1PublishCellMeters();
             try
             {
                 H1Crumb("eightrows-exit: start");
@@ -9592,10 +9755,15 @@ for (int zr = 0; zr < 8; zr++)
                     Display.H1RowVfoOffsetHz[r] = (int)Math.Round((slice.FrequencyMHz - centre) * 1e6);
                     Display.H1RowRateHz[r] = HeadlessSliceManager.Instance.GetSliceRateHz(r);
                     Display.H1RowActive[r] = slice.IsActive;
-                    Display.H1CellAudio[r] = slice.IsStreamingAudio;
                     Display.H1CellTx[r] = TxArbiter.Instance.ActiveDigitalRx == r;
                     Display.H1RowTci[r] = slice.HasConsumer(SliceConsumer.TciAudio) || slice.HasConsumer(SliceConsumer.TciIq);
                     Display.H1RowTxMask[r] = (_h1VoiceTxRx == r) ? (_h1VoiceTxSub ? 2 : 1) : 0;
+                    // H1 (bug fix 2026-11-12): keep the two windows' RX tags independent.
+                    // slice.IsStreamingAudio is true when EITHER window's audio is in the
+                    // mix (the GUI consumer is per slice), so a sub-only listen lit the
+                    // main window's RX tag too. Publish one mask bit per window instead.
+                    Display.H1CellAudio[r] = (_h1SpareListenMask & (1 << (2 * r))) != 0;
+                    Display.H1RowSubAudio[r] = (_h1SpareListenMask & (1 << (2 * r + 1))) != 0;
 
                     HeadlessSubRX.State sub = HeadlessSubRX.Get(r);
                     Display.H1RowSubEnabled[r] = sub.Enabled;
@@ -9764,6 +9932,10 @@ for (int zr = 0; zr < 8; zr++)
             {
                 CheckBoxTS sp = NewSubPill("h1sub" + row, "SUB");
                 sp.Size = new Size(45, 16);
+                // H1 (bug fix 2026-11-12): NewSubPill borrows chkNR's console-size font, and
+                // "SUB" at that size overflows the 45x16 cell caption (user screenshot: the
+                // letters filled the pill). Give it the strip pills' own small font.
+                sp.Font = new Font("Segoe UI", 7f);
                 sp.Visible = false;
                 sp.TabStop = false;
                 sp.CheckedChanged += H1CellSubChanged;
@@ -9876,8 +10048,8 @@ for (int zr = 0; zr < 8; zr++)
             {
                 cmaster.SetAAudioMixState((void*)0, 0, id, on);
                 cmaster.SetAAudioMixWhat((void*)0, 0, id, on);
-                if (on) _h1SpareAudioMask |= (1 << id);
-                else _h1SpareAudioMask &= ~(1 << id);
+                if (on) { _h1SpareAudioMask |= (1 << id); _h1SpareListenMask |= (1 << id); }
+                else { _h1SpareAudioMask &= ~(1 << id); _h1SpareListenMask &= ~(1 << id); }
                 if (H1SpareSliceHasAudio(rx))
                     HeadlessSliceManager.Instance.AddConsumer(rx, SliceConsumer.GuiAudio);
                 else
@@ -9922,10 +10094,8 @@ for (int zr = 0; zr < 8; zr++)
             }
             catch { }
             if (!Display.H1EightRows || rx < 2) return;
-            HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(rx);
-            Display.H1CellAudio[rx] = (_h1SpareAudioMask & (1 << (2 * rx))) != 0
-                || (sl != null && sl.HasConsumer(SliceConsumer.TciAudio));
-            Display.H1RowSubAudio[rx] = sub && (_h1SpareAudioMask & (1 << (2 * rx + 1))) != 0;
+            Display.H1CellAudio[rx] = (_h1SpareListenMask & (1 << (2 * rx))) != 0;
+            Display.H1RowSubAudio[rx] = (_h1SpareListenMask & (1 << (2 * rx + 1))) != 0;
         }
 
         private bool H1SpareSliceHasAudio(int rx)
@@ -9972,18 +10142,31 @@ for (int zr = 0; zr < 8; zr++)
             finally { _h1PanelGuard = false; }
         }
 
-        private void H1HideNormalViewPanels()
+        // H1 (bug fix 2026-11-12): the normal-view visibility is captured BEFORE the
+        // collapse. The collapse hides every panel, so the old capture - taken after it -
+        // recorded "hidden" and the exit restore kept the VAC1/VAC2 audio and VFO panels
+        // hidden for good.
+        private void H1CaptureNormalViewPanels()
         {
             H1InitNormalPanelGuard();
             _h1NormalPanelSaved = new Dictionary<Control, bool>();
+            foreach (Control c in _h1NormalPanels)
+                if (c != null) _h1NormalPanelSaved[c] = c.Visible;
+        }
+
+        private void H1HideNormalViewPanels()
+        {
+            H1InitNormalPanelGuard();
+            if (_h1NormalPanelSaved == null) H1CaptureNormalViewPanels();
             _h1PanelGuard = true;
             try
             {
                 foreach (Control c in _h1NormalPanels)
                 {
                     if (c == null) continue;
-                    _h1NormalPanelSaved[c] = c.Visible;
-                    if (c.Visible) c.Visible = false;
+                    bool wasVisible;
+                    if (!_h1NormalPanelSaved.TryGetValue(c, out wasVisible) || !wasVisible) continue;
+                    c.Visible = false;
                 }
             }
             finally { _h1PanelGuard = false; }
@@ -10204,7 +10387,38 @@ for (int zr = 0; zr < 8; zr++)
             {
                 if (row == 0) { if (chkEnableMultiRX != null) chkEnableMultiRX.Checked = sp.Checked; }
                 else if (row == 1) { if (chkEnableMultiRX2 != null) chkEnableMultiRX2.Checked = sp.Checked; }
-                else HeadlessSubRX.SetEnabled(row, sp.Checked);
+                else
+                {
+                    HeadlessSubRX.SetEnabled(row, sp.Checked);
+                    // H1 (user 2026-11-20): switching the sub off also forgets its listen
+                    // tag and stops its audio - the tag means "this window is listening".
+                    // H1SetSpareAudio cannot do it here: it refuses to touch a sub that has
+                    // just been switched off, so the bits are cleared directly.
+                    if (!sp.Checked)
+                    {
+                        int h1sbit = 1 << (2 * row + 1);
+                        if ((_h1SpareListenMask & h1sbit) != 0 || (_h1SpareAudioMask & h1sbit) != 0)
+                        {
+                            try
+                            {
+                                unsafe
+                                {
+                                    cmaster.SetAAudioMixState((void*)0, 0, 2 * row + 1, false);
+                                    cmaster.SetAAudioMixWhat((void*)0, 0, 2 * row + 1, false);
+                                }
+                            }
+                            catch { }
+                            _h1SpareAudioMask &= ~h1sbit;
+                            _h1SpareListenMask &= ~h1sbit;
+                            try
+                            {
+                                if (!H1SpareSliceHasAudio(row))
+                                    HeadlessSliceManager.Instance.RemoveConsumer(row, SliceConsumer.GuiAudio);
+                            }
+                            catch { }
+                        }
+                    }
+                }
             }
             catch { }
             H1CellSubFace(sp);
@@ -10258,9 +10472,11 @@ for (int zr = 0; zr < 8; zr++)
                 try { HeadlessSliceManager.Instance.RemoveConsumer(rx, SliceConsumer.GuiAudio); } catch { }
                 if (Display.H1EightRows)
                 {
-                    HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(rx);
-                    Display.H1CellAudio[rx] = sl != null && sl.HasConsumer(SliceConsumer.TciAudio);
-                    Display.H1RowSubAudio[rx] = false;
+                    // H1 (user 2026-11-20): the listen TAG is remembered when the view is
+                    // left; only the audio stops. The tag returns on the next entry and the
+                    // first click on that window resumes the listen.
+                    Display.H1CellAudio[rx] = (_h1SpareListenMask & (1 << (2 * rx))) != 0;
+                    Display.H1RowSubAudio[rx] = (_h1SpareListenMask & (1 << (2 * rx + 1))) != 0;
                 }
             }
         }
@@ -10863,7 +11079,7 @@ for (int zr = 0; zr < 8; zr++)
                 }
             }
             _h1MutFromSlider = false;
-            radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+            H1ApplyRxGain(1);
             if (chkSubRX1MUT.Focused) btnHidden.Focus();
         }
 
@@ -10885,7 +11101,7 @@ for (int zr = 0; zr < 8; zr++)
                 }
             }
             _h1MutFromSlider = false;
-            radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
+            H1ApplyRxGain(0);
             if (chkVAC1MUT.Focused) btnHidden.Focus();
         }
 
@@ -11068,7 +11284,7 @@ for (int zr = 0; zr < 8; zr++)
                 }
             }
             _h1MutFromSlider = false;
-            radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
+            H1ApplyRxGain(2);
             if (chkVAC2MUT.Focused) btnHidden.Focus();
         }
 
@@ -11088,7 +11304,7 @@ for (int zr = 0; zr < 8; zr++)
                 }
             }
             _h1MutFromSlider = false;
-            radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+            H1ApplyRxGain(3);
             if (chkSubRX2MUT.Focused) btnHidden.Focus();
         }
 
@@ -11100,22 +11316,22 @@ for (int zr = 0; zr < 8; zr++)
                 if (chkVAC1MUT != null && ptbRX0Gain != null)
                 {
                     if (chkVAC1MUT.Checked) ptbRX0Gain.Value = 0;
-                    radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
+                    H1ApplyRxGain(0);
                 }
                 if (chkSubRX1MUT != null && ptbRX1Gain != null)
                 {
                     if (chkSubRX1MUT.Checked) ptbRX1Gain.Value = 0;
-                    radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+                    H1ApplyRxGain(1);
                 }
                 if (chkVAC2MUT != null && ptbRX2Gain != null)
                 {
                     if (chkVAC2MUT.Checked) ptbRX2Gain.Value = 0;
-                    radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
+                    H1ApplyRxGain(2);
                 }
                 if (chkSubRX2MUT != null && ptbRX2SubGain != null)
                 {
                     if (chkSubRX2MUT.Checked) ptbRX2SubGain.Value = 0;
-                    radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+                    H1ApplyRxGain(3);
                 }
             }
             catch { }
@@ -25122,7 +25338,7 @@ for (int zr = 0; zr < 8; zr++)
         private long _h1BandGuardReqTick = 0;
         private long _h1BandGuardArmTick = 0;
         private int _h1BandGuardRestorePwr = 0;
-        private bool _h1AmpBlockVisible = false; // H1 round 4: the block in the console, off by default
+        private bool _h1AmpBlockVisible = true; // H1 (user 2026-11-22): displayed by default
         public bool H1AmpBlockVisible
         {
             get { return _h1AmpBlockVisible; }
@@ -29073,16 +29289,52 @@ for (int zr = 0; zr < 8; zr++)
         // H1: apply the four receiver channel gains from the gates and the volumes they work through,
         // exactly as the mute handlers do. Called after a transmit-source change so the audio the
         // gesture found is still the audio it leaves.
+        // H1 (user 2026-11-21): a window's RX tag IS its gate, so the gate is the authority for
+        // every gain write. A programmatic slider re-apply (switching RX2 off re-sets the RX1 AF
+        // slider) used to write the slider gain while the gate was still muted, which made a
+        // window audible with its tag off. VAC1/VAC2 stay enabled for the active receivers - only
+        // the per-window output gain is gated here. Every writer goes through this helper.
+        private void H1ApplyRxGain(int channel)
+        {
+            try
+            {
+                switch (channel)
+                {
+                    case 0:
+                        radio.GetDSPRX(0, 0).RXOutputGain =
+                            (chkVAC1MUT == null || !chkVAC1MUT.Checked) && !(chkMUT.Checked && m_bMuteWillMuteVAC1)
+                            ? (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum : 0.0;
+                        break;
+                    case 1:
+                        radio.GetDSPRX(0, 1).RXOutputGain =
+                            (chkSubRX1MUT == null || !chkSubRX1MUT.Checked) && !(chkMUT.Checked && m_bMuteWillMuteVAC1)
+                            ? (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum : 0.0;
+                        break;
+                    case 2:
+                        radio.GetDSPRX(1, 0).RXOutputGain =
+                            (chkVAC2MUT == null || !chkVAC2MUT.Checked) && !(chkRX2Mute.Checked && m_bMuteWillMuteVAC2)
+                            ? (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum : 0.0;
+                        break;
+                    case 3:
+                        radio.GetDSPRX(1, 1).RXOutputGain =
+                            (chkSubRX2MUT == null || !chkSubRX2MUT.Checked) && !(chkRX2Mute.Checked && m_bMuteWillMuteVAC2)
+                            ? (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum : 0.0;
+                        break;
+                }
+            }
+            catch { }
+        }
+
         private void H1ApplyRxChannelGains()
         {
             if (ptbRX0Gain != null && chkVAC1MUT != null)
-                radio.GetDSPRX(0, 0).RXOutputGain = chkVAC1MUT.Checked ? 0.0 : (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
+                H1ApplyRxGain(0);
             if (ptbRX1Gain != null && chkSubRX1MUT != null)
-                radio.GetDSPRX(0, 1).RXOutputGain = chkSubRX1MUT.Checked ? 0.0 : (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+                H1ApplyRxGain(1);
             if (ptbRX2Gain != null && chkVAC2MUT != null)
-                radio.GetDSPRX(1, 0).RXOutputGain = chkVAC2MUT.Checked ? 0.0 : (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
+                H1ApplyRxGain(2);
             if (ptbRX2SubGain != null && chkSubRX2MUT != null)
-                radio.GetDSPRX(1, 1).RXOutputGain = chkSubRX2MUT.Checked ? 0.0 : (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+                H1ApplyRxGain(3);
         }
 
         // H1: publish the audio and transmit state to the display, which paints the windows with it.
@@ -29176,6 +29428,8 @@ for (int zr = 0; zr < 8; zr++)
                 H1Crumb("fullscreen-exit: restore-geometry");
                 H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
                 H1RestoreNormalViewPanels();             // H1: put the normal-view panels back exactly
+                UpdateSubVeilStates();                   // H1 (bug fix 2026-11-12): and the normal dim state
+                H1UpdateRX1Veil();
                 H1Crumb("fullscreen-exit: done");
             }
             else
@@ -29187,6 +29441,8 @@ for (int zr = 0; zr < 8; zr++)
                 H1Crumb("fullscreen-enter: eightrows");
                 H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
                 setupTuneDriveSlider();                  // H1: and stays off the full-screen view
+                H1Crumb("fullscreen-enter: capture-panels");
+                H1CaptureNormalViewPanels();             // H1: before the collapse hides them
                 H1Crumb("fullscreen-enter: collapse");
                 CollapseDisplay(true);
                 H1HideNormalViewPanels();   // H1: no normal-view panels in the eight-row view
@@ -36625,14 +36881,24 @@ private readonly double[] _h1BasePanSlider = new double[8];
                         chkRX1.Checked = true;
                         return;
                     }
-                    if (RX2Enabled && H1TxTickOnRx1())
+                    if (RX2Enabled)
                     {
-                        H1RefuseRxChange("The transmit VFO is VFO A." + Environment.NewLine + Environment.NewLine
-                            + "Move the transmit VFO to VFO B (or SubVFOB) before switching RX1 off - the transmit frequency is never moved for you.");
-                        chkRX1.Checked = true;
-                        return;
+                        // H1 (user 2026-11-20): symmetrical with RX2 - when RX1 owns the
+                        // transmit VFO its tag moves to RX2 automatically (main tick to
+                        // main, sub tick to sub) instead of refusing the switch-off. The
+                        // frequency follows the tag and it is handed back when RX1 returns.
+                        _h1Rx1SavedSub = chkEnableMultiRX.Checked;
+                        int h1m = H1TxTicksMask();
+                        int h1moved = 0;
+                        if ((h1m & 1) != 0) h1moved |= 4;   // VFO A -> VFO B
+                        if ((h1m & 2) != 0) h1moved |= 8;   // SubVFOA -> SubVFOB
+                        if (h1moved != 0)
+                        {
+                            H1SetTxTicks(h1moved);
+                            H1SpacePttTrace("rx1off: transmit tag moved to RX2 (" + h1moved + ")");
+                        }
+                        _rx1Active = false;    // RX2 keeps the radio up
                     }
-                    if (RX2Enabled) _rx1Active = false;    // RX2 keeps the radio up
                     else
                     {
                         H1Crumb("rx1-click power-off");
@@ -36644,6 +36910,8 @@ private readonly double[] _h1BasePanSlider = new double[8];
             finally { _h1Rx1Changing = false; }
             H1Rx1Visual();
             if (PowerOn) H1ApplyRx1State();
+            H1RestoreRx1Sub();
+            H1EnsureVacForActiveReceivers();
         }
 
         // H1: load the RX1 pill art from the active skin (the skin loader only walks panels, so
@@ -36787,6 +37055,64 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         // H1: apply the RX1 side of the receiver state. RX1 off means its audio leaves the mix and
         // its sub receiver cannot outlive it (the rule SubRX2 already follows RX2 with).
+        // H1 (user 2026-11-22): the station listens through the VACs - VAC1 must be enabled while
+        // RX1 is the active receiver, VAC2 while RX2 is. The tag/gain fix never touches these
+        // switches, but an RX2 cycle or a restore can leave them off; enforce them when the
+        // receivers become active. Skipped while the console is restoring its own state.
+        private bool _h1VacEnforceQueued = false;
+
+        // H1 (user 2026-11-22): the enable itself must not run inside the power-on sequence -
+        // starting/stopping the VAC audio streams while the DSP is coming up crashed wdsp.dll
+        // (c0000005) in the middle of the power-on path. The request is therefore deferred by
+        // a couple of seconds, exactly like the other late audio nudges in this console.
+        private void H1QueueVacEnforcement()
+        {
+            if (initializing || _h1VacEnforceQueued) return;
+            _h1VacEnforceQueued = true;
+            try
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Thread.Sleep(2500);
+                        if (IsDisposed || !IsHandleCreated) { _h1VacEnforceQueued = false; return; }
+                        BeginInvoke((Action)(() =>
+                        {
+                            _h1VacEnforceQueued = false;
+                            H1EnforceVacForActiveReceivers();
+                        }));
+                    }
+                    catch { _h1VacEnforceQueued = false; }
+                });
+            }
+            catch { _h1VacEnforceQueued = false; }
+        }
+
+        private void H1EnforceVacForActiveReceivers()
+        {
+            try
+            {
+                if (initializing || _mox || !chkPower.Checked) return;
+                if (_rx1Active && chkVAC1 != null && !chkVAC1.Checked)
+                {
+                    chkVAC1.Checked = true;
+                    H1SpacePttTrace("vac: VAC1 enabled for RX1");
+                }
+                if (rx2_enabled && chkVAC2 != null && !chkVAC2.Checked)
+                {
+                    chkVAC2.Checked = true;
+                    H1SpacePttTrace("vac: VAC2 enabled for RX2");
+                }
+            }
+            catch { }
+        }
+
+        private void H1EnsureVacForActiveReceivers()
+        {
+            H1QueueVacEnforcement();
+        }
+
         private void H1ApplyRx1State()
         {
             H1Crumb("apply-rx1 active=" + _rx1Active);
@@ -38245,8 +38571,8 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
                 if (m_bMuteWillMuteVAC1)
                 {
-                    radio.GetDSPRX(0, 0).RXOutputGain = 0.0; //MW0LGE_21j
-                    radio.GetDSPRX(0, 1).RXOutputGain = 0.0; //MW0LGE_21j
+                    H1ApplyRxGain(0); // H1: the gate is the authority, never a bare slider gain
+                    H1ApplyRxGain(1);
                 }
 
                 chkMUT.BackColor = button_selected_color;
@@ -38257,8 +38583,8 @@ private readonly double[] _h1BasePanSlider = new double[8];
             {
                 Audio.MuteRX1 = false;
 
-                radio.GetDSPRX(0, 0).RXOutputGain = (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
-                radio.GetDSPRX(0, 1).RXOutputGain = (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum; //MW0LGE_21j do this always
+                H1ApplyRxGain(0);
+                H1ApplyRxGain(1); //MW0LGE_21j do this always
 
                 ptbAF_Scroll(this, EventArgs.Empty);
                 chkMUT.BackColor = SystemColors.Control;
@@ -47780,14 +48106,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkVAC1MUT != null && chkVAC1MUT.Checked) // H1: moving the RX1 volume brings its stream back
             { _h1MutFromSlider = true; chkVAC1MUT.Checked = false; }
 
-            if (chkMUT.Checked && m_bMuteWillMuteVAC1) //MW0LGE_21k9
-            {
-                radio.GetDSPRX(0, 0).RXOutputGain = 0.0;
-            }
-            else
-            {
-                radio.GetDSPRX(0, 0).RXOutputGain = (double)ptbRX0Gain.Value / ptbRX0Gain.Maximum;
-            }
+            H1ApplyRxGain(0); // H1: the per-window gate and the stream mute both belong in the gain
             ptbRX1AF.Value = ptbRX0Gain.Value;
 
             lblRX1AF.Text = "RX1 AF:  " + ptbRX0Gain.Value.ToString();
@@ -47822,14 +48141,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkSubRX1MUT != null && chkSubRX1MUT.Checked) // H1: moving the SubRX1 volume brings its stream back
             { _h1MutFromSlider = true; chkSubRX1MUT.Checked = false; }
 
-            if (chkMUT.Checked && m_bMuteWillMuteVAC1)
-            {
-                radio.GetDSPRX(0, 1).RXOutputGain = 0.0;
-            }
-            else
-            {
-                radio.GetDSPRX(0, 1).RXOutputGain = (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
-            }
+            H1ApplyRxGain(1);
             //
 
             setLinkedAF(2, ptbRX1Gain.Value); //[2.10.1.0] MW0LGE
@@ -48774,6 +49086,23 @@ private readonly double[] _h1BasePanSlider = new double[8];
             RX2Enabled = chkRX2.Checked;
             H1TracePanelMoves("rx2set=" + chkRX2.Checked); // H1: trace the reported trigger
 
+            // H1 (user 2026-11-20): symmetrical with RX1 - when RX2 owns the transmit VFO
+            // its tag moves to RX1 automatically (main to main, sub to sub) and a running
+            // SubRX2 is remembered; both are handed back when RX2 returns.
+            if (!initializing && !_h1Rx1Changing && oldRX2Enabled && !chkRX2.Checked)
+            {
+                _h1Rx2SavedSub = chkEnableMultiRX2.Checked;
+                int h1m2 = H1TxTicksMask();
+                int h1moved2 = 0;
+                if ((h1m2 & 4) != 0) h1moved2 |= 1;   // VFO B -> VFO A
+                if ((h1m2 & 8) != 0) h1moved2 |= 2;   // SubVFOB -> SubVFOA
+                if (h1moved2 != 0)
+                {
+                    H1SetTxTicks(h1moved2);
+                    H1SpacePttTrace("rx2off: transmit tag moved to RX1 (" + h1moved2 + ")");
+                }
+            }
+
             // H1: VFO B is RX2's slice. With RX2 off its transmit tick is greyed and cannot arm,
             // because the transmit frequency then comes from VFO A, or SubVFOA under SPLIT.
             if (chkVFOBTX != null)
@@ -48913,6 +49242,9 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 finally { _h1Rx1Changing = false; }
             }
             H1UpdateTxTickGating();
+            if (!initializing && !_h1Rx1Changing && oldRX2Enabled != chkRX2.Checked && chkRX2.Checked)
+                H1RestoreRx2Sub();
+            H1EnsureVacForActiveReceivers();
             // H1 (user 2026-11-03): only a real RX2 on->off transition may power the radio down
             // when RX1 is off (a restore or a re-entrant call must never do it).
             if (!initializing && !_h1Rx1Changing && !chkRX2.Checked && !_rx1Active && PowerOn && oldRX2Enabled)
@@ -50538,14 +50870,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             if (!initializing && e != EventArgs.Empty && m_bRXAFSlidersWillUnmute && chkVAC2MUT != null && chkVAC2MUT.Checked) // H1: moving the RX2 volume brings its stream back
             { _h1MutFromSlider = true; chkVAC2MUT.Checked = false; }
 
-            if (chkRX2Mute.Checked && m_bMuteWillMuteVAC2) //MW0LGE_21k9
-            {
-                radio.GetDSPRX(1, 0).RXOutputGain = 0.0;
-            }
-            else
-            {
-                radio.GetDSPRX(1, 0).RXOutputGain = (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum;
-            }
+            H1ApplyRxGain(2); // H1: the per-window gate and the stream mute both belong in the gain
             ptbRX2AF.Value = ptbRX2Gain.Value;
 
             lblRX2AF.Text = "RX2 AF:  " + ptbRX2Gain.Value.ToString();
@@ -50582,7 +50907,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
                 if (m_bMuteWillMuteVAC2)
                 {
-                    radio.GetDSPRX(1, 0).RXOutputGain = 0.0; //MW0LGE_21j
+                    H1ApplyRxGain(2);
                 }
 
                 lblRX2MuteVFOB.Text = "MUTE";
@@ -50592,7 +50917,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             {
                 Audio.MuteRX2 = false;
 
-                radio.GetDSPRX(1, 0).RXOutputGain = (double)ptbRX2Gain.Value / ptbRX2Gain.Maximum; //MW0LGE_21j
+                H1ApplyRxGain(2); //MW0LGE_21j
 
                 ptbRX2Gain_Scroll(this, EventArgs.Empty);
                 lblRX2MuteVFOB.Text = "";
@@ -51766,7 +52091,9 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 _bUpdatingTxTicks = true;
                 chkSubVFOBTX.Checked = false;
                 _bUpdatingTxTicks = false;
-                chkVFOATX.Checked = true;
+                // H1 (user 2026-11-20): a spare-held transmit source leaves the four normal
+                // ticks unarmed - do not invent a VFO A tick for it.
+                if (_h1VoiceTxRx < 2 && chkVFOATX != null) chkVFOATX.Checked = true;
                 showTxSelection();
             }
         }
@@ -53955,7 +54282,14 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 // left-aligned with RX EQ, one clear row under them (pills are 23 px tall at
                 // panel y 121).
                 x = panelModeSpecificPhone.Left + 81;
-                y = panelModeSpecificPhone.Top + 121 + 23 + 4;
+                // H1 (user 2026-11-22): the phone panel ends at the EQ row, but the CW panel puts
+                // its pitch row at the bottom (Pitch Freq label at y142, spinner at y140) - the
+                // label sat straight on top of it, which read as a garbled transmit block in CW.
+                // In CW (and the other non-phone panels) put the label below the panel content.
+                bool h1PhonePanel = RX1DSPMode == DSPMode.LSB || RX1DSPMode == DSPMode.USB
+                    || RX1DSPMode == DSPMode.DSB || RX1DSPMode == DSPMode.AM
+                    || RX1DSPMode == DSPMode.SAM || RX1DSPMode == DSPMode.SPEC;
+                y = panelModeSpecificPhone.Top + (h1PhonePanel ? 121 + 23 + 4 : 165 + 2);
             }
             else if (_iscollapsed && !_isexpanded)
             {

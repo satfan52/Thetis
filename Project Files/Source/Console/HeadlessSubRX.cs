@@ -93,7 +93,10 @@ namespace Thetis
                     WDSP.SetRXAAGCFixed(Ch(rx, 1), s.AgcGainDb);
                     WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5);
                     ApplyBalance(rx, s.Balance);
-                    SetFreqInternal(rx, s.FreqHz);
+                    // H1 (bug fix 2026-11-12): a sub remembered from another band (or never
+                    // set) opened its window outside the cell - the SUB button looked dead.
+                    // Normalise the position to this DDC before the channel comes up.
+                    ClampToCell(rx);
                     if (s.Nr) WDSP.SetRXAANRRun(Ch(rx, 1), 1);
                     if (s.Anf) WDSP.SetRXAANFRun(Ch(rx, 1), true);
                     if (s.Snb) WDSP.SetRXASNBARun(Ch(rx, 1), true);
@@ -181,11 +184,35 @@ namespace Thetis
             // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and
             // RadioDSPRX applies SetRXAShiftFreq(-RXOsc) => effective shift = +(fB - fA).
             // We drive SetRXAShiftFreq directly, so pass the offset itself.
+            // H1 (bug fix 2026-11-12): keep the stored frequency equal to the position that
+            // was actually applied - the cell publishes sub.FreqHz - centre as the window
+            // offset, and an unclamped stale value drew that window outside the cell.
+            long effective = (long)Math.Round(main + offset);
+            if (st.FreqHz != effective) st.FreqHz = effective;
             WDSP.SetRXAShiftFreq(Ch(rx, 1), offset);
             WDSP.RXANBPSetShiftFrequency(Ch(rx, 1), offset);
         }
 
         public static long GetFreq(int rx) { return Get(rx).FreqHz; }
+
+        /// <summary>H1 (bug fix 2026-11-12): keep the sub inside its cell. A frequency
+        /// remembered from another band, or a main retune that moved the DDC, otherwise
+        /// leaves the sub window outside the cell - the SUB button looks dead. A value
+        /// more than a DDC span away snaps onto the main slice's frequency; an edge value
+        /// is clamped and written back, so the state and the drawn window agree.</summary>
+        public static void ClampToCell(int rx)
+        {
+            var s = Get(rx);
+            var main = HeadlessSliceManager.Instance.GetSlice(rx);
+            if (main == null) return;
+            double centre = MainHz(rx);
+            int rate = HeadlessSliceManager.Instance.GetSliceRateHz(rx);
+            double edge = rate > 0 ? rate / 2.0 : 96000.0;
+            long mainHz = (long)Math.Round(main.FrequencyMHz * 1e6);
+            if (s.FreqHz <= 0 || Math.Abs((double)s.FreqHz - centre) > edge - 2000.0)
+                s.FreqHz = mainHz;
+            SetFreqInternal(rx, s.FreqHz);
+        }
 
         public static void ApplyMode(int rx, DSPMode mode)
         {

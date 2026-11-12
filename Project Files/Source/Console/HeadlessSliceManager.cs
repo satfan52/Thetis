@@ -273,9 +273,11 @@ namespace Thetis
             }
             try
             {
-                long bHz = HeadlessSubRX.GetFreq(rx);
-                if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
-                    HeadlessSubRX.SetFreq(rx, bHz);
+                // H1 (bug fix 2026-11-12): re-place VFO B and keep it inside the cell - a
+                // remembered frequency from another band otherwise draws the sub window
+                // outside the cell, which reads as a dead SUB button.
+                if (HeadlessSubRX.IsEnabled(rx))
+                    HeadlessSubRX.ClampToCell(rx);
             }
             catch { }
         }
@@ -349,9 +351,11 @@ namespace Thetis
             // VFO B is stored as an absolute frequency: re-apply against the new centre
             try
             {
-                long bHz = HeadlessSubRX.GetFreq(rx);
-                if (HeadlessSubRX.IsEnabled(rx) && bHz > 0)
-                    HeadlessSubRX.SetFreq(rx, bHz);
+                // H1 (bug fix 2026-11-12): re-place VFO B and keep it inside the cell - a
+                // remembered frequency from another band otherwise draws the sub window
+                // outside the cell, which reads as a dead SUB button.
+                if (HeadlessSubRX.IsEnabled(rx))
+                    HeadlessSubRX.ClampToCell(rx);
             }
             catch { }
 

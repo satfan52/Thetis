@@ -7192,8 +7192,12 @@ namespace Thetis
                 drawLineDX2D(m_bDX2_h1_tx_edge, r, 0, r, rowH, 2);
             }
             float ty = 56f;   // below the cell's top control row, as in the eight-row cells
+            // H1 (bug fix 2026-11-12): a window wears both tags at once, exactly as the
+            // RX1/RX2 windows do. The old else-if dropped the RX tag whenever the slice
+            // also transmitted, so the spare cells could never show both.
+            float tagStep = 10f;
             if (txSel) H1DrawWindowTag("TX", m_bDX2_h1_tx_edge, l, r, ty);
-            else if (audioSel) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, ty);
+            if (audioSel) H1DrawWindowTag("RX", m_bDX2_h1_rx_tag, l, r, txSel ? ty + tagStep : ty);
         }
         // H1 (user 2026-11-09): a very small S-meter at the left edge of the DDC1/DDC2 cells of the
         // full-window view: two thin bars, main receiver (green) and its sub (teal). While that side
