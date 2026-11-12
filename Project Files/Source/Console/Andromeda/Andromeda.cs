@@ -4178,7 +4178,7 @@ namespace Thetis
             //slow down, perhaps z-order fighting, not sure. ~1-3 seconds taken to get through
             //this function, changing from digi to something else.
             //Hidden controls are still returned in this.Controls so will still be saved out ok
-            switch (RX1DSPMode)
+            switch (H1TxPanelMode())
             {
                 case DSPMode.LSB:
                 case DSPMode.USB:

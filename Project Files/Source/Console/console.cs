@@ -10259,6 +10259,7 @@ for (int zr = 0; zr < 8; zr++)
             }
             finally { _h1TxTicksGuard = false; }
             H1RxWindowSync();
+            H1RefreshTxPanel();
         }
 
         // The operator picked an RX1/RX2 transmit VFO: that becomes the TX source and
@@ -10266,6 +10267,7 @@ for (int zr = 0; zr < 8; zr++)
         private void H1TxTickChanged(object sender, EventArgs e)
         {
             if (_h1TxTicksGuard) return;
+            H1RefreshTxPanel(); // H1 (user 2026-11-22): the transmit block follows the TX VFO
             if (_h1VoiceTxRx < 0) return;
             CheckBox c = sender as CheckBox;
             if (c == null || !c.Checked) return;
@@ -10306,6 +10308,7 @@ for (int zr = 0; zr < 8; zr++)
             H1SpacePttTrace(clear
                 ? "voice TX slice cleared (PTT uses the normal console TX) ticks=" + H1TxTicksMask()
                 : "voice TX: RX" + (row + 1) + (sub ? " SUB" : "") + " is the TX VFO, RX1/RX2 ticks now=" + H1TxTicksMask());
+            H1RefreshTxPanel(); // H1 (user 2026-11-22): follow a spare-held TX source
         }
 
         // H1 (option A): console MOX on -> steer the IC-7100 to the selected DDC and
@@ -11561,6 +11564,7 @@ for (int zr = 0; zr < 8; zr++)
             {
                 if (comboSubRX1Mode == null) return;
                 _sub_dsp_mode = SubModeFromCombo(comboSubRX1Mode);
+            H1RefreshTxPanel();
                 RadioDSPRX s = radio.GetDSPRX(0, 1);
                 WDSP.SetDSPSamplerate(WDSP.id(0, 1), _sub_dsp_mode == DSPMode.FM ? 192000 : 48000);
                 s.DSPMode = _sub_dsp_mode;
@@ -11586,6 +11590,7 @@ for (int zr = 0; zr < 8; zr++)
             {
                 if (comboSubRX2Mode == null) return;
                 _sub2_dsp_mode = SubModeFromCombo(comboSubRX2Mode);
+            H1RefreshTxPanel();
                 RadioDSPRX s = radio.GetDSPRX(1, 1);
                 WDSP.SetDSPSamplerate(WDSP.id(2, 1), _sub2_dsp_mode == DSPMode.FM ? 192000 : 48000);
                 s.DSPMode = _sub2_dsp_mode;
@@ -11627,6 +11632,7 @@ for (int zr = 0; zr < 8; zr++)
             if (wasActive) WDSP.SetChannelState(WDSP.id(2, 1), 1, 0);
 
             _sub2_dsp_mode = new_mode;
+            H1RefreshTxPanel();
             SyncSubModeCombo(2, new_mode);
             if (chkSubVFOBTX.Checked) H1ApplyTxSourceMode("SubRX2 mode"); // H1: SubVFOB holds the tick
         }
@@ -24959,6 +24965,48 @@ for (int zr = 0; zr < 8; zr++)
             }
             catch (Exception ex) { CIVController.SplitTrace("TXMODE exception " + ex.GetType().Name + ": " + ex.Message); }
             finally { _h1ApplyingTxMode = false; }
+        }
+
+        // H1 (user 2026-11-22): the mode-dependent TRANSMIT block follows the transmitter, not
+        // RX1. H1TxSourceMode covers the four RX1/RX2 ticks; a spare-held TX source is added
+        // here so the transmit section shows the CW/phone/digital/FM controls of the slice
+        // that will actually be keyed.
+        private DSPMode H1TxPanelMode()
+        {
+            try
+            {
+                if (_h1VoiceTxRx >= 2)
+                {
+                    HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(_h1VoiceTxRx);
+                    if (sl != null)
+                    {
+                        DSPMode m = sl.Mode;
+                        if (_h1VoiceTxSub)
+                        {
+                            HeadlessSubRX.State hs = HeadlessSubRX.Get(_h1VoiceTxRx);
+                            if (hs.Enabled) m = hs.Mode;
+                        }
+                        return m;
+                    }
+                    return RX1DSPMode;
+                }
+                return H1TxSourceMode;
+            }
+            catch { return RX1DSPMode; }
+        }
+
+        // H1 (user 2026-11-22): re-show the transmit section's mode panel for the current
+        // transmitter. Never while the full-window view is up - ExpandDisplay() refreshes it on
+        // the way back to the normal view.
+        private void H1RefreshTxPanel()
+        {
+            if (initializing || _h1FullScreenPanafall) return;
+            try
+            {
+                SelectModeDependentPanel();
+                setPAProfileLabelPos();
+            }
+            catch { }
         }
 
         public bool H1RigPowerMetersEnabled
@@ -49560,6 +49608,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             if (wasActive) WDSP.SetChannelState(WDSP.id(0, 1), 1, 0);
 
             _sub_dsp_mode = new_mode;
+            H1RefreshTxPanel();
             SyncSubModeCombo(1, new_mode);
             if (!from_console) UpdateSubControls();
             NotifySubRxChanged();
@@ -49640,6 +49689,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             {
                 DSPMode mode = GetSubMode();
                 _sub_dsp_mode = mode;
+            H1RefreshTxPanel();
                 switch (mode)
                 {
                     case DSPMode.LSB: radRX2ModeLSB.Checked = true; break;
@@ -50276,6 +50326,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
             radRX2FilterVar2.Text = rx2_filters[(int)new_mode].GetName(Filter.VAR2);
 
             _rx2_dsp_mode = new_mode;
+            H1RefreshTxPanel(); // H1 (user 2026-11-22): RX2's mode drives the block while RX2 holds the TX tick
 
             if (_rx2_dsp_mode != DSPMode.FM && _rx2_dsp_mode != DSPMode.DRM)
             {
@@ -54336,9 +54387,10 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 // its pitch row at the bottom (Pitch Freq label at y142, spinner at y140) - the
                 // label sat straight on top of it, which read as a garbled transmit block in CW.
                 // In CW (and the other non-phone panels) put the label below the panel content.
-                bool h1PhonePanel = RX1DSPMode == DSPMode.LSB || RX1DSPMode == DSPMode.USB
-                    || RX1DSPMode == DSPMode.DSB || RX1DSPMode == DSPMode.AM
-                    || RX1DSPMode == DSPMode.SAM || RX1DSPMode == DSPMode.SPEC;
+                DSPMode h1panelMode = H1TxPanelMode();
+                bool h1PhonePanel = h1panelMode == DSPMode.LSB || h1panelMode == DSPMode.USB
+                    || h1panelMode == DSPMode.DSB || h1panelMode == DSPMode.AM
+                    || h1panelMode == DSPMode.SAM || h1panelMode == DSPMode.SPEC;
                 y = panelModeSpecificPhone.Top + (h1PhonePanel ? 121 + 23 + 4 : 165 + 2);
             }
             else if (_iscollapsed && !_isexpanded)
