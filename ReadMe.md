@@ -1,13 +1,15 @@
-# Experimental Hybrid SDR A/B/C/D/E/F test set
+# Experimental Hybrid SDR test set (branches D, E, F, G and H1)
 
-This branch contains the **Branch G** implementation: the Branch F multi-port headless TCI server (RX3–RX8 on WebSocket ports 50002–50008, TX flow control, TxArbiter voice/digital preemption, CI-V state snapshot/restore) plus the SDR-software compatibility set — IQ streaming for CW Skimmer/panadapters, DDS panadapter center, S-meter reporting, functional AGC control and mute.
+The **active development line is Branch H1**, the hybrid-station console: the eight-DDC full-window view in which every DDC (RX1–RX8) is a full receiver, spare-slice listening audio through the native VAC routing, a single transmit source with CI-V keying of the IC-7100, per-slice persistence, the OM2000A+ LAN amplifier integration, IC-7100 rig power and meters over CI-V, per-slot CAT protocol, four exclusive transmit ticks and console layout v5. H1 builds on the Branch F headless multi-port TCI server and the Branch G SDR-software compatibility set.
 
+- [Branch H1 documentation (eight-DDC full-window receivers and the hybrid console)](HYBRID-SDR-BRANCH-H1.md)
+- [Branch H1 test set release (2026-11-12)](https://github.com/satfan52/Thetis/releases/tag/hybrid-sdr-testset-H1-2026-11-12)
 - [Branch G documentation (SDR software compatibility)](HYBRID-SDR-BRANCH-G.md)
 - **MiniTCI** — stand-alone simplified radio client for the headless ports (`TestScripts/MiniTCI.py`, exe in `TestScripts/dist/` and the GitHub release): own audio devices (no VAC), Thetis-style panafall, PTT/TUNE. PTT and TUNE hardware-verified 2026-09-14 on the Red Pitaya (receiver firmware) + IC-7100 station with VAC1 disabled.
 - [Branch F documentation (multi-port TCI server)](HYBRID-SDR-BRANCH-F.md)
 - [Branch E installation and configuration guide](HYBRID-SDR-BRANCH-E.md)
 - [Branch D installation and configuration guide](HYBRID-SDR-BRANCH-D.md)
-- [Compiled A/B/C/D/E/F/G downloads](https://github.com/satfan52/Thetis/releases)
+- [Compiled test set downloads](https://github.com/satfan52/Thetis/releases)
 
 This experimental test set is separate from the official Thetis releases described below.
 

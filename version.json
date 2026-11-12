@@ -3,8 +3,8 @@
     "ReleaseBuild": "",
     "ReleaseURL": "https://github.com/ramdor/Thetis/releases/tag/v2.10.3.12",
     "ReleaseName": "Latest Release",
-    "DevelopmentVersion": "2.10.3.12-G",
-    "DevelopmentBuild": "Headless TCI SDR Compatibility (IQ, DDS, S-meter, AGC)",
-    "DevelopmentURL": "https://github.com/satfan52/Thetis/tree/G",
-    "DevelopmentName": "Branch G — Headless TCI SDR Compatibility"
+    "DevelopmentVersion": "2.10.3.12-H1",
+    "DevelopmentBuild": "Eight-DDC Full-Window Receivers and the Hybrid Station Console",
+    "DevelopmentURL": "https://github.com/satfan52/Thetis/tree/H1",
+    "DevelopmentName": "Branch H1 - Hybrid Station Development Line"
 }
