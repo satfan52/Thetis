@@ -26879,7 +26879,8 @@ for (int zr = 0; zr < 8; zr++)
         // RX1 main/sub and RX2 main have a Setup APF page; RX2 sub and RX3..RX8 do not.
         private static bool H1ApfInSetup(int rx, int sub)
         {
-            return rx == 0 || (rx == 1 && sub == 0);
+            // H1 (user 2026-11-13): RX2 sub now has its own Setup APF group like the other three.
+            return rx <= 1;
         }
 
         private static string H1ApfShort(int rx, int sub)
@@ -26934,7 +26935,7 @@ for (int zr = 0; zr < 8; zr++)
         {
             H1ApfState s;
             s.Enabled = false; s.Tune = 0; s.Bandwidth = 150; s.Gain = 0; s.Type = 3;
-            if (rx > 1 || (rx == 1 && sub == 1)) return _h1Apf[H1ApfCh(rx, sub)];
+            if (rx > 1) return _h1Apf[H1ApfCh(rx, sub)];
             try
             {
                 RadioDSPRX r = radio.GetDSPRX(rx, sub);
@@ -26965,10 +26966,12 @@ for (int zr = 0; zr < 8; zr++)
                     }
                     else
                     {
-                        s.Tune = (int)Math.Round(r.RXAPFFreq - CWPitch);
-                        s.Bandwidth = (int)Math.Round(r.RXAPFBw);
-                        s.Gain = (int)Math.Round(200.0 * Math.Log10(r.RXAPFGain > 0 ? r.RXAPFGain : 1.0));
+                        s.Enabled = SetupForm.RX2subAPFEnable;
+                        s.Tune = SetupForm.RX2subAPFFreq;
+                        s.Bandwidth = SetupForm.RX2subAPFBandwidth;
+                        s.Gain = SetupForm.RX2subAPFGain;
                     }
+                    s.Type = SetupForm.GetAPFTypeForChannel(H1ApfCh(rx, sub));
                 }
                 else
                 {
@@ -27035,13 +27038,21 @@ for (int zr = 0; zr < 8; zr++)
                         SetupForm.SetAPFTypeForChannel(1, s.Type);
                         SetupForm.RX1subAPFEnable = s.Enabled;
                     }
-                    else
+                    else if (sub == 0)
                     {
                         SetupForm.RX2APFFreq = H1ApfClamp(s.Tune, -250, 250);
                         SetupForm.RX2APFBandwidth = H1ApfClamp(s.Bandwidth, 10, 150);
                         SetupForm.RX2APFGain = H1ApfClamp(s.Gain, 0, 100);
                         SetupForm.SetAPFTypeForChannel(2, s.Type);
                         SetupForm.RX2APFEnable = s.Enabled;
+                    }
+                    else
+                    {
+                        SetupForm.RX2subAPFFreq = H1ApfClamp(s.Tune, -250, 250);
+                        SetupForm.RX2subAPFBandwidth = H1ApfClamp(s.Bandwidth, 10, 150);
+                        SetupForm.RX2subAPFGain = H1ApfClamp(s.Gain, 0, 100);
+                        SetupForm.SetAPFTypeForChannel(3, s.Type);
+                        SetupForm.RX2subAPFEnable = s.Enabled;
                     }
                 }
                 finally { _h1ApfSyncing = false; }

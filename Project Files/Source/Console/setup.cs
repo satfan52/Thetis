@@ -150,6 +150,12 @@ namespace Thetis
                 + "The three per-channel APF groups on this page still edit their own channel directly.");
             tpDSPAudio.Controls.Add(apfFollowNote);
 
+            // H1 (user 2026-11-13): the page was missing the RX2-sub APF and Dolly groups. Build
+            // them as clones of the RX1-sub group / RX1 Dolly group so they look identical, and
+            // place them in the free area to the right; SaveOptions/getOptions pick them up by
+            // name because they are the same TS control types.
+            H1CreateRx2SubApfAndDolly();
+
             _original_pnlP1_adcs_location = pnlP1_adcs.Location;
 
             _recording_keybind_timer.Interval = 5000;
@@ -37063,6 +37069,302 @@ namespace Thetis
                 SetAPFType(next);
             }
         }
+        // ============================================================================================
+        // H1 (user 2026-11-13): RX2-sub APF and Dolly groups on the Audio page.
+        //
+        // The page had APF pages for RX1, RX1-sub and RX2 only, and Dolly only for RX1/RX2. These
+        // groups are clones of the RX1-sub APF group and RX1 Dolly group (same geometry/look) with
+        // unique names, so SaveOptions/getOptions persist them automatically. They drive the same
+        // per-channel WDSP calls as their RX1-sub counterparts, on radio.GetDSPRX(1,1).
+        // ============================================================================================
+        private System.Windows.Forms.GroupBoxTS grpDSPAudRX2subAPF;
+        private System.Windows.Forms.GroupBoxTS grpDSPAudRX2subDolly;
+        private System.Windows.Forms.CheckBoxTS chkDSPRX2subAPFEnable;
+        private System.Windows.Forms.TrackBarTS tbDSPAudRX2subAPFGain;
+        private System.Windows.Forms.TrackBarTS tbRX2subAPFTune;
+        private System.Windows.Forms.TrackBarTS tbRX2subAPFBW;
+        private System.Windows.Forms.ComboBoxTS comboAPF_type_rx2sub;
+        private System.Windows.Forms.CheckBoxTS chkDSPRX2subDollyEnable;
+        private System.Windows.Forms.NumericUpDownTS udDSPRX2subDollyF0;
+        private System.Windows.Forms.NumericUpDownTS udDSPRX2subDollyF1;
+
+        private void H1CreateRx2SubApfAndDolly()
+        {
+            if (tpDSPAudio == null || grpDSPAudRX1subAPF == null || grpDSPAudRX1Dolly == null) return;
+            try
+            {
+                grpDSPAudRX2subAPF = H1CloneGroup(grpDSPAudRX1subAPF, "grpDSPAudRX2subAPF",
+                    "RX2 Sub - APF", new System.Drawing.Point(256, 60));
+                grpDSPAudRX2subDolly = H1CloneGroup(grpDSPAudRX1Dolly, "grpDSPAudRX2subDolly",
+                    "RX2 Sub - Dolly Filter (rtty)", new System.Drawing.Point(256, 195));
+            }
+            catch { }
+        }
+
+        private System.Windows.Forms.GroupBoxTS H1CloneGroup(System.Windows.Forms.GroupBoxTS src, string name,
+            string text, System.Drawing.Point at)
+        {
+            System.Windows.Forms.GroupBoxTS g = new System.Windows.Forms.GroupBoxTS();
+            g.Name = name;
+            g.Text = text;
+            g.Location = at;
+            g.Size = src.Size;
+            g.Font = src.Font;
+            g.ForeColor = src.ForeColor;
+            g.BackColor = src.BackColor;
+            g.TabStop = false;
+            tpDSPAudio.Controls.Add(g);
+            foreach (Control c in src.Controls)
+            {
+                Control n = H1CloneControl(c);
+                if (n == null) continue;
+                g.Controls.Add(n);
+            }
+            return g;
+        }
+
+        private static string H1Rx2SubName(string srcName)
+        {
+            switch (srcName)
+            {
+                case "chkDSPRX1subAPFEnable": return "chkDSPRX2subAPFEnable";
+                case "tbDSPAudRX1subAPFGain": return "tbDSPAudRX2subAPFGain";
+                case "tbRX1subAPFTune": return "tbRX2subAPFTune";
+                case "tbRX1subAPFBW": return "tbRX2subAPFBW";
+                case "comboAPF_type_rx1sub": return "comboAPF_type_rx2sub";
+                case "chkDSPRX1DollyEnable": return "chkDSPRX2subDollyEnable";
+                case "udDSPRX1DollyF0": return "udDSPRX2subDollyF0";
+                case "udDSPRX1DollyF1": return "udDSPRX2subDollyF1";
+                default: return srcName + "_h1rx2sub";
+            }
+        }
+
+        private Control H1CloneControl(Control src)
+        {
+            Control n = null;
+            if (src is System.Windows.Forms.CheckBoxTS)
+            {
+                System.Windows.Forms.CheckBoxTS c = (System.Windows.Forms.CheckBoxTS)src;
+                System.Windows.Forms.CheckBoxTS d = new System.Windows.Forms.CheckBoxTS();
+                d.Text = c.Text;
+                d.Checked = c.Checked;
+                d.CheckAlign = c.CheckAlign;
+                d.TextAlign = c.TextAlign;
+                d.Appearance = c.Appearance;
+                n = d;
+            }
+            else if (src is System.Windows.Forms.TrackBarTS)
+            {
+                System.Windows.Forms.TrackBarTS c = (System.Windows.Forms.TrackBarTS)src;
+                System.Windows.Forms.TrackBarTS d = new System.Windows.Forms.TrackBarTS();
+                d.Minimum = c.Minimum;
+                d.Maximum = c.Maximum;
+                d.TickFrequency = c.TickFrequency;
+                d.SmallChange = c.SmallChange;
+                d.LargeChange = c.LargeChange;
+                d.Value = c.Value;
+                d.Orientation = c.Orientation;
+                d.TickStyle = c.TickStyle;
+                n = d;
+            }
+            else if (src is System.Windows.Forms.NumericUpDownTS)
+            {
+                System.Windows.Forms.NumericUpDownTS c = (System.Windows.Forms.NumericUpDownTS)src;
+                System.Windows.Forms.NumericUpDownTS d = new System.Windows.Forms.NumericUpDownTS();
+                d.Minimum = c.Minimum;
+                d.Maximum = c.Maximum;
+                d.Value = c.Value;
+                d.DecimalPlaces = c.DecimalPlaces;
+                d.Increment = c.Increment;
+                d.TextAlign = c.TextAlign;
+                n = d;
+            }
+            else if (src is System.Windows.Forms.ComboBoxTS)
+            {
+                System.Windows.Forms.ComboBoxTS c = (System.Windows.Forms.ComboBoxTS)src;
+                System.Windows.Forms.ComboBoxTS d = new System.Windows.Forms.ComboBoxTS();
+                d.DropDownStyle = c.DropDownStyle;
+                foreach (object o in c.Items) d.Items.Add(o);
+                if (c.SelectedIndex >= 0 && c.SelectedIndex < d.Items.Count) d.SelectedIndex = c.SelectedIndex;
+                else if (d.Items.Count > 3) d.SelectedIndex = 3;   // H1: default Bi-Quad, like the other groups
+                n = d;
+            }
+            else if (src is System.Windows.Forms.LabelTS)
+            {
+                System.Windows.Forms.LabelTS c = (System.Windows.Forms.LabelTS)src;
+                System.Windows.Forms.LabelTS d = new System.Windows.Forms.LabelTS();
+                d.Text = c.Text;
+                d.AutoSize = c.AutoSize;
+                d.TextAlign = c.TextAlign;
+                n = d;
+            }
+            if (n == null) return null;
+            n.Name = H1Rx2SubName(src.Name);
+            n.AutoSize = src.AutoSize;   // H1: TrackBar lanes are fixed-size in the designer groups
+            n.Location = src.Location;
+            n.Size = src.Size;
+            n.Font = src.Font;
+            n.ForeColor = src.ForeColor;
+            n.BackColor = src.BackColor;
+            n.TabStop = false;
+            H1HookRx2Sub(n);
+            return n;
+        }
+
+        private void H1HookRx2Sub(Control n)
+        {
+            switch (n.Name)
+            {
+                case "chkDSPRX2subAPFEnable":
+                    chkDSPRX2subAPFEnable = (System.Windows.Forms.CheckBoxTS)n;
+                    chkDSPRX2subAPFEnable.CheckedChanged += chkDSPRX2subAPFEnable_CheckedChanged;
+                    break;
+                case "tbDSPAudRX2subAPFGain":
+                    tbDSPAudRX2subAPFGain = (System.Windows.Forms.TrackBarTS)n;
+                    tbDSPAudRX2subAPFGain.ValueChanged += tbDSPAudRX2subAPFGain_ValueChanged;
+                    break;
+                case "tbRX2subAPFTune":
+                    tbRX2subAPFTune = (System.Windows.Forms.TrackBarTS)n;
+                    tbRX2subAPFTune.Scroll += tbRX2subAPFTune_Scroll;
+                    break;
+                case "tbRX2subAPFBW":
+                    tbRX2subAPFBW = (System.Windows.Forms.TrackBarTS)n;
+                    tbRX2subAPFBW.Scroll += tbRX2subAPFBW_Scroll;
+                    break;
+                case "comboAPF_type_rx2sub":
+                    comboAPF_type_rx2sub = (System.Windows.Forms.ComboBoxTS)n;
+                    comboAPF_type_rx2sub.SelectedIndexChanged += comboAPF_type_rx2sub_SelectedIndexChanged;
+                    break;
+                case "chkDSPRX2subDollyEnable":
+                    chkDSPRX2subDollyEnable = (System.Windows.Forms.CheckBoxTS)n;
+                    chkDSPRX2subDollyEnable.CheckedChanged += chkDSPRX2subDollyEnable_CheckedChanged;
+                    break;
+                case "udDSPRX2subDollyF0":
+                    udDSPRX2subDollyF0 = (System.Windows.Forms.NumericUpDownTS)n;
+                    udDSPRX2subDollyF0.ValueChanged += udDSPRX2subDollyF0_ValueChanged;
+                    break;
+                case "udDSPRX2subDollyF1":
+                    udDSPRX2subDollyF1 = (System.Windows.Forms.NumericUpDownTS)n;
+                    udDSPRX2subDollyF1.ValueChanged += udDSPRX2subDollyF1_ValueChanged;
+                    break;
+            }
+        }
+
+        // handlers - same per-channel calls as the RX1-sub group, on radio.GetDSPRX(1, 1)
+        private void chkDSPRX2subAPFEnable_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            if (console.RX2DSPMode == DSPMode.CWL || console.RX2DSPMode == DSPMode.CWU)
+                console.radio.GetDSPRX(1, 1).RXAPFRun = chkDSPRX2subAPFEnable.Checked;
+        }
+
+        private void tbDSPAudRX2subAPFGain_ValueChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            console.radio.GetDSPRX(1, 1).RXAPFGain = Math.Pow(10.0, (double)tbDSPAudRX2subAPFGain.Value / 200.0);
+        }
+
+        private void tbRX2subAPFTune_Scroll(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            console.radio.GetDSPRX(1, 1).RXAPFFreq = console.CWPitch + (double)tbRX2subAPFTune.Value;
+        }
+
+        private void tbRX2subAPFBW_Scroll(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            console.radio.GetDSPRX(1, 1).RXAPFBw = (double)tbRX2subAPFBW.Value;
+        }
+
+        private void comboAPF_type_rx2sub_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            int type = comboAPF_type_rx2sub.SelectedIndex;
+            if (type < 0 || type > 3) return;
+            console.radio.GetDSPRX(1, 1).RXAPFType = type;
+        }
+
+        private void chkDSPRX2subDollyEnable_CheckedChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            console.radio.GetDSPRX(1, 1).RXADollyRun = chkDSPRX2subDollyEnable.Checked;
+        }
+
+        private void udDSPRX2subDollyF0_ValueChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            console.radio.GetDSPRX(1, 1).RXADollyFreq0 = (double)udDSPRX2subDollyF0.Value;
+        }
+
+        private void udDSPRX2subDollyF1_ValueChanged(object sender, EventArgs e)
+        {
+            if (initializing) return;
+            console.radio.GetDSPRX(1, 1).RXADollyFreq1 = (double)udDSPRX2subDollyF1.Value;
+        }
+
+        // console accessors for the TX-tag-following APF group
+        public bool RX2subAPFEnable
+        {
+            get { return chkDSPRX2subAPFEnable != null && chkDSPRX2subAPFEnable.Checked; }
+            set
+            {
+                if (chkDSPRX2subAPFEnable != null)
+                {
+                    chkDSPRX2subAPFEnable.Checked = value;
+                    chkDSPRX2subAPFEnable_CheckedChanged(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        public int RX2subAPFFreq
+        {
+            get { return tbRX2subAPFTune != null ? tbRX2subAPFTune.Value : 0; }
+            set
+            {
+                if (tbRX2subAPFTune != null)
+                {
+                    tbRX2subAPFTune.Value = value;
+                    tbRX2subAPFTune_Scroll(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        public int RX2subAPFBandwidth
+        {
+            get { return tbRX2subAPFBW != null ? tbRX2subAPFBW.Value : 150; }
+            set
+            {
+                if (tbRX2subAPFBW != null)
+                {
+                    tbRX2subAPFBW.Value = value;
+                    tbRX2subAPFBW_Scroll(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        public int RX2subAPFGain
+        {
+            get { return tbDSPAudRX2subAPFGain != null ? tbDSPAudRX2subAPFGain.Value : 0; }
+            set
+            {
+                if (tbDSPAudRX2subAPFGain != null)
+                    tbDSPAudRX2subAPFGain.Value = value;
+            }
+        }
+
+        // channel 0 = RX1, 1 = RX1 sub, 2 = RX2, 3 = RX2 sub
+        public int GetAPFTypeForChannel(int channel)
+        {
+            switch (channel)
+            {
+                case 0: return comboAPF_type_rx1 != null ? comboAPF_type_rx1.SelectedIndex : 3;
+                case 1: return comboAPF_type_rx1sub != null ? comboAPF_type_rx1sub.SelectedIndex : 3;
+                case 2: return comboAPF_type_rx2 != null ? comboAPF_type_rx2.SelectedIndex : 3;
+                case 3: return comboAPF_type_rx2sub != null ? comboAPF_type_rx2sub.SelectedIndex : 3;
+            }
+            return 3;
+        }
+
         // H1 (user 2026-11-22): the console APF group follows the transmitter, so the type button
         // must set the combo of the channel it is editing (not the old owner radio's channel).
         public void SetAPFTypeForChannel(int channel, int type)
@@ -37074,6 +37376,7 @@ namespace Thetis
                 case 0: c = comboAPF_type_rx1; break;
                 case 1: c = comboAPF_type_rx1sub; break;
                 case 2: c = comboAPF_type_rx2; break;
+                case 3: c = comboAPF_type_rx2sub; break;
             }
             if (c == null) return;
             if (c.SelectedIndex == type) comboAPF_type_SelectedIndexChanged(c, EventArgs.Empty);
