@@ -155,6 +155,8 @@ namespace Thetis
             // place them in the free area to the right; SaveOptions/getOptions pick them up by
             // name because they are the same TS control types.
             H1CreateRx2SubApfAndDolly();
+            H1CreateSpareApfPage();
+            this.VisibleChanged += H1SpareApfVisibleChanged;
 
             _original_pnlP1_adcs_location = pnlP1_adcs.Location;
 
@@ -1577,6 +1579,7 @@ namespace Thetis
 
             LogTool.AddLogEntry("        Setup getting options...", "GETOPTIONS");
             getOptions();
+            H1SpareApfLoadSelection();   // H1: show the selected spare after the options are loaded
             LogTool.Completed("GETOPTIONS");
 
             selectSkin();
@@ -37300,6 +37303,289 @@ namespace Thetis
         {
             if (initializing) return;
             console.radio.GetDSPRX(1, 1).RXADollyFreq1 = (double)udDSPRX2subDollyF1.Value;
+        }
+
+        // ============================================================================================
+        // H1 (user 2026-11-13, option B): one page for the twelve spare DDC channels
+        // (RX3..RX8, Main/Sub). It edits the same H1Apf store the console's TX-tag-following
+        // APF group uses, plus the spare Dolly filter (enable, f0, f1). The controls are the
+        // same TS types as the rest of the page, so SaveOptions/getOptions persist them.
+        // ============================================================================================
+        private System.Windows.Forms.TabPage tpSpareApf;
+        private System.Windows.Forms.GroupBoxTS grpSpareApf;
+        private System.Windows.Forms.ComboBoxTS comboSpareApfDdc;
+        private System.Windows.Forms.RadioButtonTS radSpareApfMain;
+        private System.Windows.Forms.RadioButtonTS radSpareApfSub;
+        private System.Windows.Forms.CheckBoxTS chkSpareApfEnable;
+        private System.Windows.Forms.CheckBoxTS chkSpareDollyEnable;
+        private System.Windows.Forms.TrackBarTS tbSpareApfGain;
+        private System.Windows.Forms.TrackBarTS tbSpareApfTune;
+        private System.Windows.Forms.TrackBarTS tbSpareApfBW;
+        private System.Windows.Forms.ComboBoxTS comboAPF_type_spare;
+        private System.Windows.Forms.NumericUpDownTS udSpareDollyF0;
+        private System.Windows.Forms.NumericUpDownTS udSpareDollyF1;
+        private System.Windows.Forms.LabelTS lblSpareApfGainVal;
+        private System.Windows.Forms.LabelTS lblSpareApfTuneVal;
+        private System.Windows.Forms.LabelTS lblSpareApfBWVal;
+        private int _h1SpareApfRx = 2;      // 2..7 = RX3..RX8
+        private int _h1SpareApfSub = 0;
+        private bool _h1SpareApfLoading = false;
+
+        private System.Windows.Forms.LabelTS H1SpareLabel(string text, System.Drawing.Point at, int width)
+        {
+            System.Windows.Forms.LabelTS l = new System.Windows.Forms.LabelTS();
+            l.Name = "lblH1Spare" + (text.Replace(" ", "").Replace(":", "").Replace("(", "").Replace(")", "").Replace(".", "").Replace("/", ""));
+            l.Text = text;
+            l.AutoSize = false;
+            l.Size = new System.Drawing.Size(width, 14);
+            l.Location = at;
+            return l;
+        }
+
+        private void H1CreateSpareApfPage()
+        {
+            if (tcDSP == null || tpDSPAudio == null) return;
+            tpSpareApf = new System.Windows.Forms.TabPage();
+            tpSpareApf.Name = "tpSpareApf";
+            tpSpareApf.Text = "Spare APF";
+            tpSpareApf.Location = tpDSPAudio.Location;
+            tpSpareApf.Size = tpDSPAudio.Size;
+            tpSpareApf.BackColor = tpDSPAudio.BackColor;
+            tpSpareApf.UseVisualStyleBackColor = true;
+            tcDSP.TabPages.Add(tpSpareApf);
+            tpSpareApf.Enter += H1SpareApfPageEnter;
+
+            grpSpareApf = new System.Windows.Forms.GroupBoxTS();
+            grpSpareApf.Name = "grpSpareApf";
+            grpSpareApf.Text = "Spare DDC - APF and Dolly Filter (rtty)";
+            grpSpareApf.Location = new System.Drawing.Point(6, 6);
+            grpSpareApf.Size = new System.Drawing.Size(600, 270);
+            grpSpareApf.TabStop = false;
+            tpSpareApf.Controls.Add(grpSpareApf);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("DDC:", new System.Drawing.Point(12, 24), 36));
+            comboSpareApfDdc = new System.Windows.Forms.ComboBoxTS();
+            comboSpareApfDdc.Name = "comboSpareApfDdc";
+            comboSpareApfDdc.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboSpareApfDdc.Location = new System.Drawing.Point(52, 21);
+            comboSpareApfDdc.Size = new System.Drawing.Size(70, 21);
+            for (int i = 3; i <= 8; i++) comboSpareApfDdc.Items.Add("RX" + i);
+            comboSpareApfDdc.SelectedIndex = 0;
+            comboSpareApfDdc.SelectedIndexChanged += comboSpareApfDdc_SelectedIndexChanged;
+            grpSpareApf.Controls.Add(comboSpareApfDdc);
+
+            radSpareApfMain = new System.Windows.Forms.RadioButtonTS();
+            radSpareApfMain.Name = "radSpareApfMain";
+            radSpareApfMain.Text = "Main";
+            radSpareApfMain.Location = new System.Drawing.Point(140, 21);
+            radSpareApfMain.Size = new System.Drawing.Size(60, 20);
+            radSpareApfMain.Checked = true;
+            radSpareApfMain.CheckedChanged += radSpareApfMain_CheckedChanged;
+            grpSpareApf.Controls.Add(radSpareApfMain);
+
+            radSpareApfSub = new System.Windows.Forms.RadioButtonTS();
+            radSpareApfSub.Name = "radSpareApfSub";
+            radSpareApfSub.Text = "Sub";
+            radSpareApfSub.Location = new System.Drawing.Point(205, 21);
+            radSpareApfSub.Size = new System.Drawing.Size(50, 20);
+            radSpareApfSub.CheckedChanged += radSpareApfSub_CheckedChanged;
+            grpSpareApf.Controls.Add(radSpareApfSub);
+
+            chkSpareApfEnable = new System.Windows.Forms.CheckBoxTS();
+            chkSpareApfEnable.Name = "chkSpareApfEnable";
+            chkSpareApfEnable.Text = "Enable";
+            chkSpareApfEnable.Location = new System.Drawing.Point(12, 52);
+            chkSpareApfEnable.Size = new System.Drawing.Size(70, 20);
+            chkSpareApfEnable.CheckedChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(chkSpareApfEnable);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("Gain (dB)", new System.Drawing.Point(12, 78), 90));
+            tbSpareApfGain = new System.Windows.Forms.TrackBarTS();
+            tbSpareApfGain.Name = "tbSpareApfGain";
+            tbSpareApfGain.Minimum = 0;
+            tbSpareApfGain.Maximum = 100;
+            tbSpareApfGain.TickFrequency = 10;
+            tbSpareApfGain.Value = 0;
+            tbSpareApfGain.AutoSize = false;
+            tbSpareApfGain.Location = new System.Drawing.Point(12, 92);
+            tbSpareApfGain.Size = new System.Drawing.Size(190, 24);
+            tbSpareApfGain.ValueChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(tbSpareApfGain);
+            lblSpareApfGainVal = H1SpareLabel("0.0 dB", new System.Drawing.Point(206, 98), 60);
+            grpSpareApf.Controls.Add(lblSpareApfGainVal);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("Tune (Hz)", new System.Drawing.Point(12, 124), 90));
+            tbSpareApfTune = new System.Windows.Forms.TrackBarTS();
+            tbSpareApfTune.Name = "tbSpareApfTune";
+            tbSpareApfTune.Minimum = -250;
+            tbSpareApfTune.Maximum = 250;
+            tbSpareApfTune.TickFrequency = 50;
+            tbSpareApfTune.Value = 0;
+            tbSpareApfTune.AutoSize = false;
+            tbSpareApfTune.Location = new System.Drawing.Point(12, 138);
+            tbSpareApfTune.Size = new System.Drawing.Size(190, 24);
+            tbSpareApfTune.ValueChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(tbSpareApfTune);
+            lblSpareApfTuneVal = H1SpareLabel("0", new System.Drawing.Point(206, 144), 60);
+            grpSpareApf.Controls.Add(lblSpareApfTuneVal);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("Bandwidth (Hz)", new System.Drawing.Point(12, 170), 100));
+            tbSpareApfBW = new System.Windows.Forms.TrackBarTS();
+            tbSpareApfBW.Name = "tbSpareApfBW";
+            tbSpareApfBW.Minimum = 10;
+            tbSpareApfBW.Maximum = 150;
+            tbSpareApfBW.TickFrequency = 20;
+            tbSpareApfBW.Value = 150;
+            tbSpareApfBW.AutoSize = false;
+            tbSpareApfBW.Location = new System.Drawing.Point(12, 184);
+            tbSpareApfBW.Size = new System.Drawing.Size(190, 24);
+            tbSpareApfBW.ValueChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(tbSpareApfBW);
+            lblSpareApfBWVal = H1SpareLabel("150", new System.Drawing.Point(206, 190), 60);
+            grpSpareApf.Controls.Add(lblSpareApfBWVal);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("Type", new System.Drawing.Point(12, 216), 36));
+            comboAPF_type_spare = new System.Windows.Forms.ComboBoxTS();
+            comboAPF_type_spare.Name = "comboAPF_type_spare";
+            comboAPF_type_spare.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            comboAPF_type_spare.Location = new System.Drawing.Point(52, 213);
+            comboAPF_type_spare.Size = new System.Drawing.Size(100, 21);
+            comboAPF_type_spare.Items.Add("Double Pole");
+            comboAPF_type_spare.Items.Add("Matched");
+            comboAPF_type_spare.Items.Add("Gaussian");
+            comboAPF_type_spare.Items.Add("Bi-Quad");
+            comboAPF_type_spare.SelectedIndex = 3;
+            comboAPF_type_spare.SelectedIndexChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(comboAPF_type_spare);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("Dolly Filter (rtty)", new System.Drawing.Point(300, 52), 160));
+            chkSpareDollyEnable = new System.Windows.Forms.CheckBoxTS();
+            chkSpareDollyEnable.Name = "chkSpareDollyEnable";
+            chkSpareDollyEnable.Text = "Enable";
+            chkSpareDollyEnable.Location = new System.Drawing.Point(300, 78);
+            chkSpareDollyEnable.Size = new System.Drawing.Size(70, 20);
+            chkSpareDollyEnable.CheckedChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(chkSpareDollyEnable);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("f0 (Hz)", new System.Drawing.Point(300, 110), 60));
+            udSpareDollyF0 = new System.Windows.Forms.NumericUpDownTS();
+            udSpareDollyF0.Name = "udSpareDollyF0";
+            udSpareDollyF0.Minimum = 0;
+            udSpareDollyF0.Maximum = 10000;
+            udSpareDollyF0.Value = 2125;
+            udSpareDollyF0.Increment = 5;
+            udSpareDollyF0.AutoSize = false;
+            udSpareDollyF0.Location = new System.Drawing.Point(365, 107);
+            udSpareDollyF0.Size = new System.Drawing.Size(70, 20);
+            udSpareDollyF0.ValueChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(udSpareDollyF0);
+
+            grpSpareApf.Controls.Add(H1SpareLabel("f1 (Hz)", new System.Drawing.Point(300, 140), 60));
+            udSpareDollyF1 = new System.Windows.Forms.NumericUpDownTS();
+            udSpareDollyF1.Name = "udSpareDollyF1";
+            udSpareDollyF1.Minimum = 0;
+            udSpareDollyF1.Maximum = 10000;
+            udSpareDollyF1.Value = 2295;
+            udSpareDollyF1.Increment = 5;
+            udSpareDollyF1.AutoSize = false;
+            udSpareDollyF1.Location = new System.Drawing.Point(365, 137);
+            udSpareDollyF1.Size = new System.Drawing.Size(70, 20);
+            udSpareDollyF1.ValueChanged += H1SpareEditorChanged;
+            grpSpareApf.Controls.Add(udSpareDollyF1);
+
+            System.Windows.Forms.LabelTS note = new System.Windows.Forms.LabelTS();
+            note.Name = "lblH1SpareApfNote";
+            note.AutoSize = false;
+            note.Location = new System.Drawing.Point(300, 172);
+            note.Size = new System.Drawing.Size(285, 80);
+            note.Font = new System.Drawing.Font(note.Font.FontFamily, 7.5f);
+            note.Text = "Per-spare settings. The console's CW APF group and this page share the same state: whichever spare holds the TX tag shows its APF values on the console."
+                + "\r\n\r\nDolly needs the WDSP ampeak filter; it applies live when the spare channel is running.";
+            grpSpareApf.Controls.Add(note);
+        }
+
+        private void H1SpareApfVisibleChanged(object sender, EventArgs e)
+        {
+            if (this.Visible) H1SpareApfLoadSelection();
+        }
+
+        private void H1SpareApfPageEnter(object sender, EventArgs e)
+        {
+            H1SpareApfLoadSelection();
+        }
+
+        private void H1SpareApfUpdateLabels()
+        {
+            if (lblSpareApfGainVal != null) lblSpareApfGainVal.Text = ((double)tbSpareApfGain.Value / 10.0).ToString("0.0") + " dB";
+            if (lblSpareApfTuneVal != null) lblSpareApfTuneVal.Text = tbSpareApfTune.Value.ToString();
+            if (lblSpareApfBWVal != null) lblSpareApfBWVal.Text = tbSpareApfBW.Value.ToString();
+        }
+
+        private void H1SpareApfLoadSelection()
+        {
+            if (console == null) return;
+            _h1SpareApfLoading = true;
+            try
+            {
+                bool en, dolly;
+                int tune, bw, gain, type, f0, f1;
+                console.H1ApfSpareRead(_h1SpareApfRx, _h1SpareApfSub,
+                    out en, out tune, out bw, out gain, out type, out dolly, out f0, out f1);
+                chkSpareApfEnable.Checked = en;
+                tbSpareApfGain.Value = Math.Max(tbSpareApfGain.Minimum, Math.Min(tbSpareApfGain.Maximum, gain));
+                tbSpareApfTune.Value = Math.Max(tbSpareApfTune.Minimum, Math.Min(tbSpareApfTune.Maximum, tune));
+                tbSpareApfBW.Value = Math.Max(tbSpareApfBW.Minimum, Math.Min(tbSpareApfBW.Maximum, bw));
+                comboAPF_type_spare.SelectedIndex = (type < 0 || type > 3) ? 3 : type;
+                chkSpareDollyEnable.Checked = dolly;
+                udSpareDollyF0.Value = Math.Max(udSpareDollyF0.Minimum, Math.Min(udSpareDollyF0.Maximum, f0));
+                udSpareDollyF1.Value = Math.Max(udSpareDollyF1.Minimum, Math.Min(udSpareDollyF1.Maximum, f1));
+                H1SpareApfUpdateLabels();
+            }
+            catch { }
+            finally { _h1SpareApfLoading = false; }
+        }
+
+        private void H1SpareApfWrite()
+        {
+            if (_h1SpareApfLoading || console == null || initializing) return;
+            try
+            {
+                H1SpareApfUpdateLabels();
+                console.H1ApfSpareWrite(_h1SpareApfRx, _h1SpareApfSub,
+                    chkSpareApfEnable.Checked, tbSpareApfTune.Value, tbSpareApfBW.Value, tbSpareApfGain.Value,
+                    comboAPF_type_spare.SelectedIndex, chkSpareDollyEnable.Checked,
+                    (int)udSpareDollyF0.Value, (int)udSpareDollyF1.Value);
+            }
+            catch { }
+        }
+
+        private void comboSpareApfDdc_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_h1SpareApfLoading) return;
+            int i = comboSpareApfDdc.SelectedIndex;
+            if (i < 0) i = 0;
+            _h1SpareApfRx = 2 + i;
+            H1SpareApfLoadSelection();
+        }
+
+        private void radSpareApfMain_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_h1SpareApfLoading || !radSpareApfMain.Checked) return;
+            _h1SpareApfSub = 0;
+            H1SpareApfLoadSelection();
+        }
+
+        private void radSpareApfSub_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_h1SpareApfLoading || !radSpareApfSub.Checked) return;
+            _h1SpareApfSub = 1;
+            H1SpareApfLoadSelection();
+        }
+
+        private void H1SpareEditorChanged(object sender, EventArgs e)
+        {
+            if (_h1SpareApfLoading) return;
+            H1SpareApfWrite();
         }
 
         // console accessors for the TX-tag-following APF group

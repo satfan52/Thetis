@@ -26866,9 +26866,12 @@ for (int zr = 0; zr < 8; zr++)
             public int Bandwidth;   // Hz
             public int Gain;        // 10 x dB, the same units as the CW panel's gain slider
             public int Type;        // 0=Double Pole, 1=Matched, 2=Gaussian, 3=Bi-Quad
+            public bool DollyEnabled;   // spare DDCs only (Setup's "Spare APF" page)
+            public int DollyF0;         // Hz
+            public int DollyF1;         // Hz
         }
         private const int H1_APF_CHANNELS = 16;   // 2*rx + sub
-        private const string H1_APF_VERSION = "ver/1";
+        private const string H1_APF_VERSION = "ver/2";   // ver/2 adds the spare Dolly fields
         private H1ApfState[] _h1Apf = new H1ApfState[H1_APF_CHANNELS];
         private int _h1ApfChannel = -1;           // channel the console APF group currently edits
         private bool _h1ApfLoading = false;       // true while the group's controls are being loaded
@@ -26935,6 +26938,7 @@ for (int zr = 0; zr < 8; zr++)
         {
             H1ApfState s;
             s.Enabled = false; s.Tune = 0; s.Bandwidth = 150; s.Gain = 0; s.Type = 3;
+            s.DollyEnabled = false; s.DollyF0 = 2125; s.DollyF1 = 2295;
             if (rx > 1) return _h1Apf[H1ApfCh(rx, sub)];
             try
             {
@@ -27008,6 +27012,9 @@ for (int zr = 0; zr < 8; zr++)
                     WDSP.SetRXASPCWGain(ch, gain);
                     WDSP.SetRXASPCWSelection(ch, s.Type);
                     WDSP.SetRXASPCWRun(ch, s.Enabled);
+                    WDSP.SetRXAmpeakFilFreq(ch, 0, s.DollyF0);
+                    WDSP.SetRXAmpeakFilFreq(ch, 1, s.DollyF1);
+                    WDSP.SetRXAmpeakRun(ch, s.DollyEnabled);
                 }
             }
             catch { }
@@ -27229,6 +27236,51 @@ for (int zr = 0; zr < 8; zr++)
             catch { }
         }
 
+        // H1 (user 2026-11-13): Setup's "Spare APF" page reads/writes the twelve spare channels
+        // through these two methods (the console APF group uses the same store).
+        public void H1ApfSpareRead(int rx, int sub, out bool enabled, out int tune, out int bandwidth,
+            out int gain, out int type, out bool dollyEnabled, out int dollyF0, out int dollyF1)
+        {
+            H1ApfState s = _h1Apf[H1ApfCh(rx, sub)];
+            enabled = s.Enabled;
+            tune = s.Tune;
+            bandwidth = s.Bandwidth;
+            gain = s.Gain;
+            type = s.Type;
+            dollyEnabled = s.DollyEnabled;
+            dollyF0 = s.DollyF0;
+            dollyF1 = s.DollyF1;
+        }
+
+        public void H1ApfSpareWrite(int rx, int sub, bool enabled, int tune, int bandwidth, int gain,
+            int type, bool dollyEnabled, int dollyF0, int dollyF1)
+        {
+            try
+            {
+                if (rx < 2 || rx > 7) return;
+                int ch = H1ApfCh(rx, sub);
+                H1ApfState s = _h1Apf[ch];
+                s.Enabled = enabled;
+                s.Tune = H1ApfClamp(tune, -250, 250);
+                s.Bandwidth = H1ApfClamp(bandwidth, 10, 150);
+                s.Gain = H1ApfClamp(gain, 0, 100);
+                s.Type = (type < 0 || type > 3) ? 3 : type;
+                s.DollyEnabled = dollyEnabled;
+                s.DollyF0 = H1ApfClamp(dollyF0, 0, 10000);
+                s.DollyF1 = H1ApfClamp(dollyF1, 0, 10000);
+                _h1Apf[ch] = s;
+                H1ApfApplyChannel(rx, sub, s);
+                if (_h1ApfChannel == ch && !_h1ApfLoading)
+                {
+                    H1ApfUpdateUi(rx, sub, s);
+                }
+                H1SpacePttTrace("apf: spare " + H1ApfShort(rx, sub) + " enabled=" + s.Enabled
+                    + " tune=" + s.Tune + " bw=" + s.Bandwidth + " gain=" + s.Gain + " type=" + s.Type
+                    + " dolly=" + s.DollyEnabled + " f0=" + s.DollyF0 + " f1=" + s.DollyF1);
+            }
+            catch { }
+        }
+
         private void H1SaveApfSettings()
         {
             try
@@ -27243,7 +27295,8 @@ for (int zr = 0; zr < 8; zr++)
                         int ch = H1ApfCh(rx, sub);
                         H1ApfState s = _h1Apf[ch];
                         list.Add("ch" + ch + "/" + (s.Enabled ? "1" : "0") + "," + s.Tune + ","
-                            + s.Bandwidth + "," + s.Gain + "," + s.Type);
+                            + s.Bandwidth + "," + s.Gain + "," + s.Type + ","
+                            + (s.DollyEnabled ? "1" : "0") + "," + s.DollyF0 + "," + s.DollyF1);
                     }
                 }
                 DB.SaveVars("H1Apf", list);
@@ -27259,12 +27312,13 @@ for (int zr = 0; zr < 8; zr++)
                 {
                     H1ApfState s;
                     s.Enabled = false; s.Tune = 0; s.Bandwidth = 150; s.Gain = 0; s.Type = 3;
+            s.DollyEnabled = false; s.DollyF0 = 2125; s.DollyF1 = 2295;
                     _h1Apf[ch] = s;
                 }
                 List<string> list = DB.GetVars("H1Apf");
                 if (list == null || list.Count == 0) return;
                 bool versioned = false;
-                foreach (string e in list) if (e.Trim() == H1_APF_VERSION) { versioned = true; break; }
+                foreach (string e in list) if (e.Trim() == "ver/1" || e.Trim() == H1_APF_VERSION) { versioned = true; break; }
                 if (!versioned) return;
                 foreach (string entry in list)
                 {
@@ -27282,6 +27336,13 @@ for (int zr = 0; zr < 8; zr++)
                     if (!int.TryParse(p[2], out s.Bandwidth)) s.Bandwidth = 150;
                     if (!int.TryParse(p[3], out s.Gain)) s.Gain = 0;
                     if (!int.TryParse(p[4], out s.Type)) s.Type = 3;
+                    s.DollyEnabled = false; s.DollyF0 = 2125; s.DollyF1 = 2295;
+                    if (p.Length >= 8)
+                    {
+                        s.DollyEnabled = p[5].Trim() == "1";
+                        if (!int.TryParse(p[6], out s.DollyF0)) s.DollyF0 = 2125;
+                        if (!int.TryParse(p[7], out s.DollyF1)) s.DollyF1 = 2295;
+                    }
                     _h1Apf[ch] = s;
                 }
             }
