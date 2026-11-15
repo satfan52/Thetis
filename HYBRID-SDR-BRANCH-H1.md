@@ -176,6 +176,14 @@ external ATU with the same two-phase tune.
 - **Earlier operator confirmations** carried in this line: RX2/SubRX2 audio on the VACs, the sub
   tuning windows, wheel/drag/filter-edge gestures, the four transmit ticks and split behaviour, and
   MiniTCI PTT/TUNE on a headless port (2026-09-14, VAC1 disabled).
+- **Verified on the station on 2026-11-15** (deployed `Thetis.exe` `10F52244...` +
+  `ChannelMaster.dll` `8EFD295F...`, built from H1 head `1693f16`): the empty TRANSMIT block after
+  a full-window round trip is fixed - the visibility capture no longer records the children of
+  hidden mode panels, and Expand re-selects the panel for the mode in force now; the
+  close/power-off freeze is fixed - the P1/P2 read loops wait bounded and re-check the stop flag,
+  so Audio.Stop returned in 0.07 s across ten power-off cycles, five X-close cycles exited
+  cleanly, and with the SDR switched off (the historical hang condition) Audio.Stop returned in
+  0.50 s, with no new Windows hang/crash events.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -232,6 +240,13 @@ Station data and traces: database `%APPDATA%\OpenHPSDR\Thetis-x64\DB\<guid>\data
 `TestScripts/` files are tracked only on H1: a checkout of another branch removes them from disk, so
 restore one with `git show H1:TestScripts/<file> > TestScripts/<file>` before running it.
 
+The 2026-11-15 commits add two fix series: in `Console/console.cs` the full-window visibility
+capture (record each control's own visibility, never a hidden container's children), the
+post-Expand re-selection of the current mode panel, `ExitConsole` only from the disposing path,
+and the Audio.Stop completion traces; in the native read loops (`ChannelMaster/networkproto1.c`,
+`ChannelMaster/network.c`) the bounded WSA wait and stop-flag re-check on the P1 and P2/ETH
+paths that keeps the close/power-off join from waiting forever.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -242,6 +257,10 @@ restore one with `git show H1:TestScripts/<file> > TestScripts/<file>` before ru
   zooms); reset it if a clean slate is wanted.
 - Headless TCI ports keep their Branch G limits: echo-only stubs for RIT/XIT/squelch/lock and the
   port-50001-only commands; no second TRX per port.
+- The close/power-off fix covers the measured silent-UDP-stream case (bounded read-loop wait).
+  A read thread blocked inside a packet handler on a lock convoy would still leave the join
+  waiting; that different failure mode has not been observed since the fix and would need a
+  hang dump (`.wip_dumphang.ps1` + cdb) before any further change.
 - MiniTCI is not part of the H1 release archive; it lives in `TestScripts/` and `TestScripts/dist/`.
 
 ## 13. History notes (do not re-derive)
@@ -275,5 +294,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit, built from commit `addd8fb`.
+  audio/transmit; refreshed 2026-11-15 from H1 head `1693f16` with the TRANSMIT-block and
+  close/power-off fixes (`Thetis.exe` `10F52244...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
