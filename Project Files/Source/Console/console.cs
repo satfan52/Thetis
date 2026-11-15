@@ -41925,6 +41925,34 @@ private readonly double[] _h1BasePanSlider = new double[8];
             return TuneLocation.Other;
         }
 
+        // H1 (user 2026-11-15): the full-window strip control under the mouse, if any. The
+        // cell strips and the RX1/RX2 strip are direct children of the console, drawn over
+        // the panafall. Returns null over the spectrum itself, so cell tuning still works.
+        private Control H1FullWindowStripControlAtCursor()
+        {
+            try
+            {
+                Point p = PointToClient(Cursor.Position);
+                for (int i = 0; i < this.Controls.Count; i++)
+                {
+                    Control c = this.Controls[i];
+                    if (c == null || c.IsDisposed || !c.Visible) continue;
+                    if (!c.Bounds.Contains(p)) continue;
+                    bool strip = (c.Name != null && c.Name.StartsWith("h1fs")) || _h1CellStripControls.Contains(c);
+                    if (!strip && _h1CellSubControls != null)
+                    {
+                        for (int s = 0; s < _h1CellSubControls.Count; s++)
+                        {
+                            if (_h1CellSubControls[s] == c) { strip = true; break; }
+                        }
+                    }
+                    if (strip) return c;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         private void Console_MouseWheel(object sender, System.Windows.Forms.MouseEventArgs e)
         {
             // H1 (user 2026-10-05): a READ-ONLY box is a readout, not a text entry, so it must not
@@ -41974,6 +42002,28 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 GetVFOCharWidth();
 
             if (num_steps == 0) return;
+            // H1 (user 2026-11-15): the full-window cell strips and the RX1/RX2 strip stand
+            // over the display. A wheel notch on one of their controls bubbled to this display
+            // handler and tuned the cell's frequency instead of acting on the control - the
+            // operator saw it as "band switching with the wheel does not work". Hand a notch on
+            // a combo to the combo (cycle its selection, which runs its own change handler) and
+            // never tune when the pointer is over any full-window strip control.
+            if (_h1FullScreenPanafall)
+            {
+                Control h1WheelStrip = H1FullWindowStripControlAtCursor();
+                if (h1WheelStrip != null)
+                {
+                    ComboBoxTS h1WheelCombo = h1WheelStrip as ComboBoxTS;
+                    if (h1WheelCombo != null && h1WheelCombo.Items.Count > 0 && h1WheelCombo.SelectedIndex >= 0)
+                    {
+                        int h1WheelIdx = h1WheelCombo.SelectedIndex - num_steps;
+                        if (h1WheelIdx < 0) h1WheelIdx = 0;
+                        if (h1WheelIdx > h1WheelCombo.Items.Count - 1) h1WheelIdx = h1WheelCombo.Items.Count - 1;
+                        if (h1WheelIdx != h1WheelCombo.SelectedIndex) h1WheelCombo.SelectedIndex = h1WheelIdx;
+                    }
+                    return;
+                }
+            }
             int step = CurrentTuneStepHz;
             if (Common.ShiftKeyDown && step >= 10) step /= 10; //MW0LGE
 
@@ -43922,6 +43972,14 @@ private readonly double[] _h1BasePanSlider = new double[8];
             // "transmit on SubVFOA".
             else if (full_duplex)
                 goto set_tx_freq;
+            // H1 (user 2026-11-15): VFO B is RX2's receive VFO as well as a transmit VFO.
+            // When the transmit tag sits on a sub tick or on a spare cell's voice-TX slice,
+            // none of the four normal ticks is armed - and the old fall-through into `end`
+            // skipped RX2's receive DDS update entirely: the band changed, VFO B moved, and
+            // the DDC/panadapter never followed (full-window DDC2 band switching "did not
+            // work"). The receive retune must not depend on which tick carries the transmit.
+            else if (rx2_enabled)
+                goto set_rx2_freq;
             else goto end;
 
             set_tx_freq:
