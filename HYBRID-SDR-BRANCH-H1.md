@@ -184,6 +184,13 @@ external ATU with the same two-phase tune.
   so Audio.Stop returned in 0.07 s across ten power-off cycles, five X-close cycles exited
   cleanly, and with the SDR switched off (the historical hang condition) Audio.Stop returned in
   0.50 s, with no new Windows hang/crash events.
+- **Verified on the station on 2026-11-15 (evening)** (deployed `Thetis.exe` `35CB9806...`,
+  built from `feab24d`): with a spare cell (RX3) holding the voice-TX slice - the state that
+  exposed the defect - full-window band switching on DDC2 retunes the cell again; a band matrix
+  over all eight DDCs (three changes each, 24 changes) and a control matrix over all eight cells
+  (88 checks: mode combos, CTUN/NR/ANF/NB/BIN/SUB pills, AGC/AF/ZOOM sliders) pass with no
+  handler errors and the receivers live. The wheel over a cell's band/mode combo now cycles that
+  control instead of tuning the cell.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -247,6 +254,12 @@ and the Audio.Stop completion traces; in the native read loops (`ChannelMaster/n
 `ChannelMaster/network.c`) the bounded WSA wait and stop-flag re-check on the P1 and P2/ETH
 paths that keeps the close/power-off join from waiting forever.
 
+The 2026-11-15 evening fix goes further: `txtVFOBFreq_LostFocus` now retunes RX2's receive DDS
+even when no normal transmit tick is armed (a sub tick or a spare voice-TX slice holds the
+transmit), so a full-window DDC2 band change cannot go stale again; and `Console_MouseWheel`
+hands a notch over a full-window strip control to that control instead of tuning the cell
+underneath.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -261,6 +274,8 @@ paths that keeps the close/power-off join from waiting forever.
   A read thread blocked inside a packet handler on a lock convoy would still leave the join
   waiting; that different failure mode has not been observed since the fix and would need a
   hang dump (`.wip_dumphang.ps1` + cdb) before any further change.
+- Wheel over a full-window cell strip acts on the control (band/mode combos cycle); it no
+  longer tunes the cell underneath. Wheel tuning still works over the spectrum itself.
 - MiniTCI is not part of the H1 release archive; it lives in `TestScripts/` and `TestScripts/dist/`.
 
 ## 13. History notes (do not re-derive)
@@ -294,6 +309,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-15 from H1 head `1693f16` with the TRANSMIT-block and
-  close/power-off fixes (`Thetis.exe` `10F52244...`, `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-15 (evening) from H1 head `feab24d` with the full-window
+  band-switch and wheel fixes (`Thetis.exe` `35CB9806...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
