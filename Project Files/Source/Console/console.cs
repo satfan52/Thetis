@@ -54225,12 +54225,21 @@ private readonly double[] _h1BasePanSlider = new double[8];
             _h1FullScreenCaptured = true;
         }
 
+        // H1 (user 2026-11-15): record each control's OWN visibility, never the effective
+        // one. Control.Visible reports false for every child of a hidden parent, so the old
+        // recursive capture recorded a hidden mode panel's children as false and the
+        // matching restore then forced them Visible=false for good: the next mode switch
+        // showed the panel with nothing in it (the operator's empty TRANSMIT block).
+        // The full-screen hide only touches direct children of the form and of the display,
+        // so nothing below a hidden container needs recording or restoring - and not
+        // recursing there leaves those children's own state untouched.
         private void H1CaptureVisible(Control parent)
         {
             foreach (Control c in parent.Controls)
             {
-                _h1FullScreenHidden[c] = c.Visible;
-                H1CaptureVisible(c);
+                bool h1Visible = c.Visible;
+                _h1FullScreenHidden[c] = h1Visible;
+                if (h1Visible) H1CaptureVisible(c);
             }
         }
 
@@ -54820,6 +54829,10 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
             this.Text = BasicTitleBar; //MW0LGE_21a moved here after expaned is true so that title text gets rebuild correctly
                     H1FullScreenRestoreControls();   // H1: put the normal view back
+            // H1 (user 2026-11-15): the restored capture carries the mode panel that was
+            // showing before the view changed. A mode changed while the full-window view was
+            // up must still leave the transmit block showing the mode that is in force now.
+            H1RefreshTxPanel();
             H1SyncBandPanels();               // H1: and the band page that is actually selected
 }
         private void setPAProfileLabelPos()
