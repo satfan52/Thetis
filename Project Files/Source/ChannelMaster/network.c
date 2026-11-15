@@ -653,9 +653,16 @@ ReadThreadMainLoop() {
 	fflush(stdout);
 	
 	while (io_keep_running != 0) {
-		DWORD retVal = WSAWaitForMultipleEvents(1, &prn->hDataEvent, FALSE, prn->wdt ? 3000 : WSA_INFINITE, FALSE);
+		// H1 (2026-11-15, close hang): the wait is always bounded. A live stream still returns at
+		// once on FD_READ; with the Network Watchdog off a 1 s wake only gives the loop a chance to
+		// observe the io_keep_running=0 set by IOThreadStop() or the UI thread join can wait forever.
+		DWORD retVal = WSAWaitForMultipleEvents(1, &prn->hDataEvent, FALSE, prn->wdt ? 3000 : 1000, FALSE);
+		if (io_keep_running == 0) break;
 		if ((retVal == WSA_WAIT_FAILED) || (retVal == WSA_WAIT_TIMEOUT))
 		{
+			// H1 (2026-11-15): with the watchdog off, a timeout is only the 1 s stop poll - it is
+			// not a loss of sync. Keep the LOS/SendStop path for the watchdog-on case and a failed wait.
+			if (retVal == WSA_WAIT_TIMEOUT && !prn->wdt) continue;
 			HaveSync = 0; //send console LOS			
 			SendStop();
 			memset(prn->RxReadBufp, 0, prn->rx[0].spp);
@@ -1450,6 +1457,9 @@ int IOThreadStop() {
 	}
 	io_keep_running = 0;  // flag to stop
 
+	// H1 (2026-11-15, close hang): left INFINITE on purpose. Both read loops now re-check
+	// io_keep_running at least every second, so this join returns; bounding it here would let
+	// StopAudio() close the socket and free the buffers under a thread that has not exited yet.
 	WaitForSingleObject(prn->hReadThreadMain, INFINITE);
 
 	CloseHandle(prn->hReadThreadMain);

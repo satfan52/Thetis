@@ -1358,7 +1358,13 @@ namespace Thetis
             shutdownLogStringToPath("Before LogTool.Shutdown()");
             LogTool.Shutdown();
 
-            if (_exitConsoleInDispose) // ignore this if the incorrect dlls are found. We wont have used anything
+            // H1 (user 2026-11-15): ExitConsole may only run from the disposing (close) path.
+            // From the finalizer (disposing == false) the native threads and ChannelMaster
+            // state are in no defined order - that path killed the console with an
+            // AccessViolation in NetworkIO.DestroyRNet() on 2026-11-09. An undisposed
+            // Console is finalised exactly like that, so skip the teardown; the process is
+            // going away and the normal X-close / power-off path is Dispose(true).
+            if (disposing && _exitConsoleInDispose) // ignore this if the incorrect dlls are found. We wont have used anything
                 ExitConsole();
 
             if (_frmShutDownForm != null)
@@ -38118,6 +38124,11 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 //NetworkIO.StopAudio();
                 H1Crumb("power-off Audio.Stop");
                 Audio.Stop();
+                // H1 (user 2026-11-15): the close freeze stalled inside this call and the
+                // watchdog could only name the crumb before it. This line proves the native
+                // stop returned, so the next hang report is unambiguous.
+                H1StartupTrace("pwr: Audio.Stop returned");
+                H1Crumb("power-off Audio.Stop returned");
 
                 if (vac_enabled)
                 {
@@ -38236,6 +38247,8 @@ private readonly double[] _h1BasePanSlider = new double[8];
                     ATUTunetokenSource.Cancel();
                 }
 
+                H1StartupTrace("pwr: off-branch done");
+                H1Crumb("power-off done");
             }
 
             panelVFOAHover.Invalidate();
