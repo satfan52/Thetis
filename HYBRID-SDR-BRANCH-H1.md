@@ -221,6 +221,12 @@ external ATU with the same two-phase tune.
   a relaunch plus power-on saved 14.2248 (VFO A) at the next close; with the fix two restart
   cycles keep 14.217387, the SubVFOA row shows 14.217 387 after the restart, and switching 40m
   and back applies `sub=14.217387` (band trace).
+- **Verified on the station on 2026-11-21 (waterfall parity)** (deployed `Thetis.exe`
+  `840F1241...`, built from `d11e872`): DDC1 green fraction 24.7 % -> 15.9 % (normal RX1
+  13.8 %), DDC2 20.0 % -> 7.7 %, DDC5 20.0 % -> 7.6 %, DDC3/DDC4/DDC8 deep blue; inverse
+  palette position for DDC1 0.276 -> 0.169 against the normal view's 0.152; repeated
+  normal/full-window toggles without errors; DDC7 stays green on its genuinely noisy band
+  (S9+17, noise floor near the -80 dBm high threshold).
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -329,6 +335,15 @@ A sub with no stored frequency now starts on VFO A, the restored sub frequencies
 back once at power-up, and they are recorded into the band memory, so restart and band
 round-trips keep the saved position.
 
+The 2026-11-21 waterfall parity fix (display.cs) makes the eight-row cells use the normal
+panafall's waterfall level processing for all eight DDCs: DDC1/DDC2 reuse RX1's/RX2's own
+waterfall AGC trackers, high thresholds, AGC offsets, display-calibration offsets and
+opacity; DDC3-DDC8 follow RX1's configuration with their own per-row noise-floor trackers
+and their own band/grid high threshold. The cell spectrum trace also gets the
+display-calibration offset, so trace, colours and dB labels agree inside a cell. The cells
+support the Enhanced formula and the Custom gradient palette (the other palette names
+still fall back to Enhanced inside the cells).
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -378,6 +393,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (SubRX1) from H1 head `bdb6f3e` with the SubRX1
-  restart persistence fix (`Thetis.exe` `472C850C...`, `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 (waterfall) from H1 head `d11e872` with the full-window
+  waterfall colour parity (`Thetis.exe` `840F1241...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
