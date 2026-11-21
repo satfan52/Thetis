@@ -7024,7 +7024,7 @@ namespace Thetis
                 // the bold face, and inset from the frame so the digits never touch the border.
                 // The console's caption hit-test measures the same font and inset
                 // (H1CellCaptionHit/H1CellCentreFont).
-                string h1cfText = centre.ToString("f6");
+                string h1cfText = H1CellCentreText(r);   // the tuning readout, not the display centre
                 SharpDX.Direct2D1.Brush h1cfBrush = m_bDX2_h1_centre_brush != null
                     ? m_bDX2_h1_centre_brush : m_bDX2_pana_text_brush;
                 SharpDX.DirectWrite.TextFormat h1cfFont = H1CellCentreFont();
@@ -7340,10 +7340,21 @@ namespace Thetis
         private const int H1_CF_CAPTION_TOP = 5;    // inset from the top frame
         private const int H1_CF_CAPTION_HEIGHT = 22; // hit strip below the top frame
 
+        // H1 (user 2026-11-21): the caption is the cell's tuning readout - the frequency the
+        // wheel and the frequency dialog edit (VFO for DDC1/DDC2, slice VFO for DDC3-DDC8), so
+        // it follows the tuning even while CTUN keeps the display centre fixed. The horizontal
+        // scale labels remain based on the display centre.
         private static string H1CellCentreText(int row)
         {
-            double centre = row == 0 ? CentreFreqRX1 : (row == 1 ? CentreFreqRX2 : H1RowCentreMHz[row]);
-            return centre.ToString("f6");
+            double f = -1.0;
+            try
+            {
+                if (console != null) f = console.H1CellCaptionFrequency(row);
+            }
+            catch { }
+            if (f <= 0.0)
+                f = row == 0 ? CentreFreqRX1 : (row == 1 ? CentreFreqRX2 : H1RowCentreMHz[row]);
+            return f.ToString("f6");
         }
 
         private static SharpDX.DirectWrite.TextFormat H1CellCentreFont()

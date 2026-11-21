@@ -11467,6 +11467,14 @@ for (int zr = 0; zr < 8; zr++)
             catch { return -1.0; }
         }
 
+        // H1 (user 2026-11-21): the full-window cell caption shows the frequency the wheel and
+        // the entry dialog tune (VFO for DDC1/DDC2, slice VFO for DDC3-DDC8), so it follows the
+        // tuning even when CTUN keeps the display centre fixed.
+        public double H1CellCaptionFrequency(int row)
+        {
+            return H1CellTuningFrequency(row);
+        }
+
         // manual absolute frequency for one cell - same target as H1CellCaptionWheel
         private void H1CellSetFrequency(int row, double freq)
         {
