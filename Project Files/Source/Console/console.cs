@@ -9465,7 +9465,7 @@ for (int zr = 0; zr < 8; zr++)
                         bool keepPosition = tciOwned || _h1SlicePositioned[rx];
                         HeadlessSliceManager.Instance.SetVFOA(rx, keepPosition ? slice.FrequencyMHz : centre);
                         // a sub restored from the database has state but no channel yet
-                        if (HeadlessSubRX.IsEnabled(rx)) HeadlessSubRX.SetEnabled(rx, true);
+                        if (HeadlessSubRX.IsEnabled(rx)) HeadlessSubRX.SetEnabledFromConsole(rx, true);
                         Display.H1RowCentreMHz[rx] = HeadlessSliceManager.Instance.GetDisplayCenterMHz(rx);
                     }
                     catch (Exception exa) { H1SpacePttTrace("eight-row setup: slice rx" + rx + " failed: " + exa.Message); }
@@ -10504,7 +10504,10 @@ for (int zr = 0; zr < 8; zr++)
                 else if (row == 1) { if (chkEnableMultiRX2 != null) chkEnableMultiRX2.Checked = sp.Checked; }
                 else
                 {
-                    HeadlessSubRX.SetEnabled(row, sp.Checked);
+                    // H1 (audio fix 2026-11-21): the console's own sub toggle mixes main and sub
+                    // equally (unless a TCI audio client owns the slice); switching the sub off
+                    // also restores the main channel's panel gain inside SetEnabled.
+                    HeadlessSubRX.SetEnabledFromConsole(row, sp.Checked);
                     // H1 (user 2026-11-20): switching the sub off also forgets its listen
                     // tag and stops its audio - the tag means "this window is listening".
                     // H1SetSpareAudio cannot do it here: it refuses to touch a sub that has

@@ -31,7 +31,10 @@ namespace Thetis
             public DSPMode Mode = DSPMode.USB;
             public int FilterLow = 150;
             public int FilterHigh = 2800;
-            public double Balance = 1.0;          // sub pan position 0..1 (main gets 1 - balance)
+            // H1 (audio fix 2026-11-21): default to the equal mix. The selection law scales
+            // the MAIN panel gain to zero at 1.0, so enabling a console SUB pill while the
+            // window's RX tag was on silenced the main receiver; 0.5 keeps both channels.
+            public double Balance = 0.5;          // sub pan position 0..1 (main gets 1 - balance)
             public bool Nr, Anf, Snb;
             public AGCMode AgcMode = AGCMode.MED;
             public double AgcGainDb = 20.0;
@@ -103,6 +106,10 @@ namespace Thetis
                 }
                 WDSP.SetChannelState(Ch(rx, 1), on ? 1 : 0, on ? 0 : 1);
                 s.Enabled = on;
+                // H1 (audio fix 2026-11-21): switching the sub off must give the main channel its
+                // own panel gain back - the balance law had scaled it to zero while the sub was
+                // in use, and nothing else re-applied it (the console's RX tag then had no audio).
+                if (!on) RestoreMainGain(rx);
                 if (on)
                 {
                     // H1 (user 2026-11-22): the CW APF follows the TX tag - re-apply this sub's
@@ -120,6 +127,39 @@ namespace Thetis
         }
 
         public static bool IsEnabled(int rx) { return Get(rx).Enabled; }
+
+        /// <summary>H1 (audio fix 2026-11-21): put the main channel back on its own panel gain.
+        /// The sub/main balance law scales the main gain by cos(balance*pi/2), which is zero at
+        /// balance 1.0 (sub only). The console gates the two windows independently, so leaving a
+        /// zero main gain behind muted a receiver whose own RX tag was on. Called when the sub is
+        /// switched off and when the console opens/re-mixes a cell.</summary>
+        public static void RestoreMainGain(int rx)
+        {
+            if (rx < 2) return;              // RX1/RX2 gains belong to the console gates
+            var s = Get(rx);
+            if (!cmaster.IsRadioCreated) return;
+            var main = HeadlessSliceManager.Instance.GetSlice(rx);
+            double gain = main != null ? main.AudioGain : 0.5;
+            WDSP.SetRXAPanelPan(Ch(rx, 0), 0.5);
+            WDSP.SetRXAPanelGain1(Ch(rx, 0), gain);
+            WDSP.SetRXAPanelPan(Ch(rx, 1), 0.5);
+            WDSP.SetRXAPanelGain1(Ch(rx, 1), gain);
+            s.Balance = 0.5;                      // neutral mix again while the sub is off
+        }
+
+        /// <summary>H1 (audio fix 2026-11-21): the console's SUB pill enables the sub for the
+        /// operator's own window mix, so it uses the equal-mix balance unless a TCI audio client
+        /// owns the slice and has chosen its own selection.</summary>
+        public static bool SetEnabledFromConsole(int rx, bool on)
+        {
+            if (on)
+            {
+                var slice = HeadlessSliceManager.Instance.GetSlice(rx);
+                bool tciOwnsAudio = slice != null && slice.HasConsumer(SliceConsumer.TciAudio);
+                if (!tciOwnsAudio) Get(rx).Balance = 0.5;
+            }
+            return SetEnabled(rx, on);
+        }
 
         // H1: the "=RXn" follower for a headless port. Ticked, the sub takes the port
         // receiver's whole set - mode, passband and AGC - on every change, and never the
