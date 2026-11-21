@@ -7991,6 +7991,7 @@ namespace Thetis
             int mxAF = bx - 100;                              // Master AF, between the OM2000A+ block and the cluster
             H1Cap("split", "VFO", sx, cY, 130);
             H1Cap("tx", "TRANSMIT", tx, cY, 336);
+            H1TxCaptionSet();   // H1 (user 2026-11-21): name the receiver the TX tag is on
             ptbAF.BackColor = ptbPWR.BackColor; ptbTune.BackColor = ptbPWR.BackColor; // H1: no grey slider box
             // H1 (user 2026-10-05, round 4): Master AF sits on the OM2000A+ block's top row,
             // which is also the PA Drive column's level - label on sy, slider on sy+16 - so the
@@ -10583,6 +10584,9 @@ for (int zr = 0; zr < 8; zr++)
             // the route from the remaining listen bits for every spare SUB transition.
             if (row >= 2) H1ApplySpareVACRoute(row);
             H1CellSubFace(sp);
+            // H1 (user 2026-11-21): the TRANSMIT caption names the sub only while it runs; a
+            // sub-held TX tag falls back to the cell main slice when the SUB is switched off.
+            if (row >= 2) H1RefreshTxPanel();
             H1PublishCellMeters();
             H1SpacePttTrace("cell SUB: RX" + (row + 1) + " = " + sp.Checked);
             H1FsSync();
@@ -25881,11 +25885,45 @@ for (int zr = 0; zr < 8; zr++)
             catch { return RX1DSPMode; }
         }
 
+        // H1 (user 2026-11-21): the normal view's TRANSMIT caption names the receiver the PTT
+        // will use - the block itself looks the same whichever window holds the TX tag, so
+        // without this there is no way to see that TX sits on e.g. SubRX8. A sub-held tag whose
+        // SUB was switched off falls back to that cell's main slice, exactly like the PTT path.
+        private string H1TxSourceName()
+        {
+            try
+            {
+                if (_h1VoiceTxRx >= 2 && _h1VoiceTxRx <= 7)
+                {
+                    bool sub = _h1VoiceTxSub && HeadlessSubRX.IsEnabled(_h1VoiceTxRx);
+                    return (sub ? "SubRX" : "RX") + (_h1VoiceTxRx + 1).ToString();
+                }
+                if (chkSubVFOATX != null && chkSubVFOATX.Checked) return "SubRX1";
+                if (rx2_enabled && chkSubVFOBTX != null && chkSubVFOBTX.Checked) return "SubRX2";
+                if (rx2_enabled && chkVFOBTX != null && chkVFOBTX.Checked) return "RX2";
+                return "RX1";
+            }
+            catch { return "RX1"; }
+        }
+
+        private void H1TxCaptionSet()
+        {
+            try
+            {
+                Control lb;
+                if (h1Caps == null || !h1Caps.TryGetValue("tx", out lb) || lb == null) return;
+                string text = "TRANSMIT " + H1TxSourceName();
+                if (lb.Text != text) lb.Text = text;
+            }
+            catch { }
+        }
+
         // H1 (user 2026-11-22): re-show the transmit section's mode panel for the current
         // transmitter. Never while the full-window view is up - ExpandDisplay() refreshes it on
         // the way back to the normal view.
         private void H1RefreshTxPanel()
         {
+            H1TxCaptionSet();   // H1: the caption names the TX source even while the block is hidden
             if (initializing || _h1FullScreenPanafall) return;
             try
             {
