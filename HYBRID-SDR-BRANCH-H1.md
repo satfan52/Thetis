@@ -272,6 +272,17 @@ external ATU with the same two-phase tune.
   and the loopback is silent (peak/RMS 0.00000); a main tag with the same flip keeps
   `route=0xB src=2` and the main audio (loopback peak 0.920 at balance 0.5); the same flip on
   DDC5 logs `route=0x0` both ways; console responsive, no crash dumps.
+- **Verified on the station on 2026-11-21 (spare TX profile on the sub window)** (deployed
+  `Thetis.exe` `36BC3578...`, ChannelMaster `6F2BE6C5...`, built from `26bb2ba`): on the previous
+  build DDC8 (main DIGL, sub left at its default USB) with the TX tag moved from RX8 to SubRX8
+  showed the phone TX panel (MIC/COMP/VOX) in the normal view while the RX8 main tag showed the
+  digital panel. After the change the restored subs follow their cells (RX3 LSB/LSB, RX7
+  LSB/LSB, RX8 DIGL/DIGL); forcing SubRX8 to USB and flipping SUB off/on leaves it DIGL; the
+  normal-view TX panel with the tag on SubRX8 is the digital one (VAC1 RX/TX gain, sample rate,
+  Chrls/IQ) both after a restart and after the flip; console responsive, no crash dumps. The
+  reported crash was checked separately: the previous instance closed through the console's
+  normal power-off/close path and a new one started seconds later - no WER, Application Error
+  or .NET Runtime event and no crash dump.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -442,6 +453,14 @@ The pill handler now recomputes the route from the remaining listen bits on ever
 transition (no tags -> 0, which also releases the VAC takeover; main only -> the main-only
 bit; sub only -> the sub-only bit; both -> the mix) and logs it like the window-click path.
 
+The 2026-11-21 sub-mode fix (HeadlessSubRX.cs and console.cs) makes a console-enabled spare
+sub follow its cell: SetEnabled copies the main slice's mode as well as its filter,
+H1LoadSliceSettings gives a restored enabled sub the saved main mode, and the cell mode/band
+handlers re-sync the sub (H1CellSyncSubToMain). Before it a DIGL cell's sub kept the default
+USB mode, so a TX tag on the sub window produced the phone TX profile in the normal view
+while the main-window tag produced the digital one. A TCI client can still set an
+independent sub mode afterwards on its own port.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -491,7 +510,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (SUB-flip VAC route) from H1 head `92fc449` with the
-  spare SUB pill keeping the native route in step (`Thetis.exe` `180A9125...`,
-  `ChannelMaster.dll` `6F2BE6C5...`).
+  audio/transmit; refreshed 2026-11-21 (sub follows cell mode) from H1 head `26bb2ba` with the
+  spare sub keeping its cell's mode, so a TX tag on the sub window uses the right TX profile
+  (`Thetis.exe` `36BC3578...`, `ChannelMaster.dll` `6F2BE6C5...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
