@@ -216,6 +216,11 @@ external ATU with the same two-phase tune.
   (6,60,89), matching the normal panafall's fill; the normal-view scale editor opened with the
   live values, applied a change and restored it exactly; a right-drag on the dB number column
   opened no dialog and kept its grid-max gesture; the full-window editor still applies/resets.
+- **Verified on the station on 2026-11-21 (SubRX1 restart)** (deployed `Thetis.exe`
+  `472C850C...`, built from `bdb6f3e`): without the fix a close saved `VFOASubFreq` 14.217387,
+  a relaunch plus power-on saved 14.2248 (VFO A) at the next close; with the fix two restart
+  cycles keep 14.217387, the SubVFOA row shows 14.217 387 after the restart, and switching 40m
+  and back applies `sub=14.217387` (band trace).
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -316,6 +321,14 @@ brushes when the linear-gradient option is on). The exact Grid Max/Min editor al
 in the normal view now: right-click a receiver's dB number column for "RX1 scale" /
 "RX2 scale" (current band; the column's right-drag grid-max gesture is unchanged).
 
+The 2026-11-21 SubRX1 restart fix (console.cs) explains why only SubRX1 lost its frequency:
+the Setup options restore before the console state, so the sub enable handler ran a sub
+commit with the zero placeholder, the oscillator clamp synthesised an edge value which the
+band memory recorded, and the state restore plus enable snap then moved SubRX1 to VFO A.
+A sub with no stored frequency now starts on VFO A, the restored sub frequencies are put
+back once at power-up, and they are recorded into the band memory, so restart and band
+round-trips keep the saved position.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -365,7 +378,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (fill/editor) from H1 head `5cebec5` with the normal
-  fill colours and the normal-view scale editor (`Thetis.exe` `A3E61297...`,
-  `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 (SubRX1) from H1 head `bdb6f3e` with the SubRX1
+  restart persistence fix (`Thetis.exe` `472C850C...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
