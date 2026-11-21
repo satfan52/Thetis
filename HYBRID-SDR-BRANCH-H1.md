@@ -227,6 +227,12 @@ external ATU with the same two-phase tune.
   palette position for DDC1 0.276 -> 0.169 against the normal view's 0.152; repeated
   normal/full-window toggles without errors; DDC7 stays green on its genuinely noisy band
   (S9+17, noise floor near the -80 dBm high threshold).
+- **Verified on the station on 2026-11-21 (cell caption/tuning)** (deployed `Thetis.exe`
+  `C0676C17...`, built from `202cae2`): the centre caption is white bold and inset from the
+  frame (was khaki regular on the border); wheel over the caption no longer fires the scale
+  gesture and tunes by the digit under the pointer (1 MHz/1 Hz on DDC1, 100 kHz/1 kHz/1 Hz on
+  DDC3, 100 kHz on DDC5, 1 MHz on DDC2, all restored); double-click entry set and restored
+  DDC1 14.123456 and DDC3 7.200000; the gutter scale gesture still works below the caption.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -344,6 +350,14 @@ display-calibration offset, so trace, colours and dB labels agree inside a cell.
 support the Enhanced formula and the Custom gradient palette (the other palette names
 still fall back to Enhanced inside the cells).
 
+The 2026-11-21 cell caption/tuning work (display.cs and console.cs) makes each full-window
+cell's centre caption the frequency control: white bold text inset at cell-local (8,5),
+drawn after the grid and S-meter (the S-meter bar now starts at x=100 so the corner stays
+clear). The caption strip is reserved as the frequency-tuning zone: wheel over a digit
+tunes by 10^digit Hz (1 Hz .. 10 MHz), DDC1/DDC2 through their VFO targets and DDC3-DDC8
+through their slice VFO, while the dB-scale gesture keeps the gutter below the caption.
+Double-clicking the caption opens a "DDCn frequency" dialog for exact MHz entry.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -393,6 +407,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (waterfall) from H1 head `d11e872` with the full-window
-  waterfall colour parity (`Thetis.exe` `840F1241...`, `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 (caption) from H1 head `202cae2` with the bright cell
+  caption, digit tuning and manual frequency entry (`Thetis.exe` `C0676C17...`,
+  `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
