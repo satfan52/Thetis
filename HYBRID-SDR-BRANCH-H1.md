@@ -256,6 +256,14 @@ external ATU with the same two-phase tune.
   0.797 vs main 0.753 / sub 0.697); DDC5's RX5 tag plays with SUB off (green tag, aamix mask
   0x100, channel peak 0.395); TCI balance 0/1 still selects main-only/sub-only; two restarts
   keep the saved sub's cell audible; no errors or crash events.
+- **Verified on the station on 2026-11-21 (spare VAC route)** (deployed `Thetis.exe`
+  `CE05BEC4...` and rebuilt `ChannelMaster.dll` `6F2BE6C5...`, built from `4120550`): the deployed
+  DLL maps source masks 0/1/3 to the main+sub mix, 0x4 to sub only and 0x8/0xC to main only; DDC5
+  with SUB on and only the main window's RX tag lit logs `spare vac: RX5 route=0xB src=2`, and the
+  loopback capture of the console's listening device at zero main gain (balance = sub only) falls
+  from RMS 0.1132 / peak 0.592 (pure SubRX5) to digital silence (peak and RMS 0.000000000). The
+  earlier SUB on/off main-audio fix still holds (DDC5 TCI receiver peaks 0.395 -> 0.944 with the
+  mix -> 0.397 after SUB off); console responsive, no crash dumps.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -409,6 +417,16 @@ restores the main and sub panel gains, and the console's SUB toggle plus the ful
 restore use the equal mix unless a TCI audio client owns the slice (its sub_balance
 selection is left alone). RX1/RX2 panel gains remain governed by the console gates.
 
+The 2026-11-21 VAC route fix (ChannelMaster/pipe.c, cmaster.cs and console.cs) makes the native
+spare route honour the per-window listen tags. The route mask had one source bit only (bit 2 =
+sub channel alone); every other selection, including a main window only, fed ppip->rbuff[rx]
+(main+sub) to VAC1/VAC2, so with SUB enabled a main-only listen still carried SubRXn - the
+console mix path was already main-only. Bit 3 now selects the main channel alone (bit 2 = sub
+alone, neither = main+sub); SetSpareVACRoute keeps all four bits and GetSpareVACRoute /
+SpareVACSourceForMask expose the stored selection. The console sets bit 3 for main-only, bit 2
+for sub-only and no source bit when both windows listen, and logs the route plus the native
+selection for diagnosis.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -458,7 +476,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (spare SUB/main audio) from H1 head `d6b5225` with the
-  cell's SUB no longer muting its main receiver (`Thetis.exe` `1808032E...`,
-  `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 (spare VAC route) from H1 head `4120550` with the native
+  spare route following the per-window listen tags (`Thetis.exe` `CE05BEC4...`,
+  `ChannelMaster.dll` `6F2BE6C5...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
