@@ -191,6 +191,11 @@ external ATU with the same two-phase tune.
   (88 checks: mode combos, CTUN/NR/ANF/NB/BIN/SUB pills, AGC/AF/ZOOM sliders) pass with no
   handler errors and the receivers live. The wheel over a cell's band/mode combo now cycles that
   control instead of tuning the cell.
+- **Verified on the station on 2026-11-21** (deployed `Thetis.exe` `5EE0F4E9...`, built from
+  `9c8260f`): the Tune slider and its `ANT Tune:  100` label are visible at startup and after
+  two full-screen round trips (normal view: label at y732, slider at y748, under `PA Drive`),
+  hidden while the full-screen view is up, and visible again after each exit; no post-startup
+  watchdog stalls or handler errors.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -260,6 +265,13 @@ transmit), so a full-window DDC2 band change cannot go stale again; and `Console
 hands a notch over a full-window strip control to that control instead of tuning the cell
 underneath.
 
+The 2026-11-21 fix repairs the full-screen visibility snapshot: the Tune slider was hidden
+(because the full-screen view suppresses it) before `CollapseDisplay()` captured the
+normal-view control visibility, and the matching restore wrote the captured hidden value
+back after the exit had already shown it - one round trip hid the Tune slider for good,
+with Setup still on "Use Tune Slider". `H1ToggleFullScreenPanafall` now hides the slider
+only after the snapshot and re-applies `setupTuneDriveSlider()` after the restore.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -309,6 +321,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-15 (evening) from H1 head `feab24d` with the full-window
-  band-switch and wheel fixes (`Thetis.exe` `35CB9806...`, `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 from H1 head `9c8260f` with the full-screen Tune-slider
+  fix (`Thetis.exe` `5EE0F4E9...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
