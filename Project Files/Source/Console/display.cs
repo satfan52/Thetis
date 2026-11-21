@@ -261,6 +261,11 @@ namespace Thetis
         // same rule the normal-view panafall follows. The shared fields stay as fallback.
         public static readonly float[] H1RowWfLow = new float[8];
         public static readonly float[] H1RowWfHigh = new float[8];
+        // H1 (user 2026-11-21, waterfall parity): waterfall AGC tracker for the DDC rows that
+        // have no normal-view twin (rows 3-8). Rows 1-2 reuse the normal RX1/RX2 trackers.
+        private static readonly float[] _h1RowWfPrevMin = new float[8];
+        private static bool _h1WfOldPower;
+        private static bool _h1WfOldPowerSet;
         // H1 (user 2026-11-21): per-row spectrum fill/line brushes. In flat mode the cells use
         // the normal panafall's data fill and data line brushes; when the linear-gradient option
         // is on these per-row gradient brushes are built for the cell height and the row's dB
@@ -311,6 +316,7 @@ namespace Thetis
                 H1RowGridManual[z] = false;
                 H1RowWfLow[z] = -140f;
                 H1RowWfHigh[z] = -40f;
+                _h1RowWfPrevMin[z] = WATERFALL_AGC_RESTART_FLOOR_DBM;
                 H1CellMeterMain[z] = -200f;
                 H1CellMeterSub[z] = -200f;
             }
@@ -6822,6 +6828,22 @@ namespace Thetis
             byte[] row = new byte[cellW * pixel_size];
 
             if (m_nDecimation < 1) m_nDecimation = 1;
+            // H1 (user 2026-11-21, waterfall parity): the normal view resets its waterfall AGC
+            // trackers at a power change; the eight-row renderer must do the same.
+            if (!_h1WfOldPowerSet)
+            {
+                // first eight-row frame: take the current power state as the reference, so
+                // entering the view does not throw away the normal view's waterfall AGC state
+                _h1WfOldPowerSet = true;
+                _h1WfOldPower = console.PowerOn;
+            }
+            else if (console.PowerOn != _h1WfOldPower)
+            {
+                _h1WfOldPower = console.PowerOn;
+                _RX1waterfallPreviousMinValue = WATERFALL_AGC_RESTART_FLOOR_DBM;
+                _RX2waterfallPreviousMinValue = WATERFALL_AGC_RESTART_FLOOR_DBM;
+                for (int h1z = 0; h1z < 8; h1z++) _h1RowWfPrevMin[h1z] = WATERFALL_AGC_RESTART_FLOOR_DBM;
+            }
             // H1: the pooled display buffers are BUFFER_SIZE long, but only the analyser prefix
             // (one sample per display pixel divided by the decimation) carries this pass's data;
             // the rest is stale pool content. The cell must map that prefix across its width.
@@ -6850,9 +6872,39 @@ namespace Thetis
                 if (grid_max <= grid_min) grid_max = grid_min + 10;
                 float span = grid_max - grid_min;
                 // H1 (user 2026-11-21, parity): this row's own waterfall colour range.
+                // H1 (user 2026-11-21, waterfall parity): the cell's waterfall now runs the
+                // normal panafall's level processing. Rows 1-2 use RX1's/RX2's own waterfall AGC
+                // state and the very noise-floor trackers the normal view uses; rows 3-8 have no
+                // normal-view twin and follow RX1's configuration with their own per-row tracker.
+                // The display-calibration offset, waterfall AGC offset, low colour, custom palette
+                // and opacity are applied exactly as the normal view applies them.
+                bool h1wfRx2 = r == 1;
+                int h1wfRx = h1wfRx2 ? 2 : 1;
+                float h1wfOffset = h1wfRx2 ? RX2Offset : RX1Offset;
+                bool h1wfAgc = h1wfRx2 ? rx2_waterfall_agc : rx1_waterfall_agc;
+                bool h1wfSpec = h1wfRx2 ? m_bRX2_spectrum_thresholds : m_bRX1_spectrum_thresholds;
                 float h1WfLow = H1RowWfLow[r];
                 float h1WfHigh = H1RowWfHigh[r];
                 if (h1WfHigh <= h1WfLow) { h1WfLow = low_threshold; h1WfHigh = high_threshold; }
+                bool h1wfUseAgc = h1wfAgc && !h1wfSpec && !localMox(h1wfRx);
+                bool h1wfUseNF = h1wfUseAgc && isWaterfallNoiseFloorCompensationEnabled(h1wfRx);
+                bool h1wfUseSettled = h1wfUseNF && useWaterfallNoiseFloorCompensation(h1wfRx);
+                float h1wfNfTarget = h1wfUseNF ? getWaterfallNoiseFloorCompensationTarget(h1wfRx) : WATERFALL_AGC_RESTART_FLOOR_DBM;
+                float h1wfPrev = h1wfRx2 ? _RX2waterfallPreviousMinValue
+                    : (r >= 2 ? _h1RowWfPrevMin[r] : _RX1waterfallPreviousMinValue);
+                if (h1wfUseAgc)
+                {
+                    h1WfLow = h1wfUseNF
+                        ? (h1wfUseSettled ? h1wfNfTarget : h1wfPrev)
+                        : h1wfPrev - (h1wfRx2 ? m_fWaterfallAGCOffsetRX2 : m_fWaterfallAGCOffsetRX1);
+                    h1WfHigh = h1wfRx2 ? rx2_waterfall_high_threshold : waterfall_high_threshold;
+                    if (h1WfHigh <= h1WfLow) h1WfHigh = h1WfLow + 10f;
+                }
+                Color h1wfLowColor = h1wfRx2 ? rx2_waterfall_low_color : waterfall_low_color;
+                bool h1wfCustom = h1wfRx2
+                    ? (_rx2_color_scheme == ColorScheme.Custom && _rx2_waterfall_grad_ok)
+                    : (_rx1_color_scheme == ColorScheme.Custom && _rx1_waterfall_grad_ok);
+                Color[] h1wfGrad = h1wfRx2 ? _rx2_waterfall_grad : _rx1_waterfall_grad;
 
                 // H1 (user 2026-11-21): the cell's filled area must carry the normal panafall's
                 // colours - the same data fill / data line brushes (RX1's; RX2 draws with the
@@ -6932,8 +6984,11 @@ namespace Thetis
                     {
                         int di = h1Di0 + (int)((long)i * (h1Di1 - h1Di0) / cellW);
                         if (di >= h1DataLen) di = h1DataLen - 1;
-                        float v = data[di];
-                        if (v <= -200.0f) continue;
+                        float vraw = data[di];
+                        if (vraw <= -200.0f) continue;
+                        // H1 (user 2026-11-21, parity): the normal view plots the data with the
+                        // display-calibration offset added; the cells used the raw values.
+                        float v = vraw + (r == 1 ? RX2Offset : RX1Offset);
                         float p = (grid_max - v) / span;
                         if (p < 0f) p = 0f; else if (p > 1f) p = 1f;
                         int y = y0 + (int)(p * (specH - 16));
@@ -6983,29 +7038,44 @@ namespace Thetis
                             if (h1Wf1 > h1WfLen - 1) h1Wf1 = h1WfLen - 1;
                             if (h1Wf1 <= h1Wf0) h1Wf1 = Math.Min(h1WfLen - 1, h1Wf0 + 1);
                         }
+                        float h1WfRowMin = 200f;
                         for (int i = 0; i < cellW; i++)   // one cell pixel covers the shown slice
                         {
                             int di = h1Wf0 + (int)((long)i * (h1Wf1 - h1Wf0) / cellW);
                             if (di >= h1WfLen) di = h1WfLen - 1;
-                            float v = wfData[di];
+                            // H1 (user 2026-11-21, parity): the normal view colours the data with
+                            // the receiver's display-calibration offset added.
+                            float v = wfData[di] + h1wfOffset;
                             int R, G, B;
-                            if (v <= h1WfLow)
+                            if (h1wfCustom)
                             {
-                                R = 0; G = 0; B = 0;
+                                int perc;
+                                if (v <= h1WfLow) perc = 0;
+                                else if (v >= h1WfHigh) perc = 100;
+                                else
+                                {
+                                    perc = (int)((v - h1WfLow) / (h1WfHigh - h1WfLow) * 100f);
+                                    if (perc < 0) perc = 0; else if (perc > 100) perc = 100;
+                                }
+                                R = h1wfGrad[perc].R; G = h1wfGrad[perc].G; B = h1wfGrad[perc].B;
+                            }
+                            else if (v <= h1WfLow)
+                            {
+                                R = h1wfLowColor.R; G = h1wfLowColor.G; B = h1wfLowColor.B;
                             }
                             else if (v >= h1WfHigh)
                             {
                                 R = 192; G = 124; B = 255;
                             }
-                            else // value is between low and high - the 'enhanced' scheme, as the main waterfall
+                            else // value between low and high - the 'enhanced' scheme, as the main waterfall
                             {
                                 float overall_percent = (v - h1WfLow) / (h1WfHigh - h1WfLow);
                                 if (overall_percent < (float)2 / 9)
                                 {
                                     float local_percent = overall_percent / ((float)2 / 9);
-                                    R = 0;
-                                    G = 0;
-                                    B = (int)(local_percent * 255);
+                                    R = (int)((1.0 - local_percent) * h1wfLowColor.R);
+                                    G = (int)((1.0 - local_percent) * h1wfLowColor.G);
+                                    B = (int)(h1wfLowColor.B + local_percent * (255 - h1wfLowColor.B));
                                 }
                                 else if (overall_percent < (float)3 / 9)
                                 {
@@ -7041,10 +7111,24 @@ namespace Thetis
                                 }
                             }
 
+                            if (h1wfUseAgc && v < h1WfRowMin) h1WfRowMin = v;
+
                             row[i * pixel_size + 0] = (byte)B;
                             row[i * pixel_size + 1] = (byte)G;
                             row[i * pixel_size + 2] = (byte)R;
                             row[i * pixel_size + 3] = 255;
+                        }
+
+                        // H1 (user 2026-11-21, parity): run the normal view's waterfall AGC update -
+                        // rows 1-2 feed the normal RX1/RX2 trackers, rows 3-8 their own.
+                        if (h1wfUseAgc)
+                        {
+                            if (r >= 2 && h1wfPrev <= WATERFALL_AGC_RESTART_FLOOR_DBM + 0.01f)
+                                h1wfPrev = h1WfRowMin; // a spare row starts tracking from its first line
+                            float h1wfNew = (h1wfPrev * 0.6f) + ((h1wfUseNF ? h1wfNfTarget : h1WfRowMin) * 0.4f);
+                            if (h1wfRx2) _RX2waterfallPreviousMinValue = h1wfNew;
+                            else if (r >= 2) _h1RowWfPrevMin[r] = h1wfNew;
+                            else _RX1waterfallPreviousMinValue = h1wfNew;
                         }
 
                         // scroll: the new line goes on top, the rest moves down one row - the main waterfall's pattern
@@ -7058,7 +7142,8 @@ namespace Thetis
 
                     Matrix3x2 was = _d2dRenderTarget.Transform;
                     _d2dRenderTarget.Transform = Matrix3x2.Identity;
-                    _d2dRenderTarget.DrawBitmap(_h1rowWfBmp[r], new RectangleF(x0, yAbs + wfY, cellW, hWf), 1.0f, BitmapInterpolationMode.Linear);
+                    _d2dRenderTarget.DrawBitmap(_h1rowWfBmp[r], new RectangleF(x0, yAbs + wfY, cellW, hWf),
+                        h1wfRx2 ? m_fRX2WaterfallOpacity : m_fRX1WaterfallOpacity, BitmapInterpolationMode.Linear);
                     _d2dRenderTarget.Transform = was;
                 }
 
