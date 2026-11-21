@@ -238,6 +238,11 @@ external ATU with the same two-phase tune.
   view under VFO A 14.169750; a +1 MHz caption digit step and back, and manual entry
   15.169750 -> 14.169750, both leave SubRX1 at 14.200387 (band trace records it following
   the delta and returning); two restart cycles keep `VFOASubFreq=14.200387`.
+- **Verified on the station on 2026-11-21 (caption cursor)** (deployed `Thetis.exe`
+  `96943F30...`, built from `c921576`): over a full-window cell caption the cursor is the
+  custom inverting dot (hotspot 16,16, 4x4 rendered footprint) while the cell centre still
+  shows the normal 32x32 cross; the wheel over the caption tuned 14.210710 -> 14.210711 and
+  back with the digits readable; no errors or crash events.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -370,6 +375,12 @@ next restart then saved the clobbered value). The caption tuning now shifts each
 the same delta its parent VFO moved, preserving the sub's offset; normal-view tuning is
 unchanged.
 
+The 2026-11-21 caption cursor (console.cs) replaces the 32-px SizeWE tuning cursor over a
+cell's frequency caption with a runtime-built 32x32 monochrome cursor carrying a 3x3
+inverting dot at its centre: only a few pixels, visible on both the dark waterfall and
+the white digits, and it never covers the readout while the wheel tunes. Cursors elsewhere
+are unchanged; the standard arrow is used if the cursor cannot be created.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -419,7 +430,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (caption sub guard) from H1 head `a65fe94` with the
-  sub-offset-preserving caption tuning (`Thetis.exe` `C0F1D544...`,
+  audio/transmit; refreshed 2026-11-21 (caption cursor) from H1 head `c921576` with the tiny
+  inverting dot cursor over the cell frequency captions (`Thetis.exe` `96943F30...`,
   `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
