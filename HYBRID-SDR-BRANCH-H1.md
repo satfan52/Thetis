@@ -264,6 +264,14 @@ external ATU with the same two-phase tune.
   from RMS 0.1132 / peak 0.592 (pure SubRX5) to digital silence (peak and RMS 0.000000000). The
   earlier SUB on/off main-audio fix still holds (DDC5 TCI receiver peaks 0.395 -> 0.944 with the
   mix -> 0.397 after SUB off); console responsive, no crash dumps.
+- **Verified on the station on 2026-11-21 (SUB-flip VAC route)** (deployed `Thetis.exe`
+  `180A9125...`, ChannelMaster `6F2BE6C5...`, built from `92fc449`): before the fix the live
+  console (no listen tag, main panel gain forced to zero) still played the sub from a stale
+  route after a SUB off/on flip (loopback peak 0.928, RMS 0.280). Now the SubRX6 tag logs
+  `spare vac: RX6 route=0x7 src=1`; SUB off logs `route=0x0`, the flip back on keeps `route=0x0`
+  and the loopback is silent (peak/RMS 0.00000); a main tag with the same flip keeps
+  `route=0xB src=2` and the main audio (loopback peak 0.920 at balance 0.5); the same flip on
+  DDC5 logs `route=0x0` both ways; console responsive, no crash dumps.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -427,6 +435,13 @@ SpareVACSourceForMask expose the stored selection. The console sets bit 3 for ma
 for sub-only and no source bit when both windows listen, and logs the route plus the native
 selection for diagnosis.
 
+The 2026-11-21 SUB-flip route refresh (console.cs) keeps the native spare VAC route in step
+with the console listen mask. The SUB pill clears the listen bit and the console audio gate
+but not the native route, so a SUB off/on flip replayed the sub although no RX tag was lit.
+The pill handler now recomputes the route from the remaining listen bits on every spare SUB
+transition (no tags -> 0, which also releases the VAC takeover; main only -> the main-only
+bit; sub only -> the sub-only bit; both -> the mix) and logs it like the window-click path.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -476,7 +491,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (spare VAC route) from H1 head `4120550` with the native
-  spare route following the per-window listen tags (`Thetis.exe` `CE05BEC4...`,
+  audio/transmit; refreshed 2026-11-21 (SUB-flip VAC route) from H1 head `92fc449` with the
+  spare SUB pill keeping the native route in step (`Thetis.exe` `180A9125...`,
   `ChannelMaster.dll` `6F2BE6C5...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
