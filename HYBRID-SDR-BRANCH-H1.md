@@ -203,6 +203,13 @@ external ATU with the same two-phase tune.
   its span (-125/-15 -> -130/-10), a double-click restored -125/-25, wheel over the spectrum
   still tuned the cell, and a manual range survived two restarts while a reset stayed reset
   (H1Slices rows `1,-121,-21` then `0,-125,-25`).
+- **Verified on the station on 2026-11-21 (parity)** (deployed `Thetis.exe` `52810048...`,
+  built from `31a3711`): wheel over RX1's dB number column shifted -149/-35 -> -147/-33 and
+  returned exactly, Ctrl+wheel narrowed -149/-35 -> -139/-45 and returned exactly; the same
+  on RX2's column (-155/-55); wheel over the spectrum still tuned the VFO; per-row waterfall
+  thresholds follow the bands (DDC1 40m -120/-80 vs 20m -130/-80; DDC3 20m -130/-80 vs 40m
+  -120/-80, where one pair served all eight rows before); the right-click editor applied
+  Grid Max -40 / Grid Min -110 to DDC3 and Reset returned the band's -125/-25.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -287,6 +294,15 @@ double-click restores the band's configured range; the gestures never tune the c
 manual range is stored per DDC in the H1Slices record (every row written with a manual flag,
 because DB.SaveVars only merges rows).
 
+The 2026-11-21 parity work makes the two views behave the same: the normal view's dB number
+column takes the full-window wheel gesture (wheel shifts, Ctrl+wheel changes the span
+symmetrically and exactly invertibly, installed through the Setup spinners so the per-band
+store and linked waterfall follow); the eight-row renderer colours each cell's waterfall with
+its own threshold pair (published per DDC: the band's configured thresholds, or the row's own
+scale while "use spectrum min/max for waterfall" is ticked, matching the normal view rule);
+and right-clicking a cell's dB scale opens an exact Grid Max/Grid Min editor for that DDC
+(OK / Cancel / Reset to band scale), stored like a wheel override.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -336,6 +352,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (afternoon) from H1 head `555091f` with the per-DDC
-  dB scales (`Thetis.exe` `845BBD7C...`, `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 (parity) from H1 head `31a3711` with the scale-parity
+  work (`Thetis.exe` `52810048...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
