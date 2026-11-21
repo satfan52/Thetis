@@ -265,9 +265,14 @@ namespace Thetis
         [DllImport("ChannelMaster.dll", EntryPoint = "SetAAudioMixVol", CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetAAudioMixVol(void* ptr, int id, int stream, double vol);
 
-        // H1: route a spare receiver's audio into VAC1/VAC2 (bit0/bit1)
+        // H1: route a spare receiver's audio into VAC1/VAC2 (bit0/bit1); bit2 selects
+        // the sub channel alone, bit3 the main channel alone (else the main+sub mix).
         [DllImport("ChannelMaster.dll", EntryPoint = "SetSpareVACRoute", CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetSpareVACRoute(int rx, int mask);
+        [DllImport("ChannelMaster.dll", EntryPoint = "GetSpareVACRoute", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int GetSpareVACRoute(int rx);
+        [DllImport("ChannelMaster.dll", EntryPoint = "SpareVACSourceForMask", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int SpareVACSourceForMask(int mask);
 
         // VAC transmit audio selection
 

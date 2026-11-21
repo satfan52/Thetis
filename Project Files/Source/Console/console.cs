@@ -10177,13 +10177,19 @@ for (int zr = 0; zr < 8; zr++)
                     }
                     if (v1) route |= 1;
                     if (v2) route |= 2;
-                    // H1: only the sub's audio is on - send the sub channel alone,
-                    // not the main+sub mix, so the sub window really plays the sub.
+                    // H1 (audio fix 2026-11-21, follow-up): the native VAC route must carry the
+                    // SAME per-window selection as the console mix - a main-only listen routed
+                    // rbuff (main+sub), so SubRXn stayed audible with only the main RX tag on.
+                    // bit2 = sub only, bit3 = main only, neither = main+sub mix.
                     bool mainOn = (_h1SpareAudioMask & (1 << (2 * rx))) != 0;
                     bool subOn = (_h1SpareAudioMask & (1 << (2 * rx + 1))) != 0;
                     if (subOn && !mainOn) route |= 4;
+                    else if (mainOn && !subOn) route |= 8;
                 }
                 cmaster.SetSpareVACRoute(rx, route);
+                H1SpacePttTrace("spare vac: RX" + (rx + 1)
+                    + " route=0x" + cmaster.GetSpareVACRoute(rx).ToString("X")
+                    + " src=" + cmaster.SpareVACSourceForMask(route));
                 // H1: the last spare switched off - undo the VAC we switched on for it,
                 // otherwise the console falls back to RX1 audio and the speaker keeps
                 // playing although the cell was switched off.

@@ -42,11 +42,34 @@ static void update_spare_vac_takeover(void)
 	spare_vac_takeover = t;
 }
 
+// H1: source selection for a spare receiver's VAC output.
+// 0 = main+sub mix, 1 = sub channel only, 2 = main channel only.
+static int spare_vac_source(int rx)
+{
+	int mask = spare_vac_route[rx];
+	if (mask & 8) return 2;		// bit3: main only
+	if (mask & 4) return 1;		// bit2: sub only
+	return 0;
+}
+
+PORT int SpareVACSourceForMask(int mask)
+{
+	if (mask & 8) return 2;
+	if (mask & 4) return 1;
+	return 0;
+}
+
+PORT int GetSpareVACRoute(int rx)
+{
+	if (rx < 0 || rx >= cmMAXrcvr) return -1;
+	return spare_vac_route[rx];
+}
+
 PORT void SetSpareVACRoute(int rx, int mask)
 {
 	if (rx >= 0 && rx < cmMAXrcvr)
 	{
-		spare_vac_route[rx] = mask & 7;
+		spare_vac_route[rx] = mask & 15;
 		update_spare_vac_takeover();
 	}
 }
@@ -277,7 +300,13 @@ void xpipe (int stream, int pos, double** buffs)
 			// H1: a spare receiver's audio can be routed into the console's VAC
 			// outputs; the GUI's window middle-click sets this route.
 			{
-				double* spare_src = (spare_vac_route[rx] & 4) ? buffs[1] : ppip->rbuff[rx];
+				double* spare_src;
+				switch (spare_vac_source(rx))
+				{
+				case 2: spare_src = buffs[0]; break;		// main channel only
+				case 1: spare_src = buffs[1]; break;		// sub channel only
+				default: spare_src = ppip->rbuff[rx]; break;	// main+sub mix
+				}
 				if (spare_vac_route[rx] & 1) xvacOUT(0, 1, spare_src);
 				if (spare_vac_route[rx] & 2) xvacOUT(1, 1, spare_src);
 			}
