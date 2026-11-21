@@ -8698,6 +8698,15 @@ namespace Thetis
                         Display.H1CellZoom[rx].ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
                     list.Add("slice" + rx + "/" + v);
                 }
+                // H1 (user 2026-11-21): a DDC whose dB scale was adjusted keeps its own
+                // range across restarts. Every row is written with its flag: SaveVars only
+                // merges, so omitting a reset row would resurrect its old range.
+                for (int sx = 0; sx < 8; sx++)
+                {
+                    list.Add("scale" + sx + "/" + (Display.H1RowGridManual[sx] ? "1" : "0")
+                        + "," + Display.H1RowGridMin[sx].ToString()
+                        + "," + Display.H1RowGridMax[sx].ToString());
+                }
                 list.Add("ver/3");
                 DB.SaveVars("H1Slices", list);
             }
@@ -8724,6 +8733,39 @@ namespace Thetis
                     int slash = entry.IndexOf('/');
                     if (slash <= 0) continue;
                     string key = entry.Substring(0, slash);
+                    if (key.StartsWith("scale"))
+                    {
+                        int srow;
+                        if (int.TryParse(key.Substring(5), out srow) && srow >= 0 && srow <= 7)
+                        {
+                            string[] sp = entry.Substring(slash + 1).Split(',');
+                            int sfl, smn, smx;
+                            if (sp.Length >= 3 && int.TryParse(sp[0], out sfl)
+                                && int.TryParse(sp[1], out smn) && int.TryParse(sp[2], out smx))
+                            {
+                                if (sfl == 1 && smx > smn)
+                                {
+                                    Display.H1RowGridMin[srow] = smn;
+                                    Display.H1RowGridMax[srow] = smx;
+                                    Display.H1RowGridManual[srow] = true;
+                                }
+                                else
+                                {
+                                    Display.H1RowGridManual[srow] = false;
+                                }
+                            }
+                            else if (sp.Length == 2
+                                && int.TryParse(sp[0], out smn) && int.TryParse(sp[1], out smx)
+                                && smx > smn)   // the two-field form written by the first build
+                            {
+                                Display.H1RowGridMin[srow] = smn;
+                                Display.H1RowGridMax[srow] = smx;
+                                Display.H1RowGridManual[srow] = true;
+                            }
+                        }
+                        continue;
+                    }
+
                     if (!key.StartsWith("slice")) continue;
                     int rx;
                     if (!int.TryParse(key.Substring(5), out rx) || rx < 2 || rx > 7) continue;
@@ -9235,6 +9277,7 @@ namespace Thetis
                     + " vfob=" + VFOBFreq.ToString("f6") + " centre=" + CentreRX2Frequency.ToString("f6")
                     + " rx2en=" + rx2_enabled + " setBandRunning=" + m_bSetBandRunning);
             H1SpacePttTrace("fs strip: band rx" + rx + " -> " + H1FsBandNames[c.SelectedIndex]);
+            H1PublishRowScales();
         }
 
         private void H1FsModeChanged(object sender, EventArgs e)
@@ -9427,6 +9470,7 @@ for (int zr = 0; zr < 8; zr++)
                 }
                 H1PublishCellMeters();
                 _h1SliceEnterInit = false;
+                H1PublishRowScales();   // H1 (user 2026-11-21): per-DDC dBm scales
                 H1SpacePttTrace("eight-row panafall: six spare DDC streams up, spares at " + centre.ToString("f6") + " MHz");
             }
             catch { }
@@ -10589,6 +10633,8 @@ for (int zr = 0; zr < 8; zr++)
         {
             if (!_h1cellStripsBuilt) return;
             bool oldSync = _h1fsSync;
+            H1PublishRowScale(0);
+            H1PublishRowScale(1);
             _h1fsSync = true;
             try
             {
@@ -10599,6 +10645,7 @@ for (int zr = 0; zr < 8; zr++)
                 if (s == null || sl == null) continue;
                 Band band = Band.LAST;
                 try { band = BandStackManager.GetNearestBandForFrequency(sl.FrequencyMHz, false, false); } catch { }
+                H1PublishRowScale(row, band);
                 int bi = Array.IndexOf(H1FsBands, band);
                 if (bi >= 0 && s.Band.SelectedIndex != bi) s.Band.SelectedIndex = bi;
                 int mi = Array.IndexOf(H1FsModes, sl.Mode);
@@ -10737,6 +10784,7 @@ for (int zr = 0; zr < 8; zr++)
                 HeadlessSliceManager.Instance.SetVFOA(row, mhz);
                 HeadlessSliceManager.Instance.SetMode(row, mode);
                 H1CellSetDefaultFilter(row, mode);
+                H1PublishRowScales();   // H1 (user 2026-11-21): the new band's scale
             }
             catch { }
         }
@@ -10792,6 +10840,154 @@ for (int zr = 0; zr < 8; zr++)
         // The view is two columns of four cells: column 0 holds rows 0..3 (RX1,
         // RX2, RX3, RX4), column 1 rows 4..7 (RX5..RX8). Returns -1 when the point
         // is not on the display at all.
+        // ---- H1 (user 2026-11-21): per-DDC vertical scale ---------------------------------
+        // Every cell of the full-window view carries its own dBm scale. A row follows the scale
+        // configured for its band (RX1's per-band values for rows 0 and 2..7, RX2's own per-band
+        // values for row 1) unless the operator adjusts that DDC: a wheel over the cell's dB
+        // scale shifts it, Ctrl+wheel widens/narrows its span, and a double-click there returns
+        // it to the band's configured scale. A manual setting sticks to its DDC across band
+        // changes and restarts (stored in the H1Slices record).
+        private const int H1_SCALE_GUTTER = 40;   // the left label gutter of a cell
+
+        private bool H1ScaleGutterRow(int x, int y, out int row)
+        {
+            row = -1;
+            if (!_h1FullScreenPanafall || !Display.H1EightRows || pnlDisplay == null) return false;
+            int w = pnlDisplay.Width, h = pnlDisplay.Height;
+            if (w < 2 || h < 8) return false;
+            if (x < 0 || y < 0 || x >= w || y >= h) return false;
+            int r = H1CellRowAt(x, y);
+            if (r < 0) return false;
+            int col = x < w / 2 ? 0 : 1;
+            int cellX = x - col * (w / 2);
+            if (cellX > H1_SCALE_GUTTER) return false;
+            row = r;
+            return true;
+        }
+
+        // the dBm range configured for a band: RX1's per-band set, or RX2's own set
+        private void H1BandGridRange(Band band, bool rx2, out int min, out int max)
+        {
+            switch (band)
+            {
+                case Band.B160M: min = (int)(rx2 ? RX2DisplayGridMin160m : DisplayGridMin160m); max = (int)(rx2 ? RX2DisplayGridMax160m : DisplayGridMax160m); break;
+                case Band.B80M: min = (int)(rx2 ? RX2DisplayGridMin80m : DisplayGridMin80m); max = (int)(rx2 ? RX2DisplayGridMax80m : DisplayGridMax80m); break;
+                case Band.B60M: min = (int)(rx2 ? RX2DisplayGridMin60m : DisplayGridMin60m); max = (int)(rx2 ? RX2DisplayGridMax60m : DisplayGridMax60m); break;
+                case Band.B40M: min = (int)(rx2 ? RX2DisplayGridMin40m : DisplayGridMin40m); max = (int)(rx2 ? RX2DisplayGridMax40m : DisplayGridMax40m); break;
+                case Band.B30M: min = (int)(rx2 ? RX2DisplayGridMin30m : DisplayGridMin30m); max = (int)(rx2 ? RX2DisplayGridMax30m : DisplayGridMax30m); break;
+                case Band.B20M: min = (int)(rx2 ? RX2DisplayGridMin20m : DisplayGridMin20m); max = (int)(rx2 ? RX2DisplayGridMax20m : DisplayGridMax20m); break;
+                case Band.B17M: min = (int)(rx2 ? RX2DisplayGridMin17m : DisplayGridMin17m); max = (int)(rx2 ? RX2DisplayGridMax17m : DisplayGridMax17m); break;
+                case Band.B15M: min = (int)(rx2 ? RX2DisplayGridMin15m : DisplayGridMin15m); max = (int)(rx2 ? RX2DisplayGridMax15m : DisplayGridMax15m); break;
+                case Band.B12M: min = (int)(rx2 ? RX2DisplayGridMin12m : DisplayGridMin12m); max = (int)(rx2 ? RX2DisplayGridMax12m : DisplayGridMax12m); break;
+                case Band.B10M: min = (int)(rx2 ? RX2DisplayGridMin10m : DisplayGridMin10m); max = (int)(rx2 ? RX2DisplayGridMax10m : DisplayGridMax10m); break;
+                case Band.B6M: min = (int)(rx2 ? RX2DisplayGridMin6m : DisplayGridMin6m); max = (int)(rx2 ? RX2DisplayGridMax6m : DisplayGridMax6m); break;
+                case Band.WWV: min = (int)(rx2 ? RX2DisplayGridMinWWV : DisplayGridMinWWV); max = (int)(rx2 ? RX2DisplayGridMaxWWV : DisplayGridMaxWWV); break;
+                case Band.GEN: min = (int)(rx2 ? RX2DisplayGridMinGEN : DisplayGridMinGEN); max = (int)(rx2 ? RX2DisplayGridMaxGEN : DisplayGridMaxGEN); break;
+                default: min = (int)(rx2 ? RX2DisplayGridMinXVTR : DisplayGridMinXVTR); max = (int)(rx2 ? RX2DisplayGridMaxXVTR : DisplayGridMaxXVTR); break;
+            }
+            if (max <= min) max = min + 10;
+        }
+
+        // publish one row's effective range to the renderer; a manual setting wins
+        private void H1PublishRowScale(int row, Band band)
+        {
+            if (row < 0 || row > 7) return;
+            if (Display.H1RowGridManual[row]) return;
+            int mn, mx;
+            if (row == 0)
+            {
+                mn = Display.SpectrumGridMin;
+                mx = Display.SpectrumGridMax;
+            }
+            else if (row == 1)
+            {
+                mn = Display.RX2SpectrumGridMin;
+                mx = Display.RX2SpectrumGridMax;
+            }
+            else
+            {
+                H1BandGridRange(band, false, out mn, out mx);
+            }
+            if (mx <= mn) mx = mn + 10;
+            if (Display.H1RowGridMin[row] != mn || Display.H1RowGridMax[row] != mx)
+            {
+                Display.H1RowGridMin[row] = mn;
+                Display.H1RowGridMax[row] = mx;
+                if (pnlDisplay != null) pnlDisplay.Invalidate();
+            }
+        }
+
+        private void H1PublishRowScale(int row)
+        {
+            if (row < 0 || row > 7) return;
+            if (Display.H1RowGridManual[row]) return;
+            if (row == 0 || row == 1)
+            {
+                H1PublishRowScale(row, Band.GEN);
+                return;
+            }
+            Band band = Band.LAST;
+            try
+            {
+                HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(row);
+                if (sl == null) return;
+                band = BandStackManager.GetNearestBandForFrequency(sl.FrequencyMHz, false, false);
+            }
+            catch { }
+            H1PublishRowScale(row, band);
+        }
+
+        private void H1PublishRowScales()
+        {
+            for (int r = 0; r < 8; r++) H1PublishRowScale(r);
+        }
+
+        private void H1RowScaleApply(int row, int min, int max)
+        {
+            if (row < 0 || row > 7) return;
+            if (min < -200) min = -200;
+            if (max > 40) max = 40;
+            if (max - min < 10) max = min + 10;
+            if (max - min > 200) max = min + 200;
+            if (min > max - 10) min = max - 10;
+            Display.H1RowGridMin[row] = min;
+            Display.H1RowGridMax[row] = max;
+            Display.H1RowGridManual[row] = true;
+            if (pnlDisplay != null) pnlDisplay.Invalidate();
+            H1SpacePttTrace("h1scale: DDC" + (row + 1) + " min=" + min + " max=" + max + " manual");
+        }
+
+        private void H1RowScaleWheel(int row, int steps, bool span)
+        {
+            if (row < 0 || row > 7 || steps == 0) return;
+            Display.H1RowGridManual[row] = true;   // the first notch turns the band default into a manual setting
+            int mn = Display.H1RowGridMin[row], mx = Display.H1RowGridMax[row];
+            if (span)
+            {
+                int mid = (mn + mx) / 2;
+                int half = (mx - mn) / 2 - 5 * steps;
+                if (half < 5) half = 5;
+                mn = mid - half;
+                mx = mid + half;
+            }
+            else
+            {
+                mn += steps;
+                mx += steps;
+            }
+            H1RowScaleApply(row, mn, mx);
+        }
+
+        private void H1RowScaleReset(int row)
+        {
+            if (row < 0 || row > 7) return;
+            Display.H1RowGridManual[row] = false;
+            H1PublishRowScale(row);
+            if (pnlDisplay != null) pnlDisplay.Invalidate();
+            H1SpacePttTrace("h1scale: DDC" + (row + 1) + " reset to band scale min="
+                + Display.H1RowGridMin[row] + " max=" + Display.H1RowGridMax[row]);
+        }
+
         private int H1CellRowAt(int xInDisplay, int yInDisplay)
         {
             if (pnlDisplay == null) return -1;
@@ -15928,6 +16124,7 @@ for (int zr = 0; zr < 8; zr++)
 
                 CheckForMinMaxGridUpdatesRX(1);
                 CheckForMinMaxGridUpdatesRX(2);
+                H1PublishRowScales();
             }
         }
         public void UpdateDisplayGridLevelMaxValues(bool bDoBandInfoAndWaterFallSync)
@@ -16065,6 +16262,7 @@ for (int zr = 0; zr < 8; zr++)
 
                 CheckForMinMaxGridUpdatesRX(1);
                 CheckForMinMaxGridUpdatesRX(2);
+                H1PublishRowScales();
             }
         }
 
@@ -42011,6 +42209,23 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 GetVFOCharWidth();
 
             if (num_steps == 0) return;
+            // H1 (user 2026-11-21): the left gutter of a full-window cell is that DDC's dB scale.
+            // A notch there shifts the scale, Ctrl+wheel widens/narrows it; the gesture never
+            // tunes the cell. Checked before the cell-strip guard: the gutter is not a control.
+            if (_h1FullScreenPanafall && pnlDisplay != null)
+            {
+                try
+                {
+                    Point h1scPt = pnlDisplay.PointToClient(PointToScreen(new Point(e.X, e.Y)));
+                    int h1scRow;
+                    if (H1ScaleGutterRow(h1scPt.X, h1scPt.Y, out h1scRow))
+                    {
+                        H1RowScaleWheel(h1scRow, num_steps, Common.CtrlKeyDown);
+                        return;
+                    }
+                }
+                catch { }
+            }
             // H1 (user 2026-11-15): the full-window cell strips and the RX1/RX2 strip stand
             // over the display. A wheel notch on one of their controls bubbled to this display
             // handler and tuned the cell's frequency instead of acting on the control - the
@@ -62925,6 +63140,23 @@ private void incrementMutliMeterDisplayModeRX2()
         private void pnlDisplay_DoubleClick(object sender, EventArgs e)
         {
             if (Display.PausedDisplay) return;
+            // H1 (user 2026-11-21): a double-click on a cell's dB scale restores that DDC to the
+            // scale configured for its band.
+            if (_h1FullScreenPanafall && pnlDisplay != null)
+            {
+                try
+                {
+                    Point h1scPt = pnlDisplay.PointToClient(Cursor.Position);
+                    int h1scRow;
+                    if (H1ScaleGutterRow(h1scPt.X, h1scPt.Y, out h1scRow))
+                    {
+                        H1RowScaleReset(h1scRow);
+                        return;
+                    }
+                }
+                catch { }
+            }
+
 
             int new_val = (int)PixelToDb(display_cursor_y);
             if (!(rx1_grid_adjust || gridmaxadjust))
@@ -62954,6 +63186,14 @@ private void incrementMutliMeterDisplayModeRX2()
         {
             if (Display.PausedDisplay) return;
             H1SetZoomRowFromPoint(e.X, e.Y);
+            // H1 (user 2026-11-21): the dB scale gutter is not a tuning surface - a press there
+            // starts nothing, so the double-click below can reset that row's scale.
+            if (_h1FullScreenPanafall && e.Button == MouseButtons.Left)
+            {
+                int h1scRow;
+                if (H1ScaleGutterRow(e.X, e.Y, out h1scRow)) return;
+            }
+
 
             // H1 (step 2): the 2x4 cells are eight receivers. Rows 0/1 of the LEFT
             // column are the console's RX1/RX2; the other six cells are RX3..RX8 and

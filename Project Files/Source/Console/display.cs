@@ -248,6 +248,13 @@ namespace Thetis
         public static readonly int[] H1RowDisplayLow = new int[8];
         public static readonly int[] H1RowDisplayHigh = new int[8];
         public static readonly bool[] H1RowSpanValid = new bool[8];
+        // H1 (user 2026-11-21): per-row vertical (dBm) scale of the eight-row view. The
+        // console publishes the effective range for every DDC (its band's configured scale,
+        // or a manual override made by wheel-tuning that DDC's own dB scale). The renderer
+        // maps each row's trace, grid lines and dB labels with its own pair.
+        public static readonly int[] H1RowGridMin = new int[8];
+        public static readonly int[] H1RowGridMax = new int[8];
+        public static readonly bool[] H1RowGridManual = new bool[8];
         // per-cell slice state, published by the console every 150 ms
         public static readonly int[] H1RowFilterLow = new int[8];
         public static readonly int[] H1RowFilterHigh = new int[8];
@@ -279,6 +286,12 @@ namespace Thetis
             {
                 H1RowWinLeft[z] = H1RowWinRight[z] = -1;
                 H1RowSubWinLeft[z] = H1RowSubWinRight[z] = -1;
+                // H1 (user 2026-11-21): the row scale defaults match the console's own
+                // display defaults; the console publishes the real per-band ranges when the
+                // eight-row view opens.
+                H1RowGridMin[z] = -140;
+                H1RowGridMax[z] = -40;
+                H1RowGridManual[z] = false;
                 H1CellMeterMain[z] = -200f;
                 H1CellMeterSub[z] = -200f;
             }
@@ -6710,10 +6723,9 @@ namespace Thetis
                 _h1rowWfBmpH = wfH;
             }
 
-            int grid_max = spectrum_grid_max;
-            int grid_min = spectrum_grid_min;
-            if (grid_max <= grid_min) grid_max = grid_min + 10;
-            float span = grid_max - grid_min;
+            // H1 (user 2026-11-21): the vertical scale is per row now - each cell's dBm
+            // range is fetched inside the loop from Display.H1RowGridMin/Max; the old shared
+            // RX1 pair is only the fallback when a row has not been published yet.
 
             float low_threshold = waterfall_low_threshold;
             float high_threshold = waterfall_high_threshold;
@@ -6742,6 +6754,14 @@ namespace Thetis
                 if (hWf <= 0) continue;
                 Matrix3x2 h1was = _d2dRenderTarget.Transform;
                 _d2dRenderTarget.Transform = Matrix3x2.Translation(x0, yAbs);
+
+                // H1 (user 2026-11-21): this row's own dBm range. The console publishes the
+                // band's configured scale (or the operator's manual override for this DDC).
+                int grid_max = H1RowGridMax[r];
+                int grid_min = H1RowGridMin[r];
+                if (grid_max <= grid_min) { grid_max = spectrum_grid_max; grid_min = spectrum_grid_min; }
+                if (grid_max <= grid_min) grid_max = grid_min + 10;
+                float span = grid_max - grid_min;
 
                 float[] data;
                 float[] wfData;
