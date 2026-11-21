@@ -11317,6 +11317,86 @@ for (int zr = 0; zr < 8; zr++)
             catch { }
         }
 
+        // H1 (user 2026-11-21): a tiny dot cursor for the full-window cell frequency caption.
+        // The normal SizeWE tuning cursor is 32 px wide and hid the digits being wheel-tuned;
+        // this is an 8x8 cursor with a 3x3 white dot (one-pixel dark ring, hotspot in the middle),
+        // so the readout stays visible. Falls back to the standard arrow if the cursor cannot
+        // be created.
+        // H1 (user 2026-11-21): a tiny dot cursor for the full-window cell frequency caption.
+        // The normal SizeWE tuning cursor is 32 px wide and hid the digits being wheel-tuned.
+        // A deliberately monochrome 1-bpp cursor (3x3 inverting dot, transparent elsewhere,
+        // hotspot in its middle) is only a few pixels, always visible on dark and light text,
+        // and avoids the colour/alpha cursor handling entirely.
+        // H1 (user 2026-11-21): a tiny dot cursor for the full-window cell frequency caption.
+        // The normal SizeWE tuning cursor is 32 px wide and hid the digits being wheel-tuned.
+        // This is a 32x32 monochrome cursor with a 3x3 inverting dot at its centre (transparent
+        // everywhere else, hotspot in the middle): at 100% scale it is just a few pixels, it
+        // stays visible on both the dark background and the white digits (it inverts them), and
+        // it avoids colour/alpha cursor handling entirely. Falls back to the normal arrow if the
+        // cursor cannot be created.
+        private Cursor H1CaptionCursor()
+        {
+            if (_h1_caption_cursor != null) return _h1_caption_cursor;
+            try
+            {
+                const int size = 32;          // the normal system cursor size, so no scaling
+                const int hot = 16;
+                int stride = 4;               // 32 pixels at 1 bpp, padded to 4 bytes
+                byte[] xor = new byte[stride * size];
+                byte[] and = new byte[stride * size];
+                for (int y = 0; y < size; y++)
+                {
+                    int rowFromBottom = size - 1 - y;
+                    for (int x = 0; x < size; x++)
+                    {
+                        bool dot = Math.Abs(x - hot) <= 1 && Math.Abs(y - hot) <= 1;
+                        int idx = rowFromBottom * stride + (x >> 3);
+                        byte bit = (byte)(1 << (7 - (x & 7)));
+                        if (dot) xor[idx] |= bit;          // dot: invert the screen (visible on any colour)
+                        else and[idx] |= bit;              // background: leave the screen alone
+                    }
+                }
+                // BITMAPINFOHEADER + 1-bpp colour table + XOR bitmap + AND bitmap
+                int imageSize = 40 + 8 + xor.Length + and.Length;
+                _h1_caption_cursor_stream = new System.IO.MemoryStream();
+                System.IO.BinaryWriter w = new System.IO.BinaryWriter(_h1_caption_cursor_stream);
+                w.Write((ushort)0);            // reserved
+                w.Write((ushort)2);            // type: cursor
+                w.Write((ushort)1);            // count
+                w.Write((byte)size);           // width
+                w.Write((byte)size);           // height
+                w.Write((byte)2);              // colours (1-bpp)
+                w.Write((byte)0);              // reserved
+                w.Write((ushort)hot);          // hotspot x
+                w.Write((ushort)hot);          // hotspot y
+                w.Write((uint)imageSize);      // bytes in resource
+                w.Write((uint)22);             // image offset
+                w.Write((uint)40);             // BITMAPINFOHEADER
+                w.Write((int)size);
+                w.Write((int)(size * 2));      // height doubled (XOR + AND)
+                w.Write((ushort)1);            // planes
+                w.Write((ushort)1);            // bits per pixel
+                w.Write((uint)0);              // compression
+                w.Write((uint)(xor.Length + and.Length));
+                w.Write((int)0);               // x pixels/meter
+                w.Write((int)0);               // y pixels/meter
+                w.Write((uint)2);              // colours used
+                w.Write((uint)2);              // colours important
+                w.Write((byte)0); w.Write((byte)0); w.Write((byte)0); w.Write((byte)0);          // black
+                w.Write((byte)255); w.Write((byte)255); w.Write((byte)255); w.Write((byte)0);    // white
+                w.Write(xor);
+                w.Write(and);
+                w.Flush();
+                _h1_caption_cursor_stream.Position = 0;
+                _h1_caption_cursor = new Cursor(_h1_caption_cursor_stream);
+            }
+            catch
+            {
+                _h1_caption_cursor = Cursors.Default;
+            }
+            return _h1_caption_cursor;
+        }
+
         // H1 (user 2026-11-21): the cell's centre caption is the frequency-tuning surface.
         // A wheel notch moves the digit under the pointer (10^digit Hz); DDC1/DDC2 follow the
         // same VFO target their cell wheel already uses, DDC3-DDC8 tune their headless slice.
@@ -45294,6 +45374,10 @@ private readonly double[] _h1BasePanSlider = new double[8];
         private Cursor grab = new Cursor(msgrab);
         private Cursor grabbing = new Cursor(msgrabbing);
         private Cursor _cross_outlined = new Cursor(mscross_outlined);
+        // H1 (user 2026-11-21): tiny dot cursor for the full-window frequency caption (built
+        // lazily by H1CaptionCursor so the digits stay readable while the wheel tunes them).
+        private Cursor _h1_caption_cursor;
+        private System.IO.MemoryStream _h1_caption_cursor_stream;
 
         private bool m_bDraggingPanafallSplit = false;
 
@@ -66209,6 +66293,16 @@ private void incrementMutliMeterDisplayModeRX2()
                 if ((!rx2_enabled && Display.CurrentDisplayMode == DisplayMode.PANAFALL) && m_bDraggingPanafallSplit) //MW0LGE_21k9c changes to this and below
                     next_cursor = Cursors.SizeNS; // down here so we catch moving out of the splitter bar, but is still enabled
                                                   // otherwise we get flickering
+
+                // H1 (user 2026-11-21): over a full-window cell's frequency caption the wheel
+                // tunes digits, so show the tiny dot cursor - the SizeWE tuning cursor covered
+                // the digits being changed.
+                if (_h1FullScreenPanafall && pnlDisplay != null)
+                {
+                    int h1cfRow;
+                    if (Display.H1CellCaptionRow(e.X, e.Y, out h1cfRow))
+                        next_cursor = H1CaptionCursor();
+                }
 
                 // nothing applied yet
                 if (next_cursor == Cursors.Cross || next_cursor == _cross_outlined)
