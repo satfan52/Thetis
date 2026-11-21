@@ -8790,6 +8790,10 @@ namespace Thetis
                     }
                     HeadlessSubRX.State sub = HeadlessSubRX.Get(rx);
                     sub.Enabled = p[12] == "1";
+                    // H1 (user 2026-11-21): a restored console sub follows its cell's mode, like
+                    // Thetis's own sub receiver - otherwise it started in its default USB and a
+                    // TX tag on the sub window showed the phone TX profile for a DIGL cell.
+                    if (sub.Enabled) sub.Mode = (DSPMode)int.Parse(p[2]);
                     sub.FreqHz = long.Parse(p[13]);
                     sub.FilterLow = int.Parse(p[14]);
                     sub.FilterHigh = int.Parse(p[15]);
@@ -10751,6 +10755,7 @@ for (int zr = 0; zr < 8; zr++)
             DSPMode mode = H1FsModes[c.SelectedIndex];
             HeadlessSliceManager.Instance.SetMode(row, mode);
             H1CellSetDefaultFilter(row, mode);
+            H1CellSyncSubToMain(row);   // H1 (user 2026-11-21): the cell's sub follows the mode
             H1SpacePttTrace("h1cs: mode rx" + row + " -> " + H1FsModeNames[c.SelectedIndex]);
             H1FsSync();
         }
@@ -10828,6 +10833,7 @@ for (int zr = 0; zr < 8; zr++)
                 HeadlessSliceManager.Instance.SetVFOA(row, mhz);
                 HeadlessSliceManager.Instance.SetMode(row, mode);
                 H1CellSetDefaultFilter(row, mode);
+                H1CellSyncSubToMain(row);   // H1 (user 2026-11-21): the band's mode reaches the sub
                 H1PublishRowScales();   // H1 (user 2026-11-21): the new band's scale
             }
             catch { }
@@ -10851,6 +10857,24 @@ for (int zr = 0; zr < 8; zr++)
                 default: low = 300; high = 3000; break;
             }
             HeadlessSliceManager.Instance.SetFilter(row, low, high);
+        }
+
+        // H1 (user 2026-11-21): the console's cell mode/band change drives the cell's SUB as
+        // well - Thetis's own sub receiver follows the main mode, and the TX profile shown for
+        // a TX tag on the sub window must match the cell. TCI clients can still set an
+        // independent sub mode afterwards on their own port.
+        private void H1CellSyncSubToMain(int row)
+        {
+            if (row < 2 || row > 7 || !HeadlessSubRX.IsEnabled(row)) return;
+            try
+            {
+                HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(row);
+                if (sl == null) return;
+                HeadlessSubRX.ApplyFilter(row, sl.FilterLow, sl.FilterHigh);
+                HeadlessSubRX.ApplyMode(row, sl.Mode);
+                H1SpacePttTrace("h1cs: sub rx" + row + " follows main mode " + sl.Mode);
+            }
+            catch { }
         }
 
         private static double H1DefaultBandFreq(Band band)

@@ -85,6 +85,11 @@ namespace Thetis
                     {
                         s.FilterLow = mainSlice.FilterLow;
                         s.FilterHigh = mainSlice.FilterHigh;
+                        // H1 (user 2026-11-21): the console sub follows the cell's mode like
+                        // Thetis's own sub receiver. Without this a sub enabled on a DIGL cell
+                        // kept the default USB state, so its TX profile (TX tag on the sub
+                        // window) came out as the phone profile instead of the cell's one.
+                        s.Mode = mainSlice.Mode;
                     }
                     // full channel init (same pattern as HeadlessSliceManager.ActivateAudio)
                     WDSP.SetRXAMode(Ch(rx, 1), s.Mode);
