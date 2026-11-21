@@ -30034,7 +30034,6 @@ for (int zr = 0; zr < 8; zr++)
                 H1Crumb("fullscreen-exit: geometry/dim");
                 _h1FullScreenPanafall = false;
                 H1EightRowsExit();                       // H1: the eight-row view ends with the mode
-                setupTuneDriveSlider();                  // H1: the console's tune slider comes back on exit
                 H1Crumb("fullscreen-exit: expand");
                 ExpandDisplay(true);
                 H1Crumb("fullscreen-exit: restore-geometry");
@@ -30042,6 +30041,13 @@ for (int zr = 0; zr < 8; zr++)
                 H1RestoreNormalViewPanels();             // H1: put the normal-view panels back exactly
                 UpdateSubVeilStates();                   // H1 (bug fix 2026-11-12): and the normal dim state
                 H1UpdateRX1Veil();
+                // H1 (user 2026-11-21): the Tune slider's visibility must be re-applied AFTER
+                // the full-screen restore. On enter the slider is hidden before the visibility
+                // snapshot is taken, so the snapshot records it hidden and the restore writes
+                // that back after the exit already showed it: one round trip hid the Tune
+                // slider for good, with Setup still set to "Use Tune Slider". As the last
+                // writer this also follows a tune source changed while the view was up.
+                setupTuneDriveSlider();
                 H1Crumb("fullscreen-exit: done");
             }
             else
@@ -30052,12 +30058,15 @@ for (int zr = 0; zr < 8; zr++)
                 H1FullScreenCaptureGeometry();           // H1: remember the normal geometry before the collapse
                 H1Crumb("fullscreen-enter: eightrows");
                 H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
-                setupTuneDriveSlider();                  // H1: and stays off the full-screen view
                 H1Crumb("fullscreen-enter: capture-panels");
                 H1CaptureNormalViewPanels();             // H1: before the collapse hides them
                 H1Crumb("fullscreen-enter: collapse");
                 CollapseDisplay(true);
                 H1HideNormalViewPanels();   // H1: no normal-view panels in the eight-row view
+                // H1 (user 2026-11-21): hide the Tune slider only after CollapseDisplay() has
+                // taken its visibility snapshot, so that snapshot keeps the normal-view state
+                // (see the matching call in the exit branch).
+                setupTuneDriveSlider();
                 H1Crumb("fullscreen-enter: done");
             }
             H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
