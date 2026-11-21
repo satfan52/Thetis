@@ -4322,6 +4322,7 @@ namespace Thetis
                         // why only RX1 showed the fault. The property call below still runs,
                         // to push the row and the display once the form is available.
                         double vfoaSubRestored = double.Parse(val);
+                        _startupVFOASubFreq = vfoaSubRestored;
                         m_dVFOASubFreq = Math.Round(vfoaSubRestored, 6);
                         saved_vfoa_sub_freq = m_dVFOASubFreq;  // init the save sub freq (i dont like this, TODO)
                         BandLog("restore VFOASubFreq=" + vfoaSubRestored + " -> m_dVFOASubFreq");
@@ -4334,6 +4335,7 @@ namespace Thetis
                         VFOBSubFreq = double.Parse(val);
                         _force_vfo_update = false;
                         saved_vfob_sub_freq = m_dVFOBSubFreq;
+                        _startupVFOBSubFreq = m_dVFOBSubFreq;
                         break;
                     case "CentreRX2Frequency":
                         dRX2_centre_freq = double.Parse(val);
@@ -21988,6 +21990,11 @@ for (int zr = 0; zr < 8; zr++)
 
         private double saved_vfoa_freq = 7.1;
         private double saved_vfoa_sub_freq = 7.1;
+        // H1 (user 2026-11-21): the frequencies restored from the database, kept so the
+        // power-up pass can put them back after the receivers' setup has settled.
+        private double _startupVFOASubFreq = -1;
+        private double _startupVFOBSubFreq = -1;
+        private bool _startupSubFreqsApplied = false;
         private double saved_vfob_sub_freq = 7.1;
         private double saved_vfob_freq = 7.1;
 
@@ -38534,6 +38541,31 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 // stranded off screen.
                 if (chkEnableMultiRX.Checked) UpdateVFOASub();
                 if (rx2_enabled && chkEnableMultiRX2.Checked) UpdateVFOBSub();
+
+                // H1 (user 2026-11-21): the stored sub frequencies are authoritative on start-up.
+                // A restore-order pass could synthesise an edge position from a placeholder sub
+                // value before the sub's own state stood up; now that the radio runs, put the
+                // saved frequencies back (once per launch).
+                if (!_startupSubFreqsApplied)
+                {
+                    _startupSubFreqsApplied = true;
+                    BandLog("startup subs restore: saved1=" + _startupVFOASubFreq + " saved2=" + _startupVFOBSubFreq);
+                    if (_startupVFOASubFreq > 0 && chkEnableMultiRX.Checked)
+                    {
+                        BandLog("startup subs restore: sub1 -> " + _startupVFOASubFreq);
+                        VFOASubFreq = _startupVFOASubFreq;
+                    }
+                    if (_startupVFOBSubFreq > 0 && rx2_enabled && chkEnableMultiRX2.Checked)
+                    {
+                        BandLog("startup subs restore: sub2 -> " + _startupVFOBSubFreq);
+                        VFOBSubFreq = _startupVFOBSubFreq;
+                    }
+                }
+
+                // H1 (user 2026-11-21): correct the band memory with the restored positions, so a
+                // band switch in this session returns the sub to where it was left.
+                if (chkEnableMultiRX.Checked) recordSubMemory(1);
+                if (rx2_enabled && chkEnableMultiRX2.Checked) recordSubMemory(2);
                 UpdateVFOBRowEnabled(); // H1: grey the B frame at power-up with RX2 off too
                 HeadlessSliceManager.Instance.SyncActiveSlices();
                 SetupForm.UpdateGeneraHardware();
@@ -43683,6 +43715,16 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
                 double vfoa = VFOAFreq;
                 double freq = VFOASubFreq;
+                // H1 (user 2026-11-21): a sub with no stored frequency yet - the start-up window
+                // where the Setup options are restored before the console state - must start on
+                // VFO A. The old path computed a huge offset from the zero placeholder, parked the
+                // sub at an edge synthesised from the oscillator, and that poisoned value was then
+                // recorded into the band memory and cost the saved SubRX1 frequency on restart.
+                if (freq <= 0.0)
+                {
+                    VFOASubFreq = vfoa;
+                    return;
+                }
 
                 Display.VFOASub = (long)(freq * 1e6);
                 if (chkTUN.Checked && chkVFOATX.Checked && chkVFOSplit.Checked)
@@ -43717,6 +43759,12 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 {
                     int diff = (int)((freq - vfoa) * 1e6);
                     double sub_osc = radio.GetDSPRX(0, 0).RXOsc - diff;
+                    // H1 (diagnostic 2026-11-21): only a commit whose sub frequency is far from VFO A
+                    // is worth a trace - the start-up poisoning pass looked exactly so.
+                    if (Math.Abs(freq - vfoa) > 0.05)
+                        BandLog("sub1 commit: freq=" + freq + " vfoa=" + vfoa + " sub_osc=" + sub_osc
+                        + " min=" + SubOscMin + " max=" + SubOscMax + " init=" + initializing
+                        + " inUse=" + VFOASubInUse + " saved=" + saved_vfoa_sub_freq);
 
                     // H1: never park the sub from an unsettled oscillator. At start-up this
                     // finaliser runs while the receiver's DDS is still mid-restore, the
