@@ -10490,6 +10490,34 @@ for (int zr = 0; zr < 8; zr++)
             }
         }
 
+        // H1 (audio fix 2026-11-21, third): keep the native spare VAC route in step with the
+        // console listen mask. The route is what feeds VAC1/VAC2 (the audible path on this
+        // station) and it is NOT cleared by the SUB pill, so a SUB off/on flip used to replay
+        // the sub with no RX tag lit. The route bits are: 1/2 = VAC1/VAC2, 4 = sub only,
+        // 8 = main only; no bits at all when neither window listens.
+        private void H1ApplySpareVACRoute(int rx)
+        {
+            if (rx < 2 || rx > 7) return;
+            try
+            {
+                bool mainOn = (_h1SpareAudioMask & (1 << (2 * rx))) != 0;
+                bool subOn = (_h1SpareAudioMask & (1 << (2 * rx + 1))) != 0;
+                int route = 0;
+                if (mainOn || subOn)
+                {
+                    if (chkVAC1 != null && chkVAC1.Checked) route |= 1;
+                    if (chkVAC2 != null && chkVAC2.Checked) route |= 2;
+                    if (subOn && !mainOn) route |= 4;
+                    else if (mainOn && !subOn) route |= 8;
+                }
+                cmaster.SetSpareVACRoute(rx, route);
+                H1SpacePttTrace("spare vac: RX" + (rx + 1)
+                    + " route=0x" + cmaster.GetSpareVACRoute(rx).ToString("X")
+                    + " src=" + cmaster.SpareVACSourceForMask(route));
+            }
+            catch { }
+        }
+
         // H1 (M2): a SUB toggle acts on that receiver's sub - the console's multi-RX ticks
         // for RX1/RX2, the headless sub receiver for RX3..RX8.
         private void H1CellSubChanged(object sender, EventArgs e)
@@ -10545,6 +10573,11 @@ for (int zr = 0; zr < 8; zr++)
                 }
             }
             catch { }
+            // H1 (audio fix 2026-11-21, third): the native VAC route outlives the listen mask.
+            // Switching a spare SUB off clears its listen bit but left the route as it was, so
+            // switching the SUB back on replayed the sub although no RX tag was lit. Recompute
+            // the route from the remaining listen bits for every spare SUB transition.
+            if (row >= 2) H1ApplySpareVACRoute(row);
             H1CellSubFace(sp);
             H1PublishCellMeters();
             H1SpacePttTrace("cell SUB: RX" + (row + 1) + " = " + sp.Checked);
