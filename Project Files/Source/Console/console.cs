@@ -11049,6 +11049,10 @@ for (int zr = 0; zr < 8; zr++)
 
         // H1 (user 2026-11-21, parity): the normal view's dB number column, from a display-client
         // point. Returns 1 for RX1's column, 2 for RX2's, 0 when the point is anywhere else.
+        // H1 (user 2026-11-21): set by a right-press on the normal view's dB number column and
+        // consumed by the matching release when the pointer did not move (editor gesture).
+        private int _h1NormalScaleClickRx = 0;
+        private Point _h1NormalScaleClickPoint;
         private int H1NormalScaleStripAt(int x, int y)
         {
             if (pnlDisplay == null) return 0;
@@ -11109,15 +11113,66 @@ for (int zr = 0; zr < 8; zr++)
                 + (rx == 1 ? Display.SpectrumGridMax : Display.RX2SpectrumGridMax) + " (wheel)");
         }
 
+        // H1 (user 2026-11-21): install an exact Grid Max/Min for a normal-view receiver through
+        // the Setup spinners (so the per-band store and a linked waterfall follow), with the
+        // same clamping as the wheel gesture.
+        private void H1NormalScaleApply(int rx, int min, int max)
+        {
+            if ((rx != 1 && rx != 2) || IsSetupFormNull) return;
+            int stepDb = Math.Max(1, Display.SpectrumGridStep);
+            if (min < -200) min = -200;
+            if (max > 200) max = 200;
+            int minSpan = Math.Max(24, 2 * stepDb);
+            if (max - min < minSpan) max = min + minSpan;
+            if (max - min > 300) min = max - 300;
+            if (min > max - minSpan) min = max - minSpan;
+            int curMin = rx == 1 ? Display.SpectrumGridMin : Display.RX2SpectrumGridMin;
+            if (min <= curMin)
+            {
+                if (rx == 1) SetupForm.DisplayGridMin = min; else SetupForm.RX2DisplayGridMin = min;
+                if (rx == 1) SetupForm.DisplayGridMax = max; else SetupForm.RX2DisplayGridMax = max;
+            }
+            else
+            {
+                if (rx == 1) SetupForm.DisplayGridMax = max; else SetupForm.RX2DisplayGridMax = max;
+                if (rx == 1) SetupForm.DisplayGridMin = min; else SetupForm.RX2DisplayGridMin = min;
+            }
+            setWaterfallGainsIfLinkedToSpectrum(rx);
+            H1SpacePttTrace("scale: RX" + rx + " min="
+                + (rx == 1 ? Display.SpectrumGridMin : Display.RX2SpectrumGridMin) + " max="
+                + (rx == 1 ? Display.SpectrumGridMax : Display.RX2SpectrumGridMax) + " (editor)");
+        }
+
         // H1 (user 2026-11-21, parity): exact per-DDC Grid Max/Min entry - the full-window
         // counterpart of the Setup display spinners, opened by right-clicking a cell's dB scale.
         private void H1ShowScaleEditor(int row)
         {
             if (row < 0 || row > 7) return;
+            H1ShowScaleEditor("DDC" + (row + 1) + " scale",
+                Display.H1RowGridMax[row], Display.H1RowGridMin[row], true,
+                (mn, mx) => H1RowScaleApply(row, mn, mx),
+                () => H1RowScaleReset(row));
+        }
+
+        // H1 (user 2026-11-21): the same exact editor for the normal view's receivers; it edits
+        // the current band's stored scale (RX1's or RX2's Setup values).
+        private void H1ShowNormalScaleEditor(int rx)
+        {
+            if (rx != 1 && rx != 2) return;
+            H1ShowScaleEditor("RX" + rx + " scale",
+                rx == 1 ? Display.SpectrumGridMax : Display.RX2SpectrumGridMax,
+                rx == 1 ? Display.SpectrumGridMin : Display.RX2SpectrumGridMin,
+                false,
+                (mn, mx) => H1NormalScaleApply(rx, mn, mx), null);
+        }
+
+        private void H1ShowScaleEditor(string title, int maxVal, int minVal, bool allowResetToBand,
+            Action<int, int> apply, Action reset)
+        {
             try
             {
                 Form f = new Form();
-                f.Text = "DDC" + (row + 1) + " scale";
+                f.Text = title;
                 f.FormBorderStyle = FormBorderStyle.FixedDialog;
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = false;
@@ -11135,7 +11190,7 @@ for (int zr = 0; zr < 8; zr++)
                 nudMax.Minimum = -200;
                 nudMax.Maximum = 200;
                 nudMax.Increment = 1;
-                nudMax.Value = Display.H1RowGridMax[row];
+                nudMax.Value = maxVal;
                 nudMax.Location = new Point(110, 16);
                 nudMax.Size = new Size(120, 22);
                 f.Controls.Add(nudMax);
@@ -11150,7 +11205,7 @@ for (int zr = 0; zr < 8; zr++)
                 nudMin.Minimum = -200;
                 nudMin.Maximum = 200;
                 nudMin.Increment = 1;
-                nudMin.Value = Display.H1RowGridMin[row];
+                nudMin.Value = minVal;
                 nudMin.Location = new Point(110, 48);
                 nudMin.Size = new Size(120, 22);
                 f.Controls.Add(nudMin);
@@ -11169,32 +11224,39 @@ for (int zr = 0; zr < 8; zr++)
                 btnCancel.Size = new Size(70, 26);
                 f.Controls.Add(btnCancel);
 
-                Button btnReset = new Button();
-                btnReset.Text = "Reset to band scale";
-                btnReset.Location = new Point(166, 96);
-                btnReset.Size = new Size(130, 26);
-                f.Controls.Add(btnReset);
+                Button btnReset = null;
+                if (allowResetToBand && reset != null)
+                {
+                    btnReset = new Button();
+                    btnReset.Text = "Reset to band scale";
+                    btnReset.Location = new Point(166, 96);
+                    btnReset.Size = new Size(130, 26);
+                    f.Controls.Add(btnReset);
+                }
 
                 ToolTip tip = new ToolTip();
-                tip.SetToolTip(nudMax, "Top of this DDC's vertical scale, in dBm.");
-                tip.SetToolTip(nudMin, "Bottom of this DDC's vertical scale, in dBm.");
-                tip.SetToolTip(btnReset, "Return this DDC to the scale configured for its band.");
+                tip.SetToolTip(nudMax, "Top of this scale, in dBm.");
+                tip.SetToolTip(nudMin, "Bottom of this scale, in dBm.");
+                if (btnReset != null) tip.SetToolTip(btnReset, "Return this DDC to the scale configured for its band.");
 
                 f.AcceptButton = btnOk;
                 f.CancelButton = btnCancel;
-                btnReset.Click += (s, ev) =>
+                if (btnReset != null)
                 {
-                    f.DialogResult = DialogResult.Cancel;
-                    f.Close();
-                    H1RowScaleReset(row);
-                };
+                    btnReset.Click += (s, ev) =>
+                    {
+                        f.DialogResult = DialogResult.Cancel;
+                        f.Close();
+                        reset();
+                    };
+                }
 
                 if (f.ShowDialog(this) == DialogResult.OK)
                 {
                     int mn = (int)nudMin.Value;
                     int mx = (int)nudMax.Value;
                     if (mx - mn < 10) mx = mn + 10;
-                    H1RowScaleApply(row, mn, mx);
+                    apply(mn, mx);
                 }
                 f.Dispose();
             }
@@ -63426,6 +63488,18 @@ private void incrementMutliMeterDisplayModeRX2()
                 if (H1ScaleGutterRow(e.X, e.Y, out h1scRow)) return;
             }
 
+            // H1 (user 2026-11-21): remember a right-press on the normal view's dB number column;
+            // its release opens the exact Grid Max/Min editor, unless it was a drag.
+            if (!_h1FullScreenPanafall && e.Button == MouseButtons.Right && pnlDisplay != null)
+            {
+                int h1nscRx = H1NormalScaleStripAt(e.X, e.Y);
+                if (h1nscRx != 0)
+                {
+                    _h1NormalScaleClickRx = h1nscRx;
+                    _h1NormalScaleClickPoint = new Point(e.X, e.Y);
+                }
+            }
+
             // H1 (user 2026-11-21, parity): right-click on a cell's dB scale opens the exact
             // Grid Max / Grid Min editor for that DDC (the counterpart of Setup's spinners).
             if (_h1FullScreenPanafall && e.Button == MouseButtons.Right)
@@ -65992,6 +66066,23 @@ private void incrementMutliMeterDisplayModeRX2()
                     int x = pnlDisplay.PointToScreen(p).X - 16;
                     int y = pnlDisplay.PointToScreen(p).Y - 16;
                     ShowNotchPopup(x, y, SelectedNotch, 0, 1000, AlwaysOnTop);
+                }
+            }
+
+            // H1 (user 2026-11-21): a right-click (not a drag) on the normal view's dB number
+            // column opens the exact Grid Max/Min editor for that receiver.
+            if (_h1NormalScaleClickRx != 0)
+            {
+                int h1nscRx = _h1NormalScaleClickRx;
+                _h1NormalScaleClickRx = 0;
+                if (e.Button == MouseButtons.Right)
+                {
+                    int h1nscDx = e.X - _h1NormalScaleClickPoint.X;
+                    int h1nscDy = e.Y - _h1NormalScaleClickPoint.Y;
+                    if (Math.Abs(h1nscDx) <= 3 && Math.Abs(h1nscDy) <= 3)
+                    {
+                        try { BeginInvoke(new MethodInvoker(() => H1ShowNormalScaleEditor(h1nscRx))); } catch { }
+                    }
                 }
             }
         }

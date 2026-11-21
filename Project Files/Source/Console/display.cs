@@ -261,6 +261,17 @@ namespace Thetis
         // same rule the normal-view panafall follows. The shared fields stay as fallback.
         public static readonly float[] H1RowWfLow = new float[8];
         public static readonly float[] H1RowWfHigh = new float[8];
+        // H1 (user 2026-11-21): per-row spectrum fill/line brushes. In flat mode the cells use
+        // the normal panafall's data fill and data line brushes; when the linear-gradient option
+        // is on these per-row gradient brushes are built for the cell height and the row's dB
+        // range, so a cell's filled area matches what the normal view shows for that scale.
+        private static SharpDX.Direct2D1.LinearGradientBrush[] _h1rowGradFill = new SharpDX.Direct2D1.LinearGradientBrush[8];
+        private static SharpDX.Direct2D1.LinearGradientBrush[] _h1rowGradLine = new SharpDX.Direct2D1.LinearGradientBrush[8];
+        private static readonly int[] _h1rowGradLo = new int[8];
+        private static readonly int[] _h1rowGradHi = new int[8];
+        private static int _h1rowGradSpecH = -1;
+        private static Color _h1rowGradFillColor;
+        private static Color _h1rowGradLineColor;
         // per-cell slice state, published by the console every 150 ms
         public static readonly int[] H1RowFilterLow = new int[8];
         public static readonly int[] H1RowFilterHigh = new int[8];
@@ -6701,6 +6712,53 @@ namespace Thetis
         // compact panafall: scale text, the spectrum trace and a scrolling waterfall. Only this mode's
         // renderer runs here - the regular two-receiver drawing is left completely untouched.
         private static string _h1dbgLast = "";
+
+        // H1 (user 2026-11-21): build the eight-row view's per-row gradient fill/line brushes.
+        // Same gradient stops and alpha as the normal panafall (buildLinearGradientBrush), but
+        // mapped onto the cell's own spectrum height and dB range.
+        private static void buildH1RowGradients(int specH)
+        {
+            for (int r = 0; r < 8; r++)
+            {
+                int gmin = H1RowGridMin[r];
+                int gmax = H1RowGridMax[r];
+                if (gmax <= gmin) gmax = gmin + 10;
+                System.Collections.Generic.List<ucLGPicker.ColourGradientData> lst =
+                    console.SetupForm.RX1GradPicker.GetColourGradientDataForDBMRange(gmin, gmax);
+                SharpDX.Direct2D1.GradientStop[] fillStops = new SharpDX.Direct2D1.GradientStop[lst.Count];
+                SharpDX.Direct2D1.GradientStop[] lineStops = new SharpDX.Direct2D1.GradientStop[lst.Count];
+                for (int n = 0; n < lst.Count; n++)
+                {
+                    Color fillColour = Color.FromArgb(data_fill_color.A, lst[n].color.R, lst[n].color.G, lst[n].color.B);
+                    Color lineColour = Color.FromArgb(data_line_color.A, lst[n].color.R, lst[n].color.G, lst[n].color.B);
+                    fillStops[n] = new SharpDX.Direct2D1.GradientStop() { Color = convertColour(fillColour), Position = lst[n].percent };
+                    lineStops[n] = new SharpDX.Direct2D1.GradientStop() { Color = convertColour(lineColour), Position = lst[n].percent };
+                }
+                SharpDX.Direct2D1.GradientStopCollection fill = new SharpDX.Direct2D1.GradientStopCollection(_d2dRenderTarget, fillStops);
+                SharpDX.Direct2D1.GradientStopCollection line = new SharpDX.Direct2D1.GradientStopCollection(_d2dRenderTarget, lineStops);
+                Utilities.Dispose(ref _h1rowGradFill[r]);
+                Utilities.Dispose(ref _h1rowGradLine[r]);
+                _h1rowGradFill[r] = new SharpDX.Direct2D1.LinearGradientBrush(_d2dRenderTarget,
+                    new SharpDX.Direct2D1.LinearGradientBrushProperties()
+                    {
+                        StartPoint = new SharpDX.Vector2(0, specH - 16),
+                        EndPoint = new SharpDX.Vector2(0, 0)
+                    }, fill);
+                _h1rowGradLine[r] = new SharpDX.Direct2D1.LinearGradientBrush(_d2dRenderTarget,
+                    new SharpDX.Direct2D1.LinearGradientBrushProperties()
+                    {
+                        StartPoint = new SharpDX.Vector2(0, specH - 16),
+                        EndPoint = new SharpDX.Vector2(0, 0)
+                    }, line);
+                Utilities.Dispose(ref fill);
+                Utilities.Dispose(ref line);
+                _h1rowGradLo[r] = gmin;
+                _h1rowGradHi[r] = gmax;
+            }
+            _h1rowGradSpecH = specH;
+            _h1rowGradFillColor = data_fill_color;
+            _h1rowGradLineColor = data_line_color;
+        }
         unsafe static private void H1DrawEightRowsDX2D(int W, int H)
         {
             // H1 (user 2026-11-03): eight stacked rows left no usable height - lay the eight DDCs
@@ -6714,6 +6772,27 @@ namespace Thetis
             if (specH < 20) specH = 20;
             int wfH = rowH - specH - 1;
             if (wfH < 8) wfH = 8;
+
+            // H1 (user 2026-11-21): keep the per-row gradient fill/line brushes in step with the
+            // cell height, the row dB ranges and the configured colours.
+            if (m_bUseLinearGradient)
+            {
+                bool h1gradRebuild = _h1rowGradSpecH != specH
+                    || _h1rowGradFillColor != data_fill_color
+                    || _h1rowGradLineColor != data_line_color;
+                if (!h1gradRebuild)
+                {
+                    for (int rr = 0; rr < 8; rr++)
+                    {
+                        if (_h1rowGradLo[rr] != H1RowGridMin[rr] || _h1rowGradHi[rr] != H1RowGridMax[rr])
+                        {
+                            h1gradRebuild = true;
+                            break;
+                        }
+                    }
+                }
+                if (h1gradRebuild) buildH1RowGradients(specH);
+            }
 
             // (re)create the row waterfall bitmaps when the geometry changes
             if (_h1rowWfBmpW != cellW || _h1rowWfBmpH != wfH || _h1rowWfBmp[0] == null)
@@ -6774,6 +6853,17 @@ namespace Thetis
                 float h1WfLow = H1RowWfLow[r];
                 float h1WfHigh = H1RowWfHigh[r];
                 if (h1WfHigh <= h1WfLow) { h1WfLow = low_threshold; h1WfHigh = high_threshold; }
+
+                // H1 (user 2026-11-21): the cell's filled area must carry the normal panafall's
+                // colours - the same data fill / data line brushes (RX1's; RX2 draws with the
+                // same flat pair), or this row's gradient pair when that option is on.
+                SharpDX.Direct2D1.Brush h1FillBrush = m_bDX2_data_fill_fpen_brush;
+                SharpDX.Direct2D1.Brush h1LineBrush = m_bDX2_data_line_pen_brush;
+                if (m_bUseLinearGradient)
+                {
+                    if (_h1rowGradFill[r] != null) h1FillBrush = _h1rowGradFill[r];
+                    if (m_bUseLinearGradientForDataLine && _h1rowGradLine[r] != null) h1LineBrush = _h1rowGradLine[r];
+                }
 
                 float[] data;
                 float[] wfData;
@@ -6837,6 +6927,7 @@ namespace Thetis
                         if (h1Di1 > h1DataLen - 1) h1Di1 = h1DataLen - 1;
                         if (h1Di1 <= h1Di0) h1Di1 = Math.Min(h1DataLen - 1, h1Di0 + 1);
                     }
+                    int h1PrevY = -1;
                     for (int i = 0; i < cellW; i++)
                     {
                         int di = h1Di0 + (int)((long)i * (h1Di1 - h1Di0) / cellW);
@@ -6846,7 +6937,12 @@ namespace Thetis
                         float p = (grid_max - v) / span;
                         if (p < 0f) p = 0f; else if (p > 1f) p = 1f;
                         int y = y0 + (int)(p * (specH - 16));
-                        drawLineDX2D(m_bDX2_data_line_pen_brush, i, y, i, y0 + specH - 2, 1);
+                        // H1 (user 2026-11-21): fill under the trace with the normal view's
+                        // data fill brush, then outline the trace with its data line brush.
+                        drawLineDX2D(h1FillBrush, i, y, i, y0 + specH - 2, 1);
+                        if (h1PrevY >= 0)
+                            drawLineDX2D(h1LineBrush, i - 1, h1PrevY, i, y, _display_line_width);
+                        h1PrevY = y;
                     }
                 }
 
@@ -7375,7 +7471,10 @@ namespace Thetis
                 for (int r = 0; r < 8; r++)
                 {
                     Utilities.Dispose(ref _h1rowWfBmp[r]);
+                    Utilities.Dispose(ref _h1rowGradFill[r]);
+                    Utilities.Dispose(ref _h1rowGradLine[r]);
                 }
+                _h1rowGradSpecH = -1;
             }
         }
 
