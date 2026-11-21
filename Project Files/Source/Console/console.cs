@@ -11268,6 +11268,55 @@ for (int zr = 0; zr < 8; zr++)
             catch (Exception ex) { H1SpacePttTrace("h1scale editor failed: " + ex.Message); }
         }
 
+        // H1 (user 2026-11-21): snapshot the sub frequencies before a caption tuning change, and
+        // re-apply the parent VFO's delta to them afterwards. A large digit step otherwise makes
+        // the VFO A/B update snap a sub that left the visible span onto the VFO, which clobbered
+        // the remembered SubRX1/SubRX2 frequency.
+        private double H1CfOldSubA = -1;
+        private double H1CfOldSubB = -1;
+        private double H1CfOldVfoA = 0;
+        private double H1CfOldVfoB = 0;
+
+        private void H1CellCaptionSnapshotVfos()
+        {
+            H1CfOldVfoA = VFOAFreq;
+            H1CfOldVfoB = VFOBFreq;
+            H1CfOldSubA = -1;
+            H1CfOldSubB = -1;
+            try
+            {
+                if (chkEnableMultiRX.Checked || chkVFOSplit.Checked)
+                {
+                    double s = VFOASubFreq;
+                    if (s > 0) H1CfOldSubA = s;
+                }
+            }
+            catch { }
+            try
+            {
+                if (rx2_enabled && chkEnableMultiRX2.Checked)
+                {
+                    double s = VFOBSubFreq;
+                    if (s > 0) H1CfOldSubB = s;
+                }
+            }
+            catch { }
+        }
+
+        private void H1CellCaptionKeepSubOffsets()
+        {
+            try
+            {
+                double dA = VFOAFreq - H1CfOldVfoA;
+                double dB = VFOBFreq - H1CfOldVfoB;
+                if (dA != 0.0 && H1CfOldSubA > 0)
+                    VFOASubFreq = Math.Round(H1CfOldSubA + dA, 6);
+                if (dB != 0.0 && H1CfOldSubB > 0)
+                    VFOBSubFreq = Math.Round(H1CfOldSubB + dB, 6);
+            }
+            catch { }
+        }
+
         // H1 (user 2026-11-21): the cell's centre caption is the frequency-tuning surface.
         // A wheel notch moves the digit under the pointer (10^digit Hz); DDC1/DDC2 follow the
         // same VFO target their cell wheel already uses, DDC3-DDC8 tune their headless slice.
@@ -11276,6 +11325,7 @@ for (int zr = 0; zr < 8; zr++)
             if (row < 0 || row > 7 || digit < 0 || num_steps == 0) return;
             if (digit > 7) digit = 7;
             double delta = Math.Pow(10, digit) * 1e-6 * num_steps;   // MHz
+            H1CellCaptionSnapshotVfos();
             try
             {
                 if (row == 0)
@@ -11307,6 +11357,7 @@ for (int zr = 0; zr < 8; zr++)
                         TxArbiter.Instance.UpdateDigitalTxFrequency(row, f);
                     H1SpacePttTrace("h1cf: wheel DDC" + (row + 1) + " digit=" + digit + " -> " + f.ToString("f6"));
                 }
+                H1CellCaptionKeepSubOffsets();
             }
             catch { }
         }
@@ -11340,6 +11391,7 @@ for (int zr = 0; zr < 8; zr++)
         private void H1CellSetFrequency(int row, double freq)
         {
             if (row < 0 || row > 7 || freq <= 0.0) return;
+            H1CellCaptionSnapshotVfos();
             try
             {
                 if (row == 0)
@@ -11370,6 +11422,7 @@ for (int zr = 0; zr < 8; zr++)
                         TxArbiter.Instance.UpdateDigitalTxFrequency(row, Math.Round(freq, 6));
                 }
                 H1SpacePttTrace("h1cf: set DDC" + (row + 1) + " -> " + freq.ToString("f6"));
+                H1CellCaptionKeepSubOffsets();
             }
             catch { }
         }
