@@ -243,6 +243,11 @@ external ATU with the same two-phase tune.
   custom inverting dot (hotspot 16,16, 4x4 rendered footprint) while the cell centre still
   shows the normal 32x32 cross; the wheel over the caption tuned 14.210710 -> 14.210711 and
   back with the digits readable; no errors or crash events.
+- **Verified on the station on 2026-11-21 (caption tuning readout)** (deployed `Thetis.exe`
+  `32AE40F1...`, built from `28d51b5`): DDC7 (CTUN on) caption reads 24.950002 instead of its
+  fixed centre 25.005000 and a wheel notch steps it to 24.950012 (restored); DDC2 caption
+  21.070310 (VFO B); CTUN-off cells unchanged (DDC1 14.210701, DDC3 7.101641, DDC5
+  7.037431, DDC8 28.476381); no errors or crash events.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -381,6 +386,12 @@ inverting dot at its centre: only a few pixels, visible on both the dark waterfa
 the white digits, and it never covers the readout while the wheel tunes. Cursors elsewhere
 are unchanged; the standard arrow is used if the cursor cannot be created.
 
+The 2026-11-21 caption tuning readout (display.cs and console.cs) makes the cell caption
+show the frequency the wheel and the "DDCn frequency" dialog edit - VFO A/B for
+DDC1/DDC2 per the click-tune mode, slice VFO for DDC3-DDC8 - instead of the display
+centre. It therefore follows the tuning under CTUN, where the centre stays fixed; the
+horizontal frequency-scale labels remain centre-based.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -430,7 +441,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (caption cursor) from H1 head `c921576` with the tiny
-  inverting dot cursor over the cell frequency captions (`Thetis.exe` `96943F30...`,
+  audio/transmit; refreshed 2026-11-21 (caption readout) from H1 head `28d51b5` with the cell
+  caption showing the tuned frequency (`Thetis.exe` `32AE40F1...`,
   `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
