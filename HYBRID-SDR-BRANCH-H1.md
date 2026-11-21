@@ -248,6 +248,14 @@ external ATU with the same two-phase tune.
   fixed centre 25.005000 and a wheel notch steps it to 24.950012 (restored); DDC2 caption
   21.070310 (VFO B); CTUN-off cells unchanged (DDC1 14.210701, DDC3 7.101641, DDC5
   7.037431, DDC8 28.476381); no errors or crash events.
+- **Verified on the station on 2026-11-21 (spare SUB/main audio)** (deployed `Thetis.exe`
+  `1808032E...`, built from `d6b5225`): with the previous build DDC6 (SUB on) measured a receiver
+  sum peak 0.731 = sub-only 0.730 while the main channel was alive at 0.742, and the sum was
+  exactly 0.00000 after SUB off. Now a SUB on/off cycle leaves the main receiver audible on
+  DDC3-DDC8 (peaks 0.35-0.43); a restored sub with the equal mix plays both channels (DDC6 sum
+  0.797 vs main 0.753 / sub 0.697); DDC5's RX5 tag plays with SUB off (green tag, aamix mask
+  0x100, channel peak 0.395); TCI balance 0/1 still selects main-only/sub-only; two restarts
+  keep the saved sub's cell audible; no errors or crash events.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -392,6 +400,15 @@ DDC1/DDC2 per the click-tune mode, slice VFO for DDC3-DDC8 - instead of the disp
 centre. It therefore follows the tuning under CTUN, where the centre stays fixed; the
 horizontal frequency-scale labels remain centre-based.
 
+The 2026-11-21 spare SUB/main audio fix (HeadlessSubRX.cs and console.cs) removes a mute
+that made a cell's main receiver silent once its SUB had been switched on: enabling the
+sub applied the headless balance law with the default balance 1.0 (sub only), which
+scales the MAIN WDSP panel gain to cos(pi/2) = 0, and switching the sub off never
+re-applied it. The balance default is now the equal mix (0.5), switching the sub off
+restores the main and sub panel gains, and the console's SUB toggle plus the full-window
+restore use the equal mix unless a TCI audio client owns the slice (its sub_balance
+selection is left alone). RX1/RX2 panel gains remain governed by the console gates.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -441,7 +458,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (caption readout) from H1 head `28d51b5` with the cell
-  caption showing the tuned frequency (`Thetis.exe` `32AE40F1...`,
+  audio/transmit; refreshed 2026-11-21 (spare SUB/main audio) from H1 head `d6b5225` with the
+  cell's SUB no longer muting its main receiver (`Thetis.exe` `1808032E...`,
   `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
