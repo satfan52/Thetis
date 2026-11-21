@@ -283,6 +283,13 @@ external ATU with the same two-phase tune.
   reported crash was checked separately: the previous instance closed through the console's
   normal power-off/close path and a new one started seconds later - no WER, Application Error
   or .NET Runtime event and no crash dump.
+- **Verified on the station on 2026-11-21 (normal-view TX source caption)** (deployed
+  `Thetis.exe` `40E6362F...`, ChannelMaster `6F2BE6C5...`, built from `71c7549`): the restored tag
+  on SubRX3 shows `TRANSMIT SubRX3`; the RX1 tick gives `TRANSMIT RX1`, the SubRX1 tick
+  `TRANSMIT SubRX1`, the SubRX2 tick `TRANSMIT SubRX2`; a TX tag on RX8 main gives
+  `TRANSMIT RX8`, on SubRX8 gives `TRANSMIT SubRX8`; switching SUB8 off while the tag sat on it
+  falls back to `TRANSMIT RX8`; the console was left with the SubRX3 tag restored and no TX
+  tick; responsive, no crash dumps.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -461,6 +468,13 @@ USB mode, so a TX tag on the sub window produced the phone TX profile in the nor
 while the main-window tag produced the digital one. A TCI client can still set an
 independent sub mode afterwards on its own port.
 
+The 2026-11-21 TX-source caption (console.cs) puts the active transmitter's name into the
+normal view's TRANSMIT caption: RX1/SubRX1/RX2/SubRX2 for the four tick boxes, and RX3..RX8
+or SubRX3..SubRX8 for a spare cell's voice-TX tag, using the sub only while it runs so a
+sub-held tag falls back to that cell's main slice when the SUB is switched off.
+H1TxCaptionSet writes it into the existing "tx" caption on every TX-source change, from the
+layout pass (start-up and view changes) and after a spare SUB toggle.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -510,7 +524,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (sub follows cell mode) from H1 head `26bb2ba` with the
-  spare sub keeping its cell's mode, so a TX tag on the sub window uses the right TX profile
-  (`Thetis.exe` `36BC3578...`, `ChannelMaster.dll` `6F2BE6C5...`).
+  audio/transmit; refreshed 2026-11-21 (TX source caption) from H1 head `71c7549` with the
+  normal-view TRANSMIT caption naming the active receiver (`Thetis.exe` `40E6362F...`,
+  `ChannelMaster.dll` `6F2BE6C5...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
