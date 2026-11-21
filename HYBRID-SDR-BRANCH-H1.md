@@ -196,6 +196,13 @@ external ATU with the same two-phase tune.
   two full-screen round trips (normal view: label at y732, slider at y748, under `PA Drive`),
   hidden while the full-screen view is up, and visible again after each exit; no post-startup
   watchdog stalls or handler errors.
+- **Verified on the station on 2026-11-21 (afternoon)** (deployed `Thetis.exe` `845BBD7C...`,
+  built from `555091f`): in the eight-row view DDC1 on 20m shows its 20m scale (-20/-120) and
+  DDC3 on 40m the 40m scale (-25/-125) where both previously showed RX1's pair; a wheel over
+  DDC3's scale gutter moved only DDC3 (-125/-25 -> -121/-21 in four notches), Ctrl+wheel changed
+  its span (-125/-15 -> -130/-10), a double-click restored -125/-25, wheel over the spectrum
+  still tuned the cell, and a manual range survived two restarts while a reset stayed reset
+  (H1Slices rows `1,-121,-21` then `0,-125,-25`).
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -272,6 +279,14 @@ back after the exit had already shown it - one round trip hid the Tune slider fo
 with Setup still on "Use Tune Slider". `H1ToggleFullScreenPanafall` now hides the slider
 only after the snapshot and re-applies `setupTuneDriveSlider()` after the restore.
 
+The 2026-11-21 per-DDC scale feature gives every cell of the eight-row view its own dBm
+range (`Display.H1RowGridMin/Max`, published by the console from that DDC's band's
+configured scale - RX1's per-band values for rows 0 and 2..7, RX2's own for row 1). A wheel
+over a cell's dB scale gutter shifts that DDC's range, Ctrl+wheel changes its span, and a
+double-click restores the band's configured range; the gestures never tune the cell. A
+manual range is stored per DDC in the H1Slices record (every row written with a manual flag,
+because DB.SaveVars only merges rows).
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -321,6 +336,6 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 from H1 head `9c8260f` with the full-screen Tune-slider
-  fix (`Thetis.exe` `5EE0F4E9...`, `ChannelMaster.dll` `8EFD295F...`).
+  audio/transmit; refreshed 2026-11-21 (afternoon) from H1 head `555091f` with the per-DDC
+  dB scales (`Thetis.exe` `845BBD7C...`, `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
