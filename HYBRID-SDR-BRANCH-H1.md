@@ -233,6 +233,11 @@ external ATU with the same two-phase tune.
   gesture and tunes by the digit under the pointer (1 MHz/1 Hz on DDC1, 100 kHz/1 kHz/1 Hz on
   DDC3, 100 kHz on DDC5, 1 MHz on DDC2, all restored); double-click entry set and restored
   DDC1 14.123456 and DDC3 7.200000; the gutter scale gesture still works below the caption.
+- **Verified on the station on 2026-11-21 (caption sub guard)** (deployed `Thetis.exe`
+  `C0F1D544...`, built from `a65fe94`): SubRX1 restored to 14.200387 and shown in the normal
+  view under VFO A 14.169750; a +1 MHz caption digit step and back, and manual entry
+  15.169750 -> 14.169750, both leave SubRX1 at 14.200387 (band trace records it following
+  the delta and returning); two restart cycles keep `VFOASubFreq=14.200387`.
 - **Only the operator can confirm on-air behaviour** — the PC has no RF or TX-audio observable.
 - **Not verified**: CPU load with all eight DSP channels and analysers streaming at once (the manager
   keeps slices dormant until a consumer arrives); mixed per-DDC sample rates on the 8-DDC firmware;
@@ -358,6 +363,13 @@ tunes by 10^digit Hz (1 Hz .. 10 MHz), DDC1/DDC2 through their VFO targets and D
 through their slice VFO, while the dB-scale gesture keeps the gutter below the caption.
 Double-clicking the caption opens a "DDCn frequency" dialog for exact MHz entry.
 
+The 2026-11-21 caption sub guard (console.cs) fixes a side effect of the big digit steps:
+moving VFO A/B far enough made the existing sub-follow clamp snap a SubRX1/SubRX2 that
+left the visible span onto its parent VFO, overwriting the remembered sub frequency (the
+next restart then saved the clobbered value). The caption tuning now shifts each sub by
+the same delta its parent VFO moved, preserving the sub's offset; normal-view tuning is
+unchanged.
+
 ## 12. Known limits and open items
 
 - Spare-cell band combos currently use RX1's band stack (the last-used frequency/mode for that band);
@@ -407,7 +419,7 @@ master (852bf0e)
 Test set releases:
 
 - `hybrid-sdr-testset-H1-2026-11-12` — current: eight-DDC full-window receivers and spare-slice
-  audio/transmit; refreshed 2026-11-21 (caption) from H1 head `202cae2` with the bright cell
-  caption, digit tuning and manual frequency entry (`Thetis.exe` `C0676C17...`,
+  audio/transmit; refreshed 2026-11-21 (caption sub guard) from H1 head `a65fe94` with the
+  sub-offset-preserving caption tuning (`Thetis.exe` `C0F1D544...`,
   `ChannelMaster.dll` `8EFD295F...`).
 - `hybrid-sdr-testset-H1-2026-09-26` — the earlier sub-receiver test set (superseded entry).
