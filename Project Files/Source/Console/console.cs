@@ -10888,42 +10888,100 @@ for (int zr = 0; zr < 8; zr++)
             if (max <= min) max = min + 10;
         }
 
-        // publish one row's effective range to the renderer; a manual setting wins
+        // the waterfall colour thresholds configured for a band (normal-view Setup values)
+        private void H1BandWaterfallRange(Band band, bool rx2, out float low, out float high)
+        {
+            switch (band)
+            {
+                case Band.B160M: low = rx2 ? RX2WaterfallLowThreshold160m : WaterfallLowThreshold160m; high = rx2 ? RX2WaterfallHighThreshold160m : WaterfallHighThreshold160m; break;
+                case Band.B80M: low = rx2 ? RX2WaterfallLowThreshold80m : WaterfallLowThreshold80m; high = rx2 ? RX2WaterfallHighThreshold80m : WaterfallHighThreshold80m; break;
+                case Band.B60M: low = rx2 ? RX2WaterfallLowThreshold60m : WaterfallLowThreshold60m; high = rx2 ? RX2WaterfallHighThreshold60m : WaterfallHighThreshold60m; break;
+                case Band.B40M: low = rx2 ? RX2WaterfallLowThreshold40m : WaterfallLowThreshold40m; high = rx2 ? RX2WaterfallHighThreshold40m : WaterfallHighThreshold40m; break;
+                case Band.B30M: low = rx2 ? RX2WaterfallLowThreshold30m : WaterfallLowThreshold30m; high = rx2 ? RX2WaterfallHighThreshold30m : WaterfallHighThreshold30m; break;
+                case Band.B20M: low = rx2 ? RX2WaterfallLowThreshold20m : WaterfallLowThreshold20m; high = rx2 ? RX2WaterfallHighThreshold20m : WaterfallHighThreshold20m; break;
+                case Band.B17M: low = rx2 ? RX2WaterfallLowThreshold17m : WaterfallLowThreshold17m; high = rx2 ? RX2WaterfallHighThreshold17m : WaterfallHighThreshold17m; break;
+                case Band.B15M: low = rx2 ? RX2WaterfallLowThreshold15m : WaterfallLowThreshold15m; high = rx2 ? RX2WaterfallHighThreshold15m : WaterfallHighThreshold15m; break;
+                case Band.B12M: low = rx2 ? RX2WaterfallLowThreshold12m : WaterfallLowThreshold12m; high = rx2 ? RX2WaterfallHighThreshold12m : WaterfallHighThreshold12m; break;
+                case Band.B10M: low = rx2 ? RX2WaterfallLowThreshold10m : WaterfallLowThreshold10m; high = rx2 ? RX2WaterfallHighThreshold10m : WaterfallHighThreshold10m; break;
+                case Band.B6M: low = rx2 ? RX2WaterfallLowThreshold6m : WaterfallLowThreshold6m; high = rx2 ? RX2WaterfallHighThreshold6m : WaterfallHighThreshold6m; break;
+                case Band.WWV: low = rx2 ? RX2WaterfallLowThresholdWWV : WaterfallLowThresholdWWV; high = rx2 ? RX2WaterfallHighThresholdWWV : WaterfallHighThresholdWWV; break;
+                case Band.GEN: low = rx2 ? RX2WaterfallLowThresholdGEN : WaterfallLowThresholdGEN; high = rx2 ? RX2WaterfallHighThresholdGEN : WaterfallHighThresholdGEN; break;
+                default: low = rx2 ? RX2WaterfallLowThresholdXVTR : WaterfallLowThresholdXVTR; high = rx2 ? RX2WaterfallHighThresholdXVTR : WaterfallHighThresholdXVTR; break;
+            }
+            if (high <= low) high = low + 10f;
+        }
+
+        // publish one row's effective range and waterfall colour thresholds to the renderer;
+        // a manual dBm setting wins for the axis, the waterfall keeps the normal-view rule.
         private void H1PublishRowScale(int row, Band band)
         {
             if (row < 0 || row > 7) return;
-            if (Display.H1RowGridManual[row]) return;
-            int mn, mx;
-            if (row == 0)
+            bool changed = false;
+            if (!Display.H1RowGridManual[row])
             {
-                mn = Display.SpectrumGridMin;
-                mx = Display.SpectrumGridMax;
+                int mn, mx;
+                if (row == 0)
+                {
+                    mn = Display.SpectrumGridMin;
+                    mx = Display.SpectrumGridMax;
+                }
+                else if (row == 1)
+                {
+                    mn = Display.RX2SpectrumGridMin;
+                    mx = Display.RX2SpectrumGridMax;
+                }
+                else
+                {
+                    H1BandGridRange(band, false, out mn, out mx);
+                }
+                if (mx <= mn) mx = mn + 10;
+                if (Display.H1RowGridMin[row] != mn || Display.H1RowGridMax[row] != mx)
+                {
+                    Display.H1RowGridMin[row] = mn;
+                    Display.H1RowGridMax[row] = mx;
+                    changed = true;
+                }
             }
-            else if (row == 1)
+
+            // H1 (user 2026-11-21, parity): the row's waterfall colours follow the same rule as
+            // the normal-view panafall - the band's configured thresholds, or the row's own
+            // dBm scale while "use spectrum min/max for waterfall" is ticked for its receiver.
+            bool rx2 = row == 1;
+            bool link = rx2 ? m_bWaterfallUseRX2SpectrumMinMax : m_bWaterfallUseRX1SpectrumMinMax;
+            float wlo, whi;
+            if (link)
             {
-                mn = Display.RX2SpectrumGridMin;
-                mx = Display.RX2SpectrumGridMax;
+                wlo = Display.H1RowGridMin[row];
+                whi = Display.H1RowGridMax[row];
             }
             else
             {
-                H1BandGridRange(band, false, out mn, out mx);
+                Band wfBand = row == 0 ? RX1Band : (row == 1 ? RX2Band : band);
+                H1BandWaterfallRange(wfBand, rx2, out wlo, out whi);
             }
-            if (mx <= mn) mx = mn + 10;
-            if (Display.H1RowGridMin[row] != mn || Display.H1RowGridMax[row] != mx)
+            if (whi <= wlo) whi = wlo + 10f;
+            if (Display.H1RowWfLow[row] != wlo || Display.H1RowWfHigh[row] != whi)
             {
-                Display.H1RowGridMin[row] = mn;
-                Display.H1RowGridMax[row] = mx;
-                if (pnlDisplay != null) pnlDisplay.Invalidate();
+                Display.H1RowWfLow[row] = wlo;
+                Display.H1RowWfHigh[row] = whi;
+                changed = true;
+                H1SpacePttTrace("h1wf: DDC" + (row + 1) + " low=" + wlo.ToString("f1") + " high=" + whi.ToString("f1")
+                    + (link ? " (scale)" : " (band)"));
             }
+            if (changed && pnlDisplay != null) pnlDisplay.Invalidate();
         }
 
         private void H1PublishRowScale(int row)
         {
             if (row < 0 || row > 7) return;
-            if (Display.H1RowGridManual[row]) return;
-            if (row == 0 || row == 1)
+            if (row == 0)
             {
-                H1PublishRowScale(row, Band.GEN);
+                H1PublishRowScale(0, RX1Band);
+                return;
+            }
+            if (row == 1)
+            {
+                H1PublishRowScale(1, RX2Band);
                 return;
             }
             Band band = Band.LAST;
@@ -10955,6 +11013,7 @@ for (int zr = 0; zr < 8; zr++)
             Display.H1RowGridManual[row] = true;
             if (pnlDisplay != null) pnlDisplay.Invalidate();
             H1SpacePttTrace("h1scale: DDC" + (row + 1) + " min=" + min + " max=" + max + " manual");
+            H1PublishRowScale(row);   // H1: a linked waterfall follows the row scale at once
         }
 
         private void H1RowScaleWheel(int row, int steps, bool span)
@@ -10964,11 +11023,11 @@ for (int zr = 0; zr < 8; zr++)
             int mn = Display.H1RowGridMin[row], mx = Display.H1RowGridMax[row];
             if (span)
             {
-                int mid = (mn + mx) / 2;
-                int half = (mx - mn) / 2 - 5 * steps;
-                if (half < 5) half = 5;
-                mn = mid - half;
-                mx = mid + half;
+                // H1 (user 2026-11-21): move both ends symmetrically - no midpoint rounding,
+                // so a span change is exactly invertible and the middle stays put.
+                int d = 5 * steps;
+                mn += d;
+                mx -= d;
             }
             else
             {
@@ -10986,6 +11045,160 @@ for (int zr = 0; zr < 8; zr++)
             if (pnlDisplay != null) pnlDisplay.Invalidate();
             H1SpacePttTrace("h1scale: DDC" + (row + 1) + " reset to band scale min="
                 + Display.H1RowGridMin[row] + " max=" + Display.H1RowGridMax[row]);
+        }
+
+        // H1 (user 2026-11-21, parity): the normal view's dB number column, from a display-client
+        // point. Returns 1 for RX1's column, 2 for RX2's, 0 when the point is anywhere else.
+        private int H1NormalScaleStripAt(int x, int y)
+        {
+            if (pnlDisplay == null) return 0;
+            if (x < 0 || y < 0 || x >= pnlDisplay.Width || y >= pnlDisplay.Height) return 0;
+            // H1 (user 2026-11-21, parity): the strip is correct for the receiver whose part of
+            // the pane the pointer is in - both receivers draw their numbers at the same x.
+            if (RX1DisplayGridW > RX1DisplayGridX && RX1DisplayGridX >= 0
+                && x >= RX1DisplayGridX && x <= RX1DisplayGridW && overRX(x, y, 1, false)) return 1;
+            if (rx2_enabled && RX2DisplayGridW > RX2DisplayGridX && RX2DisplayGridX >= 0
+                && x >= RX2DisplayGridX && x <= RX2DisplayGridW && overRX(x, y, 2, false)) return 2;
+            return 0;
+        }
+
+        // wheel over the normal view's dB number column: shift the receiver's scale (1 dB per
+        // notch), Ctrl+wheel changes its span (5 dB per notch, about the middle). Installed
+        // through the setup spinners so the per-band store and linked waterfall follow.
+        private void H1NormalScaleWheel(int rx, int steps, bool span)
+        {
+            if ((rx != 1 && rx != 2) || steps == 0) return;
+            if (IsSetupFormNull) return;
+            int stepDb = Math.Max(1, Display.SpectrumGridStep);
+            int min = rx == 1 ? Display.SpectrumGridMin : Display.RX2SpectrumGridMin;
+            int max = rx == 1 ? Display.SpectrumGridMax : Display.RX2SpectrumGridMax;
+            int nmin = min, nmax = max;
+            if (span)
+            {
+                // H1 (user 2026-11-21, parity): symmetric span change, exactly invertible.
+                int d = 5 * steps;
+                nmin = min + d;
+                nmax = max - d;
+            }
+            else
+            {
+                nmin += steps;
+                nmax += steps;
+            }
+            if (nmin < -200) nmin = -200;
+            if (nmax > 200) nmax = 200;
+            int minSpan = Math.Max(24, 2 * stepDb);
+            if (nmax - nmin < minSpan) nmax = nmin + minSpan;
+            if (nmax - nmin > 300) nmin = nmax - 300;
+            if (nmin > nmax - minSpan) nmin = nmax - minSpan;
+            if (nmin == min && nmax == max) return;
+            // order the two writes so the setup spinners' min/max guards never clamp them
+            if (nmin <= min)
+            {
+                if (rx == 1) SetupForm.DisplayGridMin = nmin; else SetupForm.RX2DisplayGridMin = nmin;
+                if (rx == 1) SetupForm.DisplayGridMax = nmax; else SetupForm.RX2DisplayGridMax = nmax;
+            }
+            else
+            {
+                if (rx == 1) SetupForm.DisplayGridMax = nmax; else SetupForm.RX2DisplayGridMax = nmax;
+                if (rx == 1) SetupForm.DisplayGridMin = nmin; else SetupForm.RX2DisplayGridMin = nmin;
+            }
+            setWaterfallGainsIfLinkedToSpectrum(rx);
+            H1SpacePttTrace("scale: RX" + rx + " min="
+                + (rx == 1 ? Display.SpectrumGridMin : Display.RX2SpectrumGridMin) + " max="
+                + (rx == 1 ? Display.SpectrumGridMax : Display.RX2SpectrumGridMax) + " (wheel)");
+        }
+
+        // H1 (user 2026-11-21, parity): exact per-DDC Grid Max/Min entry - the full-window
+        // counterpart of the Setup display spinners, opened by right-clicking a cell's dB scale.
+        private void H1ShowScaleEditor(int row)
+        {
+            if (row < 0 || row > 7) return;
+            try
+            {
+                Form f = new Form();
+                f.Text = "DDC" + (row + 1) + " scale";
+                f.FormBorderStyle = FormBorderStyle.FixedDialog;
+                f.StartPosition = FormStartPosition.CenterParent;
+                f.MinimizeBox = false;
+                f.MaximizeBox = false;
+                f.ShowInTaskbar = false;
+                f.ClientSize = new Size(310, 134);
+
+                Label lMax = new Label();
+                lMax.Text = "Grid Max:";
+                lMax.Location = new Point(14, 20);
+                lMax.AutoSize = true;
+                f.Controls.Add(lMax);
+
+                NumericUpDown nudMax = new NumericUpDown();
+                nudMax.Minimum = -200;
+                nudMax.Maximum = 200;
+                nudMax.Increment = 1;
+                nudMax.Value = Display.H1RowGridMax[row];
+                nudMax.Location = new Point(110, 16);
+                nudMax.Size = new Size(120, 22);
+                f.Controls.Add(nudMax);
+
+                Label lMin = new Label();
+                lMin.Text = "Grid Min:";
+                lMin.Location = new Point(14, 52);
+                lMin.AutoSize = true;
+                f.Controls.Add(lMin);
+
+                NumericUpDown nudMin = new NumericUpDown();
+                nudMin.Minimum = -200;
+                nudMin.Maximum = 200;
+                nudMin.Increment = 1;
+                nudMin.Value = Display.H1RowGridMin[row];
+                nudMin.Location = new Point(110, 48);
+                nudMin.Size = new Size(120, 22);
+                f.Controls.Add(nudMin);
+
+                Button btnOk = new Button();
+                btnOk.Text = "OK";
+                btnOk.DialogResult = DialogResult.OK;
+                btnOk.Location = new Point(14, 96);
+                btnOk.Size = new Size(70, 26);
+                f.Controls.Add(btnOk);
+
+                Button btnCancel = new Button();
+                btnCancel.Text = "Cancel";
+                btnCancel.DialogResult = DialogResult.Cancel;
+                btnCancel.Location = new Point(90, 96);
+                btnCancel.Size = new Size(70, 26);
+                f.Controls.Add(btnCancel);
+
+                Button btnReset = new Button();
+                btnReset.Text = "Reset to band scale";
+                btnReset.Location = new Point(166, 96);
+                btnReset.Size = new Size(130, 26);
+                f.Controls.Add(btnReset);
+
+                ToolTip tip = new ToolTip();
+                tip.SetToolTip(nudMax, "Top of this DDC's vertical scale, in dBm.");
+                tip.SetToolTip(nudMin, "Bottom of this DDC's vertical scale, in dBm.");
+                tip.SetToolTip(btnReset, "Return this DDC to the scale configured for its band.");
+
+                f.AcceptButton = btnOk;
+                f.CancelButton = btnCancel;
+                btnReset.Click += (s, ev) =>
+                {
+                    f.DialogResult = DialogResult.Cancel;
+                    f.Close();
+                    H1RowScaleReset(row);
+                };
+
+                if (f.ShowDialog(this) == DialogResult.OK)
+                {
+                    int mn = (int)nudMin.Value;
+                    int mx = (int)nudMax.Value;
+                    if (mx - mn < 10) mx = mn + 10;
+                    H1RowScaleApply(row, mn, mx);
+                }
+                f.Dispose();
+            }
+            catch (Exception ex) { H1SpacePttTrace("h1scale editor failed: " + ex.Message); }
         }
 
         private int H1CellRowAt(int xInDisplay, int yInDisplay)
@@ -22435,6 +22648,7 @@ for (int zr = 0; zr < 8; zr++)
                 Display.SpectrumBasedThresholdsRX1 = m_bWaterfallUseRX1SpectrumMinMax;
 
                 setWaterfallGainsIfLinkedToSpectrum(1);
+                if (_h1FullScreenPanafall) H1PublishRowScales();   // H1: per-row waterfall colours follow the option
             }
         }
         private bool m_bWaterfallUseRX2SpectrumMinMax = false;
@@ -22447,6 +22661,7 @@ for (int zr = 0; zr < 8; zr++)
                 Display.SpectrumBasedThresholdsRX2 = m_bWaterfallUseRX2SpectrumMinMax;
 
                 setWaterfallGainsIfLinkedToSpectrum(2);
+                if (_h1FullScreenPanafall) H1PublishRowScales();   // H1: per-row waterfall colours follow the option
             }
         }
 
@@ -42209,6 +42424,23 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 GetVFOCharWidth();
 
             if (num_steps == 0) return;
+            // H1 (user 2026-11-21, parity): in the normal view the dB number column of each
+            // receiver takes the same wheel gesture as a full-window cell - a notch shifts that
+            // receiver's scale, Ctrl+wheel changes its span.
+            if (!_h1FullScreenPanafall && pnlDisplay != null)
+            {
+                try
+                {
+                    Point h1nPt = pnlDisplay.PointToClient(PointToScreen(new Point(e.X, e.Y)));
+                    int h1nRx = H1NormalScaleStripAt(h1nPt.X, h1nPt.Y);
+                    if (h1nRx != 0)
+                    {
+                        H1NormalScaleWheel(h1nRx, num_steps, Common.CtrlKeyDown);
+                        return;
+                    }
+                }
+                catch { }
+            }
             // H1 (user 2026-11-21): the left gutter of a full-window cell is that DDC's dB scale.
             // A notch there shifts the scale, Ctrl+wheel widens/narrows it; the gesture never
             // tunes the cell. Checked before the cell-strip guard: the gutter is not a control.
@@ -63192,6 +63424,18 @@ private void incrementMutliMeterDisplayModeRX2()
             {
                 int h1scRow;
                 if (H1ScaleGutterRow(e.X, e.Y, out h1scRow)) return;
+            }
+
+            // H1 (user 2026-11-21, parity): right-click on a cell's dB scale opens the exact
+            // Grid Max / Grid Min editor for that DDC (the counterpart of Setup's spinners).
+            if (_h1FullScreenPanafall && e.Button == MouseButtons.Right)
+            {
+                int h1scRowR;
+                if (H1ScaleGutterRow(e.X, e.Y, out h1scRowR))
+                {
+                    H1ShowScaleEditor(h1scRowR);
+                    return;
+                }
             }
 
 

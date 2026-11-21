@@ -255,6 +255,12 @@ namespace Thetis
         public static readonly int[] H1RowGridMin = new int[8];
         public static readonly int[] H1RowGridMax = new int[8];
         public static readonly bool[] H1RowGridManual = new bool[8];
+        // H1 (user 2026-11-21, parity): per-row waterfall colour thresholds. The console
+        // publishes them from the row's band's configured waterfall thresholds, or from the
+        // row's own scale while the "use spectrum min/max for waterfall" option is on - the
+        // same rule the normal-view panafall follows. The shared fields stay as fallback.
+        public static readonly float[] H1RowWfLow = new float[8];
+        public static readonly float[] H1RowWfHigh = new float[8];
         // per-cell slice state, published by the console every 150 ms
         public static readonly int[] H1RowFilterLow = new int[8];
         public static readonly int[] H1RowFilterHigh = new int[8];
@@ -292,6 +298,8 @@ namespace Thetis
                 H1RowGridMin[z] = -140;
                 H1RowGridMax[z] = -40;
                 H1RowGridManual[z] = false;
+                H1RowWfLow[z] = -140f;
+                H1RowWfHigh[z] = -40f;
                 H1CellMeterMain[z] = -200f;
                 H1CellMeterSub[z] = -200f;
             }
@@ -6762,6 +6770,10 @@ namespace Thetis
                 if (grid_max <= grid_min) { grid_max = spectrum_grid_max; grid_min = spectrum_grid_min; }
                 if (grid_max <= grid_min) grid_max = grid_min + 10;
                 float span = grid_max - grid_min;
+                // H1 (user 2026-11-21, parity): this row's own waterfall colour range.
+                float h1WfLow = H1RowWfLow[r];
+                float h1WfHigh = H1RowWfHigh[r];
+                if (h1WfHigh <= h1WfLow) { h1WfLow = low_threshold; h1WfHigh = high_threshold; }
 
                 float[] data;
                 float[] wfData;
@@ -6881,17 +6893,17 @@ namespace Thetis
                             if (di >= h1WfLen) di = h1WfLen - 1;
                             float v = wfData[di];
                             int R, G, B;
-                            if (v <= low_threshold)
+                            if (v <= h1WfLow)
                             {
                                 R = 0; G = 0; B = 0;
                             }
-                            else if (v >= high_threshold)
+                            else if (v >= h1WfHigh)
                             {
                                 R = 192; G = 124; B = 255;
                             }
                             else // value is between low and high - the 'enhanced' scheme, as the main waterfall
                             {
-                                float overall_percent = (v - low_threshold) / (high_threshold - low_threshold);
+                                float overall_percent = (v - h1WfLow) / (h1WfHigh - h1WfLow);
                                 if (overall_percent < (float)2 / 9)
                                 {
                                     float local_percent = overall_percent / ((float)2 / 9);
