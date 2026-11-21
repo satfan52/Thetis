@@ -2985,6 +2985,9 @@ namespace Thetis
         }
 
         private static SolidBrush pana_text_brush = new SolidBrush(Color.Khaki);
+        // H1 (user 2026-11-21): the full-window cell's centre caption is its tuning readout - draw
+        // it in bright white so it stands out from the dim scale text.
+        private static SolidBrush h1_centre_text_brush = new SolidBrush(Color.White);
         private static Font pana_font = new Font("Tahoma", 7F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
 
         private static Font m_fntCallOutFont = new Font("Trebuchet MS", 9, FontStyle.Regular);
@@ -7008,10 +7011,6 @@ namespace Thetis
                 // level with the controls.
                 // H1 (M1 step 5): every cell carries its own S-meter now
 
-                if (m_bDX2_pana_text_brush != null)
-                {
-                    drawStringDX2D(centre.ToString("f6"), fontDX2d_font9, m_bDX2_pana_text_brush, 4, y0 + 2);
-                }
 
                 // H1 (user 2026-11-09): the 2x4 cells had only the centre caption - give every DDC
                 // its own dB (vertical) and frequency (horizontal) scales. They use the same mappings
@@ -7019,6 +7018,20 @@ namespace Thetis
                 // so the numbers sit on the content and line up with the tuning windows.
                 H1DrawCellScales(cellW, specH, h1Low, h1High, centre, grid_max, grid_min, 0);
                 H1DrawCellSMeter(r);
+
+                // H1 (user 2026-11-21): the centre caption is the cell's tuning readout - draw it
+                // last (over the grid lines and the meter bed), in the bright caption brush with
+                // the bold face, and inset from the frame so the digits never touch the border.
+                // The console's caption hit-test measures the same font and inset
+                // (H1CellCaptionHit/H1CellCentreFont).
+                string h1cfText = centre.ToString("f6");
+                SharpDX.Direct2D1.Brush h1cfBrush = m_bDX2_h1_centre_brush != null
+                    ? m_bDX2_h1_centre_brush : m_bDX2_pana_text_brush;
+                SharpDX.DirectWrite.TextFormat h1cfFont = H1CellCentreFont();
+                if (h1cfBrush != null && h1cfFont != null)
+                {
+                    drawStringDX2D(h1cfText, h1cfFont, h1cfBrush, H1_CF_CAPTION_X, y0 + H1_CF_CAPTION_TOP);
+                }
 
                 // waterfall: colour the new line, scroll the bitmap down one row, draw it
                 if (hasWf && wfData != null && _h1rowWfBmp[r] != null && hWf == wfH)
@@ -7320,6 +7333,76 @@ namespace Thetis
             }
         }
 
+        // H1 (user 2026-11-21): the cell's centre caption is its frequency-tuning surface. These
+        // helpers give the console the caption rectangle and the digit under the pointer, in
+        // pnlDisplay client coordinates; the caption strip is excluded from the dB-scale gesture.
+        private const int H1_CF_CAPTION_X = 8;      // inset from the left frame
+        private const int H1_CF_CAPTION_TOP = 5;    // inset from the top frame
+        private const int H1_CF_CAPTION_HEIGHT = 22; // hit strip below the top frame
+
+        private static string H1CellCentreText(int row)
+        {
+            double centre = row == 0 ? CentreFreqRX1 : (row == 1 ? CentreFreqRX2 : H1RowCentreMHz[row]);
+            return centre.ToString("f6");
+        }
+
+        private static SharpDX.DirectWrite.TextFormat H1CellCentreFont()
+        {
+            return fontDX2d_font9b != null ? fontDX2d_font9b : fontDX2d_font9;
+        }
+
+        // row: cell 0..7; digit: power of ten of the digit under the pointer (0 = 1 Hz .. 7 = 10 MHz)
+        public static bool H1CellCaptionHit(int x, int y, out int row, out int digit)
+        {
+            row = -1;
+            digit = -1;
+            if (!H1EightRows || fontDX2d_font9 == null) return false;
+            int w = displayTargetWidth, h = displayTargetHeight;
+            if (w < 4 || h < 8) return false;
+            int cellW = w / 2, rowH = h / 4;
+            if (cellW < 4 || rowH < 8) return false;
+            if (x < 0 || y < 0 || x >= w || y >= h) return false;
+            int col = x < cellW ? 0 : 1;
+            int rowInCol = y / rowH;
+            if (rowInCol > 3) rowInCol = 3;
+            int r = col * 4 + rowInCol;
+            int cellX = x - col * cellW;
+            int cellY = y - rowInCol * rowH;
+            if (cellY < H1_CF_CAPTION_TOP - 2 || cellY > H1_CF_CAPTION_HEIGHT) return false;
+            string text = H1CellCentreText(r);
+            SharpDX.DirectWrite.TextFormat tf = H1CellCentreFont();
+            if (tf == null) return false;
+            SizeF sz = measureStringDX2D(text, tf);
+            int textRight = H1_CF_CAPTION_X + (int)Math.Ceiling(sz.Width) + 2;
+            if (cellX < H1_CF_CAPTION_X - 2 || cellX > textRight) return false;
+            // which character is under the pointer
+            int charIndex = text.Length - 1;
+            float captionLeft = H1_CF_CAPTION_X;
+            for (int i = 0; i < text.Length; i++)
+            {
+                float pre = i == 0 ? 0f : measureStringDX2D(text.Substring(0, i), tf).Width;
+                float cw = measureStringDX2D(text.Substring(i, 1), tf).Width;
+                if (cellX <= captionLeft + pre + cw)
+                {
+                    charIndex = i;
+                    break;
+                }
+            }
+            if (text[charIndex] == '.' && charIndex + 1 < text.Length) charIndex++;
+            int exp = 0;
+            for (int j = charIndex + 1; j < text.Length; j++)
+                if (text[j] != '.') exp++;
+            row = r;
+            digit = exp;
+            return true;
+        }
+
+        public static bool H1CellCaptionRow(int x, int y, out int row)
+        {
+            int digit;
+            return H1CellCaptionHit(x, y, out row, out digit);
+        }
+
         // H1 (M1 step 3): per-cell window for one of the six spare DDC cells. The
         // slice state (passband, VFO offsets, sub window) is published by the
         // console; this maps it onto the cell and paints it with the same
@@ -7421,7 +7504,7 @@ namespace Thetis
         // the over-scale marks are S9+20 and S9+40. The main receiver is the white needle and text,
         // the sub receiver the blue one; the readouts say the actual S value, e.g. "S7" or "S9+12".
         // While that cell's side transmits the bar becomes an amber SWR bar (1..5) with its value.
-        private const int H1SMeterX0 = 64;     // right of the centre caption
+        private const int H1SMeterX0 = 100;    // right of the centre caption (clear of the bold digits)
         private const int H1SMeterX1 = 214;    // left of the control block
         private const int H1SMeterReadX = 220; // "S7" / "SWR 1.3" text column
         private const int H1SMeterBarY = 13;   // level with the control row
@@ -9082,6 +9165,7 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_grid_tx_text_brush;
         private static SharpDX.Direct2D1.Brush m_bDX2_grid_text_brush;
         private static SharpDX.Direct2D1.Brush m_bDX2_pana_text_brush;
+        private static SharpDX.Direct2D1.Brush m_bDX2_h1_centre_brush;
 
         private static SharpDX.Direct2D1.Brush m_bDX2_p1;
 
@@ -9430,6 +9514,7 @@ namespace Thetis
             m_bDX2_grid_tx_text_brush = null;
             m_bDX2_grid_text_brush = null;
             m_bDX2_pana_text_brush = null;
+            m_bDX2_h1_centre_brush = null;
 
             m_bDX2_bandstack_overlay_brush = null;
             m_bDX2_bandstack_overlay_brush_lines = null;
@@ -9528,6 +9613,7 @@ namespace Thetis
                 m_bDX2_grid_tx_text_brush = convertBrush((SolidBrush)grid_tx_text_brush);
                 m_bDX2_grid_text_brush = convertBrush((SolidBrush)grid_text_brush);
                 m_bDX2_pana_text_brush = convertBrush((SolidBrush)pana_text_brush);
+                m_bDX2_h1_centre_brush = convertBrush((SolidBrush)h1_centre_text_brush);
 
                 m_bDX2_bandstack_overlay_brush = convertBrush((SolidBrush)bandstack_overlay_brush);
                 m_bDX2_bandstack_overlay_brush_lines = convertBrush((SolidBrush)bandstack_overlay_brush_lines);

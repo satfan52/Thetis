@@ -10860,6 +10860,9 @@ for (int zr = 0; zr < 8; zr++)
             if (x < 0 || y < 0 || x >= w || y >= h) return false;
             int r = H1CellRowAt(x, y);
             if (r < 0) return false;
+            // H1 (user 2026-11-21): the centre caption is the frequency-tuning surface, not the scale.
+            int h1cfRow;
+            if (Display.H1CellCaptionRow(x, y, out h1cfRow)) return false;
             int col = x < w / 2 ? 0 : 1;
             int cellX = x - col * (w / 2);
             if (cellX > H1_SCALE_GUTTER) return false;
@@ -11263,6 +11266,180 @@ for (int zr = 0; zr < 8; zr++)
                 f.Dispose();
             }
             catch (Exception ex) { H1SpacePttTrace("h1scale editor failed: " + ex.Message); }
+        }
+
+        // H1 (user 2026-11-21): the cell's centre caption is the frequency-tuning surface.
+        // A wheel notch moves the digit under the pointer (10^digit Hz); DDC1/DDC2 follow the
+        // same VFO target their cell wheel already uses, DDC3-DDC8 tune their headless slice.
+        private void H1CellCaptionWheel(int row, int digit, int num_steps)
+        {
+            if (row < 0 || row > 7 || digit < 0 || num_steps == 0) return;
+            if (digit > 7) digit = 7;
+            double delta = Math.Pow(10, digit) * 1e-6 * num_steps;   // MHz
+            try
+            {
+                if (row == 0)
+                {
+                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                    {
+                        if (rx2_enabled && chkVFOSplit.Checked) VFOASubFreq = Math.Round(VFOASubFreq + delta, 6);
+                        else VFOBFreq = Math.Round(VFOBFreq + delta, 6);
+                    }
+                    else if (!_mox) VFOAFreq = Math.Round(VFOAFreq + delta, 6);
+                }
+                else if (row == 1)
+                {
+                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                        VFOASubFreq = Math.Round(VFOASubFreq + delta, 6);
+                    else if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
+                        VFOBFreq = Math.Round(VFOBFreq + delta, 6);
+                    else
+                        VFOAFreq = Math.Round(VFOAFreq + delta, 6);
+                }
+                else
+                {
+                    HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(row);
+                    if (slice == null) return;
+                    _h1SlicePositioned[row] = true;
+                    double f = Math.Round(slice.FrequencyMHz + delta, 6);
+                    HeadlessSliceManager.Instance.SetVFOA(row, f);
+                    if (TxArbiter.Instance.ActiveDigitalRx == row)
+                        TxArbiter.Instance.UpdateDigitalTxFrequency(row, f);
+                    H1SpacePttTrace("h1cf: wheel DDC" + (row + 1) + " digit=" + digit + " -> " + f.ToString("f6"));
+                }
+            }
+            catch { }
+        }
+
+        // the frequency a cell's caption currently shows/tunes (for the manual-entry prefill)
+        private double H1CellTuningFrequency(int row)
+        {
+            try
+            {
+                if (row == 0)
+                {
+                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                        return (rx2_enabled && chkVFOSplit.Checked) ? VFOASubFreq : VFOBFreq;
+                    return VFOAFreq;
+                }
+                if (row == 1)
+                {
+                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                        return VFOASubFreq;
+                    if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
+                        return VFOBFreq;
+                    return VFOAFreq;
+                }
+                HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(row);
+                return slice == null ? -1.0 : slice.FrequencyMHz;
+            }
+            catch { return -1.0; }
+        }
+
+        // manual absolute frequency for one cell - same target as H1CellCaptionWheel
+        private void H1CellSetFrequency(int row, double freq)
+        {
+            if (row < 0 || row > 7 || freq <= 0.0) return;
+            try
+            {
+                if (row == 0)
+                {
+                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                    {
+                        if (rx2_enabled && chkVFOSplit.Checked) VFOASubFreq = Math.Round(freq, 6);
+                        else VFOBFreq = Math.Round(freq, 6);
+                    }
+                    else if (!_mox) VFOAFreq = Math.Round(freq, 6);
+                }
+                else if (row == 1)
+                {
+                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                        VFOASubFreq = Math.Round(freq, 6);
+                    else if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
+                        VFOBFreq = Math.Round(freq, 6);
+                    else
+                        VFOAFreq = Math.Round(freq, 6);
+                }
+                else
+                {
+                    HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(row);
+                    if (slice == null) return;
+                    _h1SlicePositioned[row] = true;
+                    HeadlessSliceManager.Instance.SetVFOA(row, Math.Round(freq, 6));
+                    if (TxArbiter.Instance.ActiveDigitalRx == row)
+                        TxArbiter.Instance.UpdateDigitalTxFrequency(row, Math.Round(freq, 6));
+                }
+                H1SpacePttTrace("h1cf: set DDC" + (row + 1) + " -> " + freq.ToString("f6"));
+            }
+            catch { }
+        }
+
+        // double-click on a cell's centre caption: exact frequency entry for that DDC
+        private void H1ShowCellFrequencyEditor(int row)
+        {
+            if (row < 0 || row > 7) return;
+            double cur = H1CellTuningFrequency(row);
+            if (cur <= 0.0) return;
+            try
+            {
+                Form f = new Form();
+                f.Text = "DDC" + (row + 1) + " frequency";
+                f.FormBorderStyle = FormBorderStyle.FixedDialog;
+                f.StartPosition = FormStartPosition.CenterParent;
+                f.MinimizeBox = false;
+                f.MaximizeBox = false;
+                f.ShowInTaskbar = false;
+                f.ClientSize = new Size(300, 96);
+
+                Label lFreq = new Label();
+                lFreq.Text = "Frequency (MHz):";
+                lFreq.Location = new Point(14, 18);
+                lFreq.AutoSize = true;
+                f.Controls.Add(lFreq);
+
+                TextBox tbFreq = new TextBox();
+                tbFreq.Text = cur.ToString("f6");
+                tbFreq.Location = new Point(126, 14);
+                tbFreq.Size = new Size(160, 22);
+                f.Controls.Add(tbFreq);
+
+                Button btnOk = new Button();
+                btnOk.Text = "OK";
+                btnOk.DialogResult = DialogResult.OK;
+                btnOk.Location = new Point(126, 56);
+                btnOk.Size = new Size(74, 26);
+                f.Controls.Add(btnOk);
+
+                Button btnCancel = new Button();
+                btnCancel.Text = "Cancel";
+                btnCancel.DialogResult = DialogResult.Cancel;
+                btnCancel.Location = new Point(212, 56);
+                btnCancel.Size = new Size(74, 26);
+                f.Controls.Add(btnCancel);
+
+                ToolTip tip = new ToolTip();
+                tip.SetToolTip(tbFreq, "Tuning frequency in MHz for this DDC.");
+
+                f.AcceptButton = btnOk;
+                f.CancelButton = btnCancel;
+                tbFreq.SelectAll();
+                tbFreq.Focus();
+
+                if (f.ShowDialog(this) == DialogResult.OK)
+                {
+                    double v;
+                    string s = tbFreq.Text.Trim();
+                    if (double.TryParse(s, System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out v)
+                        || double.TryParse(s, out v))
+                    {
+                        if (v >= 0.01 && v <= 6000.0) H1CellSetFrequency(row, v);
+                        else H1SpacePttTrace("h1cf: entry rejected " + s);
+                    }
+                }
+                f.Dispose();
+            }
+            catch (Exception ex) { H1SpacePttTrace("h1cf editor failed: " + ex.Message); }
         }
 
         private int H1CellRowAt(int xInDisplay, int yInDisplay)
@@ -42535,6 +42712,23 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 }
                 catch { }
             }
+            // H1 (user 2026-11-21): a notch over a cell's centre caption tunes that DDC by the
+            // digit under the pointer (1 Hz .. 10 MHz), so the caption never collides with the
+            // dB-scale gesture that lives below it. All eight DDCs.
+            if (_h1FullScreenPanafall && pnlDisplay != null)
+            {
+                try
+                {
+                    Point h1cfPt = pnlDisplay.PointToClient(PointToScreen(new Point(e.X, e.Y)));
+                    int h1cfRow, h1cfDigit;
+                    if (Display.H1CellCaptionHit(h1cfPt.X, h1cfPt.Y, out h1cfRow, out h1cfDigit))
+                    {
+                        H1CellCaptionWheel(h1cfRow, h1cfDigit, num_steps);
+                        return;
+                    }
+                }
+                catch { }
+            }
             // H1 (user 2026-11-21): the left gutter of a full-window cell is that DDC's dB scale.
             // A notch there shifts the scale, Ctrl+wheel widens/narrows it; the gesture never
             // tunes the cell. Checked before the cell-strip guard: the gutter is not a control.
@@ -63482,6 +63676,22 @@ private void incrementMutliMeterDisplayModeRX2()
         private void pnlDisplay_DoubleClick(object sender, EventArgs e)
         {
             if (Display.PausedDisplay) return;
+            // H1 (user 2026-11-21): a double-click on a cell's centre caption opens the exact
+            // frequency entry for that DDC.
+            if (_h1FullScreenPanafall && pnlDisplay != null)
+            {
+                try
+                {
+                    Point h1cfPt = pnlDisplay.PointToClient(Cursor.Position);
+                    int h1cfRow;
+                    if (Display.H1CellCaptionRow(h1cfPt.X, h1cfPt.Y, out h1cfRow))
+                    {
+                        H1ShowCellFrequencyEditor(h1cfRow);
+                        return;
+                    }
+                }
+                catch { }
+            }
             // H1 (user 2026-11-21): a double-click on a cell's dB scale restores that DDC to the
             // scale configured for its band.
             if (_h1FullScreenPanafall && pnlDisplay != null)
@@ -63528,6 +63738,13 @@ private void incrementMutliMeterDisplayModeRX2()
         {
             if (Display.PausedDisplay) return;
             H1SetZoomRowFromPoint(e.X, e.Y);
+            // H1 (user 2026-11-21): the centre caption is the frequency-tuning surface; a press
+            // there starts neither the scale gesture nor a drag (double-click opens the entry).
+            if (_h1FullScreenPanafall && pnlDisplay != null)
+            {
+                int h1cfRow;
+                if (Display.H1CellCaptionRow(e.X, e.Y, out h1cfRow)) return;
+            }
             // H1 (user 2026-11-21): the dB scale gutter is not a tuning surface - a press there
             // starts nothing, so the double-click below can reset that row's scale.
             if (_h1FullScreenPanafall && e.Button == MouseButtons.Left)
