@@ -9389,6 +9389,7 @@ namespace Thetis
         private bool _h1AutoZoomReady = false;   // becomes true once the console window is shown
         private readonly bool[] _h1AutoZoomCell = new bool[8];
         private readonly double[] _h1AutoCellFocusHz = new double[8];
+        private readonly double[] _h1AutoZoomSaved = new double[8]; // manual zoom before AUTO
         private bool _h1AutoZoomApplying = false;
 
         private int H1AutoTagWindowPx()
@@ -9556,6 +9557,22 @@ namespace Thetis
             return true;
         }
 
+        // H2 (user 2026-11-22): leaving AUTO by its ZOOM caption restores the manual zoom the
+        // cell had before AUTO; without this the auto-applied zoom stayed as the manual value.
+        void H1AutoRestoreCellManualZoom(int row)
+        {
+            if (row < 0 || row > 7) return;
+            double physical = _h1AutoZoomSaved[row];
+            _h1AutoZoomSaved[row] = -1.0;
+            if (physical < 1.0) physical = 1.0;
+            Display.H1CellZoom[row] = physical;
+            H1FsZoomSync(row == 0 ? h1fsZoom1 : row == 1 ? h1fsZoom2 : h1cellStrips[row].Zoom,
+                row == 0 ? h1fsZoomVal1 : row == 1 ? h1fsZoomVal2 : h1cellStrips[row].ZoomVal,
+                physical);
+            H1ApplyCellAnalyserZoom(row);
+            if (pnlDisplay != null) pnlDisplay.Invalidate();
+        }
+
         private void H1AutoZoomCellApply(int row)
         {
             try
@@ -9582,6 +9599,10 @@ namespace Thetis
                 double maxPhysical = H1CellPhysicalMaxZoom();
                 if (physical < 1.0) physical = 1.0;
                 if (physical > maxPhysical) physical = maxPhysical;
+                // Remember the manual zoom that was in force before AUTO first took this cell,
+                // so leaving AUTO can put the operator's own scale back.
+                if (_h1AutoZoomSaved[row] <= 0.0)
+                    _h1AutoZoomSaved[row] = Display.H1CellZoom[row];
                 Display.H1CellZoom[row] = physical;
                 _h1AutoCellFocusHz[row] = wc;
                 H1ApplyCellAnalyserZoom(row);
@@ -9683,7 +9704,10 @@ namespace Thetis
             H1AutoUiSync();
             H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " " + (_h1AutoZoomCell[row] ? "on" : "off")
                 + " (zoom caption)");
-            if (_h1AutoZoomCell[row]) H1AutoZoomCellApply(row);
+            if (_h1AutoZoomCell[row])
+                H1AutoZoomCellApply(row);
+            else
+                H1AutoRestoreCellManualZoom(row);
         }
 
         private void H1AutoUiSync()
@@ -9777,6 +9801,7 @@ namespace Thetis
             if (!_h1AutoZoomApplying && _h1AutoZoomCell[row])
             {
                 _h1AutoZoomCell[row] = false;
+                _h1AutoZoomSaved[row] = -1.0;
                 H1AutoUiSync();
                 H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " off (manual zoom)");
             }
@@ -11426,6 +11451,7 @@ for (int zr = 0; zr < 8; zr++)
             if (!_h1AutoZoomApplying && _h1AutoZoomCell[row])
             {
                 _h1AutoZoomCell[row] = false;
+                _h1AutoZoomSaved[row] = -1.0;
                 H1AutoUiSync();
                 H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " off (manual zoom)");
             }

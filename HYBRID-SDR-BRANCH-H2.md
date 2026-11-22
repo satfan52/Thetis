@@ -166,6 +166,29 @@ shows no visible STATIC overlay, and the readout shows the complete `14.077 442`
 35x11 empty STATIC by hand reproduced the fix immediately. RX2's `lblRX2APF` uses the same handler.
 
 
+
+## Cell AUTO exit restores the manual zoom (2026-11-22)
+
+Enabling a full-window cell's AUTO zoom changed `Display.H1CellZoom` and the cell analyser, but
+leaving AUTO by its ZOOM caption only cleared the AUTO flag: the auto-applied zoom and pan stayed
+in force, the cell slider was left at the auto value, and the operator's previous manual scale was
+lost. In the reported case the scale stayed at the auto position and could not be brought back to
+the no-zoom state.
+
+- `H1AutoZoomCellApply` now remembers the cell's manual zoom the first time AUTO takes it
+  (`_h1AutoZoomSaved[8]`).
+- Turning AUTO off by clicking the ZOOM caption calls `H1AutoRestoreCellManualZoom`: it puts the
+  remembered manual zoom back, syncs the slider/value label, clears the stale auto pan by applying
+  the normal analyser path, and invalidates the pane.
+- A manual slider move while AUTO is on still takes over immediately and clears the remembered
+  value; re-entering AUTO captures the new manual zoom.
+
+Tested on DDC1 in full-window mode with `Thetis.exe` `9afdc0c3...`: manual 64x → AUTO (auto target
+52x) → AUTO off returned the cell to **64x** (`cell zoom: DDC1 physical 29.09 ...`; trace
+`auto zoom: DDC1 off (zoom caption)`), and a following manual drag returned it to 1.0x. Before the
+fix the AUTO-off value stayed at the auto position.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
