@@ -11537,14 +11537,24 @@ for (int zr = 0; zr < 8; zr++)
                 s.Agc.SetValueQuiet(agc);
                 s.AgcVal.Text = agc.ToString();
                 int af = H1FsClamp((int)Math.Round(sl.AudioGain * 100.0), 0, 100);
+                int nr = sl.Nr; bool anf = sl.Anf, nb = sl.Nb, bin = sl.Bin;
+                if (_h1CellSubCtrl[row])
+                {
+                    HeadlessSubRX.State ss = HeadlessSubRX.Get(row);
+                    agc = H1FsClamp((int)Math.Round(ss.AgcGainDb), -20, 120);
+                    af = H1FsClamp((int)Math.Round(ss.Gain * 100.0), 0, 100);
+                    nr = ss.NrMode; anf = ss.Anf; nb = ss.Nb; bin = ss.Bin;
+                    int smode = Array.IndexOf(H1FsModes, ss.Mode);
+                    if (smode >= 0 && s.Mode.SelectedIndex != smode) s.Mode.SelectedIndex = smode;
+                }
                 s.Af.Minimum = 0; s.Af.Maximum = 100;
                 s.Af.SetValueQuiet(af);
                 s.AfVal.Text = af.ToString();
                 H1FsZoomSync(s.Zoom, s.ZoomVal, Display.H1CellZoom[row]);
-                H1FsPillFace(s.Nr, sl.Nr > 0, sl.Nr > 0 ? "NR" + sl.Nr : "NR");
-                H1FsPillFace(s.Anf, sl.Anf, "ANF");
-                H1FsPillFace(s.Nb, sl.Nb, "NB");
-                H1FsPillFace(s.Bin, sl.Bin, "BIN");
+                H1FsPillFace(s.Nr, nr > 0, nr > 0 ? "NR" + nr : "NR");
+                H1FsPillFace(s.Anf, anf, "ANF");
+                H1FsPillFace(s.Nb, nb, "NB");
+                H1FsPillFace(s.Bin, bin, "BIN");
                 H1FsPillFace(s.Ctun, HeadlessSliceManager.Instance.GetCtunMode(row), "CTUN");
             }
             for (int srow = 0; srow < 8; srow++)

@@ -35,7 +35,7 @@ namespace Thetis
             // the MAIN panel gain to zero at 1.0, so enabling a console SUB pill while the
             // window's RX tag was on silenced the main receiver; 0.5 keeps both channels.
             public double Balance = 0.5;          // sub pan position 0..1 (main gets 1 - balance)
-            public bool Nr, Anf, Snb;
+            public bool Nr, Anf, Snb, Nb;
             public int NrMode;                    // 0 off, 1..4 = NR1..NR4
             public bool Bin;                      // binaural panel
             public double Gain = 1.0;             // sub audio panel gain
@@ -341,6 +341,7 @@ namespace Thetis
         /// <summary>Wideband NB acts on the shared DDC stream (before the main/sub split) - one setting serves both.</summary>
         public static void SetNb(int rx, bool on)
         {
+            Get(rx).Nb = on;
             cmaster.SetRCVRANBRun(0, rx, on);          // NB is DDC-wide (before main/sub split)
         }
 
