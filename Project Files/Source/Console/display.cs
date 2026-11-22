@@ -248,6 +248,17 @@ namespace Thetis
         public static readonly int[] H1RowDisplayLow = new int[8];
         public static readonly int[] H1RowDisplayHigh = new int[8];
         public static readonly bool[] H1RowSpanValid = new bool[8];
+        // H2 (user 2026-11-22): the full-window cells' own 1x span, published by the console from
+        // each DDC analyser. The normal-view zoom is deliberately not part of it, so the two views
+        // are independent; the renderer, scales, windows, drag mapping and click mapping all use
+        // these extents (or the zoomed span the analyser publishes after applying the cell zoom).
+        public static readonly int[] H1RowBaseLow = new int[8];
+        public static readonly int[] H1RowBaseHigh = new int[8];
+        public static readonly bool[] H1RowBaseValid = new bool[8];
+        // H2: the rendered width of the small TX/RX tag (7 pt bold, measured once at font build).
+        // The console's auto zoom uses it to make the tag fit with a margin inside the window.
+        private static float _h1TagTextWidthPx = 14f;
+        public static float H1TagTextWidthPx { get { return _h1TagTextWidthPx; } }
         // H1 (user 2026-11-21): per-row vertical (dBm) scale of the eight-row view. The
         // console publishes the effective range for every DDC (its band's configured scale,
         // or a manual override made by wheel-tuning that DDC's own dB scale). The renderer
@@ -323,15 +334,38 @@ namespace Thetis
         }
 
 
-        // called by the analyser when it finishes configuring a zoomed cell: store that cell's span
+        // called by the analyser when it finishes configuring a cell: store that cell's span.
+        // H2 (user 2026-11-22): every cell publishes its span now, not only the zoomed ones - the
+        // cell's 1x span is independent of the normal view, so the analyser output is the truth
+        // for all eight rows and the normal-view display variables stay untouched while the
+        // full-window view is up.
         public static bool H1StoreCellSpan(int row, int low, int high)
         {
             if (!H1EightRows || row < 0 || row > 7) return false;
-            if (H1CellZoom[row] <= 1.0001) return false;
             H1RowDisplayLow[row] = low;
             H1RowDisplayHigh[row] = high;
             H1RowSpanValid[row] = true;
             return true;
+        }
+
+        // H2: the console publishes each cell's full-window 1x span here.
+        public static void H1StoreRowBaseSpan(int row, int low, int high)
+        {
+            if (row < 0 || row > 7) return;
+            H1RowBaseLow[row] = low;
+            H1RowBaseHigh[row] = high;
+            H1RowBaseValid[row] = high > low;
+        }
+
+        public static void H1ClearRowSpans()
+        {
+            for (int z = 0; z < 8; z++)
+            {
+                H1RowBaseLow[z] = H1RowBaseHigh[z] = 0;
+                H1RowBaseValid[z] = false;
+                H1RowDisplayLow[z] = H1RowDisplayHigh[z] = 0;
+                H1RowSpanValid[z] = false;
+            }
         }
         public static float[][] h1row_display_data = new float[6][];          // stream order (streams 2..7)
         public static float[][] h1row_current_display_data = new float[6][];
@@ -6939,23 +6973,26 @@ namespace Thetis
                 // H1 (user 2026-11-09): the cell's visible span. DDC1/DDC2 can be zoomed about the
                 // middle of the box, independently of each other; the trace, windows, scales and the
                 // console's click/drag mapping all use this span. Other rows keep the base span.
-                int h1BaseLow = r == 1 ? rx2_display_low : rx_display_low;
-                int h1BaseHigh = r == 1 ? rx2_display_high : rx_display_high;
+                // H2 (user 2026-11-22): the cell's base is its own full-window 1x span, not the
+                // normal view's current zoom. The console publishes it from the DDC analyser; the
+                // legacy display variables are only a fallback while that has not happened yet.
+                int h1BaseLow = H1RowBaseValid[r] ? H1RowBaseLow[r] : (r == 1 ? rx2_display_low : rx_display_low);
+                int h1BaseHigh = H1RowBaseValid[r] ? H1RowBaseHigh[r] : (r == 1 ? rx2_display_high : rx_display_high);
                 double h1Zoom = H1CellZoom[r];
                 if (h1Zoom < 1.0) h1Zoom = 1.0;
                 int h1Low = h1BaseLow;
                 int h1High = h1BaseHigh;
-                // H1 (user 2026-11-09, option A): a zoomed cell's analyser was reconfigured and its
-                // pixels already cover the zoomed span - take the span it published and do not crop
-                // the data a second time. Until that span arrives, fall back to the display crop.
-                if (h1Zoom > 1.0001 && H1RowSpanValid[r])
+                // H1 (user 2026-11-09, option A): a cell's analyser was reconfigured and its pixels
+                // already cover the cell span - take the span it published and do not crop the data
+                // a second time. Until that span arrives, fall back to the base span and the cell zoom.
+                if (H1RowSpanValid[r])
                 {
                     h1Low = H1RowDisplayLow[r];
                     h1High = H1RowDisplayHigh[r];
                     h1BaseLow = h1Low;
                     h1BaseHigh = h1High;
                 }
-                else if (h1Zoom > 1.0001 && h1BaseHigh > h1BaseLow)
+                else if (h1BaseHigh > h1BaseLow)
                 {
                     double h1mid = (h1BaseLow + h1BaseHigh) * 0.5;
                     double h1half = (h1BaseHigh - h1BaseLow) * 0.5 / h1Zoom;
@@ -9759,6 +9796,14 @@ namespace Thetis
                 fontDX2d_font9c = new SharpDX.DirectWrite.TextFormat(fontFactory, font95.FontFamily.Name, (font95.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_tag = new SharpDX.DirectWrite.TextFormat(fontFactory, font9.FontFamily.Name, SharpDX.DirectWrite.FontWeight.Bold,
                     SharpDX.DirectWrite.FontStyle.Normal, (7f / 72) * _d2dRenderTarget.DotsPerInch.Width);
+                // H2: the auto-zoom tag-fit margin is based on the real rendered tag width
+                try
+                {
+                    float wtx = measureStringDX2D("TX", fontDX2d_tag).Width;
+                    float wrx = measureStringDX2D("RX", fontDX2d_tag).Width;
+                    _h1TagTextWidthPx = Math.Max(wtx, wrx);
+                }
+                catch { _h1TagTextWidthPx = 14f; }
                 fontDX2d_panafont = new SharpDX.DirectWrite.TextFormat(fontFactory, pana_font.FontFamily.Name, (pana_font.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_font10 = new SharpDX.DirectWrite.TextFormat(fontFactory, font10.FontFamily.Name, (font10.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);
                 fontDX2d_font12 = new SharpDX.DirectWrite.TextFormat(fontFactory, font12.FontFamily.Name, (font12.Size / 72) * _d2dRenderTarget.DotsPerInch.Width);

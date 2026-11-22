@@ -636,8 +636,15 @@ namespace Thetis
         public Console(string[] args)
         {
             H1StartupTrace("ctor start (thread " + System.Threading.Thread.CurrentThread.ManagedThreadId + ")");
-            this.Shown += (s, e) => H1StartupTrace("window Shown: size=" + this.Size + " state=" + this.WindowState
+            this.Shown += (s, e) =>
+            {
+                // H2: the saved normal-view AUTO zoom is applied only after the window is up;
+                // applying it during the constructor can re-enter the startup layout.
+                _h1AutoZoomReady = true;
+                try { BeginInvoke((MethodInvoker)H1AutoZoomNormalIfEnabled); } catch { }
+                H1StartupTrace("window Shown: size=" + this.Size + " state=" + this.WindowState
                 + " loc=" + this.Location + " resizes=" + _h1StartupResizeCount + " expands=" + _h1StartupExpandCount);
+            };
             //DialogResult drr = MessageBox.Show("This version will break stuff.\n" +
             //    "There are lots of things that need testing/fixing. Ok to continue?",
             //    "Eeeeeeek",
@@ -8592,13 +8599,17 @@ namespace Thetis
             public ComboBoxTS Band, Mode;
             public H1FsSlider Agc, Af, Zoom;
             public Label AgcCap, AgcVal, AfCap, AfVal, ZoomCap, ZoomVal;
-            public CheckBoxTS Ctun, Nr, Anf, Nb, Bin;
+            public CheckBoxTS Ctun, Nr, Anf, Nb, Bin, Auto;
         }
 
         private ComboBoxTS h1fsBand1, h1fsMode1, h1fsBand2, h1fsMode2;
         private H1FsSlider h1fsAgc1, h1fsAf1, h1fsAgc2, h1fsAf2;
         private H1FsSlider h1fsZoom1, h1fsZoom2;              // H1: per-cell zoom, DDC1 and DDC2
         private Label h1fsZoomCap1, h1fsZoomVal1, h1fsZoomCap2, h1fsZoomVal2;
+        // H2 (user 2026-11-22): tag-fit AUTO toggles - one for the normal view (it sets the global
+        // zoom) and one per full-window cell (each sets that cell's own zoom).
+        private CheckBoxTS h1fsAuto1, h1fsAuto2, h1AutoZoomNormalBtn;
+        private bool _h1AutoUiSyncGuard = false;
         private Label h1fsAgcCap1, h1fsAgcVal1, h1fsAfCap1, h1fsAfVal1;
         private Label h1fsAgcCap2, h1fsAgcVal2, h1fsAfCap2, h1fsAfVal2;
         private CheckBoxTS h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1;
@@ -8698,7 +8709,8 @@ namespace Thetis
                         HeadlessSliceManager.Instance.GetCtunMode(rx) ? "1" : "0",
                         sub.Enabled ? "1" : "0", sub.FreqHz.ToString(),
                         sub.FilterLow.ToString(), sub.FilterHigh.ToString(),
-                        Display.H1CellZoom[rx].ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
+                        Display.H1CellZoom[rx].ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                        _h1AutoZoomCell[rx] ? "1" : "0" });
                     list.Add("slice" + rx + "/" + v);
                 }
                 // H1 (user 2026-11-21): a DDC whose dB scale was adjusted keeps its own
@@ -8710,7 +8722,14 @@ namespace Thetis
                         + "," + Display.H1RowGridMin[sx].ToString()
                         + "," + Display.H1RowGridMax[sx].ToString());
                 }
-                list.Add("ver/3");
+                list.Add("autoZoomNormal/" + (_h1AutoZoomNormal ? "1" : "0"));
+                for (int zr = 0; zr < 2; zr++)
+                {
+                    list.Add("cell" + zr + "/"
+                        + Display.H1CellZoom[zr].ToString("R", System.Globalization.CultureInfo.InvariantCulture)
+                        + "," + (_h1AutoZoomCell[zr] ? "1" : "0"));
+                }
+                list.Add("ver/4");
                 DB.SaveVars("H1Slices", list);
             }
             catch { }
@@ -8725,17 +8744,42 @@ namespace Thetis
                 // H1 (M2): a version marker makes pre-version rows ignore-able instead of
                 // being restored as operator positions.
                 bool versioned = false;
+                bool cellZoomNewScale = false;
                 foreach (string e in list)
                 {
-                    if (e.Trim() == "ver/3") { versioned = true; break; }
+                    // ver/3 = the H1 record, ver/4 = H2 (independent cell zoom scale)
+                    if (e.Trim() == "ver/3") versioned = true;
+                    if (e.Trim() == "ver/4") { versioned = true; cellZoomNewScale = true; }
                 }
                 if (!versioned) return;
                 var inv = System.Globalization.CultureInfo.InvariantCulture;
+                H1AutoUiSync();
                 foreach (string entry in list)
                 {
                     int slash = entry.IndexOf('/');
                     if (slash <= 0) continue;
                     string key = entry.Substring(0, slash);
+                    if (key == "autoZoomNormal")
+                    {
+                        _h1AutoZoomNormal = entry.Substring(slash + 1).Trim() == "1";
+                        continue;
+                    }
+                    if (key.StartsWith("cell"))
+                    {
+                        int cr;
+                        if (int.TryParse(key.Substring(4), out cr) && cr >= 0 && cr <= 1)
+                        {
+                            string[] cp = entry.Substring(slash + 1).Split(',');
+                            double cz;
+                            if (cp.Length >= 2 && double.TryParse(cp[0], System.Globalization.NumberStyles.Float, inv, out cz))
+                            {
+                                if (cz < 1.0) cz = 1.0;
+                                Display.H1CellZoom[cr] = cz;
+                                _h1AutoZoomCell[cr] = cp[1].Trim() == "1";
+                            }
+                        }
+                        continue;
+                    }
                     if (key.StartsWith("scale"))
                     {
                         int srow;
@@ -8798,7 +8842,13 @@ namespace Thetis
                     sub.FreqHz = long.Parse(p[13]);
                     sub.FilterLow = int.Parse(p[14]);
                     sub.FilterHigh = int.Parse(p[15]);
-                    Display.H1CellZoom[rx] = double.Parse(p[16], inv);
+                    // H2 (user 2026-11-22): the cell zoom scale changed from the old
+                    // normal-zoom x 16 scale to the independent 1x..64x scale. The saved number
+                    // cannot be mapped reliably (the old value was relative to the normal-view
+                    // zoom at save time), so start the cell at its neutral 1x; AUTO or the strip
+                    // slider set it again. The field remains in the record for the new value.
+                    Display.H1CellZoom[rx] = cellZoomNewScale ? double.Parse(p[16], inv) : 1.0;
+                    _h1AutoZoomCell[rx] = cellZoomNewScale && p.Length >= 18 && p[17] == "1";
                     H1SpacePttTrace("h1cs: restored rx" + rx + " " + p[1] + " mode=" + p[2] + " positioned=" + positioned);
                 }
             }
@@ -8991,6 +9041,13 @@ namespace Thetis
             h1fsCtun2 = H1FsNewPill("h1fsCtun2", "CTUN");
             h1fsCtun1.Size = new Size(H1FsCtunW, H1FsCtrlH);
             h1fsCtun2.Size = new Size(H1FsCtunW, H1FsCtrlH);
+            // H2: the tag-fit AUTO toggles for DDC1/DDC2 and for the normal view
+            h1fsAuto1 = H1FsNewPill("h1fsAuto1", "AUTO", 40);
+            h1fsAuto2 = H1FsNewPill("h1fsAuto2", "AUTO", 40);
+            h1fsAuto1.CheckedChanged += H1FsAutoChanged;
+            h1fsAuto2.CheckedChanged += H1FsAutoChanged;
+            h1AutoZoomNormalBtn = H1FsNewPill("h1AutoZoomNormal", "AUTO", 40);
+            h1AutoZoomNormalBtn.CheckedChanged += H1NormalAutoChanged;
 
             h1fsBand1.SelectedIndexChanged += H1FsBandChanged;
             h1fsBand2.SelectedIndexChanged += H1FsBandChanged;
@@ -9136,6 +9193,7 @@ namespace Thetis
                 // H1 (user 2026-11-09): the cell zoom sliders show the display's state
                 H1FsZoomSync(h1fsZoom1, h1fsZoomVal1, Display.H1CellZoom[0]);
                 H1FsZoomSync(h1fsZoom2, h1fsZoomVal2, Display.H1CellZoom[1]);
+                H1AutoUiSync();
 
                 // NR is a five-state cycle, so the pill's face is the mode, not a tick
                 int nr1 = GetSelectedNR(1), nr2 = GetSelectedNR(2);
@@ -9162,42 +9220,395 @@ namespace Thetis
             finally { _h1fsSync = false; }
         }
 
-        // H1 (user 2026-11-09): the cell zoom runs 1x..16x on a 0..100 slider (logarithmic, so the
-        // low end has useful resolution). These helpers keep slider, label and Display in step.
-        private static double H1FsZoomFactor(int sliderValue)
+        // H2 (user 2026-11-22): the full-window cells have their own 1x base span (independent
+        // of the normal-view zoom) and their own analyser zoom limit, so the deepest cell span
+        // still has enough FFT bins for the waterfall to look like it does today. The strip
+        // slider shows a 1x..64x scale; 64x is the top of that independent scale
+        // (H1CellPhysicalMaxZoom gives the optical ratio it maps to).
+        private const double H1CellZoomLimit = 150.0;   // H1-cell analyser floor while full-window is up
+        private const double H1CellLabelMax = 64.0;
+
+        // the trackbar value that the console calls 1x (Maximum + Minimum - 100)
+        private double H1OneXSliderValue()
+        {
+            if (ptbDisplayZoom == null) return (150.0 - 10.0) / (240.0 - 10.0);
+            int v1 = ptbDisplayZoom.Maximum + ptbDisplayZoom.Minimum - 100;
+            int lo = ptbDisplayZoom.Minimum, hi = ptbDisplayZoom.Maximum;
+            if (hi <= lo) return 0.0;
+            return (double)(v1 - lo) / (hi - lo);
+        }
+
+        // optical zoom relative to the cell's 1x span at the H1 limit (tag-fit uses this; the
+        // 64x label is the top of the scale, not a literal multiplier)
+        private double H1CellPhysicalMaxZoom()
+        {
+            double factor1x = H1ZoomFactorFromSlider(H1OneXSliderValue(), H1CellZoomLimit);
+            return H1CellZoomLimit / factor1x;
+        }
+
+        private double H1CellPhysicalFromLabel(double label)
+        {
+            if (label < 1.0) label = 1.0;
+            if (label > H1CellLabelMax) label = H1CellLabelMax;
+            double maxp = H1CellPhysicalMaxZoom();
+            return Math.Pow(maxp, (label - 1.0) / (H1CellLabelMax - 1.0));
+        }
+
+        private double H1CellLabelFromPhysical(double physical)
+        {
+            if (physical < 1.0) physical = 1.0;
+            double maxp = H1CellPhysicalMaxZoom();
+            if (physical > maxp) physical = maxp;
+            return 1.0 + (H1CellLabelMax - 1.0) * Math.Log(physical) / Math.Log(maxp);
+        }
+
+        private double H1FsZoomFactor(int sliderValue)
         {
             if (sliderValue < 0) sliderValue = 0;
             if (sliderValue > 100) sliderValue = 100;
-            return Math.Pow(16.0, sliderValue / 100.0);
+            double label = 1.0 + (H1CellLabelMax - 1.0) * sliderValue / 100.0;
+            return H1CellPhysicalFromLabel(label);
         }
 
-        private static int H1FsZoomSliderValue(double zoom)
+        private int H1FsZoomSliderValue(double physical)
         {
-            if (zoom < 1.0) zoom = 1.0;
-            if (zoom > 16.0) zoom = 16.0;
-            int v = (int)Math.Round(Math.Log(zoom, 16.0) * 100.0);
+            double label = H1CellLabelFromPhysical(physical);
+            int v = (int)Math.Round((label - 1.0) / (H1CellLabelMax - 1.0) * 100.0);
             if (v < 0) v = 0;
             if (v > 100) v = 100;
             return v;
         }
 
-        private static string H1FsZoomText(double zoom)
+        private string H1FsZoomText(double physical)
         {
-            if (zoom < 1.0001) return "1x";
-            return zoom >= 9.95 ? Math.Round(zoom).ToString("0") + "x" : zoom.ToString("0.0") + "x";
+            double label = H1CellLabelFromPhysical(physical);
+            return label >= 9.95 ? Math.Round(label).ToString("0") + "x" : label.ToString("0.0") + "x";
         }
 
-        private static void H1FsZoomTextSet(Label l, double zoom)
+        private void H1FsZoomTextSet(Label l, double physical)
         {
             if (l == null) return;
-            string t = H1FsZoomText(zoom);
+            string t = H1FsZoomText(physical);
             if (l.Text != t) l.Text = t;
         }
 
-        private void H1FsZoomSync(H1FsSlider s, Label l, double zoom)
+        private void H1FsZoomSync(H1FsSlider s, Label l, double physical)
         {
-            if (s != null) s.SetValueQuiet(H1FsZoomSliderValue(zoom));
-            H1FsZoomTextSet(l, zoom);
+            if (s != null) s.SetValueQuiet(H1FsZoomSliderValue(physical));
+            H1FsZoomTextSet(l, physical);
+        }
+
+        // ====================================================================================
+        // H2 auto zoom (user 2026-11-22). The window that carries the RX/TX tag must stay
+        // readable and centred. The target span is derived in absolute hertz from the window's
+        // own filter width, the pane/cell pixel width and the measured tag width, so the same
+        // rule covers 50 Hz..wide modes and every sample rate (48..384 k). Every change goes
+        // through the normal analyser zoom/pan path - the FFT size, pixels and waterfall
+        // processing are untouched.
+        // ====================================================================================
+        private bool _h1AutoZoomNormal = false;
+        private bool _h1AutoZoomReady = false;   // becomes true once the console window is shown
+        private readonly bool[] _h1AutoZoomCell = new bool[8];
+        private readonly double[] _h1AutoCellFocusHz = new double[8];
+        private bool _h1AutoZoomApplying = false;
+
+        private int H1AutoTagWindowPx()
+        {
+            int w = (int)Math.Ceiling(Display.H1TagTextWidthPx) + 8;
+            return w < 18 ? 18 : w;
+        }
+
+        private double H1AutoTargetSpan(int low, int high, int panePx)
+        {
+            int w = Math.Abs(high - low);
+            if (w < 10) w = 10;
+            if (panePx < 1) panePx = 1;
+            return (double)w * panePx / H1AutoTagWindowPx();
+        }
+
+        private double H1AutoRequiredFactor(SpecHPSDR sp, double targetSpan)
+        {
+            if (sp == null || targetSpan <= 0.0) return 1.0;
+            var e = sp.GetFrequencyExtents(0.0, 0.5);
+            double fullSpan = e.Item2 - e.Item1;
+            if (fullSpan <= 0.0) return 1.0;
+            return fullSpan / targetSpan;
+        }
+
+        // one window of a receiver: its tag-fit span and its union bounds (absolute Hz offsets
+        // from the display centre). Used by both the normal-view and the per-cell auto zoom.
+        private void H1AutoConsiderWindow(string name, int low, int high, double centreHz, int panePx,
+            ref double tagSpan, ref double unionLow, ref double unionHigh)
+        {
+            int w = Math.Abs(high - low);
+            if (w < 10) w = 10;
+            double target = H1AutoTargetSpan(low, high, panePx);
+            if (target > tagSpan) tagSpan = target;
+            double lo = centreHz - w * 0.5;
+            double hi = centreHz + w * 0.5;
+            if (lo < unionLow) unionLow = lo;
+            if (hi > unionHigh) unionHigh = hi;
+            H1SpacePttTrace("auto zoom: " + name + " width " + w + " centre " + centreHz.ToString("F0")
+                + " target " + target.ToString("F0"));
+        }
+
+        private void H1AutoZoomNormalIfEnabled()
+        {
+            try
+            {
+                if (!_h1AutoZoomNormal || !_h1AutoZoomReady || _h1AutoZoomApplying || initializing || !PowerOn
+                    || _h1FullScreenPanafall || ptbDisplayZoom == null || pnlDisplay == null)
+                    return;
+                int paneW = pnlDisplay.Width;
+                if (paneW < 100) return;
+
+                // Each window needs at least its tag-fit span. A smaller span means more zoom, so
+                // the requirement is the MAXIMUM of the individual factors (the narrowest filter
+                // drives it). Sub windows are only considered while they are inside the current
+                // display - otherwise no amount of zooming can bring them on screen (the normal
+                // view's pan/CTUN owns that, not the zoom).
+                double factor = 1.0;
+                SpecHPSDR sp1 = specRX.GetSpecRX(0);
+                double target1 = H1AutoTargetSpan(Display.RX1FilterLow, Display.RX1FilterHigh, paneW);
+                H1SpacePttTrace("auto zoom: RX1 main width " + Math.Abs(Display.RX1FilterHigh - Display.RX1FilterLow)
+                    + " target " + target1.ToString("F0"));
+                factor = Math.Max(factor, H1AutoRequiredFactor(sp1, target1));
+                if (Display.SubRX1Enabled && sp1 != null)
+                {
+                    double sc = (Display.SubRX1FilterLow + Display.SubRX1FilterHigh) * 0.5
+                        + (Display.VFOASub - Display.VFOA);
+                    double halfDisp = (Display.RXDisplayHigh - Display.RXDisplayLow) * 0.5;
+                    if (halfDisp > 0.0 && Math.Abs(sc) < halfDisp)
+                    {
+                        double t = H1AutoTargetSpan(Display.SubRX1FilterLow, Display.SubRX1FilterHigh, paneW);
+                        H1SpacePttTrace("auto zoom: SubRX1 width " + Math.Abs(Display.SubRX1FilterHigh - Display.SubRX1FilterLow)
+                            + " target " + t.ToString("F0"));
+                        factor = Math.Max(factor, H1AutoRequiredFactor(sp1, t));
+                    }
+                }
+                if (rx2_enabled)
+                {
+                    SpecHPSDR sp2 = specRX.GetSpecRX(1);
+                    double t2 = H1AutoTargetSpan(Display.RX2FilterLow, Display.RX2FilterHigh, paneW);
+                    H1SpacePttTrace("auto zoom: RX2 main width " + Math.Abs(Display.RX2FilterHigh - Display.RX2FilterLow)
+                        + " target " + t2.ToString("F0"));
+                    factor = Math.Max(factor, H1AutoRequiredFactor(sp2, t2));
+                    if (Display.SubRX2Enabled && sp2 != null)
+                    {
+                        double sc = (Display.SubRX2FilterLow + Display.SubRX2FilterHigh) * 0.5
+                            + (Display.VFOBSub - Display.VFOB);
+                        double halfDisp = (Display.RX2DisplayHigh - Display.RX2DisplayLow) * 0.5;
+                        if (halfDisp > 0.0 && Math.Abs(sc) < halfDisp)
+                        {
+                            double t = H1AutoTargetSpan(Display.SubRX2FilterLow, Display.SubRX2FilterHigh, paneW);
+                            H1SpacePttTrace("auto zoom: SubRX2 width " + Math.Abs(Display.SubRX2FilterHigh - Display.SubRX2FilterLow)
+                                + " target " + t.ToString("F0"));
+                            factor = Math.Max(factor, H1AutoRequiredFactor(sp2, t));
+                        }
+                    }
+                }
+                if (factor > 100.0) factor = 100.0;
+
+                double z = H1SliderFromZoomFactor(factor, 100.0);
+                int lo = ptbDisplayZoom.Minimum, hi = ptbDisplayZoom.Maximum;
+                int val = lo + (int)Math.Round(z * (hi - lo));
+                if (val < lo) val = lo;
+                if (val > hi) val = hi;
+
+                _h1AutoZoomApplying = true;
+                try
+                {
+                    if (ptbDisplayZoom.Value != val) ptbDisplayZoom.Value = val;
+                    ptbDisplayZoom_Scroll(this, EventArgs.Empty);
+                }
+                finally { _h1AutoZoomApplying = false; }
+                H1SpacePttTrace("auto zoom: normal factor " + factor.ToString("F2") + " z "
+                    + z.ToString("F4") + " slider " + val);
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("auto zoom: normal failed: " + ex.Message);
+            }
+        }
+
+        private void H1AutoZoomCellIfEnabled(int row)
+        {
+            try
+            {
+                if (row < 0 || row > 7 || !_h1AutoZoomCell[row]) return;
+                H1AutoZoomCellApply(row);
+            }
+            catch { }
+        }
+
+        // H2: the window a cell's auto zoom centres on. TX tag first, then the RX (audio) tag,
+        // then the main window; the chosen window's filter width sets the target span.
+        private bool H1AutoCellFocusWindow(int row, out int low, out int high, out double centreHz, out string name)
+        {
+            low = high = 0;
+            centreHz = 0.0;
+            name = "main";
+            if (row == 0 || row == 1)
+            {
+                int fl = row == 0 ? Display.RX1FilterLow : Display.RX2FilterLow;
+                int fh = row == 0 ? Display.RX1FilterHigh : Display.RX2FilterHigh;
+                int fdiff = row == 0 ? Display.FreqDiff : Display.RX2FreqDiff;
+                low = fl; high = fh;
+                centreHz = (fl + fh) * 0.5 - fdiff;
+                return true;
+            }
+            int tx = Display.H1RowTxMask[row];
+            bool subTag = (tx & 2) != 0 || ((tx & 1) == 0 && Display.H1RowSubAudio[row]);
+            bool mainTag = (tx & 1) != 0 || ((tx & 2) == 0 && Display.H1CellAudio[row]);
+            if (subTag && !Display.H1RowSubEnabled[row]) subTag = false;
+            if (!mainTag && !subTag) mainTag = true;
+            if (subTag && (!mainTag || (Display.H1RowTxMask[row] & 2) != 0))
+            {
+                low = Display.H1RowSubLow[row];
+                high = Display.H1RowSubHigh[row];
+                centreHz = (low + high) * 0.5 + Display.H1RowSubOffsetHz[row];
+                name = "sub";
+                return true;
+            }
+            low = Display.H1RowFilterLow[row];
+            high = Display.H1RowFilterHigh[row];
+            centreHz = (low + high) * 0.5 + Display.H1RowVfoOffsetHz[row];
+            name = "main";
+            return true;
+        }
+
+        private void H1AutoZoomCellApply(int row)
+        {
+            try
+            {
+                if (row < 0 || row > 7 || !_h1AutoZoomCell[row] || !Display.H1EightRows || pnlDisplay == null)
+                    return;
+                if (!Display.H1RowBaseValid[row])
+                {
+                    H1PublishRowBaseSpans();
+                    if (!Display.H1RowBaseValid[row]) return;
+                }
+                int paneW = H1CellWidthPx();
+                if (paneW < 100) return;
+                double baseSpan = Display.H1RowBaseHigh[row] - Display.H1RowBaseLow[row];
+                if (baseSpan <= 0.0) return;
+
+                int wl, wh;
+                double wc;
+                string wname;
+                if (!H1AutoCellFocusWindow(row, out wl, out wh, out wc, out wname)) return;
+
+                double targetSpan = H1AutoTargetSpan(wl, wh, paneW);
+                double physical = baseSpan / targetSpan;
+                double maxPhysical = H1CellPhysicalMaxZoom();
+                if (physical < 1.0) physical = 1.0;
+                if (physical > maxPhysical) physical = maxPhysical;
+                Display.H1CellZoom[row] = physical;
+                _h1AutoCellFocusHz[row] = wc;
+                H1ApplyCellAnalyserZoom(row);
+                if (row == 0) H1FsZoomSync(h1fsZoom1, h1fsZoomVal1, physical);
+                else if (row == 1) H1FsZoomSync(h1fsZoom2, h1fsZoomVal2, physical);
+                else if (h1cellStrips != null && h1cellStrips[row] != null)
+                    H1FsZoomSync(h1cellStrips[row].Zoom, h1cellStrips[row].ZoomVal, physical);
+                H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " " + wname + " width " + Math.Abs(wh - wl)
+                    + " target " + targetSpan.ToString("F0") + " physical " + physical.ToString("F2")
+                    + " focus " + wc.ToString("F0"));
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " failed: " + ex.Message);
+            }
+        }
+
+        private void H1AutoZoomCellsIfEnabled()
+        {
+            for (int row = 0; row < 8; row++)
+            {
+                if (!_h1AutoZoomCell[row]) continue;
+                try { H1AutoZoomCellApply(row); } catch { }
+            }
+        }
+
+        private void H1AutoUiSync()
+        {
+            if (_h1AutoUiSyncGuard) return;
+            _h1AutoUiSyncGuard = true;
+            try
+            {
+                if (h1fsAuto1 != null) h1fsAuto1.Checked = _h1AutoZoomCell[0];
+                if (h1fsAuto2 != null) h1fsAuto2.Checked = _h1AutoZoomCell[1];
+                if (h1cellStrips != null)
+                {
+                    for (int row = 2; row < 8; row++)
+                    {
+                        H1CellStrip s = h1cellStrips[row];
+                        if (s != null && s.Auto != null) s.Auto.Checked = _h1AutoZoomCell[row];
+                    }
+                }
+                if (h1AutoZoomNormalBtn != null)
+                {
+                    H1AutoUiPositionNormal();
+                    h1AutoZoomNormalBtn.Visible = !_h1FullScreenPanafall;
+                    h1AutoZoomNormalBtn.Checked = _h1AutoZoomNormal;
+                }
+            }
+            catch { }
+            finally { _h1AutoUiSyncGuard = false; }
+        }
+
+        private void H1AutoUiPositionNormal()
+        {
+            try
+            {
+                if (h1AutoZoomNormalBtn == null || radDisplayZoom05 == null) return;
+                Point p = PointToClient(radDisplayZoom05.PointToScreen(Point.Empty));
+                Point want = new Point(p.X - 46, p.Y);
+                if (h1AutoZoomNormalBtn.Location != want) h1AutoZoomNormalBtn.Location = want;
+                h1AutoZoomNormalBtn.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            }
+            catch { }
+        }
+
+        private void H1AutoZoomNormalManualOff()
+        {
+            if (_h1AutoUiSyncGuard || _h1AutoZoomApplying) return;
+            if (!_h1AutoZoomNormal) return;
+            _h1AutoZoomNormal = false;
+            H1AutoUiSync();
+            H1SpacePttTrace("auto zoom: normal off (manual zoom)");
+        }
+
+        private void H1NormalAutoChanged(object sender, EventArgs e)
+        {
+            if (_h1AutoUiSyncGuard || _h1fsSync) return;
+            if (h1AutoZoomNormalBtn == null) return;
+            _h1AutoZoomNormal = h1AutoZoomNormalBtn.Checked;
+            H1SpacePttTrace("auto zoom: normal " + (_h1AutoZoomNormal ? "on" : "off"));
+            if (_h1AutoZoomNormal) H1AutoZoomNormalIfEnabled();
+        }
+
+        private void H1FsAutoChanged(object sender, EventArgs e)
+        {
+            if (_h1AutoUiSyncGuard || _h1fsSync) return;
+            int row = sender == h1fsAuto1 ? 0 : (sender == h1fsAuto2 ? 1 : -1);
+            if (row < 0) return;
+            CheckBoxTS c = sender as CheckBoxTS;
+            if (c == null) return;
+            _h1AutoZoomCell[row] = c.Checked;
+            H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " " + (c.Checked ? "on" : "off"));
+            if (c.Checked) H1AutoZoomCellApply(row);
+        }
+
+        private void H1CellAutoChanged(object sender, EventArgs e)
+        {
+            if (_h1AutoUiSyncGuard || _h1fsSync) return;
+            int row = H1CellStripRow(sender);
+            if (row < 2 || row > 7) return;
+            CheckBoxTS c = sender as CheckBoxTS;
+            if (c == null) return;
+            _h1AutoZoomCell[row] = c.Checked;
+            H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " " + (c.Checked ? "on" : "off"));
+            if (c.Checked) H1AutoZoomCellApply(row);
         }
 
         private void H1FsZoomChanged(object sender, EventArgs e)
@@ -9206,6 +9617,13 @@ namespace Thetis
             H1FsSlider t = sender as H1FsSlider;
             if (t == null) return;
             int row = (t == h1fsZoom1) ? 0 : 1;
+            // H2: manual cell zoom change leaves AUTO for that cell
+            if (!_h1AutoZoomApplying && _h1AutoZoomCell[row])
+            {
+                _h1AutoZoomCell[row] = false;
+                H1AutoUiSync();
+                H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " off (manual zoom)");
+            }
             double zoom = H1FsZoomFactor(t.Value);
             Display.H1CellZoom[row] = zoom;
             H1FsZoomTextSet(row == 0 ? h1fsZoomVal1 : h1fsZoomVal2, zoom);
@@ -9415,6 +9833,7 @@ for (int zr = 0; zr < 8; zr++)
                         if (zs == null) continue;
                         _h1BaseZoomSlider[zr] = zs.ZoomSlider;
                         _h1BasePanSlider[zr] = zs.PanSlider;
+                        _h1BaseZoomLimit[zr] = zs.ZoomLimit;
                     }
                     _h1BaseZoomSaved = true;
                 }
@@ -9443,8 +9862,16 @@ for (int zr = 0; zr < 8; zr++)
                     }
                     catch (Exception ex3) { H1SpacePttTrace("eight-row setup: analyser for stream " + s + " failed: " + ex3.Message); }
                 }
+                // H2 (user 2026-11-22): the full-window cells get their own analyser zoom floor
+                // and their own 1x base spans; the normal-view zoom is not part of either.
+                for (int zr = 0; zr < 8; zr++)
+                {
+                    SpecHPSDR zs = specRX.GetSpecRX(zr);
+                    if (zs != null) zs.ZoomLimit = H1CellZoomLimit;
+                }
                 try { UpdateDDCs(Display.RX2Enabled); } catch (Exception exd) { H1SpacePttTrace("eight-row setup: UpdateDDCs failed: " + exd.Message); }
                 Display.H1EightRows = true;
+                H1PublishRowBaseSpans();
                 // H1 (bug fix 2026-11-12): the normal-view dim veils must not show over the
                 // full-window cells - hide them the moment the view opens.
                 if (h1SubRX1Veil != null) h1SubRX1Veil.Visible = false;
@@ -9508,6 +9935,7 @@ for (int zr = 0; zr < 8; zr++)
                 H1Crumb("eightrows-exit: cleanup");
                 Display.H1EightRowCleanup();
                 H1RestoreCellAnalysers();   // H1 (zoom option A): put the normal-view zoom back
+                H1AutoZoomNormalIfEnabled(); // H2: the normal view's tag-fit auto zoom
                 for (int s = 2; s < 8; s++)
                 {
                     try { cmaster.SetRunPanadapter(s, false); } catch { }
@@ -9556,11 +9984,18 @@ for (int zr = 0; zr < 8; zr++)
             H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
                 h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
                 h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
+            // H2: AUTO sits to the right of the zoom value in the DDC1/DDC2 strips
+            if (h1fsAuto1 != null && h1fsZoomVal1 != null)
+                h1fsAuto1.Location = new Point(h1fsZoomVal1.Location.X + h1fsZoomVal1.Width + 4,
+                    top + H1FsCtrlH + 2);
+            if (h1fsAuto2 != null && h1fsZoomVal2 != null)
+                h1fsAuto2.Location = new Point(h1fsZoomVal2.Location.X + h1fsZoomVal2.Width + 4,
+                    y2 + H1FsCtrlH + 2);
 
             // RX2's strip is RX2's - nothing to show while RX2 is switched off
             bool rx2On = rx2_enabled && _h1FullScreenPanafall;
             foreach (Control c in new Control[] { h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
-                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
+                h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2, h1fsAuto2,
                 h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = rx2On;
             H1CellStripsLayout();
@@ -9626,12 +10061,30 @@ for (int zr = 0; zr < 8; zr++)
             return w > 1 ? w : 1;
         }
 
-        // H1 (M1 step 4): absolute frequency of a point in a spare cell. The cell
-        // span is the analyser span its cloned spec draws (RX1's normal span).
-        // H1 (M2): the span a cell shows at its current zoom, anchored on its middle.
+        // H2 (user 2026-11-22): the span a spare cell shows. It is the zoomed span its analyser
+        // published (the cell owns its span now); before the first frame arrives, the cell's 1x
+        // base span divided by the cell zoom. The normal-view display span is only the last
+        // fallback, so the two views stay independent.
         private void H1SpareCellVisibleSpan(int cell, out int low, out int high)
         {
-            int bl = Display.RXDisplayLow, bh = Display.RXDisplayHigh;
+            if (cell < 0 || cell > 7) { low = Display.RXDisplayLow; high = Display.RXDisplayHigh; return; }
+            if (Display.H1RowSpanValid[cell])
+            {
+                low = Display.H1RowDisplayLow[cell];
+                high = Display.H1RowDisplayHigh[cell];
+                return;
+            }
+            int bl, bh;
+            if (Display.H1RowBaseValid[cell])
+            {
+                bl = Display.H1RowBaseLow[cell];
+                bh = Display.H1RowBaseHigh[cell];
+            }
+            else
+            {
+                bl = Display.RXDisplayLow;
+                bh = Display.RXDisplayHigh;
+            }
             double zoom = Display.H1CellZoom[cell];
             if (zoom < 1.0) zoom = 1.0;
             double mid = (bl + bh) * 0.5;
@@ -9805,6 +10258,10 @@ for (int zr = 0; zr < 8; zr++)
         {
             try
             {
+                // H2 (user 2026-11-22): the cells' 1x spans move with sample rate / FFT size /
+                // decimation. Re-check them on the existing 150 ms meter tick and re-apply the
+                // cell zooms only when a span actually changed.
+                H1RefreshRowBasesIfChanged();
                 // H1 (user report 2026-11-09): the legacy meters' values were frozen while the
                 // full-window view was up - their Paint handlers are what release the meter thread
                 // for the next reading, and those controls are hidden here. Each cell meter is
@@ -9929,11 +10386,11 @@ for (int zr = 0; zr < 8; zr++)
             H1FsSync();
             foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
                                                    h1fsAfCap1, h1fsAf1, h1fsAfVal1,
-                                                   h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1,
+                                                   h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1, h1fsAuto1,
                                                    h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
                                                    h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
                                                    h1fsAfCap2, h1fsAf2, h1fsAfVal2,
-                                                   h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
+                                                   h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2, h1fsAuto2,
                                                    h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
             {
                 if (c == null) continue;
@@ -9952,8 +10409,14 @@ for (int zr = 0; zr < 8; zr++)
             H1PublishCellMeters();
             m_h1CellMeterTimer.Start();
 
-            // H1 (zoom option A): re-apply any zoom the cells were left with
-            for (int zr = 0; zr < 8; zr++) H1ApplyCellAnalyserZoom(zr);
+            // H2: publish the cells' 1x base spans, then re-apply manual zooms / the tag-fit
+            // auto zoom each cell was left with
+            H1PublishRowBaseSpans();
+            for (int zr = 0; zr < 8; zr++)
+            {
+                if (_h1AutoZoomCell[zr]) H1AutoZoomCellApply(zr);
+                else H1ApplyCellAnalyserZoom(zr);
+            }
         }
 
         private void H1FsHide()
@@ -9963,13 +10426,14 @@ for (int zr = 0; zr < 8; zr++)
             if (m_h1CellMeterTimer != null) m_h1CellMeterTimer.Stop();
             foreach (Control c in new Control[] { h1fsBand1, h1fsMode1, h1fsAgcCap1, h1fsAgc1, h1fsAgcVal1,
                                                    h1fsAfCap1, h1fsAf1, h1fsAfVal1,
-                                                   h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1,
+                                                   h1fsZoomCap1, h1fsZoom1, h1fsZoomVal1, h1fsAuto1,
                                                    h1fsNr1, h1fsAnf1, h1fsNb1, h1fsBin1, h1fsCtun1,
                                                    h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
                                                    h1fsAfCap2, h1fsAf2, h1fsAfVal2,
-                                                   h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
+                                                   h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2, h1fsAuto2,
                                                    h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = false;
+            if (h1AutoZoomNormalBtn != null) h1AutoZoomNormalBtn.Visible = false;
             H1CellStripsHide();
         }
 
@@ -10005,6 +10469,8 @@ for (int zr = 0; zr < 8; zr++)
                 s.AfVal = H1FsNewLabel(tag + "AfVal", "", true);
                 s.ZoomCap = H1FsNewLabel(tag + "ZoomCap", "ZOOM", false, H1FsZoomCapW);
                 s.ZoomVal = H1FsNewLabel(tag + "ZoomVal", "", true, H1FsZoomValW);
+                s.Auto = H1FsNewPill(tag + "Auto", "AUTO", 40);   // H2: per-cell tag-fit AUTO
+                s.Auto.CheckedChanged += H1CellAutoChanged;
                 s.Nr = H1FsNewPill(tag + "Nr", "NR", 34);
                 s.Anf = H1FsNewPill(tag + "Anf", "ANF", 32);
                 s.Nb = H1FsNewPill(tag + "Nb", "NB", 26);
@@ -10025,7 +10491,7 @@ for (int zr = 0; zr < 8; zr++)
                     hp.CheckedChanged += H1CellPillChanged;
                 }
                 foreach (Control c in new Control[] { s.Band, s.Mode, s.Agc, s.Af, s.Zoom,
-                    s.AgcCap, s.AgcVal, s.AfCap, s.AfVal, s.ZoomCap, s.ZoomVal,
+                    s.AgcCap, s.AgcVal, s.AfCap, s.AfVal, s.ZoomCap, s.ZoomVal, s.Auto,
                     s.Nr, s.Anf, s.Nb, s.Bin, s.Ctun })
                 {
                     _h1CellStripOwner[c] = row;
@@ -10133,6 +10599,7 @@ for (int zr = 0; zr < 8; zr++)
             s.ZoomCap.Location = new Point(x0, y + 2); x0 += H1FsZoomCapW + 2;
             s.Zoom.Location = new Point(x0, y + 2); x0 += H1FsZoomSliderW + 2;
             s.ZoomVal.Location = new Point(x0, y + 2);
+            s.Auto.Location = new Point(x0 + s.ZoomVal.Width + 4, y + H1FsCtrlH + 1);
         }
 
         // H1 (M2): read the slices into the six strips.
@@ -10583,6 +11050,8 @@ for (int zr = 0; zr < 8; zr++)
             // switching the SUB back on replayed the sub although no RX tag was lit. Recompute
             // the route from the remaining listen bits for every spare SUB transition.
             if (row >= 2) H1ApplySpareVACRoute(row);
+            if (row >= 2) H1AutoZoomCellIfEnabled(row);   // H2: sub window appears/disappears
+            else H1AutoZoomNormalIfEnabled();             // H2: normal-view sub window
             H1CellSubFace(sp);
             // H1 (user 2026-11-21): the TRANSMIT caption names the sub only while it runs; a
             // sub-held TX tag falls back to the cell main slice when the SUB is switched off.
@@ -10661,8 +11130,16 @@ for (int zr = 0; zr < 8; zr++)
             if (rx >= 2 && rx < 8 && !_h1SliceEnterInit) _h1SlicePositioned[rx] = true;
             H1CellStripsRefreshFromSlice();
         }
-        private void H1SliceFrontEndChangedMode(int rx, DSPMode mode) { H1CellStripsRefreshFromSlice(); }
-        private void H1SliceFrontEndChangedFilter(int rx, int low, int high) { H1CellStripsRefreshFromSlice(); }
+        private void H1SliceFrontEndChangedMode(int rx, DSPMode mode)
+        {
+            H1CellStripsRefreshFromSlice();
+            if (rx >= 2 && rx < 8) H1AutoZoomCellIfEnabled(rx);   // H2: TCI mode change
+        }
+        private void H1SliceFrontEndChangedFilter(int rx, int low, int high)
+        {
+            H1CellStripsRefreshFromSlice();
+            if (rx >= 2 && rx < 8) H1AutoZoomCellIfEnabled(rx);   // H2: TCI filter change
+        }
 
         private void H1CellStripsRefreshFromSlice()
         {
@@ -10712,6 +11189,7 @@ for (int zr = 0; zr < 8; zr++)
                 s.Af.SetValueQuiet(af);
                 s.AfVal.Text = af.ToString();
                 H1FsZoomSync(s.Zoom, s.ZoomVal, Display.H1CellZoom[row]);
+                if (s.Auto != null) s.Auto.Checked = _h1AutoZoomCell[row];
                 H1FsPillFace(s.Nr, sl.Nr > 0, sl.Nr > 0 ? "NR" + sl.Nr : "NR");
                 H1FsPillFace(s.Anf, sl.Anf, "ANF");
                 H1FsPillFace(s.Nb, sl.Nb, "NB");
@@ -10760,6 +11238,7 @@ for (int zr = 0; zr < 8; zr++)
             HeadlessSliceManager.Instance.SetMode(row, mode);
             H1CellSetDefaultFilter(row, mode);
             H1CellSyncSubToMain(row);   // H1 (user 2026-11-21): the cell's sub follows the mode
+            H1AutoZoomCellIfEnabled(row);   // H2: tag-fit auto zoom follows the filter
             H1SpacePttTrace("h1cs: mode rx" + row + " -> " + H1FsModeNames[c.SelectedIndex]);
             H1FsSync();
         }
@@ -10790,6 +11269,13 @@ for (int zr = 0; zr < 8; zr++)
             if (row < 2 || h1cellStrips[row] == null) return;
             H1FsSlider t = sender as H1FsSlider;
             if (t == null) return;
+            // H2: manual cell zoom change leaves AUTO for that cell
+            if (!_h1AutoZoomApplying && _h1AutoZoomCell[row])
+            {
+                _h1AutoZoomCell[row] = false;
+                H1AutoUiSync();
+                H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " off (manual zoom)");
+            }
             double zoom = H1FsZoomFactor(t.Value);
             Display.H1CellZoom[row] = zoom;
             H1FsZoomTextSet(h1cellStrips[row].ZoomVal, zoom);
@@ -10838,6 +11324,7 @@ for (int zr = 0; zr < 8; zr++)
                 HeadlessSliceManager.Instance.SetMode(row, mode);
                 H1CellSetDefaultFilter(row, mode);
                 H1CellSyncSubToMain(row);   // H1 (user 2026-11-21): the band's mode reaches the sub
+                H1AutoZoomCellIfEnabled(row);   // H2: tag-fit auto zoom follows the band/mode
                 H1PublishRowScales();   // H1 (user 2026-11-21): the new band's scale
             }
             catch { }
@@ -14981,6 +15468,7 @@ for (int zr = 0; zr < 8; zr++)
             m_nLowOutRX1 = low;
             m_nHighOutRX1 = high;
             if (chkSubRX1Follow != null && chkSubRX1Follow.Checked) H1SyncSubFromParent(1); // H1: the follower takes the passband
+            H1AutoZoomNormalIfEnabled();   // H2: tag-fit auto zoom follows the passband
         }
 
         public void UpdateRX2Filters(int low, int high, bool force = false, bool from_change_event = false)
@@ -15088,6 +15576,7 @@ for (int zr = 0; zr < 8; zr++)
             m_nLowOutRX2 = low;
             m_nHighOutRX2 = high;
             if (chkSubRX2Follow != null && chkSubRX2Follow.Checked) H1SyncSubFromParent(2); // H1: the follower takes the passband
+            H1AutoZoomNormalIfEnabled();   // H2: tag-fit auto zoom follows the passband
         }
 
         public void UpdateRX1FilterNames(Filter f, string old_name, string new_name)
@@ -32383,56 +32872,142 @@ for (int zr = 0; zr < 8; zr++)
         // on entry so a cell zoom can be layered on top of the normal-view zoom and undone cleanly.
 private readonly double[] _h1BaseZoomSlider = new double[8];
 private readonly double[] _h1BasePanSlider = new double[8];
+private readonly double[] _h1BaseZoomLimit = new double[8];
+private readonly int[] _h1BaseSampleRate = new int[8];
+private readonly int[] _h1BaseFftSize = new int[8];
         private bool _h1BaseZoomSaved = false;
 
-        // slider value -> span divisor (the same curve the analyser uses: width = intervals*(1-(1-1/100)*log10(9z+1)))
-        private static double H1ZoomFactorFromSlider(double z)
+        // slider value -> span divisor (the same curve the analyser uses:
+        // width = intervals*(1-(1-1/limit)*log10(9z+1))). H2: the limit is a parameter so the
+        // eight-row cells can use a deeper floor than the normal view.
+        private static double H1ZoomFactorFromSlider(double z, double limit = 100.0)
         {
             if (z < 0.0) z = 0.0;
             if (z > 1.0) z = 1.0;
-            double factor = 1.0 / (1.0 - 0.99 * Math.Log10(9.0 * z + 1.0));
+            if (limit < 1.0) limit = 100.0;
+            double factor = 1.0 / (1.0 - (1.0 - 1.0 / limit) * Math.Log10(9.0 * z + 1.0));
             if (factor < 1.0) factor = 1.0;
             return factor;
         }
 
-        private static double H1SliderFromZoomFactor(double factor)
+        private static double H1SliderFromZoomFactor(double factor, double limit = 100.0)
         {
             if (factor < 1.0) factor = 1.0;
-            const double fmax = 99.0;   // the analyser's own zoom limit is 1/100 of the span
-            if (factor > fmax) factor = fmax;
-            double l = (1.0 - 1.0 / factor) / 0.99;
+            if (limit < 1.0) limit = 100.0;
+            if (factor > limit) factor = limit;
+            double l = (1.0 - 1.0 / factor) / (1.0 - 1.0 / limit);
             double z = (Math.Pow(10.0, l) - 1.0) / 9.0;
             if (z < 0.0) z = 0.0;
             if (z > 1.0) z = 1.0;
             return z;
         }
 
-        // H1 (zoom option A): make the cell's own analyser produce its pixels across the zoomed span.
-        // Zoom is anchored on the middle of the box (choice 2A) via the analyser's pan slider = 0.5.
+        // H2 (user 2026-11-22): every full-window cell has a 1x base span of its own, computed
+        // from its analyser. It is published to Display so the renderer and all click/drag mapping
+        // use the same numbers even before the analyser's first zoomed frame arrives.
+        private void H1PublishRowBaseSpans()
+        {
+            try
+            {
+                if (!Display.H1EightRows) return;
+                double z1 = H1OneXSliderValue();
+                for (int row = 0; row < 8; row++)
+                {
+                    SpecHPSDR sp = specRX.GetSpecRX(row);
+                    if (sp == null) continue;
+                    var ext = sp.GetFrequencyExtents(z1, 0.5);
+                    Display.H1StoreRowBaseSpan(row, ext.Item1, ext.Item2);
+                    _h1BaseSampleRate[row] = sp.SampleRate;
+                    _h1BaseFftSize[row] = sp.FFTSize;
+                    H1SpacePttTrace("cell zoom: DDC" + (row + 1) + " base span " + ext.Item1 + ".." + ext.Item2
+                        + " (" + (ext.Item2 - ext.Item1) + " Hz, rate " + sp.SampleRate
+                        + ", fft " + sp.FFTSize + ")");
+                }
+            }
+            catch (Exception ex)
+            {
+                H1SpacePttTrace("cell zoom: publishing base spans failed: " + ex.Message);
+            }
+        }
+
+        // H2: sample-rate, FFT-size or decimation changes move the cell's 1x span. Check
+        // periodically (the cell meter timer already runs at 150 ms) and re-apply the cell zooms
+        // when the span actually moved.
+        private void H1RefreshRowBasesIfChanged()
+        {
+            try
+            {
+                if (!Display.H1EightRows) return;
+                bool changed = false;
+                for (int row = 0; row < 8; row++)
+                {
+                    SpecHPSDR sp = specRX.GetSpecRX(row);
+                    if (sp == null) continue;
+                    if (!Display.H1RowBaseValid[row]
+                        || _h1BaseSampleRate[row] != sp.SampleRate
+                        || _h1BaseFftSize[row] != sp.FFTSize)
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+                if (!changed) return;
+                H1PublishRowBaseSpans();
+                for (int row = 0; row < 8; row++)
+                {
+                    if (_h1AutoZoomCell[row]) H1AutoZoomCellApply(row);
+                    else H1ApplyCellAnalyserZoom(row);
+                }
+                H1SpacePttTrace("cell zoom: row base spans refreshed (sample rate / FFT changed)");
+            }
+            catch { }
+        }
+
+        // H2: make the cell's own analyser produce its pixels across the cell span. The cell zoom
+        // is relative to the cell's 1x base span, never to the normal-view zoom. Zoom is anchored
+        // on the middle of the box via the analyser's pan slider = 0.5.
         private void H1ApplyCellAnalyserZoom(int row)
         {
             try
             {
-                if (row < 0 || row > 7) return;
+                if (row < 0 || row > 7 || !Display.H1EightRows) return;
                 SpecHPSDR sp = specRX.GetSpecRX(row);
                 if (sp == null) return;
-                double cellZoom = Display.H1CellZoom[row];
-                if (!_h1BaseZoomSaved || cellZoom <= 1.0001)
+                if (!Display.H1RowBaseValid[row])
                 {
-                    Display.H1RowSpanValid[row] = false;
-                    if (_h1BaseZoomSaved && Display.H1EightRows)
-                    {
-                        if (sp.ZoomSlider != _h1BaseZoomSlider[row]) sp.ZoomSlider = _h1BaseZoomSlider[row];
-                        if (sp.PanSlider != _h1BasePanSlider[row]) sp.PanSlider = _h1BasePanSlider[row];
-                    }
-                    return;
+                    H1PublishRowBaseSpans();
+                    if (!Display.H1RowBaseValid[row]) return;
                 }
-                double want = H1ZoomFactorFromSlider(_h1BaseZoomSlider[row]) * cellZoom;
-                double zNew = H1SliderFromZoomFactor(want);
-                if (sp.PanSlider != 0.5) sp.PanSlider = 0.5;
-                sp.ZoomSlider = zNew;
-                H1SpacePttTrace("cell zoom: DDC" + (row + 1) + " analyser zoom " + zNew.ToString("F4")
-                    + " span/1x " + want.ToString("F1"));
+                double physical = Display.H1CellZoom[row];
+                if (physical < 1.0) physical = 1.0;
+                double maxPhysical = H1CellPhysicalMaxZoom();
+                if (physical > maxPhysical) physical = maxPhysical;
+                Display.H1CellZoom[row] = physical;
+                double factor1x = H1ZoomFactorFromSlider(H1OneXSliderValue(), H1CellZoomLimit);
+                double want = factor1x * physical;
+                double zNew = H1SliderFromZoomFactor(want, sp.ZoomLimit);
+                Display.H1RowSpanValid[row] = false;
+                // H2 auto: centre the pane on the tagged window(s) instead of the box middle,
+                // so a narrow window at a large VFO offset stays visible when zoomed in.
+                if (_h1AutoZoomCell[row])
+                {
+                    var fe = sp.GetFrequencyExtents(0.0, 0.5);
+                    double fullSpan = fe.Item2 - fe.Item1;
+                    double baseSpan = Display.H1RowBaseHigh[row] - Display.H1RowBaseLow[row];
+                    double shownSpan = baseSpan / physical;
+                    double denom = fullSpan - shownSpan;
+                    double pan = 0.5;
+                    if (denom > 1.0) pan = 0.5 + _h1AutoCellFocusHz[row] / denom;
+                    if (pan < 0.0) pan = 0.0;
+                    if (pan > 1.0) pan = 1.0;
+                    if (Math.Abs(sp.PanSlider - pan) > 1e-9) sp.PanSlider = pan;
+                }
+                else if (sp.PanSlider != 0.5) sp.PanSlider = 0.5;
+                if (Math.Abs(sp.ZoomSlider - zNew) > 1e-12) sp.ZoomSlider = zNew;
+                else sp.initAnalyzer();
+                H1SpacePttTrace("cell zoom: DDC" + (row + 1) + " physical " + physical.ToString("F2")
+                    + " factor/1x " + want.ToString("F1") + " z " + zNew.ToString("F4")
+                    + " limit " + sp.ZoomLimit.ToString("F0"));
             }
             catch (Exception ex)
             {
@@ -32440,7 +33015,8 @@ private readonly double[] _h1BasePanSlider = new double[8];
             }
         }
 
-        // H1 (zoom option A): put the receiver analysers back the way the normal view expects them
+        // H2: put the receiver analysers (zoom, pan and zoom limit) back the way the normal view
+        // expects them, and drop the full-window span state.
         private void H1RestoreCellAnalysers()
         {
             try
@@ -32448,12 +33024,15 @@ private readonly double[] _h1BasePanSlider = new double[8];
                 if (!_h1BaseZoomSaved) return;
                 for (int row = 0; row < 8; row++)
                 {
-                    Display.H1RowSpanValid[row] = false;
                     SpecHPSDR sp = specRX.GetSpecRX(row);
                     if (sp == null) continue;
+                    double lim = _h1BaseZoomLimit[row];
+                    if (lim < 1.0) lim = 100.0;
+                    sp.ZoomLimit = lim;
                     sp.ZoomSlider = _h1BaseZoomSlider[row];
                     sp.PanSlider = _h1BasePanSlider[row];
                 }
+                Display.H1ClearRowSpans();
                 _h1BaseZoomSaved = false;
             }
             catch { }
@@ -32478,16 +33057,21 @@ private readonly double[] _h1BasePanSlider = new double[8];
             if (!Display.H1EightRows || _h1ZoomRow < 0) return;
             int row = _h1ZoomRow;
             if (rx != (row == 0 ? 1 : 2)) return;
-            double zoom = Display.H1CellZoom[row];
-            if (zoom <= 1.0001) return;
-            // H1 (zoom option A): the cell's analyser is zoomed, so use the span it published
+            // H2 (user 2026-11-22): use the cell's own published span (or its 1x base span and
+            // cell zoom); the normal-view display span passed in must not leak into the cell.
             if (Display.H1RowSpanValid[row])
             {
                 low = Display.H1RowDisplayLow[row];
                 high = Display.H1RowDisplayHigh[row];
                 return;
             }
-            // fallback while the analyser's first zoomed frame has not arrived yet
+            if (Display.H1RowBaseValid[row])
+            {
+                low = Display.H1RowBaseLow[row];
+                high = Display.H1RowBaseHigh[row];
+            }
+            double zoom = Display.H1CellZoom[row];
+            if (zoom <= 1.0001) return;
             if (high <= low) return;
             double mid = (low + high) * 0.5;
             double half = (high - low) * 0.5 / zoom;
@@ -46120,6 +46704,12 @@ private readonly double[] _h1BasePanSlider = new double[8];
         {
             double dOldZoomFactor = lastZoomFactor;//MW0LGE21d
 
+            // H2: a manual slider move leaves AUTO; programmatic writes from the console's own
+            // layout code must not (they do not focus the trackbar and are not auto writes).
+            if (!_h1AutoZoomApplying && _h1AutoZoomNormal
+                && sender == ptbDisplayZoom && ptbDisplayZoom.Focused)
+                H1AutoZoomNormalManualOff();
+
             specRX.GetSpecRX(0).ZoomSlider = ((double)ptbDisplayZoom.Value - 10.0) / 230.0;
             specRX.GetSpecRX(1).ZoomSlider = ((double)ptbDisplayZoom.Value - 10.0) / 230.0;
             specRX.GetSpecRX(cmaster.inid(1, 0)).ZoomSlider = ((double)ptbDisplayZoom.Value - 10.0) / 230.0;
@@ -46193,6 +46783,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         private void radDisplayZoom05_CheckedChanged(object sender, System.EventArgs e)
         {
+            H1AutoZoomNormalManualOff();
             if (radDisplayZoom05.Checked)
             {
                 displayZoom05();
@@ -46206,6 +46797,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         private void radDisplayZoom1x_CheckedChanged(object sender, System.EventArgs e)
         {
+            H1AutoZoomNormalManualOff();
             if (radDisplayZoom1x.Checked)
             {
                 displayZoom1();
@@ -46219,6 +46811,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
 
         private void radDisplayZoom2x_CheckedChanged(object sender, System.EventArgs e)
         {
+            H1AutoZoomNormalManualOff();
             if (radDisplayZoom2x.Checked)
             {
                 displayZoom2();
@@ -46231,6 +46824,7 @@ private readonly double[] _h1BasePanSlider = new double[8];
         }
         private void radDisplayZoom4x_CheckedChanged(object sender, System.EventArgs e)
         {
+            H1AutoZoomNormalManualOff();
             if (radDisplayZoom4x.Checked)
             {
                 displayZoom4();

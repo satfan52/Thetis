@@ -418,6 +418,24 @@ namespace Thetis
         }
 
         private double z_slider;
+        // H2 (user 2026-11-22): the analyser's own zoom floor. 100 is the historical limit (1 %
+        // of the usable FFT span). The eight-row cells raise it while the full-window view is up
+        // so the tag-fit auto zoom can reach the 50 Hz windows at 384 k; every other analyser
+        // keeps 100.
+        private double _zoom_limit = 100.0;
+        public double ZoomLimit
+        {
+            get { return _zoom_limit; }
+            set
+            {
+                double n = value;
+                if (n < 1.0) n = 1.0;
+                if (n > 1000.0) n = 1000.0;
+                if (n == _zoom_limit) return;
+                _zoom_limit = n;
+                if (update) initAnalyzer();
+            }
+        }
         public double ZoomSlider
         {
             get { return z_slider; }
@@ -534,6 +552,7 @@ namespace Thetis
             av_mode_wf = src.av_mode_wf;
             z_slider = src.z_slider;
             pan_slider = src.pan_slider;
+            _zoom_limit = src._zoom_limit;
             sample_rate = src.sample_rate;
             nb_on = src.nb_on;
             nb2_on = src.nb2_on;
@@ -597,7 +616,7 @@ namespace Thetis
                         double zoom_slider = Math.Log10(9.0 * z_slider + 1.0);
 
                         //limits how much you can zoom in; higher value means you zoom more
-                        const double zoom_limit = 100;
+                        double zoom_limit = _zoom_limit;
 
                         //calculate the width in intervals after applying zoom
                         double width = intervals * (1.0 - (1.0 - 1.0 / zoom_limit) * zoom_slider);
@@ -697,7 +716,7 @@ namespace Thetis
         public void ZoomToBandwidth(double target_bandwidth_hz)
         {
             const double CLIP_FRACTION = 0.04;
-            const double zoom_limit = 100.0;
+            double zoom_limit = _zoom_limit;
 
             double bin_width = (double)sample_rate / (double)fft_size;
             int bins_per_subspan = fft_size - 1 - 2 * (int)Math.Floor(CLIP_FRACTION * fft_size);
@@ -766,7 +785,7 @@ namespace Thetis
                         double zoom_slider = Math.Log10(9.0 * zslider + 1.0);
 
                         //limits how much you can zoom in; higher value means you zoom more
-                        const double zoom_limit = 100;
+                        double zoom_limit = _zoom_limit;
 
                         //calculate the width in intervals after applying zoom
                         double width = intervals * (1.0 - (1.0 - 1.0 / zoom_limit) * zoom_slider);
