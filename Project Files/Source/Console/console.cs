@@ -9301,6 +9301,8 @@ namespace Thetis
                     bool don = chkTUN != null && chkTUN.Checked;
                     if (h1FsTunePill.Checked != don) h1FsTunePill.Checked = don;
                     h1FsTunePill.FlatAppearance.CheckedBackColor = don ? Color.Red : Color.FromArgb(48, 48, 48);
+                    if (h1FsTunePill.BackColor != (don ? Color.Red : Color.FromArgb(48, 48, 48)))
+                        h1FsTunePill.BackColor = don ? Color.Red : Color.FromArgb(48, 48, 48);
                     h1FsTunePill.ForeColor = don ? Color.White : Color.FromArgb(180, 180, 180);
                 }
                 if (_h1FullScreenPanafall && _h1cellStripsBuilt) H1CellStripsSync();

@@ -7631,9 +7631,9 @@ namespace Thetis
                     if (swr > 99f) swr = 99f;
                     string a = "SWR " + swr.ToString("F1");
                     string b = "FWD " + H1CellMeterFwd.ToString("F0") + "W";
-                    drawStringDX2D(a, tf, m_bDX2_h1_tx_edge, x0 + 2, 3);
+                    drawStringDX2D(a, tf, m_bDX2_Red, x0 + 2, 3);
                     SizeF sa = measureStringDX2D(a, tf);
-                    drawStringDX2D(b, tf, m_bDX2_h1_tx_edge, x0 + 2 + (int)sa.Width + 8, 3);
+                    drawStringDX2D(b, tf, m_bDX2_Red, x0 + 2 + (int)sa.Width + 8, 3);
                 }
                 return;
             }
