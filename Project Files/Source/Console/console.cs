@@ -10274,8 +10274,10 @@ for (int zr = 0; zr < 8; zr++)
             double centre = Display.H1RowCentreMHz[cell];
             // H2: RX1/RX2 (cells 0/1) use the console receiver centres; their
             // row-centre array entry is only populated for the headless DDCs.
+            // H2: use the display's own DDC centre. With CTUN on, CentreFrequency is the
+            // frozen display centre, while the cells are drawn around Display.CentreFreqRX1/2.
             if (centre <= 0.0)
-                centre = cell == 0 ? CentreFrequency : (cell == 1 ? CentreRX2Frequency : centre);
+                centre = cell == 0 ? Display.CentreFreqRX1 : (cell == 1 ? Display.CentreFreqRX2 : centre);
             int low, high;
             H1SpareCellVisibleSpan(cell, out low, out high);
             int span = high - low;

@@ -345,6 +345,18 @@ Verified in full-window: right-click on the DDC3 spectrum drew a yellow vertical
 crosshair, a second right-click changed it to blue, and a third removed it.
 
 
+## Full-window DDC1/DDC2 CTUN click mapping (2026-11-22)
+
+The full-window yellow click on DDC1/DDC2 with CTUN on moved the tuning windows to
+the wrong frequency. The cell renderer plots around the hardware/display centre
+Display.CentreFreqRX1 / CentreFreqRX2, but the click mapper used the console's
+CentreFrequency, which under CTUN is the frozen display centre. The mapper now
+uses the same Display.CentreFreqRX1/RX2 values as the renderer. Verified with DDC1
+CTUN on: clicking at the same pixel produced VFOA 14.078320, and the RX1 tuning
+window landed under the clicked pixel; blue still moved SubVFOA with the main
+caption unchanged.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
