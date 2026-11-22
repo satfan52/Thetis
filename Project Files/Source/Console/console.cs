@@ -9091,9 +9091,15 @@ namespace Thetis
                 h1AutoNormalZoomButton.Font = radDisplayZoom1x.Font;
                 h1AutoNormalZoomButton.ForeColor = radDisplayZoom1x.ForeColor;
                 h1AutoNormalZoomButton.TextAlign = radDisplayZoom1x.TextAlign;
-                // "Auto Zoom" needs more width than AUTO; keep the same skin row height, widen the
-                // pill and place it immediately left of the zoom slider (repositioned at runtime,
-                // because the zoom row is anchored and the slider moves with the window).
+                // H2 (user 2026-11-22): the pill must not overlap the MFJ998R block on the left.
+                // Move the zoom slider/ZTB/preset row 15 px right (there is spare space before the
+                // right-hand Width/Shift panel) to open a clean gap; the pill is repositioned at
+                // runtime 2 px left of the live slider.
+                foreach (Control zc in new Control[] { ptbDisplayZoom, btnDisplayZTB,
+                    radDisplayZoom05, radDisplayZoom1x, radDisplayZoom2x, radDisplayZoom4x })
+                {
+                    if (zc != null) zc.Left += 15;
+                }
                 h1AutoNormalZoomButton.Size = new Size(76, radDisplayZoom1x.Height);
                 h1AutoNormalZoomButton.Anchor = ptbDisplayZoom.Anchor;
                 h1AutoNormalZoomButton.TabStop = false;
@@ -9630,6 +9636,8 @@ namespace Thetis
                     // so its position changes with the window/layout)
                     if (ptbDisplayZoom != null && h1AutoNormalZoomButton.Parent == ptbDisplayZoom.Parent)
                     {
+                        // Fit the pill in the zoom row, just left of the shifted slider, so it
+                        // cannot overlap the MFJ998R block any more.
                         int bx = ptbDisplayZoom.Left - h1AutoNormalZoomButton.Width - 2;
                         if (bx < 0) bx = 0;
                         Point want = new Point(bx, ptbDisplayZoom.Top);
