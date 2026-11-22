@@ -9257,6 +9257,8 @@ namespace Thetis
             if (h1FsTunePill.BackColor != want) h1FsTunePill.BackColor = want;
             h1FsTunePill.FlatAppearance.CheckedBackColor = Color.Red;
             h1FsTunePill.ForeColor = on ? Color.White : Color.FromArgb(180, 180, 180);
+            // H1: the normal-view TX step attenuator must never float over the eight-DDC view.
+            if (udTXStepAttData != null) udTXStepAttData.Visible = !fs;
         }
 
         private void H1FsSync()
