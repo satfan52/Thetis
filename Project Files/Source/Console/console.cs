@@ -8656,7 +8656,8 @@ namespace Thetis
         private readonly Dictionary<object, int> _h1CellStripOwner = new Dictionary<object, int>();
         private bool _h1cellStripsBuilt = false;
         private readonly bool[] _h1CellSubCtrl = new bool[8];
-        private CheckBoxTS h1FsTunePill;
+        private CheckBoxTS h1FsTunePill, h1FsPttPill, h1FsMoxPill;
+        private bool _h1PttOwnedMox = false;
         // H1 (M2): local audio (aamix) state, driven by the middle-click on a window
         private int _h1SpareAudioMask = 0;
         private bool _h1SpareVacAutoOn = false;   // we switched VAC1 on for the spare audio
@@ -9252,11 +9253,21 @@ namespace Thetis
             bool fs = _h1FullScreenPanafall;
             bool on = fs && (chkTUN != null && (chkTUN.Checked || _tuning));
             if (h1FsTunePill.Visible != fs) h1FsTunePill.Visible = fs;
+            if (h1FsPttPill.Visible != fs) h1FsPttPill.Visible = fs;
+            if (h1FsMoxPill.Visible != fs) h1FsMoxPill.Visible = fs;
             if (h1FsTunePill.Checked != on) h1FsTunePill.Checked = on;
-            Color want = on ? Color.Red : Color.FromArgb(48, 48, 48);
-            if (h1FsTunePill.BackColor != want) h1FsTunePill.BackColor = want;
+            Color tw = on ? Color.Red : Color.FromArgb(110, 0, 0);
+            if (h1FsTunePill.BackColor != tw) h1FsTunePill.BackColor = tw;
             h1FsTunePill.FlatAppearance.CheckedBackColor = Color.Red;
-            h1FsTunePill.ForeColor = on ? Color.White : Color.FromArgb(180, 180, 180);
+            h1FsTunePill.ForeColor = Color.White;
+            bool mox = chkMOX != null && chkMOX.Checked;
+            if (h1FsMoxPill.Checked != mox) h1FsMoxPill.Checked = mox;
+            Color mw = mox ? Color.Yellow : Color.FromArgb(90, 90, 0);
+            if (h1FsMoxPill.BackColor != mw) h1FsMoxPill.BackColor = mw;
+            h1FsMoxPill.FlatAppearance.CheckedBackColor = Color.Yellow;
+            h1FsMoxPill.ForeColor = Color.Black;
+            if (!_h1PttOwnedMox) h1FsPttPill.BackColor = Color.FromArgb(110, 55, 0);
+            h1FsPttPill.ForeColor = Color.White;
             // H1: the normal-view TX step attenuator must never float over the eight-DDC view.
             if (udTXStepAttData != null) udTXStepAttData.Visible = !fs;
         }
@@ -10789,14 +10800,40 @@ for (int zr = 0; zr < 8; zr++)
             }
 
             h1FsTunePill = NewSubPill("h1FsTunePill", "TUN");
-            h1FsTunePill.Size = new Size(46, 20);
-            h1FsTunePill.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
-            h1FsTunePill.Visible = false;
-            h1FsTunePill.TabStop = false;
+            h1FsPttPill = NewSubPill("h1FsPttPill", "PTT");
+            h1FsMoxPill = NewSubPill("h1FsMoxPill", "MOX");
+            h1FsTunePill.Size = new Size(54, 24);
+            h1FsTunePill.Font = new Font("Segoe UI", 8f, FontStyle.Bold);
+            h1FsPttPill.Size = new Size(42, 20);
+            h1FsMoxPill.Size = new Size(42, 20);
+            h1FsPttPill.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            h1FsMoxPill.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            foreach (CheckBoxTS tb in new CheckBoxTS[] { h1FsTunePill, h1FsPttPill, h1FsMoxPill })
+            {
+                tb.Visible = false;
+                tb.TabStop = false;
+                tb.FlatAppearance.BorderSize = 2;
+                Controls.Add(tb);
+                _h1CellStripControls.Add(tb);
+            }
+            h1FsTunePill.FlatAppearance.BorderColor = Color.Red;
             h1FsTunePill.FlatAppearance.CheckedBackColor = Color.Red;
             h1FsTunePill.Click += (ts, te) => { if (chkTUN != null) chkTUN.Checked = h1FsTunePill.Checked; };
-            Controls.Add(h1FsTunePill);
-            _h1CellStripControls.Add(h1FsTunePill);
+            h1FsMoxPill.FlatAppearance.BorderColor = Color.Yellow;
+            h1FsMoxPill.FlatAppearance.CheckedBackColor = Color.Yellow;
+            h1FsMoxPill.Click += (ts, te) => { if (chkMOX != null) chkMOX.Checked = h1FsMoxPill.Checked; };
+            h1FsPttPill.AutoCheck = false;
+            h1FsPttPill.FlatAppearance.BorderColor = Color.Orange;
+            h1FsPttPill.MouseDown += (ts, te) => {
+                if (chkTUN != null && chkTUN.Checked) return;
+                if (chkMOX != null && !chkMOX.Checked) { _h1PttOwnedMox = true; chkMOX.Checked = true; }
+                h1FsPttPill.BackColor = Color.Orange; h1FsPttPill.ForeColor = Color.Black;
+            };
+            h1FsPttPill.MouseUp += (ts, te) => {
+                if (_h1PttOwnedMox && chkMOX != null) chkMOX.Checked = false;
+                _h1PttOwnedMox = false;
+                H1FsTunePillSync();
+            };
             }
             catch (Exception ex)
             {
@@ -10860,9 +10897,13 @@ for (int zr = 0; zr < 8; zr++)
             }
             if (h1FsTunePill != null)
             {
-                h1FsTunePill.Location = new Point(left + pnlDisplay.Width / 2 - h1FsTunePill.Width / 2,
-                    top + pnlDisplay.Height - h1FsTunePill.Height - 38);
-                h1FsTunePill.BringToFront();
+                int txY = top + pnlDisplay.Height - h1FsTunePill.Height - 38;
+                int txW = h1FsTunePill.Width + h1FsPttPill.Width + h1FsMoxPill.Width + 16;
+                int txX = left + pnlDisplay.Width / 2 - txW / 2;
+                h1FsTunePill.Location = new Point(txX, txY);
+                h1FsPttPill.Location = new Point(txX + h1FsTunePill.Width + 8, txY + 2);
+                h1FsMoxPill.Location = new Point(txX + h1FsTunePill.Width + h1FsPttPill.Width + 16, txY + 2);
+                h1FsTunePill.BringToFront(); h1FsPttPill.BringToFront(); h1FsMoxPill.BringToFront();
             }
 
         }
