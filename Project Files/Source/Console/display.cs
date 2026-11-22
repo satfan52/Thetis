@@ -9700,7 +9700,7 @@ namespace Thetis
                 m_bDX2_band_edge_pen = convertBrush((SolidBrush)band_edge_pen.Brush);
                 m_bDX2_grid_pen_inb = convertBrush((SolidBrush)grid_pen_inb.Brush);
 
-                m_bDX2_h1_tx_edge = getDXBrushForColour(Color.Red); // H1: the TX window's edge and tag
+                m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
                 m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
