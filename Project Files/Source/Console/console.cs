@@ -9111,6 +9111,11 @@ namespace Thetis
                     parent.Controls.Add(h1AutoNormalZoomButton);
                     h1AutoNormalZoomButton.BringToFront();
                 }
+                // The 1x skin art carries a light bottom/right border that is hidden between the
+                // tightly packed presets but shows as stray lines on this wider pill. Clip the
+                // button's last pixel row/column so only the pill itself is drawn.
+                h1AutoNormalZoomButton.Region = new Region(new Rectangle(0, 0,
+                    h1AutoNormalZoomButton.Width - 1, h1AutoNormalZoomButton.Height - 1));
                 try { toolTip1.SetToolTip(h1AutoNormalZoomButton,
                     "Auto zoom: follow the RX/TX tag width; click to toggle auto/manual zoom"); } catch { }
                 lblDisplayZoom.Visible = false;

@@ -90,7 +90,8 @@ highlight wash is still visible (pixel diff confirms the wash is drawn).
   labelled `Auto Zoom` in the zoom row. It copies the preset buttons' `Appearance=Button`,
   `FlatStyle=Flat`, font and anchor, is 76x24 (the two-word label needs more width than `1x`) and
   uses the 1x preset's skin art via a mapping in `Skin.cs` (`radAutoZoomNormal` ->
-  `radDisplayZoom1x`). It is repositioned at runtime to sit 2 px left of the live zoom slider; the
+  `radDisplayZoom1x`). The 1x art's 1 px light bottom/right border is clipped away with a
+  `Region` (75x23) so the pill draws only its rounded body - no stray line below or to its right. It is repositioned at runtime to sit 2 px left of the live zoom slider; the
   zoom slider/ZTB/preset row is shifted 15 px right at startup so the pill no longer overlaps or
   touches the MFJ998R/PA block (there is a clear gap between the MFJ line and the pill). Inactive
   it is the normal dark button;
@@ -101,9 +102,9 @@ highlight wash is still visible (pixel diff confirms the wash is drawn).
   slider itself toggles AUTO as well; the caption reads `AUTO` in amber while active. Dragging the
   slider tunes manually and leaves AUTO (the existing manual-takeover path).
 
-Verified on the station with `Thetis.exe` `026ba754...`: the zoom row shows an `Auto Zoom` pill
-immediately left of the zoom slider (2 px gap), with a clear gap to the MFJ998R line (the row was
-moved 15 px right); inactive it is dark with white text,
+Verified on the station with `Thetis.exe` `b7087c8a...`: the zoom row shows a clean `Auto Zoom`
+pill immediately left of the zoom slider (2 px gap), with a clear gap to the MFJ998R line (the row
+was moved 15 px right) and no bottom/right border lines; inactive it is dark with white text,
 clicking it makes it checked-blue and enables auto, clicking again returns it to dark/manual
 (`auto zoom: normal off (AUTO button)`). Full-window caption/slider toggles still work, and the
 earlier VFO-first-digit and dB-scale-highlight fixes remain in place.
