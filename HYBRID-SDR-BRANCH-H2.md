@@ -54,6 +54,30 @@ the running console.
   `auto zoom: normal off (manual zoom)` and left the requested zoom in place.
 - Console responsive after all tests, no crash dumps.
 
+
+## Normal-view rendering fixes (2026-11-22, after the first H2 test build)
+
+These two are normal-view rendering defects found on the station after the first H2 test build;
+they are independent of the zoom work (same symptoms on the pre-H2 build), and are fixed here
+because they were found while testing H2.
+
+- **RX1 frequency readout's first digit clipped.** The docked VFO meter draws the frequency line
+  right-aligned at 41.5 % of its widget. With a two-digit MHz part (e.g. `14.086`) the line was
+  wider than the space to the left of that anchor, so the render target clipped the leading digit.
+  The line is now fitted into the available space (shrink only) for VFO A and VFO B
+  (`MeterManager.cs`, the `plotText(sVfoA/sVfoB, ...)` calls now pass a `fitSizeWidth` of
+  `0.415 * widget width` with `only_shrink`).
+- **dB-scale hover highlight covered the top-left frequency figure.** The translucent
+  number-scale highlight was painted after the frequency/band-edge labels. The wash is now painted
+  after the grid lines but before the scale numbers and band-edge/frequency callouts, so hovering
+  the scale still highlights it but cannot obscure the frequency figure in the top-left corner
+  (`display.cs`). The bright number colour switch stays in the label block.
+
+Verified on the station with the fixed build (`Thetis.exe` `2f1e40e0...`): at 14.086842 MHz the
+VFO A readout shows the complete `14.086 842` (first digit no longer clipped); hovering the dBm
+scale leaves the red `14.000` band-edge/frequency figure at the top-left readable while the
+highlight wash is still visible (pixel diff confirms the wash is drawn).
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows

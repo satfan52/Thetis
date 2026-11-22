@@ -40267,7 +40267,12 @@ namespace Thetis
                 { 
                     getParts(m.VfoA, out MHz, out kHz, out hz);
                     string sVfoA = MHz + "." + kHz;// + "." + hz;
-                    plotText(sVfoA, x + (w * 0.415f) * x_multy, y + (h * 0.02f), rect.Width, vfo.FontSize * 1.5f, vfo.FrequencyColour, nVfoAFade, vfo.FontFamily, vfo.Style, true);
+                    // The line is right-aligned at 41.5 % of the widget. With a two-digit MHz part
+                    // (e.g. 14.086) it can be wider than the space to the left of that anchor; fit it
+                    // into that space so the first digit is not clipped by the item rectangle.
+                    plotText(sVfoA, x + (w * 0.415f) * x_multy, y + (h * 0.02f), rect.Width,
+                        vfo.FontSize * 1.5f, vfo.FrequencyColour, nVfoAFade, vfo.FontFamily, vfo.Style,
+                        true, false, (w * 0.415f) * x_multy, only_shrink: true);
                     plotText(hz, x + (w * 0.48f) * x_multy, y + (h * 0.11f), rect.Width, vfo.FontSize * 1.2f, vfo.FrequencyColourSmall, nVfoAFade, vfo.FontFamily, vfo.Style, true);
                 }
 
@@ -40296,7 +40301,10 @@ namespace Thetis
                     // hz VFOB
                     getParts(tmpVfoB, out MHz, out kHz, out hz);
                     string sVfoB = MHz + "." + kHz;// + "." + hz;
-                    plotText(sVfoB, x + (w * 0.415f) * x_multy + (w * (0.50f - x_shift)) * x_multy, y + (h * 0.02f), rect.Width, vfo.FontSize * 1.5f, vfo.FrequencyColour, nVfoBFade, vfo.FontFamily, vfo.Style, true);
+                    plotText(sVfoB, x + (w * 0.415f) * x_multy + (w * (0.50f - x_shift)) * x_multy,
+                        y + (h * 0.02f), rect.Width, vfo.FontSize * 1.5f, vfo.FrequencyColour,
+                        nVfoBFade, vfo.FontFamily, vfo.Style, true, false,
+                        (w * 0.415f) * x_multy, only_shrink: true);
                     plotText(hz, x + (w * 0.48f) * x_multy + (w * (0.50f - x_shift)) * x_multy, y + (h * 0.11f), rect.Width, vfo.FontSize * 1.2f, vfo.FrequencyColourSmall, nVfoBFade, vfo.FontFamily, vfo.Style, true);
                 }
 

@@ -10928,6 +10928,21 @@ namespace Thetis
                         }
                     }
 
+                    // H2 (user 2026-11-22): the dB-scale highlight wash. It is painted after the
+                    // grid lines but before the scale numbers and the band-edge/frequency callouts,
+                    // so the wash is visible yet it cannot cover the frequency figure in the
+                    // top-left corner.
+                    if (!bIsWaterfall &&
+                        ((m_bHighlightNumberScaleRX1 && rx == 1) || (m_bHighlightNumberScaleRX2 && rx == 2)))
+                    {
+                        if (rx == 1)
+                            drawFillRectangleDX2D(m_bDX2_m_bHightlightNumberScale, console.RX1DisplayGridX,
+                                nVerticalShift + top, console.RX1DisplayGridW - console.RX1DisplayGridX, H - top);
+                        else
+                            drawFillRectangleDX2D(m_bDX2_m_bHightlightNumberScale, console.RX2DisplayGridX,
+                                nVerticalShift + top, console.RX2DisplayGridW - console.RX2DisplayGridX, H - top);
+                    }
+
                     if (_show_frequency_numbers)
                     {
                         if (((double)((int)(actual_fgrid * 1000))) == actual_fgrid * 1000)
@@ -11066,18 +11081,11 @@ namespace Thetis
             {
                 SharpDX.Direct2D1.Brush brTextLabel;
 
-                // highlight the number/scales
+                // highlight the number/scales - the wash itself is painted early so the labels
+                // (including the band-edge/frequency figure) stay readable; only the text colour
+                // switches here.
                 if ((m_bHighlightNumberScaleRX1 && rx == 1) || (m_bHighlightNumberScaleRX2 && rx == 2))
                 {
-                    if (rx == 1)
-                    {
-                        drawFillRectangleDX2D(m_bDX2_m_bHightlightNumberScale, console.RX1DisplayGridX, nVerticalShift + top, console.RX1DisplayGridW - console.RX1DisplayGridX, H - top);
-                    }
-                    else
-                    {
-                        drawFillRectangleDX2D(m_bDX2_m_bHightlightNumberScale, console.RX2DisplayGridX, nVerticalShift + top, console.RX2DisplayGridW - console.RX2DisplayGridX, H - top);
-
-                    }
                     brTextLabel = m_bDX2_m_bHightlightNumbers;
                 }
                 else
