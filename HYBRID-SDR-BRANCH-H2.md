@@ -18,7 +18,8 @@ AUTO so the RX/TX tag window is zoomed to stay readable. Built from H1 head `648
   CW filter at 384 k without changing the FFT configuration. Every non-H1 analyser keeps 100.
 - **Tag-fit AUTO.** No extra AUTO buttons anywhere. In the normal view a single `Auto Zoom` pill in
   the zoom row (same skin art and format as the 0.5x/1x/2x/4x presets, dark when inactive, blue
-  while active, positioned directly left of the zoom slider) flips the normal-view auto zoom; in
+  while active, positioned directly left of the zoom slider with the zoom row shifted 15 px right
+  so it is clear of the separate MFJ998R/PA block) flips the normal-view auto zoom; in
   the full-window cells the ZOOM caption/value and the zoom slider itself are clickable to flip
   that DDC between manual and AUTO (a drag on the slider still tunes manually). The target span is
   computed in absolute hertz from
@@ -89,8 +90,10 @@ highlight wash is still visible (pixel diff confirms the wash is drawn).
   labelled `Auto Zoom` in the zoom row. It copies the preset buttons' `Appearance=Button`,
   `FlatStyle=Flat`, font and anchor, is 76x24 (the two-word label needs more width than `1x`) and
   uses the 1x preset's skin art via a mapping in `Skin.cs` (`radAutoZoomNormal` ->
-  `radDisplayZoom1x`). It is repositioned at runtime to sit 2 px left of the live zoom slider (the
-  row is anchored, so the slider moves with the window). Inactive it is the normal dark button;
+  `radDisplayZoom1x`). It is repositioned at runtime to sit 2 px left of the live zoom slider; the
+  zoom slider/ZTB/preset row is shifted 15 px right at startup so the pill no longer overlaps or
+  touches the MFJ998R/PA block (there is a clear gap between the MFJ line and the pill). Inactive
+  it is the normal dark button;
   clicking it flips the normal-view tag-fit AUTO and it turns checked-blue while active. There is
   no separate pill anymore.
 - **Full window, same language:** no separate pills in the strips. Every full-window cell's ZOOM
@@ -98,8 +101,9 @@ highlight wash is still visible (pixel diff confirms the wash is drawn).
   slider itself toggles AUTO as well; the caption reads `AUTO` in amber while active. Dragging the
   slider tunes manually and leaves AUTO (the existing manual-takeover path).
 
-Verified on the station with `Thetis.exe` `f6ed9e3e...`: the zoom row shows an `Auto Zoom` pill
-immediately left of the zoom slider (2 px gap, no overlap); inactive it is dark with white text,
+Verified on the station with `Thetis.exe` `026ba754...`: the zoom row shows an `Auto Zoom` pill
+immediately left of the zoom slider (2 px gap), with a clear gap to the MFJ998R line (the row was
+moved 15 px right); inactive it is dark with white text,
 clicking it makes it checked-blue and enables auto, clicking again returns it to dark/manual
 (`auto zoom: normal off (AUTO button)`). Full-window caption/slider toggles still work, and the
 earlier VFO-first-digit and dB-scale-highlight fixes remain in place.
