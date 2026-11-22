@@ -145,6 +145,27 @@ are in the RX1 `VFOAUpdate` snap and the empty/zero SubVFOA commit (split-only k
 RX2/SubRX2 paths only use the default while `chkEnableMultiRX2` is on.
 
 
+
+## VFO first-digit overlay fix (2026-11-22, after the sub-default build)
+
+The leading digit of the main VFO A/B readout was partially covered by a **35x11 empty
+`LabelTS` over the readout**: `lblRX1APF` at `grpVFOA (45,20)` (and `lblRX2APF` at the VFO B
+twin). These labels are shown by the CW mode-change code via `lblRX1APF.Show()`, but their text is
+never set anywhere in the fork - they stay empty. A transparent WinForms label paints its parent's
+background over its rectangle instead of the sibling textbox underneath, so the empty label erased
+the left edge of the first digit (the same failure appeared at 14 MHz and had nothing to do with
+the font or the sub-row defaults).
+
+Fix: never leave an empty APF label visible. The labels are hooked with `VisibleChanged`, which
+hides them again whenever they are shown with empty text, and the `RX1APFlabel`/`RX2APFlabel`
+setters also hide the empty label. Font sizes and box widths are unchanged (an earlier font/width
+experiment was discarded on the user's instruction).
+
+Verified with `Thetis.exe` `16af547a...`: after the fix the enumeration around the first digit
+shows no visible STATIC overlay, and the readout shows the complete `14.077 442`; hiding the
+35x11 empty STATIC by hand reproduced the fix immediately. RX2's `lblRX2APF` uses the same handler.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows

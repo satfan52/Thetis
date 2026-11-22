@@ -821,6 +821,13 @@ namespace Thetis
             InitializeComponent();								// Windows Forms Generated Code
             InitSubRowLsd(); // H1: the sub rows' red last-three-digit overlays
 
+            // H2 (user 2026-11-22): the empty APF overlay labels sit over the leading VFO digit
+            // (lblRX1APF at grpVFOA 45,20, 35x11, and the RX2 twin). A transparent LabelTS paints
+            // its parent background over the sibling textbox and hides the left edge of the first
+            // digit. Never leave an empty APF label visible; the real CW/APF text still shows.
+            if (lblRX1APF != null) lblRX1APF.VisibleChanged += H1HideEmptyApfLabel;
+            if (lblRX2APF != null) lblRX2APF.VisibleChanged += H1HideEmptyApfLabel;
+
             InitRX2MixerSubSliders(); // H1: create the SubRX2 volume and pan sliders before the state restore sees them
             InitSubRXStrips(); // H1: create the SubRX1 and SubRX2 control strips before the state restore sees them
             H1CreateRX2FilterSliders(); // H1: create the RX2 filter width, shift and reset controls
@@ -18700,6 +18707,16 @@ for (int zr = 0; zr < 8; zr++)
             }
         }
 
+        // H2: an empty APF label is only a 35x11 transparent rectangle on top of the VFO
+        // readout - it paints the parent background across the leading digit. Hide it whenever it
+        // has no text, whatever mode code asked to Show() it.
+        private void H1HideEmptyApfLabel(object sender, EventArgs e)
+        {
+            LabelTS lab = sender as LabelTS;
+            if (lab != null && lab.Visible && string.IsNullOrEmpty(lab.Text))
+                lab.Visible = false;
+        }
+
         private string rx1_apf_label = "";
         public string RX1APFlabel
         {
@@ -18711,6 +18728,8 @@ for (int zr = 0; zr < 8; zr++)
             {
                 rx1_apf_label = value;
                 lblRX1APF.Text = value;
+                if (lblRX1APF != null && string.IsNullOrEmpty(value))
+                    lblRX1APF.Visible = false;
             }
         }
 
@@ -18725,6 +18744,8 @@ for (int zr = 0; zr < 8; zr++)
             {
                 rx2_apf_label = value;
                 lblRX2APF.Text = value;
+                if (lblRX2APF != null && string.IsNullOrEmpty(value))
+                    lblRX2APF.Visible = false;
             }
         }
 
