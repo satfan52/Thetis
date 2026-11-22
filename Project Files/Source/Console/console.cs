@@ -12144,18 +12144,12 @@ for (int zr = 0; zr < 8; zr++)
             {
                 if (row == 0)
                 {
-                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                    {
-                        if (rx2_enabled && chkVFOSplit.Checked) VFOASubFreq = Math.Round(VFOASubFreq + delta, 6);
-                        else VFOBFreq = Math.Round(VFOBFreq + delta, 6);
-                    }
-                    else if (!_mox) VFOAFreq = Math.Round(VFOAFreq + delta, 6);
+                    if (!_mox) VFOAFreq = Math.Round(VFOAFreq + delta, 6);
                 }
                 else if (row == 1)
                 {
-                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                        VFOASubFreq = Math.Round(VFOASubFreq + delta, 6);
-                    else if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
+                    // H2: DDC2 is RX2 when RX2 is on. Dual-VFO fallback only when RX2 is off.
+                    if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
                         VFOBFreq = Math.Round(VFOBFreq + delta, 6);
                     else
                         VFOAFreq = Math.Round(VFOAFreq + delta, 6);
@@ -12183,14 +12177,10 @@ for (int zr = 0; zr < 8; zr++)
             {
                 if (row == 0)
                 {
-                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                        return (rx2_enabled && chkVFOSplit.Checked) ? VFOASubFreq : VFOBFreq;
                     return VFOAFreq;
                 }
                 if (row == 1)
                 {
-                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                        return VFOASubFreq;
                     if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
                         return VFOBFreq;
                     return VFOAFreq;
@@ -12218,18 +12208,11 @@ for (int zr = 0; zr < 8; zr++)
             {
                 if (row == 0)
                 {
-                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                    {
-                        if (rx2_enabled && chkVFOSplit.Checked) VFOASubFreq = Math.Round(freq, 6);
-                        else VFOBFreq = Math.Round(freq, 6);
-                    }
-                    else if (!_mox) VFOAFreq = Math.Round(freq, 6);
+                    if (!_mox) VFOAFreq = Math.Round(freq, 6);
                 }
                 else if (row == 1)
                 {
-                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                        VFOASubFreq = Math.Round(freq, 6);
-                    else if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
+                    if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
                         VFOBFreq = Math.Round(freq, 6);
                     else
                         VFOAFreq = Math.Round(freq, 6);
@@ -43969,9 +43952,9 @@ private readonly int[] _h1BaseFftSize = new int[8];
                     break;
 
                 case TuneLocation.DisplayBottom:
-                    if (rx2_enabled && chkVFOSplit.Checked && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                        VFOASubFreq = SnapTune(VFOASubFreq, step, num_steps);
-                    else if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
+                    // H2: the RX2 pane always tunes RX2's own VFO (VFOB). The old
+                    // SPLIT/VFOB-mode redirect to VFOASubFreq belonged to the old model.
+                    if (rx2_enabled || (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob))
                         VFOBFreq = SnapTune(VFOBFreq, step, num_steps);
                     else
                         VFOAFreq = SnapTune(VFOAFreq, step, num_steps);
@@ -43987,16 +43970,12 @@ private readonly int[] _h1BaseFftSize = new int[8];
                     break;
 
                 case TuneLocation.DisplayTop:
-                    // MW0LGE this was other, but now we assume it is top of spectral display
-                    if (current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
-                    {
-                        if (rx2_enabled && chkVFOSplit.Checked)
-                            VFOASubFreq = SnapTune(VFOASubFreq, step, num_steps);
-                        else
-                            VFOBFreq = SnapTune(VFOBFreq, step, num_steps);
-                    }
-                    else
-                        if (!_mox) VFOAFreq = SnapTune(VFOAFreq, step, num_steps);
+                    // H2: the RX1 pane always tunes RX1's own VFO (VFOA). Dual-VFO
+                    // wheel fallback is kept only for the RX2-off layout.
+                    if (!rx2_enabled && current_click_tune_mode == ClickTuneMode.VFOB && wheel_tunes_vfob)
+                        VFOBFreq = SnapTune(VFOBFreq, step, num_steps);
+                    else if (!_mox)
+                        VFOAFreq = SnapTune(VFOAFreq, step, num_steps);
                     break;
             }
         }
@@ -65562,35 +65541,29 @@ private void incrementMutliMeterDisplayModeRX2()
                                     }
                                     else
                                     {
-                                        if (current_click_tune_mode == ClickTuneMode.VFOB && // red cross hairs
-                                            (chkVFOSplit.Checked || chkEnableMultiRX.Checked))
+                                        // Clicked display half decides the receiver. The old VFOB+
+                                        // SPLIT/MultiRX redirect to VFOASubFreq is gone: SubRX windows
+                                        // have their own priority hit-test and tune their own sub.
+                                        if (!(Common.ShiftKeyDown && (e.X > low_x && e.X < high_x))) //MW0LGE_21k9d do not set freq, so we can shift the filter instead
                                         {
-                                            VFOASubFreq = Math.Round(freq, 6);
+                                            if (!(!m_bCTUNputsZeroOnMouse && (e.X > low_x && e.X < high_x)) || current_click_tune_mode != ClickTuneMode.Off)
+                                            {
+                                                if (!H1Rx2Half(e.X, e.Y))
+                                                {
+                                                    if (!rx1_spectrum_tune_drag)
+                                                        VFOAFreq = Math.Round(freq, 6);
+                                                }
+                                                else
+                                                {
+                                                    if (!rx2_spectrum_tune_drag)
+                                                        VFOBFreq = Math.Round(freq, 6);
+                                                }
+                                            }
                                         }
                                         else
                                         {
-                                            if (!(Common.ShiftKeyDown && (e.X > low_x && e.X < high_x))) //MW0LGE_21k9d do not set freq, so we can shift the filter instead
-                                            {
-                                                if (!(!m_bCTUNputsZeroOnMouse && (e.X > low_x && e.X < high_x)) || current_click_tune_mode != ClickTuneMode.Off)
-                                                {
-                                                    if (!H1Rx2Half(e.X, e.Y))
-                                                    {
-                                                        if (!rx1_spectrum_tune_drag)
-                                                            VFOAFreq = Math.Round(freq, 6);
-                                                    }
-
-                                                    else
-                                                    {
-                                                        if (!rx2_spectrum_tune_drag)
-                                                            VFOBFreq = Math.Round(freq, 6);
-                                                    }
-                                                }
-                                            }
-                                            else
-                                            {
-                                                // shift filter MW0LGE_21k9d
-                                                dragWholeFilter(e);
-                                            }
+                                            // shift filter MW0LGE_21k9d
+                                            dragWholeFilter(e);
                                         }
                                     }
                                 }

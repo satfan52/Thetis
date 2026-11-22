@@ -213,6 +213,51 @@ AUTO -> off returned 1x on every cell (DDC1 auto value 56x with the 50 Hz filter
 with the 2.7 kHz filters).
 
 
+
+## CTUN click/wheel target correction (2026-11-22)
+
+The current receiver model is VFOA = RX1, SubVFOA = SubRX1, VFOB = RX2,
+SubVFOB = SubRX2. The window-drag handlers already followed that model, but the
+CTUN click-tune and mouse-wheel target selection still had the old "VFOB is RX1's
+second VFO" assumption:
+
+```csharp
+if (current_click_tune_mode == ClickTuneMode.VFOB &&
+    (chkVFOSplit.Checked || chkEnableMultiRX.Checked))
+    VFOASubFreq = clickedFrequency;   // SubRX1
+```
+
+This was reproduced on the station: with RX2 + SubRX1 + SPLIT on and the CTUN
+crosshair in red VFOB mode, a left-click in the blank RX2 pane ran
+`ctun left: SPECIAL -> VFOASubFreq=1.896564`; VFOB stayed unchanged and SubVFOA
+moved. The same legacy redirect existed in the normal-view wheel cases
+(`TuneLocation.DisplayTop` / `DisplayBottom`) and in the full-window DDC1/DDC2
+caption wheel, prefill and manual-entry helpers.
+
+The target is now chosen by the clicked display half, matching the drags:
+
+- RX1 pane -> `VFOAFreq`
+- RX2 pane -> `VFOBFreq`
+- SubRX1 window -> `VFOASubFreq` (its priority hit-test already handles this)
+- SubRX2 window -> `VFOBSubFreq` (same)
+
+The SPLIT/MultiRX redirect to `VFOASubFreq` was removed from CTUN click and from
+the normal/full-window wheel paths. The dual-VFO wheel fallback is kept only for
+the RX2-off layout. SubRX frequencies are therefore reachable by their windows,
+not by a VFOB-mode click or wheel elsewhere.
+
+Verified with the corrected build:
+
+- Red VFOB mode, blank **RX2** pane click: `VFOB` went 1.896456 -> 1.896564;
+  SubVFOA stayed 14.076380.
+- Red VFOB mode, blank **RX1** pane click: `VFOA` went 14.077442 -> 14.079381;
+  VFOB and SubVFOA stayed unchanged.
+- Wheel over the RX2 pane: `VFOB` 1.896564 -> 1.896560.
+- Wheel over the SubRX1 window: `SubVFOA` 14.076380 -> 14.076370 (sub-window
+  hit test still owns it).
+- Station frequencies restored afterwards; CTUN and click-tune mode left off.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
