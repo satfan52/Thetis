@@ -9307,22 +9307,20 @@ namespace Thetis
         private const double H1CellZoomLimit = 150.0;   // H1-cell analyser floor while full-window is up
         private const double H1CellLabelMax = 64.0;
 
-        // the trackbar value that the console calls 1x (Maximum + Minimum - 100)
+        // Full-window 1x is the cell's whole usable DDC bandwidth (analyser fully out), not the
+        // normal view's 1x zoom. Using the normal-view 1x value here gave a 34 kHz cell span at
+        // a 192 kHz sample rate - the display looked cut off at 1x (reported on DDC1).
         private double H1OneXSliderValue()
         {
-            if (ptbDisplayZoom == null) return (150.0 - 10.0) / (240.0 - 10.0);
-            int v1 = ptbDisplayZoom.Maximum + ptbDisplayZoom.Minimum - 100;
-            int lo = ptbDisplayZoom.Minimum, hi = ptbDisplayZoom.Maximum;
-            if (hi <= lo) return 0.0;
-            return (double)(v1 - lo) / (hi - lo);
+            return 0.0;
         }
 
         // optical zoom relative to the cell's 1x span at the H1 limit (tag-fit uses this; the
         // 64x label is the top of the scale, not a literal multiplier)
         private double H1CellPhysicalMaxZoom()
         {
-            double factor1x = H1ZoomFactorFromSlider(H1OneXSliderValue(), H1CellZoomLimit);
-            return H1CellZoomLimit / factor1x;
+            // 1x is the full usable band, so the H1 analyser limit is the optical maximum.
+            return H1CellZoomLimit;
         }
 
         private double H1CellPhysicalFromLabel(double label)

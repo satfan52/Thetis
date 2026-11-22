@@ -189,6 +189,30 @@ Tested on DDC1 in full-window mode with `Thetis.exe` `9afdc0c3...`: manual 64x �
 fix the AUTO-off value stayed at the auto position.
 
 
+
+## Full-window 1x span fix (2026-11-22)
+
+DDC1 in full-window mode at manual 1x only showed about **34 kHz** at a 192 kHz sample rate,
+while normal mode showed the receiver's wide span. The cell base span had been built from the
+analyser's **normal-view 1x zoom** (`GetFrequencyExtents(z1, 0.5)` with z1 = 0.6087), which cuts
+the usable bandwidth down to about one fifth; that was the wrong reference for the full-window
+cells.
+
+- Full-window 1x is now the cell's **whole usable DDC bandwidth**: the analyser extents at z=0
+  (`H1OneXSliderValue()` returns 0 for the cells). At 192 k the DDC1 base span is
+  **176,638 Hz** (the analyser's 92 % usable area) instead of 34,258 Hz.
+- The cell slider's 1x..64x scale now runs from that full-band base down to the H1 definition floor
+  (`H1CellPhysicalMaxZoom()` = 150 optical), so manual 1x shows the whole band and auto zoom has a
+  full-band reference for its tag-fit target.
+- The normal view's zoom mapping is untouched; this only changes the per-cell base in full-window.
+
+Verified on DDC1: manual 1x now shows the full 14 MHz band (frequency labels 13.998..14.158 MHz),
+with `cell zoom: DDC1 base span -88319..88319 (176638 Hz, rate 192000, fft 131072)`. The AUTO
+on/off restore was re-tested on all eight DDCs: manual 64x -> AUTO -> off returned 64x, then 1x ->
+AUTO -> off returned 1x on every cell (DDC1 auto value 56x with the 50 Hz filter; DDC2-8 5.5x
+with the 2.7 kHz filters).
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
