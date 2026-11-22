@@ -9076,8 +9076,14 @@ namespace Thetis
             if (h1fsZoomVal2 != null) { h1fsZoomVal2.Cursor = Cursors.Hand; h1fsZoomVal2.Click += H1ZoomCapClicked; }
             if (h1fsZoom1 != null) h1fsZoom1.ClickedWithoutDrag += H1ZoomCapClicked;
             if (h1fsZoom2 != null) h1fsZoom2.ClickedWithoutDrag += H1ZoomCapClicked;
-            h1AutoZoomNormalBtn = H1FsNewPill("h1AutoZoomNormal", "AUTO", 40);
-            h1AutoZoomNormalBtn.CheckedChanged += H1NormalAutoChanged;
+            // H2 (user 2026-11-22): no extra AUTO pill in the normal view either - the existing
+            // "Zoom:" caption is the AUTO toggle and shows AUTO in amber while it is on.
+            if (lblDisplayZoom != null)
+            {
+                _h1NormalZoomLabelOffColor = lblDisplayZoom.ForeColor;
+                lblDisplayZoom.Cursor = Cursors.Hand;
+                lblDisplayZoom.Click += H1NormalZoomLabelClicked;
+            }
 
             h1fsBand1.SelectedIndexChanged += H1FsBandChanged;
             h1fsBand2.SelectedIndexChanged += H1FsBandChanged;
@@ -9582,6 +9588,32 @@ namespace Thetis
             catch { }
         }
 
+        private Color _h1NormalZoomLabelOffColor = Color.White;
+
+        private void H1AutoUiSyncNormalZoomLabel()
+        {
+            try
+            {
+                if (lblDisplayZoom == null) return;
+                bool on = _h1AutoZoomNormal;
+                string t = on ? "AUTO" : "Zoom:";
+                if (lblDisplayZoom.Text != t) lblDisplayZoom.Text = t;
+                Color want = on ? Color.FromArgb(255, 200, 0) : _h1NormalZoomLabelOffColor;
+                if (lblDisplayZoom.ForeColor != want) lblDisplayZoom.ForeColor = want;
+            }
+            catch { }
+        }
+
+        private void H1NormalZoomLabelClicked(object sender, EventArgs e)
+        {
+            if (_h1AutoUiSyncGuard || _h1fsSync) return;
+            _h1AutoZoomNormal = !_h1AutoZoomNormal;
+            H1AutoUiSync();
+            H1SpacePttTrace("auto zoom: normal " + (_h1AutoZoomNormal ? "on" : "off")
+                + " (zoom label)");
+            if (_h1AutoZoomNormal) H1AutoZoomNormalIfEnabled();
+        }
+
         private void H1ZoomCapClicked(object sender, EventArgs e)
         {
             if (_h1fsSync) return;
@@ -9604,12 +9636,7 @@ namespace Thetis
             try
             {
                 H1AutoUiSyncZoomCaptions();
-                if (h1AutoZoomNormalBtn != null)
-                {
-                    H1AutoUiPositionNormal();
-                    h1AutoZoomNormalBtn.Visible = !_h1FullScreenPanafall;
-                    h1AutoZoomNormalBtn.Checked = _h1AutoZoomNormal;
-                }
+                H1AutoUiSyncNormalZoomLabel();
             }
             catch { }
             finally { _h1AutoUiSyncGuard = false; }
@@ -9620,6 +9647,8 @@ namespace Thetis
             try
             {
                 if (h1AutoZoomNormalBtn == null || radDisplayZoom05 == null) return;
+                // (H2: the normal-view AUTO control is now the Zoom: label; this method is kept
+                // harmless for older call sites.)
                 // H2 (user 2026-11-22): live in the same parent as the visible zoom presets, so the
                 // pill follows the layout and is not left floating over the waterfall; front it so a
                 // later BringToFront of the display cannot cover it.

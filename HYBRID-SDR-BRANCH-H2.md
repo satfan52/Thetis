@@ -16,10 +16,10 @@ AUTO so the RX/TX tag window is zoomed to stay readable. Built from H1 head `648
 - **Per-DDC zoom floor.** The H1-cell analysers get their own zoom limit (150 instead of the
   historical 100) while the full-window view is up. That is what lets the auto zoom fit a 50 Hz
   CW filter at 384 k without changing the FFT configuration. Every non-H1 analyser keeps 100.
-- **Tag-fit AUTO.** An AUTO pill in the normal view's zoom row, and in the full-window cells the
-  ZOOM caption/value and the zoom slider itself are clickable to flip that DDC between manual and
-  AUTO (a drag on the slider still tunes manually). There is no separate pill in the full-window
-  strips. The target span is computed in absolute hertz from
+- **Tag-fit AUTO.** No extra AUTO buttons anywhere. In the normal view the existing `Zoom:` caption
+  is the toggle (`AUTO` in amber while active); in the full-window cells the ZOOM caption/value and
+  the zoom slider itself are clickable to flip that DDC between manual and AUTO (a drag on the
+  slider still tunes manually). The target span is computed in absolute hertz from
   the window's filter width, the pane/cell pixel width and the measured 7 pt bold TX/RX tag width
   plus an 8 px margin. Full-window auto additionally centres the pane on the tagged window (TX tag
   first, then the RX/audio tag) by setting the analyser pan; the normal view uses the one global
@@ -81,26 +81,23 @@ scale leaves the red `14.000` band-edge/frequency figure at the top-left readabl
 highlight wash is still visible (pixel diff confirms the wash is drawn).
 
 
-## AUTO UI iteration (2026-11-22, after the first H2 test build)
+## AUTO control iteration (2026-11-22, final)
 
-- **Normal-view AUTO pill was not visible.** The pill was positioned from `radDisplayZoom05` before
-  the form layout had settled, so it could end up floating over the panadapter and be covered by
-  later `BringToFront` calls, and it was left hidden after a full-window round trip. It is now a
-  child of the same parent as the visible zoom presets, placed relative to them, brought to the
-  front whenever the normal view is active, and re-shown when the full-window view closes
-  (`H1AutoUiPositionNormal`, `H1AutoUiSync`, `H1FsHide`, `H1EightRowsExit`).
-- **No separate AUTO pills in the full-window strips.** The per-cell AUTO pills took too much room;
-  they are no longer created/shown. Every full-window cell's ZOOM caption (and its zoom value) is
-  clickable to toggle AUTO, and a plain click on the tuning-range slider itself toggles AUTO as
-  well. The caption reads `AUTO` in amber while auto is on and `ZOOM` while it is manual; dragging
-  the slider tunes manually and leaves AUTO (the existing manual-takeover path). Normal-view AUTO
-  stays on the pill.
+- **No extra AUTO button at all.** The normal-view AUTO pill was removed on request. The existing
+  `Zoom:` caption next to the normal zoom slider is now the toggle: clicking it flips the
+  normal-view AUTO zoom; it reads `AUTO` in amber while active and `Zoom:` in the normal caption
+  colour otherwise (`H1NormalZoomLabelClicked`, `H1AutoUiSyncNormalZoomLabel`).
+- **Full window, same language:** no separate pills in the strips. Every full-window cell's ZOOM
+  caption (and its zoom value) is clickable to toggle AUTO, and a plain click on the tuning-range
+  slider itself toggles AUTO as well; the caption reads `AUTO` in amber while active. Dragging the
+  slider tunes manually and leaves AUTO (the existing manual-takeover path).
 
-Verified on the station with `Thetis.exe` `e4ae991a...`: the AUTO pill is visible next to the
-normal zoom presets before and after a full-window round trip; in full-window the only `AUTO`
-text is a cell caption, clicking DDC1's ZOOM caption enabled its auto zoom (trace
-`auto zoom: DDC1 on (zoom caption)`), and a second click / slider click returned it to manual;
-dragging the slider keeps the manual zoom.
+Verified on the station with `Thetis.exe` `cdc44f9d...`: the normal view shows no AUTO button and
+clicking the `Zoom:` caption changes it to amber `AUTO`, applies the tag-fit zoom
+(`auto zoom: normal on (zoom label)`), and a second click returns it to `Zoom:`/manual. In the full
+window no separate AUTO control is visible; the ZOOM caption click enabled DDC1 auto
+(`auto zoom: DDC1 on (zoom caption)`) and the slider click returned it to manual. The other two
+normal-view fixes (VFO first digit, dB-scale highlight over the frequency figure) remain in place.
 
 ## Limits
 
