@@ -109,6 +109,42 @@ clicking it makes it checked-blue and enables auto, clicking again returns it to
 (`auto zoom: normal off (AUTO button)`). Full-window caption/slider toggles still work, and the
 earlier VFO-first-digit and dB-scale-highlight fixes remain in place.
 
+
+## SubRX default separation (2026-11-22)
+
+The sub receivers used to start exactly on their receiver's frequency: a sub that had never been
+tuned, a cleared sub row, a sub snapped back into range, or an old saved sub whose frequency sat on
+the main one all produced two tuning windows drawn on top of each other. The defaults are now
+filter-aware and only apply to a sub enabled for listening (the SPLIT-only TX path keeps its old
+TX=RX default, per the agreed Option A):
+
+- Base separation is 5 kHz. The needed separation is the larger of 5 kHz and the distance between
+  the two drawn filter windows plus a 100 Hz guard:
+  - upper side: `mainFilterHigh - subFilterLow + 100`,
+  - lower side: `subFilterHigh - mainFilterLow + 100`.
+  So ordinary 2.4-2.8 kHz filters start 5 kHz apart, and wider filters start farther apart so the
+  two windows cannot overlap.
+- The code tries the upper side first, then the lower side, and falls back to the largest usable
+  separation the receiver's 92 % sub passband still allows. It uses the same `SubPositionUsable`
+  rule as the existing clamps.
+- Applied at: first enable with no stored sub, first enable with an old saved sub exactly on the
+  receiver (legacy default), enable with a stored sub whose windows overlap, empty/zero sub row
+  commits, the out-of-span/out-of-oscillator snaps, and the startup restore pass (which otherwise
+  re-applied the old equal value after the enable repair).
+- A valid stored sub that does not overlap is left untouched; the new position is saved through the
+  existing `saved_vfoa_sub_freq` / `saved_vfob_sub_freq` and band-memory paths.
+- Both normal and full-window views use the same `Display.VFOASub`/`VFOBSub` frequencies, so no
+  renderer change was needed.
+
+Tested on the 22 November H2 build (`Thetis.exe` `73fc2fd6...`): with a database where
+`VFOBSubFreq` was deliberately set equal to `VFOBFreq` (`1.896456`), the startup restore logged
+`sub2 overlapping stored value -> default 1.901456`; the sub was placed exactly 5 kHz above VFO B
+with the main/sub filters at -2800/-100 Hz. The SubVFOA handler was also observed logging
+`default next to VFOA` (14.082442 from VFOA 14.077442) for an out-of-span sub. The Option A guards
+are in the RX1 `VFOAUpdate` snap and the empty/zero SubVFOA commit (split-only keeps VFOA), and the
+RX2/SubRX2 paths only use the default while `chkEnableMultiRX2` is on.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows

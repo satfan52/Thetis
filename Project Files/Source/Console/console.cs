@@ -39704,13 +39704,33 @@ private readonly int[] _h1BaseFftSize = new int[8];
                     BandLog("startup subs restore: saved1=" + _startupVFOASubFreq + " saved2=" + _startupVFOBSubFreq);
                     if (_startupVFOASubFreq > 0 && chkEnableMultiRX.Checked)
                     {
-                        BandLog("startup subs restore: sub1 -> " + _startupVFOASubFreq);
-                        VFOASubFreq = _startupVFOASubFreq;
+                        double sub1 = _startupVFOASubFreq;
+                        if (H2SubAtMainFrequency(sub1, VFOAFreq) || H2SubWindowsOverlap(sub1, VFOAFreq, false))
+                        {
+                            sub1 = H2SubDefaultFrequency(VFOAFreq, false);
+                            _startupVFOASubFreq = sub1;
+                            BandLog("startup subs restore: sub1 overlapping stored value -> default " + sub1);
+                        }
+                        else
+                        {
+                            BandLog("startup subs restore: sub1 -> " + sub1);
+                        }
+                        VFOASubFreq = sub1;
                     }
                     if (_startupVFOBSubFreq > 0 && rx2_enabled && chkEnableMultiRX2.Checked)
                     {
-                        BandLog("startup subs restore: sub2 -> " + _startupVFOBSubFreq);
-                        VFOBSubFreq = _startupVFOBSubFreq;
+                        double sub2 = _startupVFOBSubFreq;
+                        if (H2SubAtMainFrequency(sub2, VFOBFreq) || H2SubWindowsOverlap(sub2, VFOBFreq, true))
+                        {
+                            sub2 = H2SubDefaultFrequency(VFOBFreq, true);
+                            _startupVFOBSubFreq = sub2;
+                            BandLog("startup subs restore: sub2 overlapping stored value -> default " + sub2);
+                        }
+                        else
+                        {
+                            BandLog("startup subs restore: sub2 -> " + sub2);
+                        }
+                        VFOBSubFreq = sub2;
                     }
                 }
 
@@ -44615,7 +44635,9 @@ private readonly int[] _h1BaseFftSize = new int[8];
                                                     else if (((VFOASubFreq - VFOAFreq) * 1e6 + Display.SubRX1FilterLow < -half_span) ||
                                                              ((VFOASubFreq - VFOAFreq) * 1e6 + Display.SubRX1FilterHigh > half_span))
                                                     {
-                                                        VFOASubFreq = VFOAFreq;
+                                                        VFOASubFreq = chkEnableMultiRX.Checked
+                                                            ? H2SubDefaultFrequency(VFOAFreq, false)
+                                                            : VFOAFreq;
                                                     }
                                                     else
                                                     {
@@ -44859,7 +44881,9 @@ private readonly int[] _h1BaseFftSize = new int[8];
                 if (!chkEnableMultiRX.Checked && !chkVFOSplit.Checked) return;
                 if (txtVFOABand.Text == "." || string.IsNullOrEmpty(txtVFOABand.Text))
                 {
-                    VFOASubFreq = VFOAFreq;
+                    // Option A: listening sub gets the filter-aware default; split-only keeps TX=RX.
+                    VFOASubFreq = (!chkEnableMultiRX.Checked && chkVFOSplit.Checked)
+                        ? VFOAFreq : H2SubDefaultFrequency(VFOAFreq, false);
                     return;
                 }
 
@@ -44891,7 +44915,8 @@ private readonly int[] _h1BaseFftSize = new int[8];
                 // recorded into the band memory and cost the saved SubRX1 frequency on restart.
                 if (freq <= 0.0)
                 {
-                    VFOASubFreq = vfoa;
+                    VFOASubFreq = (!chkEnableMultiRX.Checked && chkVFOSplit.Checked)
+                        ? vfoa : H2SubDefaultFrequency(vfoa, false);
                     return;
                 }
 
@@ -45108,7 +45133,7 @@ private readonly int[] _h1BaseFftSize = new int[8];
                 if (!rx2_enabled || !chkEnableMultiRX2.Checked) return;
                 if (txtVFOBSub.Text == "." || string.IsNullOrEmpty(txtVFOBSub.Text))
                 {
-                    VFOBSubFreq = VFOBFreq;
+                    VFOBSubFreq = H2SubDefaultFrequency(VFOBFreq, true);
                     return;
                 }
 
@@ -45502,7 +45527,14 @@ private readonly int[] _h1BaseFftSize = new int[8];
                 {
                     radio.GetDSPRX(1, 1).RXOsc = sub_osc;
                 }
-                else if (!initializing) VFOBSubFreq = VFOBFreq; // snap to VFO B instead of losing the sub (never while the saved state is settling)
+                else if (!initializing)
+                {
+                    // H2: same filter-aware default as the other fallback paths; split-only
+                    // SubVFOB keeps its old TX=RX default (Option A).
+                    VFOBSubFreq = (rx2_enabled && chkEnableMultiRX2.Checked)
+                        ? H2SubDefaultFrequency(VFOBFreq, true)
+                        : VFOBFreq;
+                }
             }
 
             //[2.10.3.7]MW0LGE limits added
@@ -46529,6 +46561,68 @@ private readonly int[] _h1BaseFftSize = new int[8];
             double min = rx2Sub ? -(SubPassbandHalfRX2 + Display.SubRX2FilterLow) : -(SubPassbandHalf + Display.SubRX1FilterLow);
             double max = rx2Sub ? (SubPassbandHalfRX2 - Display.SubRX2FilterHigh) : (SubPassbandHalf - Display.SubRX1FilterHigh);
             return off >= min + 2 && off <= max - 2;
+        }
+
+        // H2 (user 2026-11-22): a sub that has never been tuned starts next to its receiver,
+        // not on top of it. The separation is the larger of the usual 5 kHz and the distance
+        // needed to keep the two drawn filter windows apart (main high edge to sub low edge
+        // for the upper side, sub high edge to main low edge for the lower side), plus a small
+        // guard. Option A: this is only used when the sub is enabled for listening; a
+        // split-only SubVFOA keeps its old default of the receiver frequency.
+        private const double H2SubDefaultOffsetHz = 5000.0;
+        private const double H2SubWindowGapHz = 100.0;
+
+        private bool H2SubAtMainFrequency(double subFreq, double mainFreq)
+        {
+            return subFreq > 0.0 && Math.Abs(subFreq - mainFreq) < 0.000001;
+        }
+
+        private bool H2SubWindowsOverlap(double subFreq, double mainFreq, bool rx2Sub)
+        {
+            try
+            {
+                int mainLow = rx2Sub ? Display.RX2FilterLow : Display.RX1FilterLow;
+                int mainHigh = rx2Sub ? Display.RX2FilterHigh : Display.RX1FilterHigh;
+                int subLow = rx2Sub ? Display.SubRX2FilterLow : Display.SubRX1FilterLow;
+                int subHigh = rx2Sub ? Display.SubRX2FilterHigh : Display.SubRX1FilterHigh;
+                double off = (subFreq - mainFreq) * 1e6;
+                return (off + subHigh) > mainLow && (off + subLow) < mainHigh;
+            }
+            catch { return false; }
+        }
+
+        private double H2SubDefaultFrequency(double mainFreq, bool rx2Sub)
+        {
+            try
+            {
+                int mainLow = rx2Sub ? Display.RX2FilterLow : Display.RX1FilterLow;
+                int mainHigh = rx2Sub ? Display.RX2FilterHigh : Display.RX1FilterHigh;
+                int subLow = rx2Sub ? Display.SubRX2FilterLow : Display.SubRX1FilterLow;
+                int subHigh = rx2Sub ? Display.SubRX2FilterHigh : Display.SubRX1FilterHigh;
+
+                double sepAbove = Math.Max(H2SubDefaultOffsetHz, (mainHigh - subLow) + H2SubWindowGapHz);
+                double sepBelow = Math.Max(H2SubDefaultOffsetHz, (subHigh - mainLow) + H2SubWindowGapHz);
+
+                double up = mainFreq + sepAbove * 1e-6;
+                if (SubPositionUsable(up, mainFreq, rx2Sub)) return up;
+                double down = mainFreq - sepBelow * 1e-6;
+                if (SubPositionUsable(down, mainFreq, rx2Sub)) return down;
+
+                // Near the receiver's edge neither preferred side may fit. Use the largest
+                // separation the usable passband still allows on either side.
+                double half = rx2Sub ? SubPassbandHalfRX2 : SubPassbandHalf;
+                double maxOff = half - subHigh - 2.0;
+                double minOff = -half - subLow + 2.0;
+                if (maxOff >= minOff)
+                {
+                    double up2 = Math.Min(sepAbove, maxOff);
+                    if (up2 >= 2.0) return mainFreq + up2 * 1e-6;
+                    double down2 = Math.Max(-sepBelow, minOff);
+                    if (down2 <= -2.0) return mainFreq + down2 * 1e-6;
+                }
+            }
+            catch { }
+            return mainFreq;
         }
 
 
@@ -50265,18 +50359,24 @@ private readonly int[] _h1BaseFftSize = new int[8];
                 bool sub_span_known = !initializing && sub_span_hz > 0 &&
                                       Display.RXDisplayHigh > Display.RXDisplayLow;
                 BandLog("sub1 enable: m=" + m_dVFOASubFreq + " vfoa=" + VFOAFreq + " span=" + sub_span_hz + " init=" + initializing);
-                if (m_dVFOASubFreq <= 0.0)
+                if (m_dVFOASubFreq <= 0.0 || H2SubAtMainFrequency(m_dVFOASubFreq, VFOAFreq))
                 {
-                    BandLog("sub1 enable: snap to VFOA (nothing stored)");
-                    m_dVFOASubFreq = VFOAFreq;
-                    saved_vfoa_sub_freq = VFOAFreq;
+                    BandLog("sub1 enable: default next to VFOA (nothing stored / old equal default)");
+                    m_dVFOASubFreq = H2SubDefaultFrequency(VFOAFreq, false);
+                    saved_vfoa_sub_freq = m_dVFOASubFreq;
                 }
                 else if (sub_span_known &&
                     Math.Abs(m_dVFOASubFreq - VFOAFreq) * 1e6 > sub_span_hz)
                 {
-                    BandLog("sub1 enable: snap to VFOA (out of span)");
-                    m_dVFOASubFreq = VFOAFreq;
-                    saved_vfoa_sub_freq = VFOAFreq;
+                    BandLog("sub1 enable: default next to VFOA (out of span)");
+                    m_dVFOASubFreq = H2SubDefaultFrequency(VFOAFreq, false);
+                    saved_vfoa_sub_freq = m_dVFOASubFreq;
+                }
+                else if (H2SubWindowsOverlap(m_dVFOASubFreq, VFOAFreq, false))
+                {
+                    BandLog("sub1 enable: overlapping windows, default next to VFOA");
+                    m_dVFOASubFreq = H2SubDefaultFrequency(VFOAFreq, false);
+                    saved_vfoa_sub_freq = m_dVFOASubFreq;
                 }
 
                 if (chkPower.Checked)
@@ -50421,11 +50521,17 @@ private readonly int[] _h1BaseFftSize = new int[8];
 
                 chkEnableMultiRX2.BackColor = button_selected_color;
 
-                // a sub that has never been tuned sits on VFO B's frequency
-                if (m_dVFOBSubFreq <= 0.0)
+                // H2: a sub that has never been tuned starts next to VFO B, filter-aware;
+                // an old default saved exactly on VFO B is repaired the same way.
+                if (m_dVFOBSubFreq <= 0.0 || H2SubAtMainFrequency(m_dVFOBSubFreq, VFOBFreq))
                 {
-                    m_dVFOBSubFreq = VFOBFreq;
-                    saved_vfob_sub_freq = VFOBFreq;
+                    m_dVFOBSubFreq = H2SubDefaultFrequency(VFOBFreq, true);
+                    saved_vfob_sub_freq = m_dVFOBSubFreq;
+                }
+                else if (H2SubWindowsOverlap(m_dVFOBSubFreq, VFOBFreq, true))
+                {
+                    m_dVFOBSubFreq = H2SubDefaultFrequency(VFOBFreq, true);
+                    saved_vfob_sub_freq = m_dVFOBSubFreq;
                 }
             }
             else
