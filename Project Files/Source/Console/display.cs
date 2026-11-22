@@ -309,6 +309,7 @@ namespace Thetis
         public static readonly float[] H1CellMeterSub = new float[8];
         public static bool H1CellTxActive = false;
         public static float H1CellMeterSwr = 1f;
+        public static float H1CellMeterFwd = 0f;
         public static readonly int[] H1RowWinLeft = new int[8];
         public static readonly int[] H1RowWinRight = new int[8];
         public static readonly int[] H1RowSubWinLeft = new int[8];
@@ -7062,8 +7063,10 @@ namespace Thetis
                 // The console's caption hit-test measures the same font and inset
                 // (H1CellCaptionHit/H1CellCentreFont).
                 string h1cfText = H1CellCentreText(r);   // the tuning readout, not the display centre
-                SharpDX.Direct2D1.Brush h1cfBrush = m_bDX2_h1_centre_brush != null
-                    ? m_bDX2_h1_centre_brush : m_bDX2_pana_text_brush;
+                bool h1cfTx = H1CellTxActive && H1CellTx[r];
+                SharpDX.Direct2D1.Brush h1cfBrush = h1cfTx && m_bDX2_Red != null
+                    ? m_bDX2_Red
+                    : (m_bDX2_h1_centre_brush != null ? m_bDX2_h1_centre_brush : m_bDX2_pana_text_brush);
                 SharpDX.DirectWrite.TextFormat h1cfFont = H1CellCentreFont();
                 if (h1cfBrush != null && h1cfFont != null)
                 {
@@ -7619,26 +7622,18 @@ namespace Thetis
 
             if (txCell)
             {
-                // SWR: 1.0 at the left to 5.0 at the right, amber
-                if (m_bDX2_grid_pen_inb != null)
+                // TX replaces the two S readings with the two figures that matter here.
+                SharpDX.DirectWrite.TextFormat tf = fontDX2d_font9 != null ? fontDX2d_font9 : fontDX2d_tag;
+                if (tf != null)
                 {
-                    float[] marks = { 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 5.0f };
-                    foreach (float m in marks)
-                    {
-                        int x = x0 + (int)((m - 1.0f) / 4.0f * w);
-                        drawLineDX2D(m_bDX2_grid_pen_inb, x, barY, x, barY + barH, 1);
-                    }
-                }
-                float swr = H1CellMeterSwr;
-                if (swr < 1f) swr = 1f;
-                if (swr > 5f) swr = 5f;
-                int fill = (int)((swr - 1f) / 4f * w);
-                if (m_bDX2_h1_tx_edge != null)
-                {
-                    if (fill > 0) drawFillRectangleDX2D(m_bDX2_h1_tx_edge, x0, barY, fill, barH);
-                    SharpDX.DirectWrite.TextFormat tf = fontDX2d_font9 != null ? fontDX2d_font9 : fontDX2d_tag;
-                    if (tf != null)
-                        drawStringDX2D("SWR " + swr.ToString("F1"), tf, m_bDX2_h1_tx_edge, H1SMeterReadX, 2);
+                    float swr = H1CellMeterSwr;
+                    if (swr < 1f) swr = 1f;
+                    if (swr > 99f) swr = 99f;
+                    string a = "SWR " + swr.ToString("F1");
+                    string b = "FWD " + H1CellMeterFwd.ToString("F0") + "W";
+                    drawStringDX2D(a, tf, m_bDX2_h1_tx_edge, x0 + 2, 3);
+                    SizeF sa = measureStringDX2D(a, tf);
+                    drawStringDX2D(b, tf, m_bDX2_h1_tx_edge, x0 + 2 + (int)sa.Width + 8, 3);
                 }
                 return;
             }
@@ -9705,7 +9700,7 @@ namespace Thetis
                 m_bDX2_band_edge_pen = convertBrush((SolidBrush)band_edge_pen.Brush);
                 m_bDX2_grid_pen_inb = convertBrush((SolidBrush)grid_pen_inb.Brush);
 
-                m_bDX2_h1_tx_edge = getDXBrushForColour(Color.FromArgb(255, 255, 200, 0)); // H1: the TX window's edge and tag
+                m_bDX2_h1_tx_edge = getDXBrushForColour(Color.Red); // H1: the TX window's edge and tag
                 m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);

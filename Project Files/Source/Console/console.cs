@@ -10542,6 +10542,7 @@ for (int zr = 0; zr < 8; zr++)
                 // console's MOX, so its cell still counts as the TX cell.
                 Display.H1CellTxActive = _mox || _tuning || TxArbiter.Instance.ActiveDigitalRx >= 0;
                 Display.H1CellMeterSwr = H1TxSwr;
+                Display.H1CellMeterFwd = H1TxFwdW;
                 for (int r = 0; r < 8; r++)
                 {
                     if (r == 0)
@@ -10850,7 +10851,7 @@ for (int zr = 0; zr < 8; zr++)
             if (h1FsTunePill != null)
             {
                 h1FsTunePill.Location = new Point(left + pnlDisplay.Width / 2 - h1FsTunePill.Width / 2,
-                    top + pnlDisplay.Height - h1FsTunePill.Height - 8);
+                    top + pnlDisplay.Height - h1FsTunePill.Height - 38);
                 h1FsTunePill.BringToFront();
             }
 
