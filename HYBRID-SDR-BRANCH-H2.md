@@ -258,6 +258,36 @@ Verified with the corrected build:
 - Station frequencies restored afterwards; CTUN and click-tune mode left off.
 
 
+
+## Yellow/blue click-tune target windows (2026-11-22)
+
+The click-tune crosshair now selects the **class of tuning window**:
+
+| Crosshair | Target class | Clicked RX1 pane | Clicked RX2 pane |
+|---|---|---|---|
+| Yellow | main receivers | VFOA (RX1) | VFOB (RX2) |
+| Blue | sub receivers | VFOASub (SubRX1) | VFOBSub (SubRX2) |
+
+Right-click cycles `Off -> yellow -> blue -> Off`. The red VFOB colour and its
+legacy split/multirx reset rules are gone. Yellow uses `m_bDX2_Yellow`; blue is a
+new `m_bDX2_Blue` Direct2D brush.
+
+Blue targets are only applied when the corresponding sub receiver exists
+(`chkEnableMultiRX` for SubRX1, RX2 plus `chkEnableMultiRX2` for SubRX2); otherwise
+the click does not move a hidden sub frequency. Direct SubRX1/SubRX2 window
+dragging still tunes those subs as before.
+
+Verified with SubRX1 and SubRX2 enabled, SPLIT off, both CTUN buttons on:
+
+- Yellow, blank RX1 pane click: VFOA 14.077442 -> 14.079381; SubVFOA unchanged.
+- Yellow, blank RX2 pane click: VFOB 1.896456 -> 1.896564; SubVFOB unchanged.
+- Blue, blank RX1 pane click: SubVFOA 14.076380 -> 14.081320; VFOA unchanged.
+- Blue, blank RX2 pane click: SubVFOB 1.885964 -> 1.896672; VFOB unchanged.
+- Right-click cycle sampled as yellow -> blue -> Off; crosshair colours confirmed
+  in the captures.
+- Station frequencies restored afterwards; CTUN and click-tune mode left off.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows

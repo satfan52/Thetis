@@ -49543,8 +49543,6 @@ private readonly int[] _h1BaseFftSize = new int[8];
                             txtVFOAFreq_LostFocus(this, EventArgs.Empty);
                         UpdateVFOASub(); // H1: clear the red from the SubVFOA row
                     }
-                    if (current_click_tune_mode == ClickTuneMode.VFOB && !chkEnableMultiRX.Checked && !chkFullDuplex.Checked)
-                        CurrentClickTuneMode = ClickTuneMode.VFOA;
                 }
             }
 
@@ -50448,8 +50446,6 @@ private readonly int[] _h1BaseFftSize = new int[8];
                     UpdateVFOASub(); // H1: dim the SubVFOA row again
                 }
 
-                if (current_click_tune_mode == ClickTuneMode.VFOB && !chkFullDuplex.Checked && !chkVFOSplit.Checked)
-                    CurrentClickTuneMode = ClickTuneMode.VFOA;
 
             }
             _sub_rx_enabled = chkEnableMultiRX.Checked;
@@ -50693,8 +50689,6 @@ private readonly int[] _h1BaseFftSize = new int[8];
                     WDSP.SetChannelState(WDSP.id(0, 0), 0, 0);
                 }
 
-                if (current_click_tune_mode == ClickTuneMode.VFOB && !chkVFOSplit.Checked && !chkEnableMultiRX.Checked)
-                    CurrentClickTuneMode = ClickTuneMode.VFOA;
             }
 
             if (CIVControllerInstance != null && CIVControllerInstance.IsOpen)
@@ -65523,13 +65517,16 @@ private void incrementMutliMeterDisplayModeRX2()
                                             {
                                                 if (!(!m_bCTUNputsZeroOnMouse && (e.X > low_x && e.X < high_x)) || current_click_tune_mode != ClickTuneMode.Off)
                                                 {
-                                                    if (current_click_tune_mode == ClickTuneMode.VFOA ||
-                                                        (_click_tune_display && current_click_tune_mode != ClickTuneMode.VFOB))
+                                                    if (current_click_tune_mode == ClickTuneMode.VFOB)
+                                                    {
+                                                        // H2: blue = sub windows, never VFOB (RX2 is off here)
+                                                        if (chkEnableMultiRX.Checked)
+                                                            VFOASubFreq = Math.Round(freq, 6);
+                                                    }
+                                                    else if (current_click_tune_mode == ClickTuneMode.VFOA || _click_tune_display)
                                                     {
                                                         VFOAFreq = Math.Round(freq, 6);
                                                     }
-                                                    else
-                                                        VFOBFreq = Math.Round(freq, 6);
                                                 }
                                             }
                                             else
@@ -65548,15 +65545,33 @@ private void incrementMutliMeterDisplayModeRX2()
                                         {
                                             if (!(!m_bCTUNputsZeroOnMouse && (e.X > low_x && e.X < high_x)) || current_click_tune_mode != ClickTuneMode.Off)
                                             {
-                                                if (!H1Rx2Half(e.X, e.Y))
+                                                bool blueSub = current_click_tune_mode == ClickTuneMode.VFOB;
+                                                if (blueSub)
                                                 {
-                                                    if (!rx1_spectrum_tune_drag)
-                                                        VFOAFreq = Math.Round(freq, 6);
+                                                    // H2: blue clicks tune the sub receiver of the clicked half
+                                                    if (!H1Rx2Half(e.X, e.Y))
+                                                    {
+                                                        if (chkEnableMultiRX.Checked)
+                                                            VFOASubFreq = Math.Round(freq, 6);
+                                                    }
+                                                    else
+                                                    {
+                                                        if (rx2_enabled && chkEnableMultiRX2.Checked)
+                                                            VFOBSubFreq = Math.Round(freq, 6);
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    if (!rx2_spectrum_tune_drag)
-                                                        VFOBFreq = Math.Round(freq, 6);
+                                                    if (!H1Rx2Half(e.X, e.Y))
+                                                    {
+                                                        if (!rx1_spectrum_tune_drag)
+                                                            VFOAFreq = Math.Round(freq, 6);
+                                                    }
+                                                    else
+                                                    {
+                                                        if (!rx2_spectrum_tune_drag)
+                                                            VFOBFreq = Math.Round(freq, 6);
+                                                    }
                                                 }
                                             }
                                         }
@@ -65921,10 +65936,8 @@ private void incrementMutliMeterDisplayModeRX2()
                                 CurrentClickTuneMode = ClickTuneMode.VFOA;
                                 break;
                             case ClickTuneMode.VFOA:
-                                if (chkVFOSplit.Checked || chkEnableMultiRX.Checked)
-                                    CurrentClickTuneMode = ClickTuneMode.VFOB;
-                                else
-                                    CurrentClickTuneMode = ClickTuneMode.Off;
+                                // H2: yellow = main RX windows, blue = sub RX windows
+                                CurrentClickTuneMode = ClickTuneMode.VFOB;
                                 break;
                             case ClickTuneMode.VFOB:
                                 CurrentClickTuneMode = ClickTuneMode.Off;

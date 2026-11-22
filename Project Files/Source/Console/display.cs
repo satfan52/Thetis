@@ -9203,6 +9203,7 @@ namespace Thetis
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_cell_frame_dark;
         private static SharpDX.Direct2D1.Brush m_bDX2_h1_cell_frame_light;
         private static SharpDX.Direct2D1.Brush m_bDX2_Red;
+        private static SharpDX.Direct2D1.Brush m_bDX2_Blue;
         private static SharpDX.Direct2D1.Brush m_bDX2_Yellow;
         private static SharpDX.Direct2D1.Brush m_bDX2_YellowGreen;
         private static SharpDX.Direct2D1.Brush m_bDX2_Gray;
@@ -9584,6 +9585,7 @@ namespace Thetis
 
             //MW0LGE_21k9rc6 just assign to null, but they are disposed of in clearAllDynamicBrushes
             m_bDX2_Red = null;
+            m_bDX2_Blue = null;
             m_bDX2_Yellow = null;
             m_bDX2_YellowGreen = null;
             m_bDX2_Gray = null;
@@ -9683,6 +9685,7 @@ namespace Thetis
                 m_bDX2_h1_rx_tag = getDXBrushForColour(Color.FromArgb(255, 120, 255, 140)); // H1: the RX tag of an active receiver
 
                 m_bDX2_Red = getDXBrushForColour(Color.Red);
+                m_bDX2_Blue = getDXBrushForColour(Color.Blue);
                 m_bDX2_Yellow = getDXBrushForColour(Color.Yellow);
                 m_bDX2_YellowGreen = getDXBrushForColour(Color.YellowGreen);
                 m_bDX2_Gray = getDXBrushForColour(Color.Gray);
@@ -11220,7 +11223,7 @@ namespace Thetis
 
                 SharpDX.Direct2D1.Brush p;
                 // if we are sub tx then the cross will be red
-                p = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_grid_text_pen : m_bDX2_Red;
+                p = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_Yellow : m_bDX2_Blue;
 
                 int y1 = nVerticalShift + top;
                 int y2 = H;
@@ -12182,7 +12185,7 @@ namespace Thetis
             // draw long cursor
             if (current_click_tune_mode != ClickTuneMode.Off)
             {
-                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_grid_text_pen : m_bDX2_Red;
+                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_Yellow : m_bDX2_Blue;
                 if (bottom) drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H + H);
                 else drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H);
                 drawLineDX2D(b, 0, display_cursor_y, W, display_cursor_y);
@@ -12374,7 +12377,7 @@ namespace Thetis
             // draw long cursor
             if (current_click_tune_mode != ClickTuneMode.Off)
             {
-                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_grid_text_pen : m_bDX2_Red;
+                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_Yellow : m_bDX2_Blue;
                 if (bottom) drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H + H);
                 else drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H);
                 drawLineDX2D(b, 0, display_cursor_y, W, display_cursor_y);
@@ -12445,7 +12448,7 @@ namespace Thetis
             // draw long cursor
             if (current_click_tune_mode != ClickTuneMode.Off)
             {
-                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_grid_text_pen : m_bDX2_Red;
+                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_Yellow : m_bDX2_Blue;
                 if (bottom) drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H + H);
                 else drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H);
                 drawLineDX2D(b, 0, display_cursor_y, W, display_cursor_y);
@@ -12569,7 +12572,7 @@ namespace Thetis
             // draw long cursor
             if (current_click_tune_mode != ClickTuneMode.Off)
             {
-                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_grid_text_pen : m_bDX2_Red;
+                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_Yellow : m_bDX2_Blue;
                 drawLineDX2D(b, display_cursor_x, 0, display_cursor_x, H);
                 drawLineDX2D(b, 0, display_cursor_y, W, display_cursor_y);
             }
