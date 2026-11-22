@@ -10897,7 +10897,7 @@ for (int zr = 0; zr < 8; zr++)
             }
             if (h1FsTunePill != null)
             {
-                int txY = top + pnlDisplay.Height - h1FsTunePill.Height - 38;
+                int txY = top + pnlDisplay.Height - h1FsTunePill.Height - 10;
                 int txW = h1FsTunePill.Width + h1FsPttPill.Width + h1FsMoxPill.Width + 16;
                 int txX = left + pnlDisplay.Width / 2 - txW / 2;
                 h1FsTunePill.Location = new Point(txX, txY);
