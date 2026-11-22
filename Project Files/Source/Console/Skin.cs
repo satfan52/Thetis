@@ -1574,6 +1574,9 @@ namespace Thetis
             if (skinName.StartsWith("radRX1Band")) skinName = "radBand" + skinName.Substring(10);
             // H1: the skins draw no RX2 tiles for filters 8 to 10; the RX2 filter row takes the RX1 tiles throughout so all twelve match
             if (skinName.StartsWith("radRX2Filter")) skinName = "radFilter" + skinName.Substring(12);
+            // H2 (user 2026-11-22): the normal-view AUTO toggle is a skinned zoom-row button; use the
+            // 1x preset's art so it matches the 0.5x/1x/2x/4x buttons for every skin.
+            if (skinName == "radAutoZoomNormal") skinName = "radDisplayZoom1x";
 
             string skey = "";
             for (int i = 0; i < 8; i++)

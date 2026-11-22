@@ -9076,13 +9076,37 @@ namespace Thetis
             if (h1fsZoomVal2 != null) { h1fsZoomVal2.Cursor = Cursors.Hand; h1fsZoomVal2.Click += H1ZoomCapClicked; }
             if (h1fsZoom1 != null) h1fsZoom1.ClickedWithoutDrag += H1ZoomCapClicked;
             if (h1fsZoom2 != null) h1fsZoom2.ClickedWithoutDrag += H1ZoomCapClicked;
-            // H2 (user 2026-11-22): no extra AUTO pill in the normal view either - the existing
-            // "Zoom:" caption is the AUTO toggle and shows AUTO in amber while it is on.
-            if (lblDisplayZoom != null)
+            // H2 (user 2026-11-22): render the normal-view AUTO toggle as a normal zoom-row
+            // button. Clone the look of the 0.5x/1x/2x/4x presets; it lives where the Zoom: label
+            // was, and is checked while auto is on.
+            if (lblDisplayZoom != null && radDisplayZoom1x != null && h1AutoNormalZoomButton == null)
             {
-                _h1NormalZoomLabelOffColor = lblDisplayZoom.ForeColor;
-                lblDisplayZoom.Cursor = Cursors.Hand;
-                lblDisplayZoom.Click += H1NormalZoomLabelClicked;
+                Control parent = lblDisplayZoom.Parent;
+                h1AutoNormalZoomButton = new RadioButtonTS();
+                h1AutoNormalZoomButton.Name = "radAutoZoomNormal";
+                h1AutoNormalZoomButton.Text = "AUTO";
+                h1AutoNormalZoomButton.Appearance = radDisplayZoom1x.Appearance;
+                h1AutoNormalZoomButton.FlatStyle = radDisplayZoom1x.FlatStyle;
+                h1AutoNormalZoomButton.FlatAppearance.BorderSize = 0;
+                h1AutoNormalZoomButton.Font = radDisplayZoom1x.Font;
+                h1AutoNormalZoomButton.ForeColor = radDisplayZoom1x.ForeColor;
+                h1AutoNormalZoomButton.TextAlign = radDisplayZoom1x.TextAlign;
+                // AUTO is four letters where the presets are two/three; keep the same skin row
+                // height but widen it and pull it left so it ends at the slider.
+                h1AutoNormalZoomButton.Size = new Size(48, radDisplayZoom1x.Height);
+                h1AutoNormalZoomButton.Anchor = radDisplayZoom1x.Anchor;
+                h1AutoNormalZoomButton.TabStop = false;
+                h1AutoNormalZoomButton.Cursor = Cursors.Hand;
+                h1AutoNormalZoomButton.Location = new Point(lblDisplayZoom.Left - 8, lblDisplayZoom.Top);
+                h1AutoNormalZoomButton.Click += H1NormalAutoButtonClicked;
+                if (parent != null)
+                {
+                    parent.Controls.Add(h1AutoNormalZoomButton);
+                    h1AutoNormalZoomButton.BringToFront();
+                }
+                try { toolTip1.SetToolTip(h1AutoNormalZoomButton,
+                    "Auto zoom: follow the RX/TX tag width; click to toggle auto/manual zoom"); } catch { }
+                lblDisplayZoom.Visible = false;
             }
 
             h1fsBand1.SelectedIndexChanged += H1FsBandChanged;
@@ -9589,28 +9613,29 @@ namespace Thetis
         }
 
         private Color _h1NormalZoomLabelOffColor = Color.White;
+        private RadioButtonTS h1AutoNormalZoomButton;
 
         private void H1AutoUiSyncNormalZoomLabel()
         {
             try
             {
-                if (lblDisplayZoom == null) return;
-                bool on = _h1AutoZoomNormal;
-                string t = on ? "AUTO" : "Zoom:";
-                if (lblDisplayZoom.Text != t) lblDisplayZoom.Text = t;
-                Color want = on ? Color.FromArgb(255, 200, 0) : _h1NormalZoomLabelOffColor;
-                if (lblDisplayZoom.ForeColor != want) lblDisplayZoom.ForeColor = want;
+                if (h1AutoNormalZoomButton != null)
+                {
+                    bool on = _h1AutoZoomNormal;
+                    if (h1AutoNormalZoomButton.Checked != on)
+                        h1AutoNormalZoomButton.Checked = on;
+                }
             }
             catch { }
         }
 
-        private void H1NormalZoomLabelClicked(object sender, EventArgs e)
+        private void H1NormalAutoButtonClicked(object sender, EventArgs e)
         {
             if (_h1AutoUiSyncGuard || _h1fsSync) return;
             _h1AutoZoomNormal = !_h1AutoZoomNormal;
             H1AutoUiSync();
             H1SpacePttTrace("auto zoom: normal " + (_h1AutoZoomNormal ? "on" : "off")
-                + " (zoom label)");
+                + " (AUTO button)");
             if (_h1AutoZoomNormal) H1AutoZoomNormalIfEnabled();
         }
 
