@@ -16,11 +16,12 @@ AUTO so the RX/TX tag window is zoomed to stay readable. Built from H1 head `648
 - **Per-DDC zoom floor.** The H1-cell analysers get their own zoom limit (150 instead of the
   historical 100) while the full-window view is up. That is what lets the auto zoom fit a 50 Hz
   CW filter at 384 k without changing the FFT configuration. Every non-H1 analyser keeps 100.
-- **Tag-fit AUTO.** No extra AUTO buttons anywhere. In the normal view a single AUTO button in the
-  zoom row (same skin art and format as the 0.5x/1x/2x/4x presets, checked while active) flips the
-  normal-view auto zoom; in the full-window cells the ZOOM caption/value and the zoom slider itself
-  are clickable to flip that DDC between manual and AUTO (a drag on the slider still tunes
-  manually). The target span is computed in absolute hertz from
+- **Tag-fit AUTO.** No extra AUTO buttons anywhere. In the normal view a single `Auto Zoom` pill in
+  the zoom row (same skin art and format as the 0.5x/1x/2x/4x presets, dark when inactive, blue
+  while active, positioned directly left of the zoom slider) flips the normal-view auto zoom; in
+  the full-window cells the ZOOM caption/value and the zoom slider itself are clickable to flip
+  that DDC between manual and AUTO (a drag on the slider still tunes manually). The target span is
+  computed in absolute hertz from
   the window's filter width, the pane/cell pixel width and the measured 7 pt bold TX/RX tag width
   plus an 8 px margin. Full-window auto additionally centres the pane on the tagged window (TX tag
   first, then the RX/audio tag) by setting the analyser pan; the normal view uses the one global
@@ -84,24 +85,24 @@ highlight wash is still visible (pixel diff confirms the wash is drawn).
 
 ## AUTO control iteration (2026-11-22, final)
 
-- **Normal view:** the plain `Zoom:` label toggle was replaced by a skinned `RadioButtonTS` (AUTO)
-  in the zoom row. It copies the preset buttons' `Appearance=Button`, `FlatStyle=Flat`, font and
-  anchor, is 48x24 (the four-letter label needs a little more width than `1x`) and uses the 1x
-  preset's skin art via a mapping in `Skin.cs` (`radAutoZoomNormal` -> `radDisplayZoom1x`), so it
-  matches the other GUI buttons in every skin and shows the checked/unchecked states. Clicking it
-  flips the normal-view tag-fit AUTO; no separate pill exists.
+- **Normal view:** the plain `Zoom:` label toggle was replaced by a skinned `RadioButtonTS` pill
+  labelled `Auto Zoom` in the zoom row. It copies the preset buttons' `Appearance=Button`,
+  `FlatStyle=Flat`, font and anchor, is 76x24 (the two-word label needs more width than `1x`) and
+  uses the 1x preset's skin art via a mapping in `Skin.cs` (`radAutoZoomNormal` ->
+  `radDisplayZoom1x`). It is repositioned at runtime to sit 2 px left of the live zoom slider (the
+  row is anchored, so the slider moves with the window). Inactive it is the normal dark button;
+  clicking it flips the normal-view tag-fit AUTO and it turns checked-blue while active. There is
+  no separate pill anymore.
 - **Full window, same language:** no separate pills in the strips. Every full-window cell's ZOOM
   caption (and its zoom value) is clickable to toggle AUTO, and a plain click on the tuning-range
   slider itself toggles AUTO as well; the caption reads `AUTO` in amber while active. Dragging the
   slider tunes manually and leaves AUTO (the existing manual-takeover path).
 
-Verified on the station with `Thetis.exe` `107ce971...`: the normal zoom row shows a dark rounded
-AUTO button in the same skin as `0.5x/1x/2x/4x`, dark with white `AUTO` when manual and blue when
-auto is active; clicking toggles auto (`auto zoom: normal off (AUTO button)`) with the full label
-visible, no overlap with the slider. In the full window no separate AUTO control is visible; the
-ZOOM caption click enabled DDC1 auto (`auto zoom: DDC1 on (zoom caption)`) and the slider click
-returned it to manual. The other two normal-view fixes (VFO first digit, dB-scale highlight over
-the frequency figure) remain in place.
+Verified on the station with `Thetis.exe` `f6ed9e3e...`: the zoom row shows an `Auto Zoom` pill
+immediately left of the zoom slider (2 px gap, no overlap); inactive it is dark with white text,
+clicking it makes it checked-blue and enables auto, clicking again returns it to dark/manual
+(`auto zoom: normal off (AUTO button)`). Full-window caption/slider toggles still work, and the
+earlier VFO-first-digit and dB-scale-highlight fixes remain in place.
 
 ## Limits
 

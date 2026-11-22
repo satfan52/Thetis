@@ -9084,20 +9084,21 @@ namespace Thetis
                 Control parent = lblDisplayZoom.Parent;
                 h1AutoNormalZoomButton = new RadioButtonTS();
                 h1AutoNormalZoomButton.Name = "radAutoZoomNormal";
-                h1AutoNormalZoomButton.Text = "AUTO";
+                h1AutoNormalZoomButton.Text = "Auto Zoom";
                 h1AutoNormalZoomButton.Appearance = radDisplayZoom1x.Appearance;
                 h1AutoNormalZoomButton.FlatStyle = radDisplayZoom1x.FlatStyle;
                 h1AutoNormalZoomButton.FlatAppearance.BorderSize = 0;
                 h1AutoNormalZoomButton.Font = radDisplayZoom1x.Font;
                 h1AutoNormalZoomButton.ForeColor = radDisplayZoom1x.ForeColor;
                 h1AutoNormalZoomButton.TextAlign = radDisplayZoom1x.TextAlign;
-                // AUTO is four letters where the presets are two/three; keep the same skin row
-                // height but widen it and pull it left so it ends at the slider.
-                h1AutoNormalZoomButton.Size = new Size(48, radDisplayZoom1x.Height);
-                h1AutoNormalZoomButton.Anchor = radDisplayZoom1x.Anchor;
+                // "Auto Zoom" needs more width than AUTO; keep the same skin row height, widen the
+                // pill and place it immediately left of the zoom slider (repositioned at runtime,
+                // because the zoom row is anchored and the slider moves with the window).
+                h1AutoNormalZoomButton.Size = new Size(76, radDisplayZoom1x.Height);
+                h1AutoNormalZoomButton.Anchor = ptbDisplayZoom.Anchor;
                 h1AutoNormalZoomButton.TabStop = false;
                 h1AutoNormalZoomButton.Cursor = Cursors.Hand;
-                h1AutoNormalZoomButton.Location = new Point(lblDisplayZoom.Left - 8, lblDisplayZoom.Top);
+                h1AutoNormalZoomButton.Location = new Point(Math.Max(0, ptbDisplayZoom.Left - 78), lblDisplayZoom.Top);
                 h1AutoNormalZoomButton.Click += H1NormalAutoButtonClicked;
                 if (parent != null)
                 {
@@ -9624,6 +9625,17 @@ namespace Thetis
                     bool on = _h1AutoZoomNormal;
                     if (h1AutoNormalZoomButton.Checked != on)
                         h1AutoNormalZoomButton.Checked = on;
+
+                    // keep the pill glued to the left of the live zoom slider (the row is anchored,
+                    // so its position changes with the window/layout)
+                    if (ptbDisplayZoom != null && h1AutoNormalZoomButton.Parent == ptbDisplayZoom.Parent)
+                    {
+                        int bx = ptbDisplayZoom.Left - h1AutoNormalZoomButton.Width - 2;
+                        if (bx < 0) bx = 0;
+                        Point want = new Point(bx, ptbDisplayZoom.Top);
+                        if (h1AutoNormalZoomButton.Location != want)
+                            h1AutoNormalZoomButton.Location = want;
+                    }
                 }
             }
             catch { }
