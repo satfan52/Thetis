@@ -8655,6 +8655,8 @@ namespace Thetis
         private readonly List<Control> _h1CellStripControls = new List<Control>();
         private readonly Dictionary<object, int> _h1CellStripOwner = new Dictionary<object, int>();
         private bool _h1cellStripsBuilt = false;
+        private readonly bool[] _h1CellSubCtrl = new bool[8];
+        private CheckBoxTS h1FsTunePill;
         // H1 (M2): local audio (aamix) state, driven by the middle-click on a window
         private int _h1SpareAudioMask = 0;
         private bool _h1SpareVacAutoOn = false;   // we switched VAC1 on for the spare audio
@@ -9294,6 +9296,13 @@ namespace Thetis
                 if (h1fsAnf2.Checked != chkRX2ANF.Checked) h1fsAnf2.Checked = chkRX2ANF.Checked;
                 if (h1fsNb2.Checked != chkRX2NB.Checked) h1fsNb2.Checked = chkRX2NB.Checked;
                 if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
+                if (h1FsTunePill != null)
+                {
+                    bool don = chkTUN != null && chkTUN.Checked;
+                    if (h1FsTunePill.Checked != don) h1FsTunePill.Checked = don;
+                    h1FsTunePill.FlatAppearance.CheckedBackColor = don ? Color.Red : Color.FromArgb(48, 48, 48);
+                    h1FsTunePill.ForeColor = don ? Color.White : Color.FromArgb(180, 180, 180);
+                }
                 if (_h1FullScreenPanafall && _h1cellStripsBuilt) H1CellStripsSync();
             }
             finally { _h1fsSync = false; }
@@ -9890,6 +9899,16 @@ namespace Thetis
             ComboBoxTS c = sender as ComboBoxTS;
             if (c == null || c.SelectedIndex < 0) return;
 
+            int mrow = c == h1fsMode1 ? 0 : 1;
+            if (_h1CellSubCtrl[mrow])
+            {
+                ComboBoxTS sub = mrow == 0 ? comboSubRX1Mode : comboSubRX2Mode;
+                int mi = sub != null ? Array.IndexOf(H1FsModes, H1FsModes[c.SelectedIndex]) : -1;
+                if (sub != null) sub.SelectedIndex = c.SelectedIndex;
+                H1SpacePttTrace("fs strip: SUB CTRL mode rx" + (mrow + 1) + " -> " + H1FsModeNames[c.SelectedIndex]);
+                H1FsSync();
+                return;
+            }
             if (c == h1fsMode1) H1FsSetMode(false, H1FsModes[c.SelectedIndex]);
             else H1FsSetMode(true, H1FsModes[c.SelectedIndex]);
 
@@ -9950,6 +9969,21 @@ namespace Thetis
             // NOT raise Scroll, so a programmatic set moved the picture and nothing else. That is why
             // the sliders slid with no effect. The console's own code sets the value and then calls
             // the handler by hand; the strip does the same.
+            int srow = (t == h1fsAgc1 || t == h1fsAf1) ? 0 : 1;
+            if (_h1CellSubCtrl[srow])
+            {
+                if (t == h1fsAgc1 || t == h1fsAgc2)
+                {
+                    PrettyTrackBar g = srow == 0 ? ptbSubRX1Gain : ptbSubRX2Gain;
+                    if (g != null) { g.Value = H1FsClamp(t.Value, g.Minimum, g.Maximum); if (srow == 0) ptbSubRX1Gain_Scroll(g, EventArgs.Empty); else ptbSubRX2Gain_Scroll(g, EventArgs.Empty); }
+                }
+                else
+                {
+                    try { radio.GetDSPRX(srow, 1).RXOutputGain = H1FsClamp(t.Value, 0, 100) / 100.0; } catch { }
+                }
+                H1FsSync();
+                return;
+            }
             if (t == h1fsAgc1) { ptbRF.Value = H1FsClamp(t.Value, ptbRF.Minimum, ptbRF.Maximum); ptbRF_Scroll(ptbRF, EventArgs.Empty); H1FsSliderText(h1fsAgcVal1, ptbRF); }
             else if (t == h1fsAf1) { ptbAF.Value = H1FsClamp(t.Value, ptbAF.Minimum, ptbAF.Maximum); ptbAF_Scroll(ptbAF, EventArgs.Empty); H1FsSliderText(h1fsAfVal1, ptbAF); }
             else if (t == h1fsAgc2) { ptbRX2RF.Value = H1FsClamp(t.Value, ptbRX2RF.Minimum, ptbRX2RF.Maximum); ptbRX2RF_Scroll(ptbRX2RF, EventArgs.Empty); H1FsSliderText(h1fsAgcVal2, ptbRX2RF); }
@@ -9966,6 +10000,21 @@ namespace Thetis
             // 0..4 = off, NR1..NR4) and its own button walks them. A pill that only flipped Checked
             // could never reach NR2..NR4, which is what "no selection of the different modes" was.
             // Do exactly what the console's NR button does and let the sync paint the result.
+            int prow = (p == h1fsNr1 || p == h1fsAnf1 || p == h1fsNb1 || p == h1fsBin1 || p == h1fsCtun1) ? 0 : 1;
+            if (_h1CellSubCtrl[prow] && p != h1fsCtun1 && p != h1fsCtun2)
+            {
+                if (p == h1fsNr1) CycleSubNR(1);
+                else if (p == h1fsNr2) CycleSubNR(2);
+                else if (p == h1fsAnf1) chkSubRX1ANF.Checked = p.Checked;
+                else if (p == h1fsNb1) chkSubRX1NB2.Checked = p.Checked;
+                else if (p == h1fsBin1) chkSubRX1BIN.Checked = p.Checked;
+                else if (p == h1fsAnf2) chkSubRX2ANF.Checked = p.Checked;
+                else if (p == h1fsNb2) chkSubRX2NB2.Checked = p.Checked;
+                else if (p == h1fsBin2) chkSubRX2BIN.Checked = p.Checked;
+                H1SpacePttTrace("fs strip: SUB CTRL pill rx" + (prow + 1) + " " + p.Text);
+                H1FsSync();
+                return;
+            }
             if (p == h1fsNr1) { incrementNR(1); H1FsSync(); return; }
             if (p == h1fsNr2) { incrementNR(2); H1FsSync(); return; }
 
@@ -10720,11 +10769,23 @@ for (int zr = 0; zr < 8; zr++)
                 sp.Font = new Font("Segoe UI", 7f);
                 sp.Visible = false;
                 sp.TabStop = false;
+                sp.AutoCheck = false;
+                sp.Click += H1CellSubCycle;
                 sp.CheckedChanged += H1CellSubChanged;
                 Controls.Add(sp);
                 h1cellSub[row] = sp;
                 _h1CellSubControls.Add(sp);
             }
+
+            h1FsTunePill = NewSubPill("h1FsTunePill", "TUN");
+            h1FsTunePill.Size = new Size(46, 20);
+            h1FsTunePill.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            h1FsTunePill.Visible = false;
+            h1FsTunePill.TabStop = false;
+            h1FsTunePill.FlatAppearance.CheckedBackColor = Color.Red;
+            h1FsTunePill.Click += (ts, te) => { if (chkTUN != null) chkTUN.Checked = h1FsTunePill.Checked; };
+            Controls.Add(h1FsTunePill);
+            _h1CellStripControls.Add(h1FsTunePill);
             }
             catch (Exception ex)
             {
@@ -10786,6 +10847,13 @@ for (int zr = 0; zr < 8; zr++)
                 int stripY = top + srowInCol * rowH;
                 sp.Location = new Point(stripX + H1FsW - 45, stripY + 1);
             }
+            if (h1FsTunePill != null)
+            {
+                h1FsTunePill.Location = new Point(left + pnlDisplay.Width / 2 - h1FsTunePill.Width / 2,
+                    top + pnlDisplay.Height - h1FsTunePill.Height - 8);
+                h1FsTunePill.BringToFront();
+            }
+
         }
 
         private void H1CellStripPlace(H1CellStrip s, int x, int y)
@@ -11200,6 +11268,25 @@ for (int zr = 0; zr < 8; zr++)
 
         // H1 (M2): a SUB toggle acts on that receiver's sub - the console's multi-RX ticks
         // for RX1/RX2, the headless sub receiver for RX3..RX8.
+        private void H1CellSubCycle(object sender, EventArgs e)
+        {
+            CheckBoxTS sp = sender as CheckBoxTS;
+            if (sp == null) return;
+            int row = -1;
+            foreach (KeyValuePair<int, CheckBoxTS> kv in h1cellSub)
+                if (kv.Value == sp) { row = kv.Key; break; }
+            if (row < 0) return;
+            bool subOn = row == 0 ? (chkEnableMultiRX != null && chkEnableMultiRX.Checked)
+                       : row == 1 ? (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked)
+                       : HeadlessSubRX.IsEnabled(row);
+            if (!subOn) { _h1CellSubCtrl[row] = false; sp.Checked = true; }
+            else if (!_h1CellSubCtrl[row]) { _h1CellSubCtrl[row] = true; sp.Checked = true; }
+            else { _h1CellSubCtrl[row] = false; sp.Checked = false; }
+            H1CellSubChanged(sp, EventArgs.Empty);
+            H1SpacePttTrace("SUB RX" + (row + 1) + " -> "
+                + (!sp.Checked ? "OFF" : (_h1CellSubCtrl[row] ? "CTRL" : "ON")));
+        }
+
         private void H1CellSubChanged(object sender, EventArgs e)
         {
             // the sync sets the pill face from the console/sub state - that is not a click
@@ -11272,10 +11359,15 @@ for (int zr = 0; zr < 8; zr++)
         private void H1CellSubFace(CheckBoxTS sp)
         {
             if (sp == null) return;
-            Color back = sp.Checked ? Color.FromArgb(255, 216, 56) : Color.FromArgb(48, 48, 48);
-            Color fore = sp.Checked ? Color.Black : Color.FromArgb(180, 180, 180);
+            int row = -1;
+            foreach (KeyValuePair<int, CheckBoxTS> kv in h1cellSub)
+                if (kv.Value == sp) { row = kv.Key; break; }
+            bool on = sp.Checked;
+            bool ctrl = on && row >= 0 && _h1CellSubCtrl[row];
+            Color back = ctrl ? Color.FromArgb(0, 90, 220)
+                        : on ? Color.FromArgb(255, 216, 56) : Color.FromArgb(48, 48, 48);
             sp.BackColor = back;
-            sp.ForeColor = fore;
+            sp.ForeColor = on ? Color.White : Color.FromArgb(180, 180, 180);
             sp.FlatAppearance.CheckedBackColor = back;
             sp.FlatAppearance.MouseOverBackColor = back;
             sp.FlatAppearance.MouseDownBackColor = back;
@@ -11442,6 +11534,13 @@ for (int zr = 0; zr < 8; zr++)
             ComboBoxTS c = sender as ComboBoxTS;
             if (row < 2 || c == null || c.SelectedIndex < 0) return;
             DSPMode mode = H1FsModes[c.SelectedIndex];
+            if (_h1CellSubCtrl[row])
+            {
+                HeadlessSubRX.ApplyMode(row, mode);
+                H1SpacePttTrace("h1cs: SUB CTRL mode rx" + row + " -> " + H1FsModeNames[c.SelectedIndex]);
+                H1FsSync();
+                return;
+            }
             HeadlessSliceManager.Instance.SetMode(row, mode);
             H1CellSetDefaultFilter(row, mode);
             H1CellSyncSubToMain(row);   // H1 (user 2026-11-21): the cell's sub follows the mode
@@ -11460,12 +11559,18 @@ for (int zr = 0; zr < 8; zr++)
             if (sender == s.Agc)
             {
                 s.AgcVal.Text = s.Agc.Value.ToString();
-                HeadlessSliceManager.Instance.SetSliceAgcTop(row, s.Agc.Value);
+                if (_h1CellSubCtrl[row])
+                    HeadlessSubRX.ApplyAgc(row, HeadlessSubRX.Get(row).AgcMode, s.Agc.Value);
+                else
+                    HeadlessSliceManager.Instance.SetSliceAgcTop(row, s.Agc.Value);
             }
             else if (sender == s.Af)
             {
                 s.AfVal.Text = s.Af.Value.ToString();
-                HeadlessSliceManager.Instance.SetSliceGain(row, Math.Max(0.001, s.Af.Value / 100.0));
+                if (_h1CellSubCtrl[row])
+                    HeadlessSubRX.SetGain(row, Math.Max(0.001, s.Af.Value / 100.0));
+                else
+                    HeadlessSliceManager.Instance.SetSliceGain(row, Math.Max(0.001, s.Af.Value / 100.0));
             }
         }
 
@@ -11506,11 +11611,12 @@ for (int zr = 0; zr < 8; zr++)
                 // a five-state cycle like the console's NR pill
                 int next = sl.Nr + 1;
                 if (next > 4) next = 0;
-                HeadlessSliceManager.Instance.SetSliceNr(row, next);
+                if (_h1CellSubCtrl[row]) HeadlessSubRX.SetNrMode(row, next);
+                else HeadlessSliceManager.Instance.SetSliceNr(row, next);
             }
-            else if (p == s.Anf) HeadlessSliceManager.Instance.SetSliceAnf(row, p.Checked);
-            else if (p == s.Nb) HeadlessSliceManager.Instance.SetSliceNb(row, p.Checked);
-            else if (p == s.Bin) HeadlessSliceManager.Instance.SetSliceBin(row, p.Checked);
+            else if (p == s.Anf) { if (_h1CellSubCtrl[row]) HeadlessSubRX.SetAnf(row, p.Checked); else HeadlessSliceManager.Instance.SetSliceAnf(row, p.Checked); }
+            else if (p == s.Nb) { if (_h1CellSubCtrl[row]) HeadlessSubRX.SetNb(row, p.Checked); else HeadlessSliceManager.Instance.SetSliceNb(row, p.Checked); }
+            else if (p == s.Bin) { if (_h1CellSubCtrl[row]) HeadlessSubRX.SetBin(row, p.Checked); else HeadlessSliceManager.Instance.SetSliceBin(row, p.Checked); }
             else if (p == s.Ctun) HeadlessSliceManager.Instance.SetCtunMode(row, p.Checked);
             H1SpacePttTrace("h1cs: pill rx" + row + " " + p.Text + "=" + p.Checked);
             H1FsSync();

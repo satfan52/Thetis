@@ -36,6 +36,9 @@ namespace Thetis
             // window's RX tag was on silenced the main receiver; 0.5 keeps both channels.
             public double Balance = 0.5;          // sub pan position 0..1 (main gets 1 - balance)
             public bool Nr, Anf, Snb;
+            public int NrMode;                    // 0 off, 1..4 = NR1..NR4
+            public bool Bin;                      // binaural panel
+            public double Gain = 1.0;             // sub audio panel gain
             public AGCMode AgcMode = AGCMode.MED;
             public double AgcGainDb = 20.0;
             public bool Follow;                   // H1: takes the port receiver's set (frequency aside)
@@ -108,6 +111,15 @@ namespace Thetis
                     if (s.Nr) WDSP.SetRXAANRRun(Ch(rx, 1), 1);
                     if (s.Anf) WDSP.SetRXAANFRun(Ch(rx, 1), true);
                     if (s.Snb) WDSP.SetRXASNBARun(Ch(rx, 1), true);
+                    if (s.NrMode > 0)
+                    {
+                        WDSP.SetRXAANRRun(Ch(rx, 1), s.NrMode == 1 ? 1 : 0);
+                        WDSP.SetRXAEMNRRun(Ch(rx, 1), s.NrMode == 2 ? 1 : 0);
+                        WDSP.SetRXARNNRRun(Ch(rx, 1), s.NrMode == 3 ? 1 : 0);
+                        WDSP.SetRXASBNRRun(Ch(rx, 1), s.NrMode == 4 ? 1 : 0);
+                    }
+                    if (s.Bin) WDSP.SetRXAPanelBinaural(Ch(rx, 1), true);
+                    WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5 * 2.0 * s.Gain);
                 }
                 WDSP.SetChannelState(Ch(rx, 1), on ? 1 : 0, on ? 0 : 1);
                 s.Enabled = on;
@@ -332,7 +344,38 @@ namespace Thetis
             cmaster.SetRCVRANBRun(0, rx, on);          // NB is DDC-wide (before main/sub split)
         }
 
-        public static void SetNr(int rx, bool on) { Get(rx).Nr = on; WDSP.SetRXAANRRun(Ch(rx, 1), on ? 1 : 0); }
+        public static void SetNr(int rx, bool on) { SetNrMode(rx, on ? (Get(rx).NrMode > 0 ? Get(rx).NrMode : 1) : 0); }
+
+        /// <summary>SUB CTRL NR: the console's four NR engines, applied to the sub channel.</summary>
+        public static void SetNrMode(int rx, int mode)
+        {
+            var s = Get(rx);
+            if (mode < 0) mode = 0; if (mode > 4) mode = 4;
+            s.NrMode = mode; s.Nr = mode > 0;
+            int ch = Ch(rx, 1);
+            try
+            {
+                WDSP.SetRXAANRRun(ch, mode == 1 ? 1 : 0);
+                WDSP.SetRXAEMNRRun(ch, mode == 2 ? 1 : 0);
+                WDSP.SetRXARNNRRun(ch, mode == 3 ? 1 : 0);
+                WDSP.SetRXASBNRRun(ch, mode == 4 ? 1 : 0);
+            }
+            catch { }
+        }
+
+        public static void SetBin(int rx, bool on)
+        {
+            Get(rx).Bin = on;
+            try { WDSP.SetRXAPanelBinaural(Ch(rx, 1), on); } catch { }
+        }
+
+        /// <summary>SUB CTRL AF: sub panel gain only, main untouched.</summary>
+        public static void SetGain(int rx, double gain)
+        {
+            if (gain < 0.0) gain = 0.0; if (gain > 2.0) gain = 2.0;
+            Get(rx).Gain = gain;
+            try { WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5 * 2.0 * gain); } catch { }
+        }
         public static void SetAnf(int rx, bool on) { Get(rx).Anf = on; WDSP.SetRXAANFRun(Ch(rx, 1), on); }
         public static void SetSnb(int rx, bool on) { Get(rx).Snb = on; WDSP.SetRXASNBARun(Ch(rx, 1), on); }
     }

@@ -373,6 +373,22 @@ after restoring the normal panels. Verified by entering full-window, changing RX
 to 15m there, and exiting: the normal-view 15m pill is blue.
 
 
+## Full-window TUN pill and SUB CTRL (2026-11-22)
+
+- Added one global TUN pill at the bottom centre of the full-window display. It
+  toggles the normal chkTUN carrier path and is red while TUN is active.
+- The per-DDC SUB pill is now a manual three-state cycle: SUB OFF (dark), SUB ON
+  (yellow), SUB CTRL (blue), back to OFF. CTRL keeps the sub enabled and routes
+  Mode, AGC, AF, NR, ANF, NB and BIN to that DDC's sub receiver; OFF/ON leave them
+  on the main receiver. State is kept per DDC.
+- DDC1/2 route through the console SubRX controls; DDC3-8 through HeadlessSubRX.
+- Extended HeadlessSubRX with NR1-NR4 profile selection, BIN (binaural panel) and
+  sub-only audio gain. The earlier on/off-only path was an implementation gap, not
+  a headless limitation.
+- Verified in full-window: SUB RX3 cycles ON (yellow) -> CTRL (blue) -> OFF (dark);
+  TUN pill is present at the bottom centre.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
