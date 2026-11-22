@@ -64915,7 +64915,7 @@ private void incrementMutliMeterDisplayModeRX2()
             H1SetZoomRowFromPoint(e.X, e.Y);
             // H1 (user 2026-11-21): the centre caption is the frequency-tuning surface; a press
             // there starts neither the scale gesture nor a drag (double-click opens the entry).
-            if (_h1FullScreenPanafall && pnlDisplay != null)
+            if (_h1FullScreenPanafall && pnlDisplay != null && e.Button == MouseButtons.Left)
             {
                 int h1cfRow;
                 if (Display.H1CellCaptionRow(e.X, e.Y, out h1cfRow)) return;
@@ -67102,6 +67102,14 @@ private void incrementMutliMeterDisplayModeRX2()
                 // H1 (step 2): a spare cell is another receiver - do not show RX1's
                 // cursor frequency/level for a point over the spare DDCs.
                 if (Display.H1EightRows && H1CellRowAt(e.X, e.Y) >= 2) bShowCursorData = false;
+                // H2: the eight-row crosshair must follow the pointer even over the
+                // spare cells, whose cursor-info block is intentionally suppressed.
+                if (Display.H1EightRows && e.X >= 0 && e.Y >= 0 &&
+                    e.X < pnlDisplay.Width && e.Y < pnlDisplay.Height)
+                {
+                    DisplayCursorX = e.X;
+                    DisplayCursorY = e.Y;
+                }
                 if (bShowCursorData)
                 {
                     float xposHz = 0;

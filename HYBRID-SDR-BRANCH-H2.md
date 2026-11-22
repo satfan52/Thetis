@@ -322,6 +322,29 @@ Verified in full-window with SubRX1/2 and the needed DDC subs enabled:
   DDC3/DDC5 headless test frequencies are transient cell state.
 
 
+
+## Full-window crosshair rendering (2026-11-22)
+
+The eight-DDC renderer bypasses the normal panafall drawing path, so the
+`CurrentClickTuneMode` crosshair was never drawn in full-window mode. The
+click-tune modes did change colour/state internally, but there was no visible
+crosshair in a DDC cell.
+
+- `H1DrawEightRowsDX2D` now draws a cell-local yellow (main) or blue (sub)
+  crosshair at the pointer, clipped to the cell under the cursor. The horizontal
+  line follows `ShowCTHLine`.
+- `pnlDisplay_MouseMove` updates `DisplayCursorX/Y` for full-window cells too; the
+  spare cells suppress their cursor-info text, which had previously left the
+  coordinates stale.
+- Right-clicking a cell's caption row now reaches the global colour cycle; the
+  caption guard only consumes left presses.
+- One remaining normal-view crosshair call site was still using the old
+  grid/red brush pair; it now uses yellow/blue like the rest.
+
+Verified in full-window: right-click on the DDC3 spectrum drew a yellow vertical
+crosshair, a second right-click changed it to blue, and a third removed it.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows

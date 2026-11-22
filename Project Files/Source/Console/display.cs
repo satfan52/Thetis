@@ -7294,6 +7294,30 @@ namespace Thetis
                 _d2dRenderTarget.Transform = h1was;
             }
 
+            // H1/H2: the normal panafall renderers draw the long click-tune cursor
+            // themselves; the eight-cell renderer bypasses them, so draw the same
+            // yellow(main)/blue(sub) crosshair inside the cell under the pointer.
+            if (current_click_tune_mode != ClickTuneMode.Off && display_cursor_x >= 0 &&
+                display_cursor_y >= 0 && display_cursor_x < W && display_cursor_y < H)
+            {
+                int cc = display_cursor_x / cellW;
+                int cr = display_cursor_y / rowH;
+                if (cc < 0) cc = 0; if (cc > 1) cc = 1;
+                if (cr < 0) cr = 0; if (cr > 3) cr = 3;
+                int cx0 = cc * cellW + 2;
+                int cx1 = (cc + 1) * cellW - 3;
+                int cy0 = cr * rowH + 2;
+                int cy1 = (cr + 1) * rowH - 3;
+                SharpDX.Direct2D1.Brush cb = current_click_tune_mode == ClickTuneMode.VFOA
+                    ? m_bDX2_Yellow : m_bDX2_Blue;
+                if (cb != null)
+                {
+                    drawLineDX2D(cb, display_cursor_x, cy0, display_cursor_x, cy1, 1.5f);
+                    if (ShowCTHLine)
+                        drawLineDX2D(cb, cx0, display_cursor_y, cx1, display_cursor_y, 1.5f);
+                }
+            }
+
             // H1: the per-cell frames separate the columns; no extra divider needed
         }
 
@@ -11709,7 +11733,7 @@ namespace Thetis
             // draw long cursor
             if (current_click_tune_mode != ClickTuneMode.Off)
             {
-                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_grid_text_brush : m_bDX2_Red;
+                SharpDX.Direct2D1.Brush b = current_click_tune_mode == ClickTuneMode.VFOA ? m_bDX2_Yellow : m_bDX2_Blue;
                 if (bottom)
                 {
                     drawLineDX2D(b, display_cursor_x, H, display_cursor_x, H + H, grid_text_pen.Width);
