@@ -16,8 +16,10 @@ AUTO so the RX/TX tag window is zoomed to stay readable. Built from H1 head `648
 - **Per-DDC zoom floor.** The H1-cell analysers get their own zoom limit (150 instead of the
   historical 100) while the full-window view is up. That is what lets the auto zoom fit a 50 Hz
   CW filter at 384 k without changing the FFT configuration. Every non-H1 analyser keeps 100.
-- **Tag-fit AUTO.** An AUTO pill in the normal view and in every full-window cell strip
-  (`specHPSDR.ZoomToBandwidth`-style target). The target span is computed in absolute hertz from
+- **Tag-fit AUTO.** An AUTO pill in the normal view's zoom row, and in the full-window cells the
+  ZOOM caption/value and the zoom slider itself are clickable to flip that DDC between manual and
+  AUTO (a drag on the slider still tunes manually). There is no separate pill in the full-window
+  strips. The target span is computed in absolute hertz from
   the window's filter width, the pane/cell pixel width and the measured 7 pt bold TX/RX tag width
   plus an 8 px margin. Full-window auto additionally centres the pane on the tagged window (TX tag
   first, then the RX/audio tag) by setting the analyser pan; the normal view uses the one global
@@ -77,6 +79,28 @@ Verified on the station with the fixed build (`Thetis.exe` `2f1e40e0...`): at 14
 VFO A readout shows the complete `14.086 842` (first digit no longer clipped); hovering the dBm
 scale leaves the red `14.000` band-edge/frequency figure at the top-left readable while the
 highlight wash is still visible (pixel diff confirms the wash is drawn).
+
+
+## AUTO UI iteration (2026-11-22, after the first H2 test build)
+
+- **Normal-view AUTO pill was not visible.** The pill was positioned from `radDisplayZoom05` before
+  the form layout had settled, so it could end up floating over the panadapter and be covered by
+  later `BringToFront` calls, and it was left hidden after a full-window round trip. It is now a
+  child of the same parent as the visible zoom presets, placed relative to them, brought to the
+  front whenever the normal view is active, and re-shown when the full-window view closes
+  (`H1AutoUiPositionNormal`, `H1AutoUiSync`, `H1FsHide`, `H1EightRowsExit`).
+- **No separate AUTO pills in the full-window strips.** The per-cell AUTO pills took too much room;
+  they are no longer created/shown. Every full-window cell's ZOOM caption (and its zoom value) is
+  clickable to toggle AUTO, and a plain click on the tuning-range slider itself toggles AUTO as
+  well. The caption reads `AUTO` in amber while auto is on and `ZOOM` while it is manual; dragging
+  the slider tunes manually and leaves AUTO (the existing manual-takeover path). Normal-view AUTO
+  stays on the pill.
+
+Verified on the station with `Thetis.exe` `e4ae991a...`: the AUTO pill is visible next to the
+normal zoom presets before and after a full-window round trip; in full-window the only `AUTO`
+text is a cell caption, clicking DDC1's ZOOM caption enabled its auto zoom (trace
+`auto zoom: DDC1 on (zoom caption)`), and a second click / slider click returned it to manual;
+dragging the slider keeps the manual zoom.
 
 ## Limits
 

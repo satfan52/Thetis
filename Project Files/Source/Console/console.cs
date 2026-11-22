@@ -641,7 +641,13 @@ namespace Thetis
                 // H2: the saved normal-view AUTO zoom is applied only after the window is up;
                 // applying it during the constructor can re-enter the startup layout.
                 _h1AutoZoomReady = true;
+                try { H1AutoUiSync(); } catch { }
                 try { BeginInvoke((MethodInvoker)H1AutoZoomNormalIfEnabled); } catch { }
+                try
+                {
+                    this.Resize += (rs, re) => { if (!_h1FullScreenPanafall) H1AutoUiSync(); };
+                }
+                catch { }
                 H1StartupTrace("window Shown: size=" + this.Size + " state=" + this.WindowState
                 + " loc=" + this.Location + " resizes=" + _h1StartupResizeCount + " expands=" + _h1StartupExpandCount);
             };
@@ -8513,6 +8519,11 @@ namespace Thetis
         {
             private int _v = 0, _min = 0, _max = 100;
             public event EventHandler ValueChanged;
+            // H2: a plain click (no drag) on the slider toggles the cell's AUTO zoom; a drag keeps
+            // the original manual behaviour (set the value where the pointer is).
+            public event EventHandler ClickedWithoutDrag;
+            private int _downX;
+            private bool _dragStarted;
 
             public H1FsSlider()
             {
@@ -8561,17 +8572,32 @@ namespace Thetis
 
             protected override void OnMouseDown(MouseEventArgs e)
             {
-                if (e.Button == MouseButtons.Left) { Capture = true; FromX(e.X); }
+                if (e.Button == MouseButtons.Left)
+                {
+                    Capture = true;
+                    _downX = e.X;
+                    _dragStarted = false;
+                }
                 base.OnMouseDown(e);
             }
 
             protected override void OnMouseMove(MouseEventArgs e)
             {
-                if (Capture) FromX(e.X);
+                if (Capture && !_dragStarted)
+                {
+                    if (Math.Abs(e.X - _downX) > 2) _dragStarted = true;
+                }
+                if (Capture && _dragStarted) FromX(e.X);
                 base.OnMouseMove(e);
             }
 
-            protected override void OnMouseUp(MouseEventArgs e) { Capture = false; base.OnMouseUp(e); }
+            protected override void OnMouseUp(MouseEventArgs e)
+            {
+                bool wasClick = Capture && !_dragStarted;
+                Capture = false;
+                if (wasClick && ClickedWithoutDrag != null) ClickedWithoutDrag(this, EventArgs.Empty);
+                base.OnMouseUp(e);
+            }
 
             protected override void OnMouseWheel(MouseEventArgs e)
             {
@@ -9042,10 +9068,14 @@ namespace Thetis
             h1fsCtun1.Size = new Size(H1FsCtunW, H1FsCtrlH);
             h1fsCtun2.Size = new Size(H1FsCtunW, H1FsCtrlH);
             // H2: the tag-fit AUTO toggles for DDC1/DDC2 and for the normal view
-            h1fsAuto1 = H1FsNewPill("h1fsAuto1", "AUTO", 40);
-            h1fsAuto2 = H1FsNewPill("h1fsAuto2", "AUTO", 40);
-            h1fsAuto1.CheckedChanged += H1FsAutoChanged;
-            h1fsAuto2.CheckedChanged += H1FsAutoChanged;
+            // H2 (user 2026-11-22): no extra AUTO pills in the full-window strips - the ZOOM
+            // caption/value itself flips that cell between manual and AUTO.
+            if (h1fsZoomCap1 != null) { h1fsZoomCap1.Cursor = Cursors.Hand; h1fsZoomCap1.Click += H1ZoomCapClicked; }
+            if (h1fsZoomVal1 != null) { h1fsZoomVal1.Cursor = Cursors.Hand; h1fsZoomVal1.Click += H1ZoomCapClicked; }
+            if (h1fsZoomCap2 != null) { h1fsZoomCap2.Cursor = Cursors.Hand; h1fsZoomCap2.Click += H1ZoomCapClicked; }
+            if (h1fsZoomVal2 != null) { h1fsZoomVal2.Cursor = Cursors.Hand; h1fsZoomVal2.Click += H1ZoomCapClicked; }
+            if (h1fsZoom1 != null) h1fsZoom1.ClickedWithoutDrag += H1ZoomCapClicked;
+            if (h1fsZoom2 != null) h1fsZoom2.ClickedWithoutDrag += H1ZoomCapClicked;
             h1AutoZoomNormalBtn = H1FsNewPill("h1AutoZoomNormal", "AUTO", 40);
             h1AutoZoomNormalBtn.CheckedChanged += H1NormalAutoChanged;
 
@@ -9529,22 +9559,51 @@ namespace Thetis
             }
         }
 
+        private void H1AutoUiSyncZoomCaptions()
+        {
+            try
+            {
+                Color onCol = Color.FromArgb(255, 200, 0);
+                Color offCol = Color.FromArgb(175, 182, 192);
+                for (int row = 0; row < 8; row++)
+                {
+                    Label cap = null;
+                    if (row == 0) cap = h1fsZoomCap1;
+                    else if (row == 1) cap = h1fsZoomCap2;
+                    else if (h1cellStrips != null && h1cellStrips[row] != null) cap = h1cellStrips[row].ZoomCap;
+                    if (cap == null) continue;
+                    bool on = _h1AutoZoomCell[row];
+                    string t = on ? "AUTO" : "ZOOM";
+                    if (cap.Text != t) cap.Text = t;
+                    Color want = on ? onCol : offCol;
+                    if (cap.ForeColor != want) cap.ForeColor = want;
+                }
+            }
+            catch { }
+        }
+
+        private void H1ZoomCapClicked(object sender, EventArgs e)
+        {
+            if (_h1fsSync) return;
+            int row = -1;
+            if (sender == h1fsZoomCap1 || sender == h1fsZoomVal1 || sender == h1fsZoom1) row = 0;
+            else if (sender == h1fsZoomCap2 || sender == h1fsZoomVal2 || sender == h1fsZoom2) row = 1;
+            else row = H1CellStripRow(sender);
+            if (row < 0 || row > 7) return;
+            _h1AutoZoomCell[row] = !_h1AutoZoomCell[row];
+            H1AutoUiSync();
+            H1SpacePttTrace("auto zoom: DDC" + (row + 1) + " " + (_h1AutoZoomCell[row] ? "on" : "off")
+                + " (zoom caption)");
+            if (_h1AutoZoomCell[row]) H1AutoZoomCellApply(row);
+        }
+
         private void H1AutoUiSync()
         {
             if (_h1AutoUiSyncGuard) return;
             _h1AutoUiSyncGuard = true;
             try
             {
-                if (h1fsAuto1 != null) h1fsAuto1.Checked = _h1AutoZoomCell[0];
-                if (h1fsAuto2 != null) h1fsAuto2.Checked = _h1AutoZoomCell[1];
-                if (h1cellStrips != null)
-                {
-                    for (int row = 2; row < 8; row++)
-                    {
-                        H1CellStrip s = h1cellStrips[row];
-                        if (s != null && s.Auto != null) s.Auto.Checked = _h1AutoZoomCell[row];
-                    }
-                }
+                H1AutoUiSyncZoomCaptions();
                 if (h1AutoZoomNormalBtn != null)
                 {
                     H1AutoUiPositionNormal();
@@ -9561,10 +9620,21 @@ namespace Thetis
             try
             {
                 if (h1AutoZoomNormalBtn == null || radDisplayZoom05 == null) return;
-                Point p = PointToClient(radDisplayZoom05.PointToScreen(Point.Empty));
-                Point want = new Point(p.X - 46, p.Y);
-                if (h1AutoZoomNormalBtn.Location != want) h1AutoZoomNormalBtn.Location = want;
-                h1AutoZoomNormalBtn.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+                // H2 (user 2026-11-22): live in the same parent as the visible zoom presets, so the
+                // pill follows the layout and is not left floating over the waterfall; front it so a
+                // later BringToFront of the display cannot cover it.
+                Control parent = radDisplayZoom05.Parent;
+                if (parent != null && h1AutoZoomNormalBtn.Parent != parent)
+                    parent.Controls.Add(h1AutoZoomNormalBtn);
+                if (parent != null)
+                {
+                    int bx = radDisplayZoom05.Left - 46;
+                    if (bx < 0) bx = 0;
+                    Point want = new Point(bx, radDisplayZoom05.Top);
+                    if (h1AutoZoomNormalBtn.Location != want) h1AutoZoomNormalBtn.Location = want;
+                    h1AutoZoomNormalBtn.Anchor = radDisplayZoom05.Anchor;
+                }
+                h1AutoZoomNormalBtn.BringToFront();
             }
             catch { }
         }
@@ -9935,6 +10005,7 @@ for (int zr = 0; zr < 8; zr++)
                 H1Crumb("eightrows-exit: cleanup");
                 Display.H1EightRowCleanup();
                 H1RestoreCellAnalysers();   // H1 (zoom option A): put the normal-view zoom back
+                H1AutoUiSync();             // H2: re-show/place the normal-view AUTO pill
                 H1AutoZoomNormalIfEnabled(); // H2: the normal view's tag-fit auto zoom
                 for (int s = 2; s < 8; s++)
                 {
@@ -9984,13 +10055,7 @@ for (int zr = 0; zr < 8; zr++)
             H1FsPlace(h1fsBand2, h1fsMode2, h1fsAgcCap2, h1fsAgc2, h1fsAgcVal2,
                 h1fsAfCap2, h1fsAf2, h1fsAfVal2, h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2,
                 h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, x, y2);
-            // H2: AUTO sits to the right of the zoom value in the DDC1/DDC2 strips
-            if (h1fsAuto1 != null && h1fsZoomVal1 != null)
-                h1fsAuto1.Location = new Point(h1fsZoomVal1.Location.X + h1fsZoomVal1.Width + 4,
-                    top + H1FsCtrlH + 2);
-            if (h1fsAuto2 != null && h1fsZoomVal2 != null)
-                h1fsAuto2.Location = new Point(h1fsZoomVal2.Location.X + h1fsZoomVal2.Width + 4,
-                    y2 + H1FsCtrlH + 2);
+            // H2 (user 2026-11-22): no AUTO pills in the strips; ZOOM caption/value toggles it.
 
             // RX2's strip is RX2's - nothing to show while RX2 is switched off
             bool rx2On = rx2_enabled && _h1FullScreenPanafall;
@@ -10433,8 +10498,10 @@ for (int zr = 0; zr < 8; zr++)
                                                    h1fsZoomCap2, h1fsZoom2, h1fsZoomVal2, h1fsAuto2,
                                                    h1fsNr2, h1fsAnf2, h1fsNb2, h1fsBin2, h1fsCtun2 })
                 if (c != null) c.Visible = false;
-            if (h1AutoZoomNormalBtn != null) h1AutoZoomNormalBtn.Visible = false;
             H1CellStripsHide();
+            // H2: the normal-view AUTO pill belongs to the normal view; restore it here after the
+            // full-window round trip (the caller has already cleared _h1FullScreenPanafall).
+            if (!_h1FullScreenPanafall) H1AutoUiSync();
         }
 
         private int H1CellStripRow(object sender)
@@ -10469,8 +10536,10 @@ for (int zr = 0; zr < 8; zr++)
                 s.AfVal = H1FsNewLabel(tag + "AfVal", "", true);
                 s.ZoomCap = H1FsNewLabel(tag + "ZoomCap", "ZOOM", false, H1FsZoomCapW);
                 s.ZoomVal = H1FsNewLabel(tag + "ZoomVal", "", true, H1FsZoomValW);
-                s.Auto = H1FsNewPill(tag + "Auto", "AUTO", 40);   // H2: per-cell tag-fit AUTO
-                s.Auto.CheckedChanged += H1CellAutoChanged;
+                // H2 (user 2026-11-22): the ZOOM caption/value/slider toggles this cell's AUTO.
+                s.ZoomCap.Cursor = Cursors.Hand; s.ZoomCap.Click += H1ZoomCapClicked;
+                s.ZoomVal.Cursor = Cursors.Hand; s.ZoomVal.Click += H1ZoomCapClicked;
+                s.Zoom.ClickedWithoutDrag += H1ZoomCapClicked;
                 s.Nr = H1FsNewPill(tag + "Nr", "NR", 34);
                 s.Anf = H1FsNewPill(tag + "Anf", "ANF", 32);
                 s.Nb = H1FsNewPill(tag + "Nb", "NB", 26);
@@ -10491,7 +10560,7 @@ for (int zr = 0; zr < 8; zr++)
                     hp.CheckedChanged += H1CellPillChanged;
                 }
                 foreach (Control c in new Control[] { s.Band, s.Mode, s.Agc, s.Af, s.Zoom,
-                    s.AgcCap, s.AgcVal, s.AfCap, s.AfVal, s.ZoomCap, s.ZoomVal, s.Auto,
+                    s.AgcCap, s.AgcVal, s.AfCap, s.AfVal, s.ZoomCap, s.ZoomVal,
                     s.Nr, s.Anf, s.Nb, s.Bin, s.Ctun })
                 {
                     _h1CellStripOwner[c] = row;
@@ -10599,7 +10668,6 @@ for (int zr = 0; zr < 8; zr++)
             s.ZoomCap.Location = new Point(x0, y + 2); x0 += H1FsZoomCapW + 2;
             s.Zoom.Location = new Point(x0, y + 2); x0 += H1FsZoomSliderW + 2;
             s.ZoomVal.Location = new Point(x0, y + 2);
-            s.Auto.Location = new Point(x0 + s.ZoomVal.Width + 4, y + H1FsCtrlH + 1);
         }
 
         // H1 (M2): read the slices into the six strips.
@@ -11189,7 +11257,6 @@ for (int zr = 0; zr < 8; zr++)
                 s.Af.SetValueQuiet(af);
                 s.AfVal.Text = af.ToString();
                 H1FsZoomSync(s.Zoom, s.ZoomVal, Display.H1CellZoom[row]);
-                if (s.Auto != null) s.Auto.Checked = _h1AutoZoomCell[row];
                 H1FsPillFace(s.Nr, sl.Nr > 0, sl.Nr > 0 ? "NR" + sl.Nr : "NR");
                 H1FsPillFace(s.Anf, sl.Anf, "ANF");
                 H1FsPillFace(s.Nb, sl.Nb, "NB");
