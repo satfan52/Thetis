@@ -31637,6 +31637,11 @@ for (int zr = 0; zr < 8; zr++)
                 H1Crumb("fullscreen-exit: restore-geometry");
                 H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
                 H1RestoreNormalViewPanels();             // H1: put the normal-view panels back exactly
+                // H2: the band pills can have missed their sync while the eight-row view
+                // owned the window (notably on a full-window startup followed by exit).
+                // Restore the checked pill from the actual receiver band.
+                H1SyncRX1BandButtons();
+                H1SyncRX2BandButtons();
                 UpdateSubVeilStates();                   // H1 (bug fix 2026-11-12): and the normal dim state
                 H1UpdateRX1Veil();
                 // H1 (user 2026-11-21): the Tune slider's visibility must be re-applied AFTER

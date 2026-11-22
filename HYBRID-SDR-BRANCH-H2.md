@@ -357,6 +357,22 @@ window landed under the clicked pixel; blue still moved SubVFOA with the main
 caption unchanged.
 
 
+## RX1/RX2 band-pill sync on full-window exit (2026-11-22)
+
+The H1 band pills could show no blue selection in the normal view after a
+full-window session, even though the receiver was on 15m (or another band). The
+normal restored band panels were put back, but H1SyncRX1BandButtons /
+H1SyncRX2BandButtons were not called on the exit path. A band changed while the
+eight-row view owned the window (notably when the app starts in full-window and
+the user exits) could therefore leave the pill state stale or empty.
+
+The full-window exit now syncs both band panels from 
+x1_band / 
+x2_band right
+after restoring the normal panels. Verified by entering full-window, changing RX1
+to 15m there, and exiting: the normal-view 15m pill is blue.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
