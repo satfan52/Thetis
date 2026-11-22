@@ -9246,6 +9246,19 @@ namespace Thetis
         }
 
         // ---- reading the console into the strip -------------------------------------------
+        private void H1FsTunePillSync()
+        {
+            if (h1FsTunePill == null) return;
+            bool fs = _h1FullScreenPanafall;
+            bool on = fs && (chkTUN != null && (chkTUN.Checked || _tuning));
+            if (h1FsTunePill.Visible != fs) h1FsTunePill.Visible = fs;
+            if (h1FsTunePill.Checked != on) h1FsTunePill.Checked = on;
+            Color want = on ? Color.Red : Color.FromArgb(48, 48, 48);
+            if (h1FsTunePill.BackColor != want) h1FsTunePill.BackColor = want;
+            h1FsTunePill.FlatAppearance.CheckedBackColor = Color.Red;
+            h1FsTunePill.ForeColor = on ? Color.White : Color.FromArgb(180, 180, 180);
+        }
+
         private void H1FsSync()
         {
             if (!_h1fsBuilt || _h1fsSync) return;
@@ -9296,15 +9309,7 @@ namespace Thetis
                 if (h1fsAnf2.Checked != chkRX2ANF.Checked) h1fsAnf2.Checked = chkRX2ANF.Checked;
                 if (h1fsNb2.Checked != chkRX2NB.Checked) h1fsNb2.Checked = chkRX2NB.Checked;
                 if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
-                if (h1FsTunePill != null)
-                {
-                    bool don = chkTUN != null && chkTUN.Checked;
-                    if (h1FsTunePill.Checked != don) h1FsTunePill.Checked = don;
-                    h1FsTunePill.FlatAppearance.CheckedBackColor = don ? Color.Red : Color.FromArgb(48, 48, 48);
-                    if (h1FsTunePill.BackColor != (don ? Color.Red : Color.FromArgb(48, 48, 48)))
-                        h1FsTunePill.BackColor = don ? Color.Red : Color.FromArgb(48, 48, 48);
-                    h1FsTunePill.ForeColor = don ? Color.White : Color.FromArgb(180, 180, 180);
-                }
+                H1FsTunePillSync();
                 if (_h1FullScreenPanafall && _h1cellStripsBuilt) H1CellStripsSync();
             }
             finally { _h1fsSync = false; }
@@ -10535,6 +10540,7 @@ for (int zr = 0; zr < 8; zr++)
                 Display.H1MeterSub2 = s2;
                 Display.H1MeterSwr = H1TxSwr;
                 Display.H1MeterTxActive = _mox || _tuning;
+                H1FsTunePillSync();
                 Display.H1MeterTx1 = chkVFOATX.Checked || (chkSubVFOATX != null && chkSubVFOATX.Checked);
                 Display.H1MeterTx2 = rx2_enabled && (chkVFOBTX.Checked || (chkSubVFOBTX != null && chkSubVFOBTX.Checked));
 
