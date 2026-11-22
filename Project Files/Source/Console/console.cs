@@ -10272,6 +10272,10 @@ for (int zr = 0; zr < 8; zr++)
         {
             int cellW = H1CellWidthPx();
             double centre = Display.H1RowCentreMHz[cell];
+            // H2: RX1/RX2 (cells 0/1) use the console receiver centres; their
+            // row-centre array entry is only populated for the headless DDCs.
+            if (centre <= 0.0)
+                centre = cell == 0 ? CentreFrequency : (cell == 1 ? CentreRX2Frequency : centre);
             int low, high;
             H1SpareCellVisibleSpan(cell, out low, out high);
             int span = high - low;
@@ -10305,14 +10309,29 @@ for (int zr = 0; zr < 8; zr++)
             int sl = Display.H1RowSubWinLeft[cell], sr = Display.H1RowSubWinRight[cell];
             int cellTop = (cell % 4) * (pnlDisplay.Height / 4);
             int cellX = e.X - (cell / 4) * H1CellWidthPx();
+            bool blueSub = current_click_tune_mode == ClickTuneMode.VFOB;
 
-            if (wl >= 0 && wr > wl && Math.Abs(cellX - wl) < 3) _h1SpareDragKind = 2;
-            else if (wl >= 0 && wr > wl && Math.Abs(cellX - wr) < 3) _h1SpareDragKind = 3;
-            else if (sub.Enabled && sl >= 0 && sr > sl && Math.Abs(cellX - sl) < 3) _h1SpareDragKind = 5;
-            else if (sub.Enabled && sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
-            else if (sub.Enabled && sl >= 0 && sr > sl && cellX > sl && cellX < sr) _h1SpareDragKind = 4;
-            else if (e.Y - cellTop < 16) _h1SpareDragKind = 1;   // top strip pans the DDC
-            else _h1SpareDragKind = 0;
+            if (e.Y - cellTop < 16) _h1SpareDragKind = 1;       // top strip pans the DDC
+            else if (blueSub)
+            {
+                // H2: blue tunes this DDC's sub receiver
+                if (!sub.Enabled)
+                {
+                    _h1SpareDragCell = -1;
+                    H1SpacePttTrace("h1cell: blue pressed but sub disabled r" + cell);
+                    return;
+                }
+                if (sl >= 0 && sr > sl && Math.Abs(cellX - sl) < 3) _h1SpareDragKind = 5;
+                else if (sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
+                else _h1SpareDragKind = 4;
+            }
+            else
+            {
+                // H2: yellow tunes this DDC's main slice
+                if (wl >= 0 && wr > wl && Math.Abs(cellX - wl) < 3) _h1SpareDragKind = 2;
+                else if (wl >= 0 && wr > wl && Math.Abs(cellX - wr) < 3) _h1SpareDragKind = 3;
+                else _h1SpareDragKind = 0;
+            }
 
             pnlDisplay.Cursor = Cursors.SizeWE;
             H1SpacePttTrace("h1cell: press cell r" + cell + " kind=" + _h1SpareDragKind
@@ -10404,6 +10423,16 @@ for (int zr = 0; zr < 8; zr++)
                     HeadlessSliceManager.Instance.SetVFOA(rx, f);
                     if (TxArbiter.Instance.ActiveDigitalRx == rx)
                         TxArbiter.Instance.UpdateDigitalTxFrequency(rx, f);
+                }
+                else if (!moved && kind == 4)
+                {
+                    HeadlessSubRX.State sub = HeadlessSubRX.Get(cell);
+                    if (sub.Enabled)
+                    {
+                        long hz = (long)Math.Round(H1SpareCellFreqAt(cell, e.X) * 1e6);
+                        HeadlessSubRX.SetFreq(rx, hz);
+                        H1SpacePttTrace("h1cell: click cell rx" + rx + " sub -> " + hz);
+                    }
                 }
             }
             catch { }
@@ -64847,6 +64876,39 @@ private void incrementMutliMeterDisplayModeRX2()
             }
         }
 
+        // H2: a simple left click on the full-window RX1/RX2 cells applies the
+        // yellow/blue target on mouse-up; drags/filter edits are left alone.
+        private int _h1ColorClickCell = -1;
+        private Point _h1ColorClickStart;
+        private bool _h1ColorClickMoved = false;
+
+        private void H1FullWindowColorClick(int cell, double freq)
+        {
+            if (cell < 0 || cell > 1 || freq <= 0.0) return;
+            bool blue = current_click_tune_mode == ClickTuneMode.VFOB;
+            double f = Math.Round(freq, 6);
+            if (cell == 0)
+            {
+                if (blue)
+                {
+                    if (chkEnableMultiRX.Checked) VFOASubFreq = f;
+                }
+                else if (current_click_tune_mode == ClickTuneMode.VFOA)
+                    VFOAFreq = f;
+            }
+            else
+            {
+                if (blue)
+                {
+                    if (rx2_enabled && chkEnableMultiRX2.Checked) VFOBSubFreq = f;
+                }
+                else if (current_click_tune_mode == ClickTuneMode.VFOA)
+                    VFOBFreq = f;
+            }
+            H1SpacePttTrace("h1cell: colour click cell0/1 rx" + (cell + 1)
+                + (blue ? " SUB" : " main") + " -> " + f.ToString("f6"));
+        }
+
         private void pnlDisplay_MouseDown(object sender, MouseEventArgs e)
         {
             if (Display.PausedDisplay) return;
@@ -64899,12 +64961,22 @@ private void incrementMutliMeterDisplayModeRX2()
             if (Display.H1EightRows)
             {
                 int h1cell = H1CellRowAt(e.X, e.Y);
+                if (e.Button == MouseButtons.Left && (h1cell == 0 || h1cell == 1))
+                {
+                    _h1ColorClickCell = h1cell;
+                    _h1ColorClickStart = new Point(e.X, e.Y);
+                    _h1ColorClickMoved = false;
+                }
                 if (h1cell >= 2)
                 {
-                    if (e.Button == MouseButtons.Left) H1SpareCellMouseDown(e, h1cell);
-                    else H1SpacePttTrace("h1cell: press cell r" + h1cell + " RX" + H1CellRowToRx(h1cell)
-                        + " (button " + e.Button + ")");
-                    return;
+                    if (e.Button == MouseButtons.Left)
+                    {
+                        H1SpareCellMouseDown(e, h1cell);
+                        return;
+                    }
+                    // H2: a right-click on a spare cell must reach the global
+                    // click-tune colour cycle (yellow main / blue sub).
+                    H1SpacePttTrace("h1cell: right-click cell r" + h1cell + " RX" + H1CellRowToRx(h1cell));
                 }
             }
 
@@ -66010,6 +66082,9 @@ private void incrementMutliMeterDisplayModeRX2()
         unsafe private void pnlDisplay_MouseMove(object sender, MouseEventArgs e)
         {
             if (Display.PausedDisplay) return;
+            if (_h1ColorClickCell >= 0 &&
+                (Math.Abs(e.X - _h1ColorClickStart.X) > 2 || Math.Abs(e.Y - _h1ColorClickStart.Y) > 2))
+                _h1ColorClickMoved = true;
             if (_h1SpareDragCell >= 0)
             {
                 H1SpareCellMouseMove(e);
@@ -67314,6 +67389,18 @@ private void incrementMutliMeterDisplayModeRX2()
         {
             _h1ZoomRow = -1;
             if (Display.PausedDisplay) return;
+            if (_h1ColorClickCell >= 0)
+            {
+                int h1cc = _h1ColorClickCell;
+                bool h1moved = _h1ColorClickMoved;
+                _h1ColorClickCell = -1;
+                _h1ColorClickMoved = false;
+                if (!h1moved && current_click_tune_mode != ClickTuneMode.Off)
+                {
+                    double h1f = H1SpareCellFreqAt(h1cc, e.X);
+                    H1FullWindowColorClick(h1cc, h1f);
+                }
+            }
             if (_h1SpareDragCell >= 0)
             {
                 H1SpareCellMouseUp(e);

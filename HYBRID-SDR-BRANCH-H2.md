@@ -288,6 +288,40 @@ Verified with SubRX1 and SubRX2 enabled, SPLIT off, both CTUN buttons on:
 - Station frequencies restored afterwards; CTUN and click-tune mode left off.
 
 
+
+## Full-window per-DDC yellow/blue targets (2026-11-22)
+
+The yellow/blue click-tune target selection now applies to all eight DDC cells in
+the 8-DDC full-window view:
+
+- DDC1/RX1 and DDC2/RX2 (the two left-column receiver cells) use a simple-click
+  tracker: yellow -> VFOA/VFOB, blue -> SubVFOA/SubVFOB when the corresponding sub
+  is enabled. Filter and window drags are left to the normal full-window gesture
+  path.
+- DDC3..DDC8 start their tuning through `H1SpareCellMouseDown`. Yellow now targets
+  that cell's main `HeadlessSlice`; blue targets its `HeadlessSubRX`. The top
+  caption strip still pans the DDC, and blue filter-edge drags now belong to the
+  sub window instead of the main window.
+- A right-click on any of the eight cells now reaches the global colour cycle
+  (`Off -> yellow -> blue -> Off`); previously DDC3..DDC8 consumed right-clicks.
+- The cell frequency mapping for DDC1/DDC2 falls back to `CentreFrequency` /
+  `CentreRX2Frequency` because their row-centre array entries are only populated
+  for the headless DDCs.
+
+Verified in full-window with SubRX1/2 and the needed DDC subs enabled:
+
+- DDC1 yellow click: VFOA 14.077442 -> 14.077720; DDC1 blue click: SubVFOA
+  14.077998 (main stayed 14.077720).
+- DDC2 blue click: SubVFOB 1.942449.
+- DDC3 yellow click: main slice 5.357167 -> 5.425062; DDC3 blue click moved its
+  sub (trace `click cell rx2 sub -> 5425062`).
+- DDC5 blue click moved its sub (trace `click cell rx4 sub -> 18064489`); main
+  caption stayed 18.062833.
+- Right-click on the DDC3 cell cycled yellow/blue/Off in the captures.
+- VFOA/SubVFOA/SubVFOB restored; DDC3/DDC5 SUB toggles returned to off. The
+  DDC3/DDC5 headless test frequencies are transient cell state.
+
+
 ## Limits
 
 - The 1–64 scale is the H2 full-window scale: 64× is the deepest span the H1 cell floor allows
