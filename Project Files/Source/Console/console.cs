@@ -9290,15 +9290,40 @@ namespace Thetis
                 int m2 = Array.IndexOf(H1FsModes, sm2);
                 if (h1fsMode2.SelectedIndex != m2 && m2 >= 0) h1fsMode2.SelectedIndex = m2;
 
-                H1FsSliderFit(h1fsAgc1, ptbRF);
-                H1FsSliderFit(h1fsAf1, ptbAF);
-                H1FsSliderFit(h1fsAgc2, ptbRX2RF);
-                H1FsSliderFit(h1fsAf2, ptbRX2AF);
-                // H1 (user 2026-11-09): the numbers beside the sliders
-                H1FsSliderText(h1fsAgcVal1, ptbRF);
-                H1FsSliderText(h1fsAfVal1, ptbAF);
-                H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
-                H1FsSliderText(h1fsAfVal2, ptbRX2AF);
+                // In SUB CTRL the sliders must track the sub, not the RX; otherwise
+                // every handler sync snaps the thumb back to the receiver value.
+                if (_h1CellSubCtrl[0])
+                {
+                    H1FsSliderFit(h1fsAgc1, ptbSubRX1Gain);
+                    h1fsAgc1.SetValueQuiet(ptbSubRX1Gain.Value);
+                    h1fsAgcVal1.Text = ptbSubRX1Gain.Value.ToString();
+                    H1FsSliderFit(h1fsAf1, ptbAF);
+                    int saf1 = H1FsClamp((int)Math.Round(radio.GetDSPRX(0, 1).RXOutputGain * 100.0), 0, 100);
+                    h1fsAf1.SetValueQuiet(saf1); h1fsAfVal1.Text = saf1.ToString();
+                }
+                else
+                {
+                    H1FsSliderFit(h1fsAgc1, ptbRF);
+                    H1FsSliderFit(h1fsAf1, ptbAF);
+                    H1FsSliderText(h1fsAgcVal1, ptbRF);
+                    H1FsSliderText(h1fsAfVal1, ptbAF);
+                }
+                if (_h1CellSubCtrl[1])
+                {
+                    H1FsSliderFit(h1fsAgc2, ptbSubRX2Gain);
+                    h1fsAgc2.SetValueQuiet(ptbSubRX2Gain.Value);
+                    h1fsAgcVal2.Text = ptbSubRX2Gain.Value.ToString();
+                    H1FsSliderFit(h1fsAf2, ptbRX2AF);
+                    int saf2 = H1FsClamp((int)Math.Round(radio.GetDSPRX(1, 1).RXOutputGain * 100.0), 0, 100);
+                    h1fsAf2.SetValueQuiet(saf2); h1fsAfVal2.Text = saf2.ToString();
+                }
+                else
+                {
+                    H1FsSliderFit(h1fsAgc2, ptbRX2RF);
+                    H1FsSliderFit(h1fsAf2, ptbRX2AF);
+                    H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
+                    H1FsSliderText(h1fsAfVal2, ptbRX2AF);
+                }
                 // H1 (user 2026-11-09): the cell zoom sliders show the display's state
                 H1FsZoomSync(h1fsZoom1, h1fsZoomVal1, Display.H1CellZoom[0]);
                 H1FsZoomSync(h1fsZoom2, h1fsZoomVal2, Display.H1CellZoom[1]);
