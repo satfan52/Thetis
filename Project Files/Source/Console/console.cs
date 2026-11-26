@@ -13355,7 +13355,9 @@ for (int zr = 0; zr < 8; zr++)
                     }
                     catch { }
                 }
-                H1SpacePttTrace("sub2 audio: mode=" + s.DSPMode.ToString()
+                s.Pan = 0.5f;
+                H1SpacePttTrace("sub2 meter=" + WDSP.CalculateRXMeter(2, 1, WDSP.MeterType.SIGNAL_STRENGTH).ToString("F1")
+                    + " mode=" + s.DSPMode.ToString()
                     + " filter=" + s.RXFilterLow.ToString() + "/" + s.RXFilterHigh.ToString()
                     + " vol=" + ptbRX2SubGain.Value.ToString()
                     + " out=" + s.RXOutputGain.ToString()
@@ -39362,6 +39364,36 @@ private readonly int[] _h1BaseFftSize = new int[8];
 
         // H1: the RX1 button. Switches RX1 on; switches it off while RX2 keeps the radio up; and
         // powers the radio off when RX1 was the last active receiver.
+        // H1: if RX2 was started before RX1, the RX1 power-on path can leave the
+        // SubRX2 channel out of the audio mixer. Re-apply it once both are up.
+        private void H1ScheduleSub2AudioRepair()
+        {
+            try
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Thread.Sleep(1200);
+                        BeginInvoke((Action)(() =>
+                        {
+                            try
+                            {
+                                if (!PowerOn || MOX || _tuning) return;
+                                if (chkRX2 == null || !chkRX2.Checked) return;
+                                if (chkEnableMultiRX2 == null || !chkEnableMultiRX2.Checked) return;
+                                ApplySubOwnSettings(2);
+                                H1SpacePttTrace("sub2 repair after RX1 start");
+                            }
+                            catch { }
+                        }));
+                    }
+                    catch { }
+                });
+            }
+            catch { }
+        }
+
         private void chkRX1_CheckedChanged(object sender, EventArgs e)
         {
             if (initializing || _h1Rx1Changing) return;
@@ -39423,6 +39455,7 @@ private readonly int[] _h1BaseFftSize = new int[8];
             if (PowerOn) H1ApplyRx1State();
             H1RestoreRx1Sub();
             H1EnsureVacForActiveReceivers();
+            H1ScheduleSub2AudioRepair();
         }
 
         // H1: load the RX1 pill art from the active skin (the skin loader only walks panels, so
