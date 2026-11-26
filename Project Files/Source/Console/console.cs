@@ -10144,8 +10144,10 @@ for (int zr = 0; zr < 8; zr++)
                 }
                 catch (Exception zex) { H1SpacePttTrace("eight-row setup: saving analyser zoom failed: " + zex.Message); }
 
+                var sw8 = System.Diagnostics.Stopwatch.StartNew();
                 double centre = Display.CentreFreqRX1;
                 _h1SliceEnterInit = true;
+                long e0 = sw8.ElapsedMilliseconds;
                 for (int s = 2; s < 8; s++)
                 {
                     // H1 (M1): the spares are tuned through their slices below
@@ -10174,8 +10176,11 @@ for (int zr = 0; zr < 8; zr++)
                     SpecHPSDR zs = specRX.GetSpecRX(zr);
                     if (zs != null) zs.ZoomLimit = H1CellZoomLimit;
                 }
+                long e1 = sw8.ElapsedMilliseconds;
                 try { UpdateDDCs(Display.RX2Enabled); } catch (Exception exd) { H1SpacePttTrace("eight-row setup: UpdateDDCs failed: " + exd.Message); }
+                long e2 = sw8.ElapsedMilliseconds;
                 Display.H1EightRows = true;
+                long e3 = sw8.ElapsedMilliseconds;
                 H1PublishRowBaseSpans();
                 // H1 (bug fix 2026-11-12): the normal-view dim veils must not show over the
                 // full-window cells - hide them the moment the view opens.
@@ -10210,7 +10215,9 @@ for (int zr = 0; zr < 8; zr++)
                 H1PublishCellMeters();
                 _h1SliceEnterInit = false;
                 H1PublishRowScales();   // H1 (user 2026-11-21): per-DDC dBm scales
-                H1SpacePttTrace("eight-row panafall: six spare DDC streams up, spares at " + centre.ToString("f6") + " MHz");
+                H1SpacePttTrace("eight-row panafall: six spare DDC streams up, spares at " + centre.ToString("f6") + " MHz"
+                    + " timing zoom=" + e0 + " analysers/limits=" + (e1-e0) + " updateDDCs=" + (e2-e1)
+                    + " displayflag=" + (e3-e2) + " rest=" + (sw8.ElapsedMilliseconds-e3) + " ms");
             }
             catch { }
         }
@@ -32029,52 +32036,59 @@ for (int zr = 0; zr < 8; zr++)
             H1Crumb("fullscreen-toggle");
             H1ClearDisplayDrags();
 
-            if (collapsedDisplay || _iscollapsed)
+            if (_h1FastFullScreen)
             {
-                H1Crumb("fullscreen-exit: geometry/dim");
+                var swf = System.Diagnostics.Stopwatch.StartNew();
                 _h1FullScreenPanafall = false;
-                H1EightRowsExit();                       // H1: the eight-row view ends with the mode
-                H1Crumb("fullscreen-exit: expand");
-                ExpandDisplay(true);
-                H1Crumb("fullscreen-exit: restore-geometry");
-                H1FullScreenRestoreGeometry();           // H1: the exact normal geometry, after the expand relayout
-                H1RestoreNormalViewPanels();             // H1: put the normal-view panels back exactly
-                // H2: the band pills can have missed their sync while the eight-row view
-                // owned the window (notably on a full-window startup followed by exit).
-                // Restore the checked pill from the actual receiver band.
+                H1EightRowsExit();
+                H1FullScreenRestoreGeometry();
+                H1FullScreenRestoreControls();
+                H1RestoreNormalViewPanels();
                 H1SyncRX1BandButtons();
                 H1SyncRX2BandButtons();
-                UpdateSubVeilStates();                   // H1 (bug fix 2026-11-12): and the normal dim state
+                UpdateSubVeilStates();
                 H1UpdateRX1Veil();
-                // H1 (user 2026-11-21): the Tune slider's visibility must be re-applied AFTER
-                // the full-screen restore. On enter the slider is hidden before the visibility
-                // snapshot is taken, so the snapshot records it hidden and the restore writes
-                // that back after the exit already showed it: one round trip hid the Tune
-                // slider for good, with Setup still set to "Use Tune Slider". As the last
-                // writer this also follows a tune source changed while the view was up.
                 setupTuneDriveSlider();
-                H1Crumb("fullscreen-exit: done");
+                _h1FastFullScreen = false;
+                H1SpacePttTrace("full-screen fast exit " + swf.ElapsedMilliseconds + " ms (" + from + ")");
+            }
+            else if (collapsedDisplay || _iscollapsed)
+            {
+                _h1FullScreenPanafall = false;
+                H1EightRowsExit();
+                ExpandDisplay(true);
+                H1FullScreenRestoreGeometry();
+                H1RestoreNormalViewPanels();
+                H1SyncRX1BandButtons();
+                H1SyncRX2BandButtons();
+                UpdateSubVeilStates();
+                H1UpdateRX1Veil();
+                setupTuneDriveSlider();
             }
             else
             {
-                // set BEFORE collapsing: CollapseDisplay runs the hide, which is gated on this flag
+                var swf = System.Diagnostics.Stopwatch.StartNew();
                 _h1FullScreenPanafall = true;
-                H1Crumb("fullscreen-enter: capture");
-                H1FullScreenCaptureGeometry();           // H1: remember the normal geometry before the collapse
-                H1Crumb("fullscreen-enter: eightrows");
-                H1EightRowsEnter();                      // H1: the full-screen view is the eight-row panafall
-                H1Crumb("fullscreen-enter: capture-panels");
-                H1CaptureNormalViewPanels();             // H1: before the collapse hides them
-                H1Crumb("fullscreen-enter: collapse");
-                CollapseDisplay(true);
-                H1HideNormalViewPanels();   // H1: no normal-view panels in the eight-row view
-                // H1 (user 2026-11-21): hide the Tune slider only after CollapseDisplay() has
-                // taken its visibility snapshot, so that snapshot keeps the normal-view state
-                // (see the matching call in the exit branch).
+                H1FullScreenCaptureGeometry();
+                H1EightRowsEnter();
+                H1CaptureNormalViewPanels();
+                // Fast hide/fill path, with the form's painting suspended while every
+                // normal control is hidden. Replaces the 1.6 s CollapseDisplay relayout.
+                SuspendDrawing(this);
+                try
+                {
+                    H1FullScreenCapture();
+                    H1FullScreenHideControls();
+                }
+                finally
+                {
+                    ResumeDrawing(this);
+                }
+                _h1FastFullScreen = true;
                 setupTuneDriveSlider();
-                H1Crumb("fullscreen-enter: done");
+                H1SpacePttTrace("full-screen fast enter " + swf.ElapsedMilliseconds + " ms (" + from + ")");
             }
-            H1SpacePttTrace("full-screen panafall " + (collapsedDisplay ? "on" : "off") + " (" + from + ")");
+            H1SpacePttTrace("full-screen panafall " + ((_h1FastFullScreen || collapsedDisplay) ? "on" : "off") + " (" + from + ")");
         }
 
         // H1 (user 2026-10-05): one diagnostic line per space press. The option is enabled in this
@@ -56539,6 +56553,7 @@ private readonly int[] _h1BaseFftSize = new int[8];
         // OTHER control goes away. To come back correctly the normal view is captured first, because
         // Expand has to restore the state the normal view actually had, not merely "everything on".
         private bool _h1FullScreenPanafall = false;
+        private bool _h1FastFullScreen = false;
         private bool _h1FullScreenCaptured = false;
         private Point _h1BtnHiddenHome = Point.Empty;
         private bool _h1BtnHiddenMoved = false;
