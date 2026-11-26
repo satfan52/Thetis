@@ -360,6 +360,11 @@ namespace Thetis
                 WDSP.SetRXAEMNRRun(ch, mode == 2 ? 1 : 0);
                 WDSP.SetRXARNNRRun(ch, mode == 3 ? 1 : 0);
                 WDSP.SetRXASBNRRun(ch, mode == 4 ? 1 : 0);
+                if (mode != 2)
+                {
+                    WDSP.SetRXAEMNRaeRun(ch, 0);
+                    WDSP.SetRXAEMNRpost2Run(ch, 0);
+                }
             }
             catch { }
         }

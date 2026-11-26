@@ -434,6 +434,14 @@ namespace Thetis
                 WDSP.SetRXAEMNRRun(ch, nr == 2 ? 1 : 0);
                 WDSP.SetRXARNNRRun(ch, nr == 3 ? 1 : 0);
                 WDSP.SetRXASBNRRun(ch, nr == 4 ? 1 : 0);
+                // NR2 has separate AE and post-processing stages that SetRXAEMNRRun
+                // does not stop. Leaving them running makes NR2 audible even with
+                // every NR profile off.
+                if (nr != 2)
+                {
+                    WDSP.SetRXAEMNRaeRun(ch, 0);
+                    WDSP.SetRXAEMNRpost2Run(ch, 0);
+                }
             }
             catch { }
         }
