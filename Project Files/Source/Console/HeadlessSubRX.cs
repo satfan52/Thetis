@@ -108,16 +108,10 @@ namespace Thetis
                     // set) opened its window outside the cell - the SUB button looked dead.
                     // Normalise the position to this DDC before the channel comes up.
                     ClampToCell(rx);
-                    if (s.Nr) WDSP.SetRXAANRRun(Ch(rx, 1), 1);
+                    // a zero profile is the default: every NR engine off
+                    SetNrMode(rx, s.NrMode);
                     if (s.Anf) WDSP.SetRXAANFRun(Ch(rx, 1), true);
                     if (s.Snb) WDSP.SetRXASNBARun(Ch(rx, 1), true);
-                    if (s.NrMode > 0)
-                    {
-                        WDSP.SetRXAANRRun(Ch(rx, 1), s.NrMode == 1 ? 1 : 0);
-                        WDSP.SetRXAEMNRRun(Ch(rx, 1), s.NrMode == 2 ? 1 : 0);
-                        WDSP.SetRXARNNRRun(Ch(rx, 1), s.NrMode == 3 ? 1 : 0);
-                        WDSP.SetRXASBNRRun(Ch(rx, 1), s.NrMode == 4 ? 1 : 0);
-                    }
                     if (s.Bin) WDSP.SetRXAPanelBinaural(Ch(rx, 1), true);
                     WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5 * 2.0 * s.Gain);
                 }

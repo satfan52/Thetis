@@ -424,6 +424,20 @@ namespace Thetis
             }
         }
 
+        private static void ApplySliceNr(HeadlessSlice slice)
+        {
+            int ch = slice.ChannelId;
+            int nr = Math.Max(0, Math.Min(4, slice.Nr));
+            try
+            {
+                WDSP.SetRXAANRRun(ch, nr == 1 ? 1 : 0);
+                WDSP.SetRXAEMNRRun(ch, nr == 2 ? 1 : 0);
+                WDSP.SetRXARNNRRun(ch, nr == 3 ? 1 : 0);
+                WDSP.SetRXASBNRRun(ch, nr == 4 ? 1 : 0);
+            }
+            catch { }
+        }
+
         public void SetSliceNr(int rx, int mode)
         {
             lock (_lock)
@@ -431,9 +445,7 @@ namespace Thetis
                 if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
                 slice.Nr = Math.Max(0, Math.Min(4, mode));
                 if (slice.IsActive && cmaster.IsRadioCreated)
-                {
-                    try { WDSP.SetRXAANRRun(slice.ChannelId, slice.Nr > 0 ? 1 : 0); } catch { }
-                }
+                    ApplySliceNr(slice);
             }
         }
 
@@ -644,7 +656,7 @@ namespace Thetis
                     WDSP.SetChannelState(slice.ChannelId, 1, 0);
                     // H1 (M2): the noise controls are per DSP channel; NB acts on the
                     // shared DDC stream, so it is set with the DDC-wide call.
-                    WDSP.SetRXAANRRun(slice.ChannelId, slice.Nr > 0 ? 1 : 0);
+                    ApplySliceNr(slice);
                     WDSP.SetRXAANFRun(slice.ChannelId, slice.Anf);
                     WDSP.SetRXAPanelBinaural(slice.ChannelId, slice.Bin);
                     cmaster.SetRCVRANBRun(0, slice.RxIndex, slice.Nb);
