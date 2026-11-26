@@ -110,6 +110,7 @@ namespace Thetis
                     {
                         s.FilterLow = mainSlice.FilterLow;
                         s.FilterHigh = mainSlice.FilterHigh;
+                        NormalizeFilterForMode(s);
                         // H1: a sub with no stored position (or one that still sits
                         // exactly on the main frequency) starts 5 kHz away, like
                         // SubRX1/2, so the two windows are visually distinct.
@@ -253,10 +254,26 @@ namespace Thetis
             }
         }
 
+        private static void NormalizeFilterForMode(State s)
+        {
+            bool lsb = s.Mode == DSPMode.LSB || s.Mode == DSPMode.DIGL || s.Mode == DSPMode.CWL;
+            bool usb = s.Mode == DSPMode.USB || s.Mode == DSPMode.DIGU || s.Mode == DSPMode.CWU;
+            int lo = s.FilterLow, hi = s.FilterHigh;
+            if (lsb && lo >= 0 && hi > 0)
+            {
+                s.FilterLow = -hi; s.FilterHigh = -lo;
+            }
+            else if (usb && hi <= 0 && lo < 0)
+            {
+                s.FilterLow = -hi; s.FilterHigh = -lo;
+            }
+        }
+
         private static void SetFreqInternal(int rx, long hz)
         {
             if (hz <= 0 || !cmaster.IsRadioCreated) return;
             var st = Get(rx);
+            NormalizeFilterForMode(st);
             double main = MainHz(rx);                  // DDC centre (Hz)
             double offset = hz - main;                 // signed offset from DDC centre
             // H1: the passband edge is the real DDC rate's Nyquist - Thetis can run
