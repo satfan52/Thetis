@@ -8658,6 +8658,7 @@ namespace Thetis
         private readonly bool[] _h1CellSubCtrl = new bool[8];
         private CheckBoxTS h1FsTunePill, h1FsPttPill, h1FsMoxPill;
         private bool _h1PttOwnedMox = false;
+        private double _h1SubAf1 = 1.0, _h1SubAf2 = 1.0;
         // H1 (M2): local audio (aamix) state, driven by the middle-click on a window
         private int _h1SpareAudioMask = 0;
         private bool _h1SpareVacAutoOn = false;   // we switched VAC1 on for the spare audio
@@ -9298,7 +9299,7 @@ namespace Thetis
                     h1fsAgc1.SetValueQuiet(ptbSubRX1Gain.Value);
                     h1fsAgcVal1.Text = ptbSubRX1Gain.Value.ToString();
                     H1FsSliderFit(h1fsAf1, ptbAF);
-                    int saf1 = H1FsClamp((int)Math.Round(radio.GetDSPRX(0, 1).RXOutputGain * 100.0), 0, 100);
+                    int saf1 = H1FsClamp((int)Math.Round(_h1SubAf1 * 100.0), 0, 100);
                     h1fsAf1.SetValueQuiet(saf1); h1fsAfVal1.Text = saf1.ToString();
                 }
                 else
@@ -9314,7 +9315,7 @@ namespace Thetis
                     h1fsAgc2.SetValueQuiet(ptbSubRX2Gain.Value);
                     h1fsAgcVal2.Text = ptbSubRX2Gain.Value.ToString();
                     H1FsSliderFit(h1fsAf2, ptbRX2AF);
-                    int saf2 = H1FsClamp((int)Math.Round(radio.GetDSPRX(1, 1).RXOutputGain * 100.0), 0, 100);
+                    int saf2 = H1FsClamp((int)Math.Round(_h1SubAf2 * 100.0), 0, 100);
                     h1fsAf2.SetValueQuiet(saf2); h1fsAfVal2.Text = saf2.ToString();
                 }
                 else
@@ -10029,12 +10030,14 @@ namespace Thetis
             {
                 if (t == h1fsAgc1 || t == h1fsAgc2)
                 {
-                    PrettyTrackBar g = srow == 0 ? ptbSubRX1Gain : ptbSubRX2Gain;
-                    if (g != null) { g.Value = H1FsClamp(t.Value, g.Minimum, g.Maximum); if (srow == 0) ptbSubRX1Gain_Scroll(g, EventArgs.Empty); else ptbSubRX2Gain_Scroll(g, EventArgs.Empty); }
+                    if (srow == 0) SetSubAgcGain(H1FsClamp(t.Value, -20, 120));
+                    else SetSub2AgcGain(H1FsClamp(t.Value, -20, 120));
                 }
                 else
                 {
-                    try { radio.GetDSPRX(srow, 1).RXOutputGain = H1FsClamp(t.Value, 0, 100) / 100.0; } catch { }
+                    double gv = H1FsClamp(t.Value, 0, 100) / 100.0;
+                    if (srow == 0) { _h1SubAf1 = gv; WDSP.SetRXAPanelGain1(WDSP.id(0, 1), gv); }
+                    else { _h1SubAf2 = gv; WDSP.SetRXAPanelGain1(WDSP.id(2, 1), gv); }
                 }
                 H1FsSync();
                 return;
