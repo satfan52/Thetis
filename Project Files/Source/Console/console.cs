@@ -8859,7 +8859,7 @@ namespace Thetis
                     HeadlessSliceManager.Instance.SetFilter(rx, int.Parse(p[3]), int.Parse(p[4]));
                     HeadlessSliceManager.Instance.SetSliceAgcTop(rx, double.Parse(p[5], inv));
                     HeadlessSliceManager.Instance.SetSliceGain(rx, double.Parse(p[6], inv));
-                    HeadlessSliceManager.Instance.SetSliceNr(rx, int.Parse(p[7]));
+                    HeadlessSliceManager.Instance.SetSliceNr(rx, 0); // NR always starts off
                     HeadlessSliceManager.Instance.SetSliceAnf(rx, p[8] == "1");
                     HeadlessSliceManager.Instance.SetSliceNb(rx, p[9] == "1");
                     HeadlessSliceManager.Instance.SetSliceBin(rx, p[10] == "1");

@@ -452,7 +452,7 @@ namespace Thetis
             {
                 if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
                 slice.Nr = Math.Max(0, Math.Min(4, mode));
-                if (slice.IsActive && cmaster.IsRadioCreated)
+                if (cmaster.IsRadioCreated)
                     ApplySliceNr(slice);
             }
         }
