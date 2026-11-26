@@ -13346,9 +13346,22 @@ for (int zr = 0; zr < 8; zr++)
                 // Force the panel gain; the RXOutputGain setter can skip WDSP when its
                 // cached value is unchanged, which has left the sub silent.
                 WDSP.SetRXAPanelGain1(WDSP.id(2, 1), s.RXOutputGain);
-                H1SpacePttTrace("sub2 apply: vol=" + ptbRX2SubGain.Value.ToString()
+                if (chkEnableMultiRX2 != null && chkEnableMultiRX2.Checked && !_mox)
+                {
+                    try { WDSP.SetChannelState(WDSP.id(2, 1), 1, 0); } catch { }
+                    try
+                    {
+                        unsafe { cmaster.SetAAudioMixWhat((void*)0, 0, WDSP.id(2, 1), !Audio.MuteRX2); }
+                    }
+                    catch { }
+                }
+                H1SpacePttTrace("sub2 audio: mode=" + s.DSPMode.ToString()
+                    + " filter=" + s.RXFilterLow.ToString() + "/" + s.RXFilterHigh.ToString()
+                    + " vol=" + ptbRX2SubGain.Value.ToString()
                     + " out=" + s.RXOutputGain.ToString()
-                    + " mut=" + (chkSubRX2MUT == null ? "n/a" : chkSubRX2MUT.Checked.ToString()));
+                    + " pan=" + (ptbRX2SubPan == null ? "n/a" : ptbRX2SubPan.Value.ToString())
+                    + " mut=" + (chkSubRX2MUT == null ? "n/a" : chkSubRX2MUT.Checked.ToString())
+                    + " rx2en=" + (chkEnableMultiRX2 == null ? "n/a" : chkEnableMultiRX2.Checked.ToString()));
             }
         }
 
