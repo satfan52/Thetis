@@ -8658,7 +8658,6 @@ namespace Thetis
         private readonly bool[] _h1CellSubCtrl = new bool[8];
         private CheckBoxTS h1FsTunePill, h1FsPttPill, h1FsMoxPill;
         private bool _h1PttOwnedMox = false;
-        private double _h1SubAf1 = 1.0, _h1SubAf2 = 1.0;
         // H1 (M2): local audio (aamix) state, driven by the middle-click on a window
         private int _h1SpareAudioMask = 0;
         private bool _h1SpareVacAutoOn = false;   // we switched VAC1 on for the spare audio
@@ -9284,47 +9283,20 @@ namespace Thetis
                 int b2 = Array.IndexOf(H1FsBands, rx2_band);
                 if (h1fsBand2.SelectedIndex != b2 && b2 >= 0) h1fsBand2.SelectedIndex = b2;
 
-                DSPMode sm1 = _h1CellSubCtrl[0] ? GetSubMode() : _rx1_dsp_mode;
-                DSPMode sm2 = _h1CellSubCtrl[1] ? radio.GetDSPRX(1, 1).DSPMode : _rx2_dsp_mode;
-                int m1 = Array.IndexOf(H1FsModes, sm1);
+                int m1 = Array.IndexOf(H1FsModes, _rx1_dsp_mode);
                 if (h1fsMode1.SelectedIndex != m1 && m1 >= 0) h1fsMode1.SelectedIndex = m1;
-                int m2 = Array.IndexOf(H1FsModes, sm2);
+                int m2 = Array.IndexOf(H1FsModes, _rx2_dsp_mode);
                 if (h1fsMode2.SelectedIndex != m2 && m2 >= 0) h1fsMode2.SelectedIndex = m2;
 
-                // In SUB CTRL the sliders must track the sub, not the RX; otherwise
-                // every handler sync snaps the thumb back to the receiver value.
-                if (_h1CellSubCtrl[0])
-                {
-                    H1FsSliderFit(h1fsAgc1, ptbSubRX1Gain);
-                    h1fsAgc1.SetValueQuiet(ptbSubRX1Gain.Value);
-                    h1fsAgcVal1.Text = ptbSubRX1Gain.Value.ToString();
-                    H1FsSliderFit(h1fsAf1, ptbAF);
-                    int saf1 = H1FsClamp((int)Math.Round(_h1SubAf1 * 100.0), 0, 100);
-                    h1fsAf1.SetValueQuiet(saf1); h1fsAfVal1.Text = saf1.ToString();
-                }
-                else
-                {
-                    H1FsSliderFit(h1fsAgc1, ptbRF);
-                    H1FsSliderFit(h1fsAf1, ptbAF);
-                    H1FsSliderText(h1fsAgcVal1, ptbRF);
-                    H1FsSliderText(h1fsAfVal1, ptbAF);
-                }
-                if (_h1CellSubCtrl[1])
-                {
-                    H1FsSliderFit(h1fsAgc2, ptbSubRX2Gain);
-                    h1fsAgc2.SetValueQuiet(ptbSubRX2Gain.Value);
-                    h1fsAgcVal2.Text = ptbSubRX2Gain.Value.ToString();
-                    H1FsSliderFit(h1fsAf2, ptbRX2AF);
-                    int saf2 = H1FsClamp((int)Math.Round(_h1SubAf2 * 100.0), 0, 100);
-                    h1fsAf2.SetValueQuiet(saf2); h1fsAfVal2.Text = saf2.ToString();
-                }
-                else
-                {
-                    H1FsSliderFit(h1fsAgc2, ptbRX2RF);
-                    H1FsSliderFit(h1fsAf2, ptbRX2AF);
-                    H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
-                    H1FsSliderText(h1fsAfVal2, ptbRX2AF);
-                }
+                H1FsSliderFit(h1fsAgc1, ptbRF);
+                H1FsSliderFit(h1fsAf1, ptbAF);
+                H1FsSliderFit(h1fsAgc2, ptbRX2RF);
+                H1FsSliderFit(h1fsAf2, ptbRX2AF);
+                // H1 (user 2026-11-09): the numbers beside the sliders
+                H1FsSliderText(h1fsAgcVal1, ptbRF);
+                H1FsSliderText(h1fsAfVal1, ptbAF);
+                H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
+                H1FsSliderText(h1fsAfVal2, ptbRX2AF);
                 // H1 (user 2026-11-09): the cell zoom sliders show the display's state
                 H1FsZoomSync(h1fsZoom1, h1fsZoomVal1, Display.H1CellZoom[0]);
                 H1FsZoomSync(h1fsZoom2, h1fsZoomVal2, Display.H1CellZoom[1]);
@@ -9950,17 +9922,9 @@ namespace Thetis
             int mrow = c == h1fsMode1 ? 0 : 1;
             if (_h1CellSubCtrl[mrow])
             {
-                // Drive the sub directly. Setting the sub combo to its already-selected
-                // index raises no event, which made a USB->LSB->USB cycle unreliable.
-                if (mrow == 0) SetSubMode(H1FsModes[c.SelectedIndex]);
-                else SetSub2Mode(H1FsModes[c.SelectedIndex]);
                 ComboBoxTS sub = mrow == 0 ? comboSubRX1Mode : comboSubRX2Mode;
-                if (sub != null && sub.SelectedIndex != c.SelectedIndex)
-                {
-                    if (mrow == 0) _sub_console_updating = true; else _sub2_console_updating = true;
-                    sub.SelectedIndex = c.SelectedIndex;
-                    if (mrow == 0) _sub_console_updating = false; else _sub2_console_updating = false;
-                }
+                int mi = sub != null ? Array.IndexOf(H1FsModes, H1FsModes[c.SelectedIndex]) : -1;
+                if (sub != null) sub.SelectedIndex = c.SelectedIndex;
                 H1SpacePttTrace("fs strip: SUB CTRL mode rx" + (mrow + 1) + " -> " + H1FsModeNames[c.SelectedIndex]);
                 H1FsSync();
                 return;
@@ -10030,14 +9994,12 @@ namespace Thetis
             {
                 if (t == h1fsAgc1 || t == h1fsAgc2)
                 {
-                    if (srow == 0) SetSubAgcGain(H1FsClamp(t.Value, -20, 120));
-                    else SetSub2AgcGain(H1FsClamp(t.Value, -20, 120));
+                    PrettyTrackBar g = srow == 0 ? ptbSubRX1Gain : ptbSubRX2Gain;
+                    if (g != null) { g.Value = H1FsClamp(t.Value, g.Minimum, g.Maximum); if (srow == 0) ptbSubRX1Gain_Scroll(g, EventArgs.Empty); else ptbSubRX2Gain_Scroll(g, EventArgs.Empty); }
                 }
                 else
                 {
-                    double gv = H1FsClamp(t.Value, 0, 100) / 100.0;
-                    if (srow == 0) { _h1SubAf1 = gv; WDSP.SetRXAPanelGain1(WDSP.id(0, 1), gv); }
-                    else { _h1SubAf2 = gv; WDSP.SetRXAPanelGain1(WDSP.id(2, 1), gv); }
+                    try { radio.GetDSPRX(srow, 1).RXOutputGain = H1FsClamp(t.Value, 0, 100) / 100.0; } catch { }
                 }
                 H1FsSync();
                 return;
@@ -11660,7 +11622,7 @@ for (int zr = 0; zr < 8; zr++)
             {
                 s.AgcVal.Text = s.Agc.Value.ToString();
                 if (_h1CellSubCtrl[row])
-                    HeadlessSubRX.SetAgcTop(row, s.Agc.Value);
+                    HeadlessSubRX.ApplyAgc(row, HeadlessSubRX.Get(row).AgcMode, s.Agc.Value);
                 else
                     HeadlessSliceManager.Instance.SetSliceAgcTop(row, s.Agc.Value);
             }
@@ -13350,7 +13312,6 @@ for (int zr = 0; zr < 8; zr++)
                 SetSubNRRun(1, chkSubRX1NR != null && chkSubRX1NR.Checked);
                 if (chkSubRX1MUT != null && chkSubRX1MUT.Checked) s.RXOutputGain = 0.0;
                 else s.RXOutputGain = (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
-                WDSP.SetRXAPanelGain1(WDSP.id(0, 1), s.RXOutputGain);
             }
             else
             {
@@ -13377,7 +13338,6 @@ for (int zr = 0; zr < 8; zr++)
                 SetSubNRRun(2, chkSubRX2NR != null && chkSubRX2NR.Checked);
                 if (chkSubRX2MUT != null && chkSubRX2MUT.Checked) s.RXOutputGain = 0.0;
                 else s.RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
-                WDSP.SetRXAPanelGain1(WDSP.id(2, 1), s.RXOutputGain);
             }
         }
 
