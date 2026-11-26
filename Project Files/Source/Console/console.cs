@@ -67820,9 +67820,12 @@ private void incrementMutliMeterDisplayModeRX2()
                         int cw = H1CellWidthPx();
                         int cx = e.X - (h1ce / 4) * cw;
                         bool blue = current_click_tune_mode == ClickTuneMode.VFOB;
-                        int el = blue ? Display.H1RowSubWinLeft[h1ce] : Display.H1RowWinLeft[h1ce];
-                        int er = blue ? Display.H1RowSubWinRight[h1ce] : Display.H1RowWinRight[h1ce];
-                        if (er > el && (Math.Abs(cx - el) < 3 || Math.Abs(cx - er) < 3))
+                        int ml = Display.H1RowWinLeft[h1ce], mr = Display.H1RowWinRight[h1ce];
+                        int sl = Display.H1RowSubWinLeft[h1ce], sr = Display.H1RowSubWinRight[h1ce];
+                        bool nearMain = mr > ml && (Math.Abs(cx - ml) < 3 || Math.Abs(cx - mr) < 3);
+                        bool nearSub = Display.H1RowSubEnabled[h1ce] && sr > sl
+                            && (Math.Abs(cx - sl) < 3 || Math.Abs(cx - sr) < 3);
+                        if (blue ? nearSub : (nearMain || nearSub))
                             next_cursor = Cursors.SizeWE;
                     }
                 }
