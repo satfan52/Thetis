@@ -683,6 +683,11 @@ namespace Thetis
 
                     // Turn ON WDSP processing for this slice channel
                     WDSP.SetChannelState(slice.ChannelId, 1, 0);
+                    // Channel start initialises WDSP state; apply the AGC preset
+                    // again afterwards or the channel's own start-up timing wins.
+                    WDSP.SetRXAAGCMode(slice.ChannelId, slice.AgcMode);
+                    ApplyAgcPreset(slice.ChannelId, slice.AgcMode);
+                    WDSP.SetRXAAGCTop(slice.ChannelId, slice.AgcTop);
                     // H1 (M2): the noise controls are per DSP channel; NB acts on the
                     // shared DDC stream, so it is set with the DDC-wide call.
                     ApplySliceNr(slice);

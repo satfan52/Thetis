@@ -117,6 +117,12 @@ namespace Thetis
                     WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5 * 2.0 * s.Gain);
                 }
                 WDSP.SetChannelState(Ch(rx, 1), on ? 1 : 0, on ? 0 : 1);
+                if (on)
+                {
+                    WDSP.SetRXAAGCMode(Ch(rx, 1), s.AgcMode);
+                    ApplyAgcPreset(Ch(rx, 1), s.AgcMode);
+                    WDSP.SetRXAAGCTop(Ch(rx, 1), 90.0);
+                }
                 s.Enabled = on;
                 // H1 (audio fix 2026-11-21): switching the sub off must give the main channel its
                 // own panel gain back - the balance law had scaled it to zero while the sub was
