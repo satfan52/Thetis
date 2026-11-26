@@ -266,8 +266,12 @@ namespace Thetis
             // Filter-aware passband edges: the carrier may reach the DDC edge
             // only where its passband does not extend past it (USB sits above
             // the carrier, LSB below, AM/SAM/NFM symmetric).
-            double upper = edge - Math.Max(0.0, (double)st.FilterHigh);
-            double lower = -edge + Math.Max(0.0, (double)(-st.FilterLow));
+            // Same asymmetric rule as SubRX1/2: a USB passband
+            // [low,high] may sit as low as -edge-low and as high as
+            // edge-high; LSB mirrors it. Using only the positive
+            // filter edge here let the window leave the DDC on one side.
+            double upper = edge - (double)st.FilterHigh;
+            double lower = -edge - (double)st.FilterLow;
             double raw = offset;
             if (offset > upper) offset = upper;
             if (offset < lower) offset = lower;
