@@ -10533,8 +10533,9 @@ for (int zr = 0; zr < 8; zr++)
                             double hz = low + (double)cellX / cellW * span - Display.H1RowSubOffsetHz[cell];
                             int v = (int)Math.Round(hz);
                             int nlow = _h1SpareSubStartLow, nhigh = _h1SpareSubStartHigh;
-                            if (_h1SpareDragKind == 5) nlow = Math.Min(v, nhigh - 10);
-                            else nhigh = Math.Max(v, nlow + 10);
+                            int minW = Math.Max(10, HeadlessSliceManager.Instance.GetSliceRateHz(rx) / 200);
+                            if (_h1SpareDragKind == 5) nlow = Math.Min(v, nhigh - minW);
+                            else nhigh = Math.Max(v, nlow + minW);
                             HeadlessSubRX.ApplyFilter(rx, nlow, nhigh);
                             break;
                         }
@@ -10608,6 +10609,27 @@ for (int zr = 0; zr < 8; zr++)
             }
             catch { }
         }
+        private int _h1SubWinProbeAt;
+        private void H1ProbeSubWindow(int r)
+        {
+            if (r != 2) return;
+            int now = Environment.TickCount;
+            if ((uint)(now - _h1SubWinProbeAt) < 800) return;
+            _h1SubWinProbeAt = now;
+            try
+            {
+                HeadlessSlice sl = HeadlessSliceManager.Instance.GetSlice(r);
+                HeadlessSubRX.State ss = HeadlessSubRX.Get(r);
+                H1SpacePttTrace("subwin2: en=" + ss.Enabled + " subF=" + ss.FreqHz
+                    + " centre=" + (HeadlessSliceManager.Instance.GetDisplayCenterMHz(r) * 1e6).ToString("F0")
+                    + " off=" + Display.H1RowSubOffsetHz[r] + " filt=" + ss.FilterLow + "/" + ss.FilterHigh
+                    + " rowLow/High=" + Display.H1RowSubLow[r] + "/" + Display.H1RowSubHigh[r]
+                    + " win=" + Display.H1RowSubWinLeft[r] + ".." + Display.H1RowSubWinRight[r]
+                    + " cellW=" + H1CellWidthPx() + " rate=" + HeadlessSliceManager.Instance.GetSliceRateHz(r));
+            }
+            catch { }
+        }
+
         private void H1PublishCellMeters()
         {
             try
@@ -10647,6 +10669,7 @@ for (int zr = 0; zr < 8; zr++)
                 Display.H1CellMeterFwd = H1TxFwdW;
                 for (int r = 0; r < 8; r++)
                 {
+                    H1ProbeSubWindow(r);
                     if (r == 0)
                     {
                         Display.H1CellMeterMain[0] = m1;
