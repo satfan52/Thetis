@@ -358,26 +358,6 @@ namespace Thetis
             catch { }
         }
 
-        public static void SetAgcConfig(int rx, AGCMode mode, double fixedDb,
-            int hang, int decay, int slope, int attack, int hangThreshold)
-        {
-            var s = Get(rx);
-            s.AgcMode = mode; s.AgcGainDb = fixedDb;
-            int ch = Ch(rx, 1);
-            try
-            {
-                WDSP.SetRXAAGCMode(ch, mode);
-                WDSP.SetRXAAGCHang(ch, hang);
-                WDSP.SetRXAAGCDecay(ch, decay);
-                WDSP.SetRXAAGCSlope(ch, slope);
-                WDSP.SetRXAAGCAttack(ch, attack);
-                WDSP.SetRXAAGCHangThreshold(ch, hangThreshold);
-                if (mode == AGCMode.FIXD) WDSP.SetRXAAGCFixed(ch, fixedDb);
-                else WDSP.SetRXAAGCTop(ch, fixedDb);
-            }
-            catch { }
-        }
-
         public static void ApplyAgc(int rx, AGCMode mode, double fixedDb)
         {
             var s = Get(rx); s.AgcMode = mode; s.AgcGainDb = fixedDb;

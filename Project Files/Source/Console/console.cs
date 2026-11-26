@@ -8289,6 +8289,7 @@ namespace Thetis
         private CheckBoxTS h1ListenRX1, h1ListenRX2, h1ListenS1, h1ListenS2;
         private bool _h1ListenBuilt = false;
         private bool _h1ListenSync = false;
+        private bool _h1AudioTagGuard = false;
         private const int H1ListenPillW = 62;   // the stock pills are 45 wide; SUB1/SUB2 need the room
         private const int H1ListenPillH = 24;
         private const int H1ListenPillGap = 4;
@@ -10807,27 +10808,6 @@ for (int zr = 0; zr < 8; zr++)
             return -1;
         }
 
-        private void H1ApplyDdc3AgcCopy()
-        {
-            try
-            {
-                RadioDSPRX rx2 = radio.GetDSPRX(1, 0);
-                RadioDSPRX sx2 = radio.GetDSPRX(1, 1);
-                if (HeadlessSliceManager.Instance.GetSlice(2) != null)
-                    HeadlessSliceManager.Instance.SetSliceAgcConfig(2,
-                        RX2AGCMode, ptbRX2RF != null ? ptbRX2RF.Value : 90.0,
-                        rx2.RXAGCHang, rx2.RXAGCDecay, rx2.RXAGCSlope, 2,
-                        rx2.RXAGCHangThreshold);
-                HeadlessSubRX.SetAgcConfig(2,
-                    sx2.RXAGCMode,
-                    ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : 90.0,
-                    sx2.RXAGCHang, sx2.RXAGCDecay, sx2.RXAGCSlope, 2,
-                    sx2.RXAGCHangThreshold);
-                H1SpacePttTrace("ddc3: exact AGC copy rx2 main/sub to rx3 main/sub");
-            }
-            catch { }
-        }
-
         private void H1CellStripsBuild()
         {
             if (_h1cellStripsBuilt) return;
@@ -10837,21 +10817,10 @@ for (int zr = 0; zr < 8; zr++)
                 _h1AgcDefaultsCopied = true;
                 try
                 {
-                    // TEST (user 2026-11-26): DDC3 only - make RX3 and SubRX3
-                    // use exactly RX2's and SubRX2's AGC configuration.
-                    RadioDSPRX rx2 = radio.GetDSPRX(1, 0);
-                    RadioDSPRX sx2 = radio.GetDSPRX(1, 1);
-                    if (HeadlessSliceManager.Instance.GetSlice(2) != null)
-                        HeadlessSliceManager.Instance.SetSliceAgcConfig(2,
-                            RX2AGCMode,
-                            ptbRX2RF != null ? ptbRX2RF.Value : 90.0,
-                            rx2.RXAGCHang, rx2.RXAGCDecay, rx2.RXAGCSlope, 2,
-                            rx2.RXAGCHangThreshold);
-                    HeadlessSubRX.SetAgcConfig(2,
-                        sx2.RXAGCMode,
-                        ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : 90.0,
-                        sx2.RXAGCHang, sx2.RXAGCDecay, sx2.RXAGCSlope, 2,
-                        sx2.RXAGCHangThreshold);
+                    double rx2Agc = ptbRX2RF != null ? ptbRX2RF.Value : 90.0;
+                    for (int gr = 2; gr < 8; gr++)
+                        if (HeadlessSliceManager.Instance.GetSlice(gr) != null)
+                            HeadlessSliceManager.Instance.SetSliceAgcTop(gr, rx2Agc);
                 }
                 catch { }
             }
@@ -10984,20 +10953,8 @@ for (int zr = 0; zr < 8; zr++)
                 c.Visible = true;
                 c.BringToFront();
             }
+            H1EnforceAudioTagLimit();
             H1CellStripsLayout();
-            try
-            {
-                ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    try
-                    {
-                        Thread.Sleep(1200);
-                        BeginInvoke((Action)(() => H1ApplyDdc3AgcCopy()));
-                    }
-                    catch { }
-                });
-            }
-            catch { }
         }
 
         private void H1CellStripsHide()
@@ -11392,6 +11349,55 @@ for (int zr = 0; zr < 8; zr++)
             }
         }
 
+        // H1 (user 2026-11-26): at most one main RX tag and one sub RX tag.
+        private void H1ExclusiveAudioTag(int rx, bool sub)
+        {
+            if (_h1AudioTagGuard) return;
+            _h1AudioTagGuard = true;
+            try
+            {
+                if (!sub)
+                {
+                    if (rx != 0 && chkVAC1MUT != null && !chkVAC1MUT.Checked) chkVAC1MUT.Checked = true;
+                    if (rx != 1 && chkVAC2MUT != null && !chkVAC2MUT.Checked) chkVAC2MUT.Checked = true;
+                    for (int other = 2; other < 8; other++)
+                    {
+                        if (other == rx) continue;
+                        if ((_h1SpareAudioMask & (1 << (2 * other))) != 0)
+                            H1SetSpareAudio(other, false, false);
+                    }
+                }
+                else
+                {
+                    if (rx != 0 && chkSubRX1MUT != null && !chkSubRX1MUT.Checked) chkSubRX1MUT.Checked = true;
+                    if (rx != 1 && chkSubRX2MUT != null && !chkSubRX2MUT.Checked) chkSubRX2MUT.Checked = true;
+                    for (int other = 2; other < 8; other++)
+                    {
+                        if (other == rx) continue;
+                        if ((_h1SpareAudioMask & (1 << (2 * other + 1))) != 0)
+                            H1SetSpareAudio(other, true, false);
+                    }
+                }
+                H1RxWindowSync();
+            }
+            finally { _h1AudioTagGuard = false; }
+        }
+
+        private void H1EnforceAudioTagLimit()
+        {
+            int mainRx = -1, subRx = -1;
+            if (chkVAC1MUT != null && !chkVAC1MUT.Checked) mainRx = 0;
+            else if (chkVAC2MUT != null && !chkVAC2MUT.Checked) mainRx = 1;
+            else for (int r = 2; r < 8; r++)
+                if ((_h1SpareAudioMask & (1 << (2 * r))) != 0) { mainRx = r; break; }
+            if (chkSubRX1MUT != null && !chkSubRX1MUT.Checked) subRx = 0;
+            else if (chkSubRX2MUT != null && !chkSubRX2MUT.Checked) subRx = 1;
+            else for (int r = 2; r < 8; r++)
+                if ((_h1SpareAudioMask & (1 << (2 * r + 1))) != 0) { subRx = r; break; }
+            if (mainRx >= 0) H1ExclusiveAudioTag(mainRx, false);
+            if (subRx >= 0) H1ExclusiveAudioTag(subRx, true);
+        }
+
         private void H1ToggleSpareAudio(int rx, bool sub)
         {
             bool on = (_h1SpareAudioMask & (1 << (2 * rx + (sub ? 1 : 0)))) == 0;
@@ -11399,18 +11405,7 @@ for (int zr = 0; zr < 8; zr++)
             // the new one on first, then the other spare cells off - the VAC stays on
             // across the hand-over instead of blipping off and on again.
             H1SetSpareAudio(rx, sub, on);
-            if (on)
-            {
-                for (int other = 2; other < 8; other++)
-                {
-                    if (other == rx) continue;
-                    if (H1SpareSliceHasAudio(other))
-                    {
-                        H1SetSpareAudio(other, false, false);
-                        H1SetSpareAudio(other, true, false);
-                    }
-                }
-            }
+            if (on) H1ExclusiveAudioTag(rx, sub);
             H1PublishCellMeters();
             H1SpacePttTrace("window click: RX" + (rx + 1) + (sub ? " SUB" : "")
                 + " audio " + (on ? "on" : "off") + " mask=0x" + _h1SpareAudioMask.ToString("X"));
@@ -31721,28 +31716,28 @@ for (int zr = 0; zr < 8; zr++)
                         if (chkVAC1MUT != null)
                         {
                             chkVAC1MUT.Checked = !chkVAC1MUT.Checked;
-                            if (!chkVAC1MUT.Checked) chkMUT.Checked = false;
+                            if (!chkVAC1MUT.Checked) { chkMUT.Checked = false; H1ExclusiveAudioTag(0, false); }
                         }
                         break;
                     case 1:
                         if (chkSubRX1MUT != null)
                         {
                             chkSubRX1MUT.Checked = !chkSubRX1MUT.Checked;
-                            if (!chkSubRX1MUT.Checked) chkMUT.Checked = false;
+                            if (!chkSubRX1MUT.Checked) { chkMUT.Checked = false; H1ExclusiveAudioTag(0, true); }
                         }
                         break;
                     case 2:
                         if (chkVAC2MUT != null)
                         {
                             chkVAC2MUT.Checked = !chkVAC2MUT.Checked;
-                            if (!chkVAC2MUT.Checked) chkRX2Mute.Checked = false;
+                            if (!chkVAC2MUT.Checked) { chkRX2Mute.Checked = false; H1ExclusiveAudioTag(1, false); }
                         }
                         break;
                     case 3:
                         if (chkSubRX2MUT != null)
                         {
                             chkSubRX2MUT.Checked = !chkSubRX2MUT.Checked;
-                            if (!chkSubRX2MUT.Checked) chkRX2Mute.Checked = false;
+                            if (!chkSubRX2MUT.Checked) { chkRX2Mute.Checked = false; H1ExclusiveAudioTag(1, true); }
                         }
                         break;
                 }
