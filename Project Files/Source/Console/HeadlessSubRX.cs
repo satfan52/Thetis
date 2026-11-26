@@ -100,6 +100,7 @@ namespace Thetis
                     WDSP.RXANBPSetFreqs(Ch(rx, 1), s.FilterLow, s.FilterHigh);
                     WDSP.SetRXASNBAOutputBandwidth(Ch(rx, 1), s.FilterLow, s.FilterHigh);
                     WDSP.SetRXAAGCMode(Ch(rx, 1), s.AgcMode);
+                    ApplyAgcPreset(Ch(rx, 1), s.AgcMode);
                     WDSP.SetRXAAGCTop(Ch(rx, 1), 90.0);
                     WDSP.SetRXAAGCFixed(Ch(rx, 1), s.AgcGainDb);
                     WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5);
@@ -331,10 +332,31 @@ namespace Thetis
             try { WDSP.SetRXAAGCTop(Ch(rx, 1), db); } catch { }
         }
 
+        private static void ApplyAgcPreset(int ch, AGCMode mode)
+        {
+            int hang = 0, decay = 250;
+            switch (mode)
+            {
+                case AGCMode.LONG: hang = 2000; decay = 2000; break;
+                case AGCMode.SLOW: hang = 1000; decay = 500; break;
+                case AGCMode.MED:  hang = 0;    decay = 250; break;
+                case AGCMode.FAST: hang = 0;    decay = 50;  break;
+            }
+            try
+            {
+                WDSP.SetRXAAGCHang(ch, hang);
+                WDSP.SetRXAAGCDecay(ch, decay);
+                WDSP.SetRXAAGCSlope(ch, 0);
+                WDSP.SetRXAAGCAttack(ch, 2);
+            }
+            catch { }
+        }
+
         public static void ApplyAgc(int rx, AGCMode mode, double fixedDb)
         {
             var s = Get(rx); s.AgcMode = mode; s.AgcGainDb = fixedDb;
             WDSP.SetRXAAGCMode(Ch(rx, 1), mode);
+            ApplyAgcPreset(Ch(rx, 1), mode);
             WDSP.SetRXAAGCFixed(Ch(rx, 1), fixedDb);
         }
 

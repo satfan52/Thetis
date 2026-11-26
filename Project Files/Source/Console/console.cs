@@ -8655,6 +8655,7 @@ namespace Thetis
         private readonly List<Control> _h1CellStripControls = new List<Control>();
         private readonly Dictionary<object, int> _h1CellStripOwner = new Dictionary<object, int>();
         private bool _h1cellStripsBuilt = false;
+        private bool _h1AgcDefaultsCopied = false;
         private readonly bool[] _h1CellSubCtrl = new bool[8];
         private CheckBoxTS h1FsTunePill, h1FsPttPill, h1FsMoxPill;
         private bool _h1PttOwnedMox = false;
@@ -10796,6 +10797,18 @@ for (int zr = 0; zr < 8; zr++)
         {
             if (_h1cellStripsBuilt) return;
             _h1cellStripsBuilt = true;
+            if (!_h1AgcDefaultsCopied)
+            {
+                _h1AgcDefaultsCopied = true;
+                try
+                {
+                    double rx2Agc = ptbRX2RF != null ? ptbRX2RF.Value : 90.0;
+                    for (int gr = 2; gr < 8; gr++)
+                        if (HeadlessSliceManager.Instance.GetSlice(gr) != null)
+                            HeadlessSliceManager.Instance.SetSliceAgcTop(gr, rx2Agc);
+                }
+                catch { }
+            }
             try
             {
             h1cellStrips = new H1CellStrip[8];

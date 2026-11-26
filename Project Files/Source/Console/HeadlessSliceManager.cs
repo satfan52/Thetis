@@ -446,6 +446,26 @@ namespace Thetis
             catch { }
         }
 
+        private static void ApplyAgcPreset(int ch, AGCMode mode)
+        {
+            int hang = 0, decay = 250;
+            switch (mode)
+            {
+                case AGCMode.LONG: hang = 2000; decay = 2000; break;
+                case AGCMode.SLOW: hang = 1000; decay = 500; break;
+                case AGCMode.MED:  hang = 0;    decay = 250; break;
+                case AGCMode.FAST: hang = 0;    decay = 50;  break;
+            }
+            try
+            {
+                WDSP.SetRXAAGCHang(ch, hang);
+                WDSP.SetRXAAGCDecay(ch, decay);
+                WDSP.SetRXAAGCSlope(ch, 0);
+                WDSP.SetRXAAGCAttack(ch, 2);
+            }
+            catch { }
+        }
+
         public void SetSliceNr(int rx, int mode)
         {
             lock (_lock)
@@ -657,6 +677,7 @@ namespace Thetis
                     WDSP.RXANBPSetFreqs(slice.ChannelId, slice.FilterLow, slice.FilterHigh);
                     WDSP.SetRXASNBAOutputBandwidth(slice.ChannelId, slice.FilterLow, slice.FilterHigh);
                     WDSP.SetRXAAGCMode(slice.ChannelId, slice.AgcMode);   // re-init from the slice's preset, not MED
+                    ApplyAgcPreset(slice.ChannelId, slice.AgcMode);
                     WDSP.SetRXAAGCTop(slice.ChannelId, slice.AgcTop);
                     WDSP.SetRXAPanelGain1(slice.ChannelId, slice.AudioGain);
 
