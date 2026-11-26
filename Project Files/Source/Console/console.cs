@@ -9283,45 +9283,80 @@ namespace Thetis
                 int b2 = Array.IndexOf(H1FsBands, rx2_band);
                 if (h1fsBand2.SelectedIndex != b2 && b2 >= 0) h1fsBand2.SelectedIndex = b2;
 
-                int m1 = Array.IndexOf(H1FsModes, _rx1_dsp_mode);
+                bool c1 = _h1CellSubCtrl[0], c2 = _h1CellSubCtrl[1];
+                DSPMode sm1 = c1 ? GetSubMode() : _rx1_dsp_mode;
+                DSPMode sm2 = c2 ? radio.GetDSPRX(1, 1).DSPMode : _rx2_dsp_mode;
+                int m1 = Array.IndexOf(H1FsModes, sm1);
                 if (h1fsMode1.SelectedIndex != m1 && m1 >= 0) h1fsMode1.SelectedIndex = m1;
-                int m2 = Array.IndexOf(H1FsModes, _rx2_dsp_mode);
+                int m2 = Array.IndexOf(H1FsModes, sm2);
                 if (h1fsMode2.SelectedIndex != m2 && m2 >= 0) h1fsMode2.SelectedIndex = m2;
 
-                H1FsSliderFit(h1fsAgc1, ptbRF);
-                H1FsSliderFit(h1fsAf1, ptbAF);
-                H1FsSliderFit(h1fsAgc2, ptbRX2RF);
-                H1FsSliderFit(h1fsAf2, ptbRX2AF);
-                // H1 (user 2026-11-09): the numbers beside the sliders
-                H1FsSliderText(h1fsAgcVal1, ptbRF);
-                H1FsSliderText(h1fsAfVal1, ptbAF);
-                H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
-                H1FsSliderText(h1fsAfVal2, ptbRX2AF);
+                if (c1)
+                {
+                    H1FsSliderFit(h1fsAgc1, ptbSubRX1Gain);
+                    h1fsAgc1.SetValueQuiet(ptbSubRX1Gain.Value);
+                    h1fsAgcVal1.Text = ptbSubRX1Gain.Value.ToString();
+                    H1FsSliderFit(h1fsAf1, ptbRX1Gain);
+                    h1fsAf1.SetValueQuiet(ptbRX1Gain.Value);
+                    h1fsAfVal1.Text = ptbRX1Gain.Value.ToString();
+                }
+                else
+                {
+                    H1FsSliderFit(h1fsAgc1, ptbRF);
+                    H1FsSliderFit(h1fsAf1, ptbAF);
+                    H1FsSliderText(h1fsAgcVal1, ptbRF);
+                    H1FsSliderText(h1fsAfVal1, ptbAF);
+                }
+                if (c2)
+                {
+                    H1FsSliderFit(h1fsAgc2, ptbSubRX2Gain);
+                    h1fsAgc2.SetValueQuiet(ptbSubRX2Gain.Value);
+                    h1fsAgcVal2.Text = ptbSubRX2Gain.Value.ToString();
+                    H1FsSliderFit(h1fsAf2, ptbRX2SubGain);
+                    h1fsAf2.SetValueQuiet(ptbRX2SubGain.Value);
+                    h1fsAfVal2.Text = ptbRX2SubGain.Value.ToString();
+                }
+                else
+                {
+                    H1FsSliderFit(h1fsAgc2, ptbRX2RF);
+                    H1FsSliderFit(h1fsAf2, ptbRX2AF);
+                    H1FsSliderText(h1fsAgcVal2, ptbRX2RF);
+                    H1FsSliderText(h1fsAfVal2, ptbRX2AF);
+                }
                 // H1 (user 2026-11-09): the cell zoom sliders show the display's state
                 H1FsZoomSync(h1fsZoom1, h1fsZoomVal1, Display.H1CellZoom[0]);
                 H1FsZoomSync(h1fsZoom2, h1fsZoomVal2, Display.H1CellZoom[1]);
                 H1AutoUiSync();
 
                 // NR is a five-state cycle, so the pill's face is the mode, not a tick
-                int nr1 = GetSelectedNR(1), nr2 = GetSelectedNR(2);
+                int nr1 = c1 ? _sub_nr_selected[0] : GetSelectedNR(1);
+                int nr2 = c2 ? _sub_nr_selected[1] : GetSelectedNR(2);
+                bool a1 = c1 ? (chkSubRX1ANF != null && chkSubRX1ANF.Checked) : chkANF.Checked;
+                bool nb1 = c1 ? (chkSubRX1NB2 != null && chkSubRX1NB2.Checked) : chkNB.Checked;
+                bool pbin1 = c1 ? (chkSubRX1BIN != null && chkSubRX1BIN.Checked) : chkBIN.Checked;
+                bool a2 = c2 ? (chkSubRX2ANF != null && chkSubRX2ANF.Checked) : chkRX2ANF.Checked;
+                bool nb2 = c2 ? (chkSubRX2NB2 != null && chkSubRX2NB2.Checked) : chkRX2NB.Checked;
+                bool pbin2 = c2 ? (chkSubRX2BIN != null && chkSubRX2BIN.Checked) : chkRX2BIN.Checked;
                 H1FsPillFace(h1fsNr1, nr1 > 0, nr1 > 0 ? "NR" + nr1 : "NR");
                 H1FsPillFace(h1fsNr2, nr2 > 0, nr2 > 0 ? "NR" + nr2 : "NR");
-                H1FsPillFace(h1fsAnf1, chkANF.Checked, "ANF");
-                H1FsPillFace(h1fsNb1, chkNB.Checked, "NB");
-                H1FsPillFace(h1fsBin1, chkBIN.Checked, "BIN");
-                H1FsPillFace(h1fsAnf2, chkRX2ANF.Checked, "ANF");
-                H1FsPillFace(h1fsNb2, chkRX2NB.Checked, "NB");
-                H1FsPillFace(h1fsBin2, chkRX2BIN.Checked, "BIN");
+                H1FsPillFace(h1fsAnf1, a1, "ANF");
+                H1FsPillFace(h1fsNb1, nb1, "NB");
+                H1FsPillFace(h1fsBin1, pbin1, "BIN");
+                H1FsPillFace(h1fsAnf2, a2, "ANF");
+                H1FsPillFace(h1fsNb2, nb2, "NB");
+                H1FsPillFace(h1fsBin2, pbin2, "BIN");
                 H1FsPillFace(h1fsCtun1, chkFWCATU.Checked, "CTUN");
                 H1FsPillFace(h1fsCtun2, chkX2TR.Checked, "CTUN");
-                if (h1fsNr1.Checked != chkNR.Checked) h1fsNr1.Checked = chkNR.Checked;
-                if (h1fsAnf1.Checked != chkANF.Checked) h1fsAnf1.Checked = chkANF.Checked;
-                if (h1fsNb1.Checked != chkNB.Checked) h1fsNb1.Checked = chkNB.Checked;
-                if (h1fsBin1.Checked != chkBIN.Checked) h1fsBin1.Checked = chkBIN.Checked;
-                if (h1fsNr2.Checked != chkRX2NR.Checked) h1fsNr2.Checked = chkRX2NR.Checked;
-                if (h1fsAnf2.Checked != chkRX2ANF.Checked) h1fsAnf2.Checked = chkRX2ANF.Checked;
-                if (h1fsNb2.Checked != chkRX2NB.Checked) h1fsNb2.Checked = chkRX2NB.Checked;
-                if (h1fsBin2.Checked != chkRX2BIN.Checked) h1fsBin2.Checked = chkRX2BIN.Checked;
+                bool cnr1 = c1 ? (nr1 > 0) : chkNR.Checked;
+                bool cnr2 = c2 ? (nr2 > 0) : chkRX2NR.Checked;
+                if (h1fsNr1.Checked != cnr1) h1fsNr1.Checked = cnr1;
+                if (h1fsAnf1.Checked != a1) h1fsAnf1.Checked = a1;
+                if (h1fsNb1.Checked != nb1) h1fsNb1.Checked = nb1;
+                if (h1fsBin1.Checked != pbin1) h1fsBin1.Checked = pbin1;
+                if (h1fsNr2.Checked != cnr2) h1fsNr2.Checked = cnr2;
+                if (h1fsAnf2.Checked != a2) h1fsAnf2.Checked = a2;
+                if (h1fsNb2.Checked != nb2) h1fsNb2.Checked = nb2;
+                if (h1fsBin2.Checked != pbin2) h1fsBin2.Checked = pbin2;
                 H1FsTunePillSync();
                 if (_h1FullScreenPanafall && _h1cellStripsBuilt) H1CellStripsSync();
             }
@@ -9922,10 +9957,20 @@ namespace Thetis
             int mrow = c == h1fsMode1 ? 0 : 1;
             if (_h1CellSubCtrl[mrow])
             {
+                DSPMode sm = H1FsModes[c.SelectedIndex];
+                int lo, hi;
+                H1SubModeFilter(sm, out lo, out hi);
+                if (mrow == 0) { SetSubMode(sm); SetSubFilter(lo, hi); }
+                else { SetSub2Mode(sm); SetSub2Filter(lo, hi); }
                 ComboBoxTS sub = mrow == 0 ? comboSubRX1Mode : comboSubRX2Mode;
-                int mi = sub != null ? Array.IndexOf(H1FsModes, H1FsModes[c.SelectedIndex]) : -1;
-                if (sub != null) sub.SelectedIndex = c.SelectedIndex;
-                H1SpacePttTrace("fs strip: SUB CTRL mode rx" + (mrow + 1) + " -> " + H1FsModeNames[c.SelectedIndex]);
+                if (sub != null && sub.SelectedIndex != c.SelectedIndex)
+                {
+                    if (mrow == 0) _sub_console_updating = true; else _sub2_console_updating = true;
+                    sub.SelectedIndex = c.SelectedIndex;
+                    if (mrow == 0) _sub_console_updating = false; else _sub2_console_updating = false;
+                }
+                H1SpacePttTrace("fs strip: SUB CTRL mode rx" + (mrow + 1) + " -> " + H1FsModeNames[c.SelectedIndex]
+                    + " filter " + lo + "/" + hi);
                 H1FsSync();
                 return;
             }
@@ -9994,12 +10039,22 @@ namespace Thetis
             {
                 if (t == h1fsAgc1 || t == h1fsAgc2)
                 {
-                    PrettyTrackBar g = srow == 0 ? ptbSubRX1Gain : ptbSubRX2Gain;
-                    if (g != null) { g.Value = H1FsClamp(t.Value, g.Minimum, g.Maximum); if (srow == 0) ptbSubRX1Gain_Scroll(g, EventArgs.Empty); else ptbSubRX2Gain_Scroll(g, EventArgs.Empty); }
+                    int gain = H1FsClamp(t.Value, -20, 120);
+                    if (srow == 0) SetSubAgcGain(gain); else SetSub2AgcGain(gain);
+                    H1SpacePttTrace("fs strip: SUB CTRL agc rx" + (srow + 1) + " -> " + gain);
                 }
                 else
                 {
-                    try { radio.GetDSPRX(srow, 1).RXOutputGain = H1FsClamp(t.Value, 0, 100) / 100.0; } catch { }
+                    int af = H1FsClamp(t.Value, 0, 100);
+                    if (srow == 0)
+                    {
+                        if (ptbRX1Gain != null) { ptbRX1Gain.Value = af; H1ApplyRxGain(1); }
+                    }
+                    else
+                    {
+                        if (ptbRX2SubGain != null) { ptbRX2SubGain.Value = af; H1ApplyRxGain(3); }
+                    }
+                    H1SpacePttTrace("fs strip: SUB CTRL af rx" + (srow + 1) + " -> " + af);
                 }
                 H1FsSync();
                 return;
@@ -11589,6 +11644,20 @@ for (int zr = 0; zr < 8; zr++)
             H1FsSync();
         }
 
+        private static void H1SubModeFilter(DSPMode mode, out int low, out int high)
+        {
+            switch (mode)
+            {
+                case DSPMode.LSB: case DSPMode.DIGL: low = -3000; high = -300; break;
+                case DSPMode.CWL: low = -500; high = -100; break;
+                case DSPMode.CWU: low = 100; high = 500; break;
+                case DSPMode.USB: case DSPMode.DIGU: low = 300; high = 3000; break;
+                case DSPMode.AM: case DSPMode.SAM: case DSPMode.DSB: low = -4000; high = 4000; break;
+                case DSPMode.FM: low = -8000; high = 8000; break;
+                default: low = -6000; high = 6000; break;
+            }
+        }
+
         private void H1CellModeChanged(object sender, EventArgs e)
         {
             if (_h1fsSync) return;
@@ -11599,7 +11668,11 @@ for (int zr = 0; zr < 8; zr++)
             if (_h1CellSubCtrl[row])
             {
                 HeadlessSubRX.ApplyMode(row, mode);
-                H1SpacePttTrace("h1cs: SUB CTRL mode rx" + row + " -> " + H1FsModeNames[c.SelectedIndex]);
+                int lo, hi;
+                H1SubModeFilter(mode, out lo, out hi);
+                HeadlessSubRX.ApplyFilter(row, lo, hi);
+                H1SpacePttTrace("h1cs: SUB CTRL mode rx" + row + " -> " + H1FsModeNames[c.SelectedIndex]
+                    + " filter " + lo + "/" + hi);
                 H1FsSync();
                 return;
             }
@@ -11622,7 +11695,7 @@ for (int zr = 0; zr < 8; zr++)
             {
                 s.AgcVal.Text = s.Agc.Value.ToString();
                 if (_h1CellSubCtrl[row])
-                    HeadlessSubRX.ApplyAgc(row, HeadlessSubRX.Get(row).AgcMode, s.Agc.Value);
+                    HeadlessSubRX.SetAgcTop(row, s.Agc.Value);
                 else
                     HeadlessSliceManager.Instance.SetSliceAgcTop(row, s.Agc.Value);
             }
@@ -11671,7 +11744,8 @@ for (int zr = 0; zr < 8; zr++)
             if (p == s.Nr)
             {
                 // a five-state cycle like the console's NR pill
-                int next = sl.Nr + 1;
+                int cur = _h1CellSubCtrl[row] ? HeadlessSubRX.Get(row).NrMode : sl.Nr;
+                int next = cur + 1;
                 if (next > 4) next = 0;
                 if (_h1CellSubCtrl[row]) HeadlessSubRX.SetNrMode(row, next);
                 else HeadlessSliceManager.Instance.SetSliceNr(row, next);
