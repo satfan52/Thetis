@@ -9283,9 +9283,11 @@ namespace Thetis
                 int b2 = Array.IndexOf(H1FsBands, rx2_band);
                 if (h1fsBand2.SelectedIndex != b2 && b2 >= 0) h1fsBand2.SelectedIndex = b2;
 
-                int m1 = Array.IndexOf(H1FsModes, _rx1_dsp_mode);
+                DSPMode sm1 = _h1CellSubCtrl[0] ? GetSubMode() : _rx1_dsp_mode;
+                DSPMode sm2 = _h1CellSubCtrl[1] ? radio.GetDSPRX(1, 1).DSPMode : _rx2_dsp_mode;
+                int m1 = Array.IndexOf(H1FsModes, sm1);
                 if (h1fsMode1.SelectedIndex != m1 && m1 >= 0) h1fsMode1.SelectedIndex = m1;
-                int m2 = Array.IndexOf(H1FsModes, _rx2_dsp_mode);
+                int m2 = Array.IndexOf(H1FsModes, sm2);
                 if (h1fsMode2.SelectedIndex != m2 && m2 >= 0) h1fsMode2.SelectedIndex = m2;
 
                 H1FsSliderFit(h1fsAgc1, ptbRF);
@@ -9922,9 +9924,17 @@ namespace Thetis
             int mrow = c == h1fsMode1 ? 0 : 1;
             if (_h1CellSubCtrl[mrow])
             {
+                // Drive the sub directly. Setting the sub combo to its already-selected
+                // index raises no event, which made a USB->LSB->USB cycle unreliable.
+                if (mrow == 0) SetSubMode(H1FsModes[c.SelectedIndex]);
+                else SetSub2Mode(H1FsModes[c.SelectedIndex]);
                 ComboBoxTS sub = mrow == 0 ? comboSubRX1Mode : comboSubRX2Mode;
-                int mi = sub != null ? Array.IndexOf(H1FsModes, H1FsModes[c.SelectedIndex]) : -1;
-                if (sub != null) sub.SelectedIndex = c.SelectedIndex;
+                if (sub != null && sub.SelectedIndex != c.SelectedIndex)
+                {
+                    if (mrow == 0) _sub_console_updating = true; else _sub2_console_updating = true;
+                    sub.SelectedIndex = c.SelectedIndex;
+                    if (mrow == 0) _sub_console_updating = false; else _sub2_console_updating = false;
+                }
                 H1SpacePttTrace("fs strip: SUB CTRL mode rx" + (mrow + 1) + " -> " + H1FsModeNames[c.SelectedIndex]);
                 H1FsSync();
                 return;
