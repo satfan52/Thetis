@@ -11110,8 +11110,11 @@ for (int zr = 0; zr < 8; zr++)
                         _h1SpareVacAutoOn = true;
                         H1SpacePttTrace("window click: VAC1 switched on for the spare audio");
                     }
+                    // Only one virtual cable may carry a spare receiver; with both
+                    // VAC1 and VAC2 routed the same spare audio, the two resampler
+                    // paths beat and produce a pumping noise. Prefer VAC1.
                     if (v1) route |= 1;
-                    if (v2) route |= 2;
+                    else if (v2) route |= 2;
                     // H1 (audio fix 2026-11-21, follow-up): the native VAC route must carry the
                     // SAME per-window selection as the console mix - a main-only listen routed
                     // rbuff (main+sub), so SubRXn stayed audible with only the main RX tag on.
@@ -11399,7 +11402,7 @@ for (int zr = 0; zr < 8; zr++)
                     for (int other = 2; other < 8; other++)
                     {
                         if (other == rx) continue;
-                        if ((_h1SpareAudioMask & (1 << (2 * other))) != 0)
+                        if (((_h1SpareAudioMask | _h1SpareListenMask) & (1 << (2 * other))) != 0)
                             H1SetSpareAudio(other, false, false);
                     }
                 }
@@ -11410,7 +11413,7 @@ for (int zr = 0; zr < 8; zr++)
                     for (int other = 2; other < 8; other++)
                     {
                         if (other == rx) continue;
-                        if ((_h1SpareAudioMask & (1 << (2 * other + 1))) != 0)
+                        if (((_h1SpareAudioMask | _h1SpareListenMask) & (1 << (2 * other + 1))) != 0)
                             H1SetSpareAudio(other, true, false);
                     }
                 }
@@ -11479,7 +11482,7 @@ for (int zr = 0; zr < 8; zr++)
                 if (mainOn || subOn)
                 {
                     if (chkVAC1 != null && chkVAC1.Checked) route |= 1;
-                    if (chkVAC2 != null && chkVAC2.Checked) route |= 2;
+                    else if (chkVAC2 != null && chkVAC2.Checked) route |= 2;
                     if (subOn && !mainOn) route |= 4;
                     else if (mainOn && !subOn) route |= 8;
                 }
