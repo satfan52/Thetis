@@ -449,12 +449,30 @@ namespace Thetis
             }
         }
 
+        private static void ApplyEmnrDefaults(int ch)
+        {
+            try
+            {
+                WDSP.SetRXAEMNRPosition(ch, 1);
+                WDSP.SetRXAEMNRgainMethod(ch, 2);
+                WDSP.SetRXAEMNRnpeMethod(ch, 0);
+                WDSP.SetRXAEMNRaeRun(ch, 1);
+                WDSP.SetRXAEMNRpost2Run(ch, 0);
+                WDSP.SetRXAEMNRpost2Nlevel(ch, 15.0);
+                WDSP.SetRXAEMNRpost2Factor(ch, 15.0);
+                WDSP.SetRXAEMNRpost2Rate(ch, 5.0);
+                WDSP.SetRXAEMNRpost2Taper(ch, 12);
+            }
+            catch { }
+        }
+
         private static void ApplySliceNr(HeadlessSlice slice)
         {
             int ch = slice.ChannelId;
             int nr = Math.Max(0, Math.Min(4, slice.Nr));
             try
             {
+                if (nr == 2) ApplyEmnrDefaults(ch);
                 WDSP.SetRXAANRRun(ch, nr == 1 ? 1 : 0);
                 WDSP.SetRXAEMNRRun(ch, nr == 2 ? 1 : 0);
                 WDSP.SetRXARNNRRun(ch, nr == 3 ? 1 : 0);

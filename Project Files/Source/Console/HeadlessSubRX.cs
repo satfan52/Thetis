@@ -396,6 +396,23 @@ namespace Thetis
         public static void SetNr(int rx, bool on) { SetNrMode(rx, on ? (Get(rx).NrMode > 0 ? Get(rx).NrMode : 1) : 0); }
 
         /// <summary>SUB CTRL NR: the console's four NR engines, applied to the sub channel.</summary>
+        private static void ApplyEmnrDefaults(int ch)
+        {
+            try
+            {
+                WDSP.SetRXAEMNRPosition(ch, 1);
+                WDSP.SetRXAEMNRgainMethod(ch, 2);
+                WDSP.SetRXAEMNRnpeMethod(ch, 0);
+                WDSP.SetRXAEMNRaeRun(ch, 1);
+                WDSP.SetRXAEMNRpost2Run(ch, 0);
+                WDSP.SetRXAEMNRpost2Nlevel(ch, 15.0);
+                WDSP.SetRXAEMNRpost2Factor(ch, 15.0);
+                WDSP.SetRXAEMNRpost2Rate(ch, 5.0);
+                WDSP.SetRXAEMNRpost2Taper(ch, 12);
+            }
+            catch { }
+        }
+
         public static void SetNrMode(int rx, int mode)
         {
             var s = Get(rx);
@@ -404,6 +421,7 @@ namespace Thetis
             int ch = Ch(rx, 1);
             try
             {
+                if (mode == 2) ApplyEmnrDefaults(ch);
                 WDSP.SetRXAANRRun(ch, mode == 1 ? 1 : 0);
                 WDSP.SetRXAEMNRRun(ch, mode == 2 ? 1 : 0);
                 WDSP.SetRXARNNRRun(ch, mode == 3 ? 1 : 0);
