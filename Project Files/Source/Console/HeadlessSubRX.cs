@@ -291,9 +291,19 @@ namespace Thetis
             // is sub-pixel, so rounding could still put the right/left window
             // edge exactly on the cell boundary and clip it away. Keep a
             // few pixels of margin instead (about 5 px at a 1k-wide cell).
-            double pixelGuard = Math.Max(2.0, ddcRate / 200.0);
-            double upper = edge - (double)st.FilterHigh - pixelGuard;
-            double lower = -edge - (double)st.FilterLow + pixelGuard;
+            // The visible cell can be a zoomed/panned part of the DDC. Clamping
+            // to the hardware Nyquist let the window leave the drawn panafall on
+            // one side while still being inside the DDC. Use the published
+            // visible span for the same rule the console subs use.
+            double visibleLow = -edge, visibleHigh = edge;
+            if (Display.H1RowSpanValid[rx])
+            {
+                visibleLow = Display.H1RowDisplayLow[rx] - main;
+                visibleHigh = Display.H1RowDisplayHigh[rx] - main;
+            }
+            double pixelGuard = Math.Max(2.0, (visibleHigh - visibleLow) / 200.0);
+            double upper = visibleHigh - (double)st.FilterHigh - pixelGuard;
+            double lower = visibleLow - (double)st.FilterLow + pixelGuard;
             double raw = offset;
             if (offset > upper) offset = upper;
             if (offset < lower) offset = lower;
