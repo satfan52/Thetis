@@ -84,8 +84,8 @@ namespace Thetis
             double edge = rate > 0 ? rate / 2.0 : 96000.0;
             double sepAbove = Math.Max(5000.0, (main.FilterHigh - s.FilterLow) + 100.0);
             double sepBelow = Math.Max(5000.0, (s.FilterHigh - main.FilterLow) + 100.0);
-            double upper = edge - Math.Max(0, s.FilterHigh);
-            double lower = -edge + Math.Max(0, -s.FilterLow);
+            double upper = edge - s.FilterHigh - 2.0;
+            double lower = -edge - s.FilterLow + 2.0;
             if (sepAbove <= upper) return (long)Math.Round(mainHz + sepAbove);
             if (sepBelow <= -lower) return (long)Math.Round(mainHz - sepBelow);
             // Neither side has room at the preferred separation; take the larger
@@ -270,8 +270,12 @@ namespace Thetis
             // [low,high] may sit as low as -edge-low and as high as
             // edge-high; LSB mirrors it. Using only the positive
             // filter edge here let the window leave the DDC on one side.
-            double upper = edge - (double)st.FilterHigh;
-            double lower = -edge - (double)st.FilterLow;
+            // DDC1/2 keep the window strictly inside the DDC: their usable
+            // position is min+2 .. max-2, not the raw edge. Without the guard
+            // the drawn window can sit exactly on the cell boundary and be
+            // clipped away on one side depending on the sideband.
+            double upper = edge - (double)st.FilterHigh - 2.0;
+            double lower = -edge - (double)st.FilterLow + 2.0;
             double raw = offset;
             if (offset > upper) offset = upper;
             if (offset < lower) offset = lower;
