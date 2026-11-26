@@ -424,6 +424,31 @@ namespace Thetis
             }
         }
 
+        public void SetSliceAgcConfig(int rx, AGCMode mode, double top,
+            int hang, int decay, int slope, int attack, int hangThreshold)
+        {
+            lock (_lock)
+            {
+                if (!_slices.TryGetValue(rx, out HeadlessSlice slice)) return;
+                slice.AgcMode = mode;
+                slice.AgcTop = top;
+                if (!slice.IsActive || !cmaster.IsRadioCreated) return;
+                int ch = slice.ChannelId;
+                try
+                {
+                    WDSP.SetRXAAGCMode(ch, mode);
+                    WDSP.SetRXAAGCHang(ch, hang);
+                    WDSP.SetRXAAGCDecay(ch, decay);
+                    WDSP.SetRXAAGCSlope(ch, slope);
+                    WDSP.SetRXAAGCAttack(ch, attack);
+                    WDSP.SetRXAAGCHangThreshold(ch, hangThreshold);
+                    if (mode == AGCMode.FIXD) WDSP.SetRXAAGCFixed(ch, top);
+                    else WDSP.SetRXAAGCTop(ch, top);
+                }
+                catch { }
+            }
+        }
+
         private static void ApplySliceNr(HeadlessSlice slice)
         {
             int ch = slice.ChannelId;

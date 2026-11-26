@@ -10807,6 +10807,27 @@ for (int zr = 0; zr < 8; zr++)
             return -1;
         }
 
+        private void H1ApplyDdc3AgcCopy()
+        {
+            try
+            {
+                RadioDSPRX rx2 = radio.GetDSPRX(1, 0);
+                RadioDSPRX sx2 = radio.GetDSPRX(1, 1);
+                if (HeadlessSliceManager.Instance.GetSlice(2) != null)
+                    HeadlessSliceManager.Instance.SetSliceAgcConfig(2,
+                        RX2AGCMode, ptbRX2RF != null ? ptbRX2RF.Value : 90.0,
+                        rx2.RXAGCHang, rx2.RXAGCDecay, rx2.RXAGCSlope, 2,
+                        rx2.RXAGCHangThreshold);
+                HeadlessSubRX.SetAgcConfig(2,
+                    sx2.RXAGCMode,
+                    ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : 90.0,
+                    sx2.RXAGCHang, sx2.RXAGCDecay, sx2.RXAGCSlope, 2,
+                    sx2.RXAGCHangThreshold);
+                H1SpacePttTrace("ddc3: exact AGC copy rx2 main/sub to rx3 main/sub");
+            }
+            catch { }
+        }
+
         private void H1CellStripsBuild()
         {
             if (_h1cellStripsBuilt) return;
@@ -10816,10 +10837,21 @@ for (int zr = 0; zr < 8; zr++)
                 _h1AgcDefaultsCopied = true;
                 try
                 {
-                    double rx2Agc = ptbRX2RF != null ? ptbRX2RF.Value : 90.0;
-                    for (int gr = 2; gr < 8; gr++)
-                        if (HeadlessSliceManager.Instance.GetSlice(gr) != null)
-                            HeadlessSliceManager.Instance.SetSliceAgcTop(gr, rx2Agc);
+                    // TEST (user 2026-11-26): DDC3 only - make RX3 and SubRX3
+                    // use exactly RX2's and SubRX2's AGC configuration.
+                    RadioDSPRX rx2 = radio.GetDSPRX(1, 0);
+                    RadioDSPRX sx2 = radio.GetDSPRX(1, 1);
+                    if (HeadlessSliceManager.Instance.GetSlice(2) != null)
+                        HeadlessSliceManager.Instance.SetSliceAgcConfig(2,
+                            RX2AGCMode,
+                            ptbRX2RF != null ? ptbRX2RF.Value : 90.0,
+                            rx2.RXAGCHang, rx2.RXAGCDecay, rx2.RXAGCSlope, 2,
+                            rx2.RXAGCHangThreshold);
+                    HeadlessSubRX.SetAgcConfig(2,
+                        sx2.RXAGCMode,
+                        ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : 90.0,
+                        sx2.RXAGCHang, sx2.RXAGCDecay, sx2.RXAGCSlope, 2,
+                        sx2.RXAGCHangThreshold);
                 }
                 catch { }
             }
@@ -10953,6 +10985,19 @@ for (int zr = 0; zr < 8; zr++)
                 c.BringToFront();
             }
             H1CellStripsLayout();
+            try
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Thread.Sleep(1200);
+                        BeginInvoke((Action)(() => H1ApplyDdc3AgcCopy()));
+                    }
+                    catch { }
+                });
+            }
+            catch { }
         }
 
         private void H1CellStripsHide()
