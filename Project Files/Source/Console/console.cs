@@ -10440,7 +10440,10 @@ for (int zr = 0; zr < 8; zr++)
             bool blueSub = current_click_tune_mode == ClickTuneMode.VFOB;
 
             bool insideSub = sub.Enabled && sl >= 0 && sr > sl && cellX >= sl - 3 && cellX <= sr + 3;
-            bool nearMainEdge = wl >= 0 && wr > wl && (Math.Abs(cellX - wl) < 3 || Math.Abs(cellX - wr) < 3);
+            int dml = (wl >= 0 && wr > wl) ? Math.Abs(cellX - wl) : 9999;
+            int dmr = (wl >= 0 && wr > wl) ? Math.Abs(cellX - wr) : 9999;
+            int dsl = (sub.Enabled && sl >= 0 && sr > sl) ? Math.Abs(cellX - sl) : 9999;
+            int dsr = (sub.Enabled && sl >= 0 && sr > sl) ? Math.Abs(cellX - sr) : 9999;
             if (e.Y - cellTop < 16) _h1SpareDragKind = 1;       // top strip pans the DDC
             else if (blueSub)
             {
@@ -10451,23 +10454,20 @@ for (int zr = 0; zr < 8; zr++)
                     H1SpacePttTrace("h1cell: blue pressed but sub disabled r" + cell);
                     return;
                 }
-                if (sl >= 0 && sr > sl && Math.Abs(cellX - sl) < 3) _h1SpareDragKind = 5;
-                else if (sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
+                if (dsl < 3) _h1SpareDragKind = 5;
+                else if (dsr < 3) _h1SpareDragKind = 6;
                 else _h1SpareDragKind = 4;
             }
-            else if (nearMainEdge)
+            else if (Math.Min(Math.Min(dml, dmr), Math.Min(dsl, dsr)) < 3)
             {
-                // yellow/off: the main passband edges keep their horizontal-arrow
-                // drag even when the sub window overlaps them
-                if (Math.Abs(cellX - wl) < 3) _h1SpareDragKind = 2;
-                else _h1SpareDragKind = 3;
+                // nearest edge wins, so a sub edge that is not on top of a
+                // main edge can be dragged in yellow/off as well
+                if (dml < 3 && dml <= dmr && dml <= dsl && dml <= dsr) _h1SpareDragKind = 2;
+                else if (dmr < 3 && dmr <= dsl && dmr <= dsr) _h1SpareDragKind = 3;
+                else if (dsl < 3 && dsl <= dsr) _h1SpareDragKind = 5;
+                else _h1SpareDragKind = 6;
             }
-            else if (insideSub)
-            {
-                if (sl >= 0 && sr > sl && Math.Abs(cellX - sl) < 3) _h1SpareDragKind = 5;
-                else if (sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
-                else _h1SpareDragKind = 4;
-            }
+            else if (insideSub) _h1SpareDragKind = 4;
             else _h1SpareDragKind = 0;
 
             pnlDisplay.Cursor = Cursors.SizeWE;
