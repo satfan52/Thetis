@@ -10641,7 +10641,8 @@ for (int zr = 0; zr < 8; zr++)
                 if (!Display.H1EightRows) return;
                 // H1 (M2): a digital slice keys the rig through CI-V without the
                 // console's MOX, so its cell still counts as the TX cell.
-                Display.H1CellTxActive = _mox || _tuning || TxArbiter.Instance.ActiveDigitalRx >= 0;
+                Display.H1CellTxActive = _mox || _tuning || _h1VoiceTxKeyed
+                    || TxArbiter.Instance.ActiveDigitalRx >= 0;
                 Display.H1CellMeterSwr = H1TxSwr;
                 Display.H1CellMeterFwd = H1TxFwdW;
                 for (int r = 0; r < 8; r++)
@@ -10683,7 +10684,11 @@ for (int zr = 0; zr < 8; zr++)
                     Display.H1RowVfoOffsetHz[r] = (int)Math.Round((slice.FrequencyMHz - centre) * 1e6);
                     Display.H1RowRateHz[r] = HeadlessSliceManager.Instance.GetSliceRateHz(r);
                     Display.H1RowActive[r] = slice.IsActive;
-                    Display.H1CellTx[r] = TxArbiter.Instance.ActiveDigitalRx == r;
+                    // The TX tag can be a spare receiver's main or sub window, not
+                    // only a TCI/digital TX slice. The caption and SWR/FWD cell
+                    // meter must follow that tag as they do for DDC1/DDC2.
+                    Display.H1CellTx[r] = (_h1VoiceTxRx == r)
+                        || (TxArbiter.Instance.ActiveDigitalRx == r);
                     Display.H1RowTci[r] = slice.HasConsumer(SliceConsumer.TciAudio) || slice.HasConsumer(SliceConsumer.TciIq);
                     Display.H1RowTxMask[r] = (_h1VoiceTxRx == r) ? (_h1VoiceTxSub ? 2 : 1) : 0;
                     // H1 (bug fix 2026-11-12): keep the two windows' RX tags independent.
