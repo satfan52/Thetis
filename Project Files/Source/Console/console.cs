@@ -11660,7 +11660,7 @@ for (int zr = 0; zr < 8; zr++)
             {
                 s.AgcVal.Text = s.Agc.Value.ToString();
                 if (_h1CellSubCtrl[row])
-                    HeadlessSubRX.ApplyAgc(row, HeadlessSubRX.Get(row).AgcMode, s.Agc.Value);
+                    HeadlessSubRX.SetAgcTop(row, s.Agc.Value);
                 else
                     HeadlessSliceManager.Instance.SetSliceAgcTop(row, s.Agc.Value);
             }
@@ -13350,6 +13350,7 @@ for (int zr = 0; zr < 8; zr++)
                 SetSubNRRun(1, chkSubRX1NR != null && chkSubRX1NR.Checked);
                 if (chkSubRX1MUT != null && chkSubRX1MUT.Checked) s.RXOutputGain = 0.0;
                 else s.RXOutputGain = (double)ptbRX1Gain.Value / ptbRX1Gain.Maximum;
+                WDSP.SetRXAPanelGain1(WDSP.id(0, 1), s.RXOutputGain);
             }
             else
             {
@@ -13376,6 +13377,7 @@ for (int zr = 0; zr < 8; zr++)
                 SetSubNRRun(2, chkSubRX2NR != null && chkSubRX2NR.Checked);
                 if (chkSubRX2MUT != null && chkSubRX2MUT.Checked) s.RXOutputGain = 0.0;
                 else s.RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+                WDSP.SetRXAPanelGain1(WDSP.id(2, 1), s.RXOutputGain);
             }
         }
 

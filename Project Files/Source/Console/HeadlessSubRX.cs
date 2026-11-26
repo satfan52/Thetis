@@ -331,6 +331,12 @@ namespace Thetis
             WDSP.SetRXAPanelGain1(Ch(rx, 1), 0.5 * 2.0 * gSub);
         }
 
+        public static void SetAgcTop(int rx, double db)
+        {
+            Get(rx).AgcGainDb = db;
+            try { WDSP.SetRXAAGCTop(Ch(rx, 1), db); } catch { }
+        }
+
         public static void ApplyAgc(int rx, AGCMode mode, double fixedDb)
         {
             var s = Get(rx); s.AgcMode = mode; s.AgcGainDb = fixedDb;
