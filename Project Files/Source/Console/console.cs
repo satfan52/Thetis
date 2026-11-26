@@ -10440,8 +10440,9 @@ for (int zr = 0; zr < 8; zr++)
             bool blueSub = current_click_tune_mode == ClickTuneMode.VFOB;
 
             bool insideSub = sub.Enabled && sl >= 0 && sr > sl && cellX >= sl - 3 && cellX <= sr + 3;
+            bool nearMainEdge = wl >= 0 && wr > wl && (Math.Abs(cellX - wl) < 3 || Math.Abs(cellX - wr) < 3);
             if (e.Y - cellTop < 16) _h1SpareDragKind = 1;       // top strip pans the DDC
-            else if (blueSub || insideSub)
+            else if (blueSub)
             {
                 // H2: blue tunes this DDC's sub receiver
                 if (!sub.Enabled)
@@ -10454,13 +10455,20 @@ for (int zr = 0; zr < 8; zr++)
                 else if (sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
                 else _h1SpareDragKind = 4;
             }
-            else
+            else if (nearMainEdge)
             {
-                // H2: yellow tunes this DDC's main slice
-                if (wl >= 0 && wr > wl && Math.Abs(cellX - wl) < 3) _h1SpareDragKind = 2;
-                else if (wl >= 0 && wr > wl && Math.Abs(cellX - wr) < 3) _h1SpareDragKind = 3;
-                else _h1SpareDragKind = 0;
+                // yellow/off: the main passband edges keep their horizontal-arrow
+                // drag even when the sub window overlaps them
+                if (Math.Abs(cellX - wl) < 3) _h1SpareDragKind = 2;
+                else _h1SpareDragKind = 3;
             }
+            else if (insideSub)
+            {
+                if (sl >= 0 && sr > sl && Math.Abs(cellX - sl) < 3) _h1SpareDragKind = 5;
+                else if (sl >= 0 && sr > sl && Math.Abs(cellX - sr) < 3) _h1SpareDragKind = 6;
+                else _h1SpareDragKind = 4;
+            }
+            else _h1SpareDragKind = 0;
 
             pnlDisplay.Cursor = Cursors.SizeWE;
             H1SpacePttTrace("h1cell: press cell r" + cell + " kind=" + _h1SpareDragKind
@@ -67801,6 +67809,17 @@ private void incrementMutliMeterDisplayModeRX2()
                     int h1cfRow;
                     if (Display.H1CellCaptionRow(e.X, e.Y, out h1cfRow))
                         next_cursor = H1CaptionCursor();
+                    int h1ce = H1CellRowAt(e.X, e.Y);
+                    if (h1ce >= 2)
+                    {
+                        int cw = H1CellWidthPx();
+                        int cx = e.X - (h1ce / 4) * cw;
+                        bool blue = current_click_tune_mode == ClickTuneMode.VFOB;
+                        int el = blue ? Display.H1RowSubWinLeft[h1ce] : Display.H1RowWinLeft[h1ce];
+                        int er = blue ? Display.H1RowSubWinRight[h1ce] : Display.H1RowWinRight[h1ce];
+                        if (er > el && (Math.Abs(cx - el) < 3 || Math.Abs(cx - er) < 3))
+                            next_cursor = Cursors.SizeWE;
+                    }
                 }
 
                 // nothing applied yet
