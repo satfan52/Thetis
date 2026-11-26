@@ -73,6 +73,28 @@ namespace Thetis
         }
 
         /// <summary>Enable/disable the subrx DSP channel. Initialises it from stored state.</summary>
+        /// <summary>Same idea as the console sub default: start 5 kHz away from the
+        /// main receiver, with enough extra separation for the two passbands not to
+        /// overlap, and fall back to the other side near the DDC edge.</summary>
+        private static long H1DefaultSubFreq(int rx, HeadlessSlice main, State s)
+        {
+            if (main == null) return 0;
+            double mainHz = main.FrequencyMHz * 1e6;
+            int rate = HeadlessSliceManager.Instance.GetSliceRateHz(rx);
+            double edge = rate > 0 ? rate / 2.0 : 96000.0;
+            double sepAbove = Math.Max(5000.0, (main.FilterHigh - s.FilterLow) + 100.0);
+            double sepBelow = Math.Max(5000.0, (s.FilterHigh - main.FilterLow) + 100.0);
+            double upper = edge - Math.Max(0, s.FilterHigh);
+            double lower = -edge + Math.Max(0, -s.FilterLow);
+            if (sepAbove <= upper) return (long)Math.Round(mainHz + sepAbove);
+            if (sepBelow <= -lower) return (long)Math.Round(mainHz - sepBelow);
+            // Neither side has room at the preferred separation; take the larger
+            // available side so the windows are still visually distinct.
+            if (upper > 2.0) return (long)Math.Round(mainHz + Math.Min(sepAbove, upper));
+            if (lower < -2.0) return (long)Math.Round(mainHz + Math.Max(-sepBelow, lower));
+            return (long)Math.Round(mainHz);
+        }
+
         public static bool SetEnabled(int rx, bool on)
         {
             var s = Get(rx);
@@ -88,6 +110,12 @@ namespace Thetis
                     {
                         s.FilterLow = mainSlice.FilterLow;
                         s.FilterHigh = mainSlice.FilterHigh;
+                        // H1: a sub with no stored position (or one that still sits
+                        // exactly on the main frequency) starts 5 kHz away, like
+                        // SubRX1/2, so the two windows are visually distinct.
+                        double mainHz = mainSlice.FrequencyMHz * 1e6;
+                        if (s.FreqHz <= 0 || Math.Abs((double)s.FreqHz - mainHz) < 1.0)
+                            s.FreqHz = H1DefaultSubFreq(rx, mainSlice, s);
                         // H1 (user 2026-11-21): the console sub follows the cell's mode like
                         // Thetis's own sub receiver. Without this a sub enabled on a DIGL cell
                         // kept the default USB state, so its TX profile (TX tag on the sub
