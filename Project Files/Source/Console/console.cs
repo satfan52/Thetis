@@ -13337,7 +13337,18 @@ for (int zr = 0; zr < 8; zr++)
                 WDSP.SetRXASNBARun(WDSP.id(2, 1), chkSubRX2NB2 != null && chkSubRX2NB2.Checked);
                 SetSubNRRun(2, chkSubRX2NR != null && chkSubRX2NR.Checked);
                 if (chkSubRX2MUT != null && chkSubRX2MUT.Checked) s.RXOutputGain = 0.0;
-                else s.RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+                else
+                {
+                    // an accidental zero volume must not leave SubRX2 permanently silent
+                    if (ptbRX2SubGain.Value < 1) ptbRX2SubGain.Value = 100;
+                    s.RXOutputGain = (double)ptbRX2SubGain.Value / ptbRX2SubGain.Maximum;
+                }
+                // Force the panel gain; the RXOutputGain setter can skip WDSP when its
+                // cached value is unchanged, which has left the sub silent.
+                WDSP.SetRXAPanelGain1(WDSP.id(2, 1), s.RXOutputGain);
+                H1SpacePttTrace("sub2 apply: vol=" + ptbRX2SubGain.Value.ToString()
+                    + " out=" + s.RXOutputGain.ToString()
+                    + " mut=" + (chkSubRX2MUT == null ? "n/a" : chkSubRX2MUT.Checked.ToString()));
             }
         }
 
