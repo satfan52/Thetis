@@ -10808,6 +10808,29 @@ for (int zr = 0; zr < 8; zr++)
             return -1;
         }
 
+        private void H1ApplyHeadlessAgcDefaults()
+        {
+            try
+            {
+                RadioDSPRX rx2 = radio.GetDSPRX(1, 0);
+                RadioDSPRX sx2 = radio.GetDSPRX(1, 1);
+                double mainTop = ptbRX2RF != null ? ptbRX2RF.Value : 90.0;
+                double subGain = ptbSubRX2Gain != null ? ptbSubRX2Gain.Value : 90.0;
+                for (int r = 2; r < 8; r++)
+                {
+                    if (HeadlessSliceManager.Instance.GetSlice(r) != null)
+                        HeadlessSliceManager.Instance.SetSliceAgcConfig(r, RX2AGCMode, mainTop,
+                            rx2.RXAGCHang, rx2.RXAGCDecay, rx2.RXAGCSlope, 2,
+                            rx2.RXAGCHangThreshold);
+                    HeadlessSubRX.SetAgcConfig(r, sx2.RXAGCMode, subGain,
+                        sx2.RXAGCHang, sx2.RXAGCDecay, sx2.RXAGCSlope, 2,
+                        sx2.RXAGCHangThreshold);
+                }
+                H1SpacePttTrace("ddc3-8: copied RX2 and SubRX2 AGC settings to all headless receivers");
+            }
+            catch { }
+        }
+
         private void H1CellStripsBuild()
         {
             if (_h1cellStripsBuilt) return;
@@ -10955,6 +10978,19 @@ for (int zr = 0; zr < 8; zr++)
             }
             H1EnforceAudioTagLimit();
             H1CellStripsLayout();
+            try
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        Thread.Sleep(1200);
+                        BeginInvoke((Action)(() => H1ApplyHeadlessAgcDefaults()));
+                    }
+                    catch { }
+                });
+            }
+            catch { }
         }
 
         private void H1CellStripsHide()
