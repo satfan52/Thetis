@@ -280,25 +280,37 @@ namespace Thetis
             // 48k..384k, so a fixed 48 kHz clamp was wrong everywhere but 96k DDCs.
             int ddcRate = HeadlessSliceManager.Instance.GetSliceRateHz(rx);
             double edge = ddcRate / 2.0;
-            // Filter-aware passband edges: the carrier may reach the DDC edge
-            // only where its passband does not extend past it (USB sits above
-            // the carrier, LSB below, AM/SAM/NFM symmetric).
-            // Same asymmetric rule as SubRX1/2: a USB passband
-            // [low,high] may sit as low as -edge-low and as high as
-            // edge-high; LSB mirrors it. Using only the positive
-            // filter edge here let the window leave the DDC on one side.
-            // The headless cell is drawn with a finite pixel width; a 2 Hz guard
-            // is sub-pixel, so rounding could still put the right/left window
-            // edge exactly on the cell boundary and clip it away. Keep a
-            // few pixels of margin instead (about 5 px at a 1k-wide cell).
-            double pixelGuard = Math.Max(2.0, ddcRate / 200.0);
-            double upper = edge - (double)st.FilterHigh - pixelGuard;
-            double lower = -edge - (double)st.FilterLow + pixelGuard;
+            // H2 (fix 2026-11-26): in the full-window view the six spare DDCs are drawn in a
+            // cell whose span is narrower than the DDC's Nyquist - the analyser clips 4 percent
+            // of each side of the sample rate. The console's own SubRX1/2 clamp holds its
+            // windows to that drawn line (0.92 * rate / 2), and the same line must hold here:
+            // clamping only to the hardware edge let the carrier reach the visible cell edge
+            // and pushed the filter window (USB above the carrier, LSB below) entirely out of
+            // the cell, where the renderer clips it away and the window disappears.
+            double spanLow, spanHigh;
+            bool haveVisibleSpan = VisibleCellSpan(rx, ddcRate, out spanLow, out spanHigh);
+            double clampLow = haveVisibleSpan ? spanLow : -edge;
+            double clampHigh = haveVisibleSpan ? spanHigh : edge;
+            // Filter-aware passband edges: the carrier may reach the edge only where its
+            // passband does not extend past it (USB sits above the carrier, LSB below,
+            // AM/SAM/NFM symmetric), exactly the SubPositionUsable rule of SubRX1/2.
+            double upper = clampHigh - (double)st.FilterHigh - H2SubEdgeGuardHz;
+            double lower = clampLow - (double)st.FilterLow + H2SubEdgeGuardHz;
             double raw = offset;
-            if (offset > upper) offset = upper;
-            if (offset < lower) offset = lower;
+            if (upper < lower)
+            {
+                // A deeply zoomed cell can be narrower than the sub's own passband. Neither edge
+                // is reachable then; centre the window in the visible span instead of letting a
+                // one-sided clamp pick an arbitrary side.
+                offset = (clampLow + clampHigh) * 0.5 - (st.FilterLow + st.FilterHigh) * 0.5;
+            }
+            else
+            {
+                if (offset > upper) offset = upper;
+                if (offset < lower) offset = lower;
+            }
             if (Math.Abs(raw - offset) > 0.5)
-                TciLog.Log($"[SubFreq] rx{rx} req={hz} main={main:0} filt={st.FilterLow}/{st.FilterHigh} off={raw:0} -> {offset:0} (up={upper:0} lo={lower:0} rate={ddcRate})");
+                TciLog.Log($"[SubFreq] rx{rx} req={hz} main={main:0} filt={st.FilterLow}/{st.FilterHigh} off={raw:0} -> {offset:0} (span={clampLow:0}..{clampHigh:0} up={upper:0} lo={lower:0})");
             // Thetis convention (txtVFOBFreq handler): RXOsc_sub = -(fB - fA) and
             // RadioDSPRX applies SetRXAShiftFreq(-RXOsc) => effective shift = +(fB - fA).
             // We drive SetRXAShiftFreq directly, so pass the offset itself.
@@ -309,6 +321,44 @@ namespace Thetis
             if (st.FreqHz != effective) st.FreqHz = effective;
             WDSP.SetRXAShiftFreq(Ch(rx, 1), offset);
             WDSP.RXANBPSetShiftFrequency(Ch(rx, 1), offset);
+        }
+
+        // H2 (fix 2026-11-26): the console's own sub-receiver tuning guard - the carrier may sit
+        // within 2 Hz of the filter-aware passband edge (SubPositionUsable in console.cs).
+        private const double H2SubEdgeGuardHz = 2.0;
+
+        /// <summary>
+        /// H2 (fix 2026-11-26): the drawn span of a spare DDC's full-window cell, as signed Hz
+        /// offsets about the DDC centre. The analyser publishes it from what it actually draws
+        /// (H1RowDisplayLow/High are offsets, never absolute frequencies). False means there is
+        /// no trustworthy span - view closed, analyser not configured yet, or a stale span left
+        /// over from a different sample rate - and the caller keeps the hardware-edge rule.
+        /// </summary>
+        private static bool VisibleCellSpan(int rx, int ddcRate, out double low, out double high)
+        {
+            low = 0.0; high = 0.0;
+            if (!Display.H1EightRows || rx < 2 || rx > 7) return false;
+            if (!Display.H1RowSpanValid[rx]) return false;
+            double lo = Display.H1RowDisplayLow[rx];
+            double hi = Display.H1RowDisplayHigh[rx];
+            if (hi <= lo) return false;
+            double rate = ddcRate > 0 ? ddcRate : 192000.0;
+            if (hi - lo > rate * 1.1) return false;      // stale span from a wider sample rate
+            if (lo < -rate || hi > rate) return false;
+            low = lo; high = hi;
+            return true;
+        }
+
+        /// <summary>
+        /// H2 (fix 2026-11-26): re-apply the stored sub frequency through the clamp. Used when
+        /// the cell's drawn span appears or changes (view entry, cell zoom/pan, sample-rate
+        /// change) so a sub left outside the new span is pulled back inside the panafall.
+        /// </summary>
+        public static void ReclampToCell(int rx)
+        {
+            var s = Get(rx);
+            if (!s.Enabled || s.FreqHz <= 0) return;
+            SetFreqInternal(rx, s.FreqHz);
         }
 
         public static long GetFreq(int rx) { return Get(rx).FreqHz; }

@@ -10525,6 +10525,12 @@ for (int zr = 0; zr < 8; zr++)
                         {
                             long hz = (long)Math.Round(H1SpareCellFreqAt(cell, e.X) * 1e6);
                             HeadlessSubRX.SetFreq(rx, hz);
+                            // H2 (fix 2026-11-26): publish the clamped position at once. Waiting
+                            // for the 150 ms meter tick drew the window up to 150 ms behind the
+                            // pointer; the console's own subs move in-step with the drag.
+                            Display.H1RowSubOffsetHz[cell] = (int)Math.Round(
+                                HeadlessSubRX.Get(cell).FreqHz
+                                - HeadlessSliceManager.Instance.GetDisplayCenterMHz(cell) * 1e6);
                             break;
                         }
                     case 5:
@@ -10537,6 +10543,10 @@ for (int zr = 0; zr < 8; zr++)
                             if (_h1SpareDragKind == 5) nlow = Math.Min(v, nhigh - minW);
                             else nhigh = Math.Max(v, nlow + minW);
                             HeadlessSubRX.ApplyFilter(rx, nlow, nhigh);
+                            // H2 (fix 2026-11-26): publish the dragged filter at once, so the
+                            // drawn sub window keeps up with the edge being grabbed.
+                            Display.H1RowSubLow[cell] = nlow;
+                            Display.H1RowSubHigh[cell] = nhigh;
                             break;
                         }
                 }
@@ -10569,6 +10579,10 @@ for (int zr = 0; zr < 8; zr++)
                     {
                         long hz = (long)Math.Round(H1SpareCellFreqAt(cell, e.X) * 1e6);
                         HeadlessSubRX.SetFreq(rx, hz);
+                        // H2 (fix 2026-11-26): publish the clamped position at once.
+                        Display.H1RowSubOffsetHz[cell] = (int)Math.Round(
+                            HeadlessSubRX.Get(cell).FreqHz
+                            - HeadlessSliceManager.Instance.GetDisplayCenterMHz(cell) * 1e6);
                         H1SpacePttTrace("h1cell: click cell rx" + rx + " sub -> " + hz);
                     }
                 }
@@ -10596,6 +10610,10 @@ for (int zr = 0; zr < 8; zr++)
                     HeadlessSubRX.State sub = HeadlessSubRX.Get(rx);
                     double sf = SnapTune(sub.FreqHz > 0 ? sub.FreqHz / 1e6 : Display.H1RowCentreMHz[rx], step, num_steps);
                     HeadlessSubRX.SetFreq(rx, (long)Math.Round(sf * 1e6));
+                    // H2 (fix 2026-11-26): publish the clamped position at once.
+                    Display.H1RowSubOffsetHz[rx] = (int)Math.Round(
+                        HeadlessSubRX.Get(rx).FreqHz
+                        - HeadlessSliceManager.Instance.GetDisplayCenterMHz(rx) * 1e6);
                     H1SpacePttTrace("h1cell: wheel cell rx" + rx + " SUB -> " + sf.ToString("f6"));
                     return;
                 }
@@ -10610,6 +10628,12 @@ for (int zr = 0; zr < 8; zr++)
             catch { }
         }
         private int _h1SubWinProbeAt;
+        // H2 (fix 2026-11-26): the drawn span each full-window cell last had. When it appears or
+        // changes (view entry, cell zoom/pan, rate change) the sub is re-applied through the
+        // clamp, so a window left outside the new span is pulled back into the panafall.
+        private readonly int[] _h1SubSpanLow = new int[8];
+        private readonly int[] _h1SubSpanHigh = new int[8];
+        private readonly bool[] _h1SubSpanValid = new bool[8];
         private void H1ProbeSubWindow(int r)
         {
             if (r != 2) return;
@@ -10660,7 +10684,13 @@ for (int zr = 0; zr < 8; zr++)
                 Display.H1MeterTx2 = rx2_enabled && (chkVFOBTX.Checked || (chkSubVFOBTX != null && chkSubVFOBTX.Checked));
 
                 // H1 (M1 steps 3-5): per-cell slice state and meters for all eight cells.
-                if (!Display.H1EightRows) return;
+                if (!Display.H1EightRows)
+                {
+                    // H2 (fix 2026-11-26): leaving the view forgets the tracked spans, so the
+                    // next entry re-applies the sub clamp to the span the cells publish then.
+                    for (int z = 0; z < 8; z++) { _h1SubSpanValid[z] = false; _h1SubSpanLow[z] = 0; _h1SubSpanHigh[z] = 0; }
+                    return;
+                }
                 // H1 (M2): a digital slice keys the rig through CI-V without the
                 // console's MOX, so its cell still counts as the TX cell.
                 Display.H1CellTxActive = _mox || _tuning || _h1VoiceTxKeyed
@@ -10731,6 +10761,21 @@ for (int zr = 0; zr < 8; zr++)
                     Display.H1RowSubEnabled[r] = sub.Enabled;
                     Display.H1RowSubLow[r] = sub.FilterLow;
                     Display.H1RowSubHigh[r] = sub.FilterHigh;
+                    // H2 (fix 2026-11-26): a new or changed drawn span (view entry, cell zoom or
+                    // pan, sample-rate change) re-applies the sub clamp against it. The headless
+                    // clamp is otherwise only touched by tuning, so a sub left outside the cell
+                    // would stay invisible until dragged.
+                    if (sub.Enabled && Display.H1RowSpanValid[r]
+                        && Display.H1RowDisplayHigh[r] > Display.H1RowDisplayLow[r]
+                        && (!_h1SubSpanValid[r]
+                            || _h1SubSpanLow[r] != Display.H1RowDisplayLow[r]
+                            || _h1SubSpanHigh[r] != Display.H1RowDisplayHigh[r]))
+                    {
+                        _h1SubSpanValid[r] = true;
+                        _h1SubSpanLow[r] = Display.H1RowDisplayLow[r];
+                        _h1SubSpanHigh[r] = Display.H1RowDisplayHigh[r];
+                        HeadlessSubRX.ReclampToCell(r);
+                    }
                     // a sub that was just switched on has no frequency yet: draw its
                     // window on the centre rather than at a huge negative offset
                     Display.H1RowSubOffsetHz[r] = (sub.Enabled && sub.FreqHz > 0) ? (int)Math.Round(sub.FreqHz - centre * 1e6) : 0;
