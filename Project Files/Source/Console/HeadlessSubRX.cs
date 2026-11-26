@@ -270,12 +270,13 @@ namespace Thetis
             // [low,high] may sit as low as -edge-low and as high as
             // edge-high; LSB mirrors it. Using only the positive
             // filter edge here let the window leave the DDC on one side.
-            // DDC1/2 keep the window strictly inside the DDC: their usable
-            // position is min+2 .. max-2, not the raw edge. Without the guard
-            // the drawn window can sit exactly on the cell boundary and be
-            // clipped away on one side depending on the sideband.
-            double upper = edge - (double)st.FilterHigh - 2.0;
-            double lower = -edge - (double)st.FilterLow + 2.0;
+            // The headless cell is drawn with a finite pixel width; a 2 Hz guard
+            // is sub-pixel, so rounding could still put the right/left window
+            // edge exactly on the cell boundary and clip it away. Keep a
+            // few pixels of margin instead (about 5 px at a 1k-wide cell).
+            double pixelGuard = Math.Max(2.0, ddcRate / 200.0);
+            double upper = edge - (double)st.FilterHigh - pixelGuard;
+            double lower = -edge - (double)st.FilterLow + pixelGuard;
             double raw = offset;
             if (offset > upper) offset = upper;
             if (offset < lower) offset = lower;
