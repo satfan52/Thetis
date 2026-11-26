@@ -10575,6 +10575,20 @@ for (int zr = 0; zr < 8; zr++)
             if (rx < 2 || rx > 7) return;
             try
             {
+                int cellW = H1CellWidthPx();
+                Point cp = pnlDisplay.PointToClient(Cursor.Position);
+                int cellX = cp.X - (rx / 4) * cellW;
+                int sl = Display.H1RowSubWinLeft[rx], sr = Display.H1RowSubWinRight[rx];
+                bool overSub = Display.H1RowSubEnabled[rx] && sr > sl
+                    && cellX >= sl - 3 && cellX <= sr + 3;
+                if (overSub)
+                {
+                    HeadlessSubRX.State sub = HeadlessSubRX.Get(rx);
+                    double sf = SnapTune(sub.FreqHz > 0 ? sub.FreqHz / 1e6 : Display.H1RowCentreMHz[rx], step, num_steps);
+                    HeadlessSubRX.SetFreq(rx, (long)Math.Round(sf * 1e6));
+                    H1SpacePttTrace("h1cell: wheel cell rx" + rx + " SUB -> " + sf.ToString("f6"));
+                    return;
+                }
                 HeadlessSlice slice = HeadlessSliceManager.Instance.GetSlice(rx);
                 if (slice == null) return;
                 double f = SnapTune(slice.FrequencyMHz, step, num_steps);
