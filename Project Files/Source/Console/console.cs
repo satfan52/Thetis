@@ -10437,8 +10437,9 @@ for (int zr = 0; zr < 8; zr++)
             int cellX = e.X - (cell / 4) * H1CellWidthPx();
             bool blueSub = current_click_tune_mode == ClickTuneMode.VFOB;
 
+            bool insideSub = sub.Enabled && sl >= 0 && sr > sl && cellX >= sl - 3 && cellX <= sr + 3;
             if (e.Y - cellTop < 16) _h1SpareDragKind = 1;       // top strip pans the DDC
-            else if (blueSub)
+            else if (blueSub || insideSub)
             {
                 // H2: blue tunes this DDC's sub receiver
                 if (!sub.Enabled)
@@ -10645,6 +10646,14 @@ for (int zr = 0; zr < 8; zr++)
                     if (slice == null) continue;
                     double centre = HeadlessSliceManager.Instance.GetDisplayCenterMHz(r);
                     Display.H1RowCentreMHz[r] = centre;
+                    if (slice.FilterHigh - slice.FilterLow < 10)
+                    {
+                        int flo, fhi;
+                        H1SubModeFilter(slice.Mode, out flo, out fhi);
+                        HeadlessSliceManager.Instance.SetFilter(r, flo, fhi);
+                        slice = HeadlessSliceManager.Instance.GetSlice(r);
+                        if (slice == null) continue;
+                    }
                     Display.H1RowFilterLow[r] = slice.FilterLow;
                     Display.H1RowFilterHigh[r] = slice.FilterHigh;
                     Display.H1RowVfoOffsetHz[r] = (int)Math.Round((slice.FrequencyMHz - centre) * 1e6);
@@ -10661,6 +10670,12 @@ for (int zr = 0; zr < 8; zr++)
                     Display.H1RowSubAudio[r] = (_h1SpareListenMask & (1 << (2 * r + 1))) != 0;
 
                     HeadlessSubRX.State sub = HeadlessSubRX.Get(r);
+                    if (sub.Enabled && sub.FilterHigh - sub.FilterLow < 10)
+                    {
+                        int flo, fhi;
+                        H1SubModeFilter(sub.Mode, out flo, out fhi);
+                        HeadlessSubRX.ApplyFilter(r, flo, fhi);
+                    }
                     Display.H1RowSubEnabled[r] = sub.Enabled;
                     Display.H1RowSubLow[r] = sub.FilterLow;
                     Display.H1RowSubHigh[r] = sub.FilterHigh;
