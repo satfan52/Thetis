@@ -11663,10 +11663,10 @@ for (int zr = 0; zr < 8; zr++)
         {
             switch (mode)
             {
-                case DSPMode.LSB: case DSPMode.DIGL: low = -3000; high = -300; break;
+                case DSPMode.LSB: case DSPMode.DIGL: low = -3000; high = -100; break;
                 case DSPMode.CWL: low = -500; high = -100; break;
                 case DSPMode.CWU: low = 100; high = 500; break;
-                case DSPMode.USB: case DSPMode.DIGU: low = 300; high = 3000; break;
+                case DSPMode.USB: case DSPMode.DIGU: low = 100; high = 3000; break;
                 case DSPMode.AM: case DSPMode.SAM: case DSPMode.DSB: low = -4000; high = 4000; break;
                 case DSPMode.FM: low = -8000; high = 8000; break;
                 default: low = -6000; high = 6000; break;
@@ -11802,10 +11802,10 @@ for (int zr = 0; zr < 8; zr++)
             int low, high;
             switch (mode)
             {
-                case DSPMode.LSB: case DSPMode.DIGL: low = -3000; high = -300; break;
+                case DSPMode.LSB: case DSPMode.DIGL: low = -3000; high = -100; break;
                 case DSPMode.CWL: low = -500; high = -100; break;
                 case DSPMode.CWU: low = 100; high = 500; break;
-                case DSPMode.USB: case DSPMode.DIGU: low = 300; high = 3000; break;
+                case DSPMode.USB: case DSPMode.DIGU: low = 100; high = 3000; break;
                 case DSPMode.AM: case DSPMode.SAM: low = -4000; high = 4000; break;
                 case DSPMode.DSB: low = -4000; high = 4000; break;
                 case DSPMode.FM: low = -8000; high = 8000; break;

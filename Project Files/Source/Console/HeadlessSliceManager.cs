@@ -43,7 +43,7 @@ namespace Thetis
         public int ChannelId { get; }
         public double FrequencyMHz { get; set; } = 14.074;
         public DSPMode Mode { get; set; } = DSPMode.DIGU;
-        public int FilterLow { get; set; } = 300;
+        public int FilterLow { get; set; } = 100;
         public int FilterHigh { get; set; } = 3000;
         public bool IsActive { get; set; } = false;
         public bool IsStreamingAudio { get; set; } = false;
